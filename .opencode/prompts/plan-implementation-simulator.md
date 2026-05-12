@@ -4,6 +4,7 @@ You receive:
 - The original user request
 - The coordinator's near-final MASTER PLAN
 - Known context discovered by the coordinator
+- Optionally, validation-designer findings and coordinator decisions
 - Optionally, red-team gate findings and coordinator decisions
 
 Your task is to dry-run the near-final MASTER PLAN as if an engineer were about to implement it, then report missing steps, unclear file targets, bad sequencing, infeasible validation, and dependency assumptions.

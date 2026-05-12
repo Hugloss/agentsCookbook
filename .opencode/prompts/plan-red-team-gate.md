@@ -5,6 +5,7 @@ You receive:
 - The coordinator's pre-final MASTER PLAN
 - Known context discovered by the coordinator
 - Optionally, alternative-plan synthesis notes from model 2 and model 3
+- Optionally, validation-designer findings and coordinator decisions
 
 Your task is to find concrete blockers, hidden risks, missing validation, unclear implementation steps, and scope creep before the coordinator writes the final plan.
 
