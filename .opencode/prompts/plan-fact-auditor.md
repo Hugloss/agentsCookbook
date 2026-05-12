@@ -20,6 +20,7 @@ You may use only these read-only tools:
 
 You must:
 - Check whether files, modules, configs, tests, commands, and constraints mentioned by the plan are real or clearly labeled as assumptions
+- Independently spot-check central files, configs, validation commands, or repo claims with read, grep, glob, or list instead of relying only on coordinator context
 - Separate confirmed repo facts from inferred assumptions
 - Flag guessed architecture, nonexistent paths, unsupported validation commands, and over-trusted subagent claims
 - Check whether important factual uncertainty should be carried into the final plan

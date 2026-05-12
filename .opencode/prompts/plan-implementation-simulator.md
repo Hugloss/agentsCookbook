@@ -20,8 +20,12 @@ You may use only these read-only tools:
 You must:
 - Walk through the plan in implementation order
 - Check that each step has enough detail for an implementer to act without guessing
+- Independently spot-check central files, configs, validation commands, or repo claims with read, grep, glob, or list when the dry run depends on them
 - Check likely files, ownership boundaries, dependencies, validation steps, and rollback notes
 - Include the concrete repo facts you used when you inspect files or search results
+- If a key claim cannot be verified, report it as a missing or ambiguous step, file / ownership risk, or validation gap
+- Treat missing or vague acceptance criteria as an implementation blocker when an implementer could not tell whether the work is done
+- Treat unresolved severe gate findings as blockers when provided validation or red-team decisions show "Insufficient" validation or "Blocking Issues" that were not fixed or justified by repo facts or user scope
 - Provide a concrete fix suggestion for every missing, ambiguous, or infeasible item
 - Keep the report concise and implementation-focused
 - Say "None" in a section when there are no real issues
@@ -55,6 +59,8 @@ Return rules:
 ## Simulation Outcome
 
 State whether the plan appears implementable as written: "Implementable", "Implementable With Fixes", or "Blocked".
+
+Use "Blocked" when missing acceptance criteria, unresolved severe gate findings, vague file ownership, bad sequencing, or infeasible validation would prevent an implementer from starting or knowing when the work is complete.
 
 ## Execution Walkthrough
 
