@@ -61,6 +61,78 @@
         "todowrite": "deny",
         "doom_loop": "deny"
       }
+    },
+    "plan-red-team-gate": {
+      "description": "Final read-only red-team gate. Reviews the pre-final master plan for blockers, risk, missing validation, and scope creep.",
+      "mode": "subagent",
+      "model": "liteLLM/gpt-oss",
+      "temperature": 0.1,
+      "prompt": "{file:./.opencode/prompts/plan-red-team-gate.md}",
+      "permission": {
+        "question": "deny",
+        "task": "deny",
+        "grep": "allow",
+        "glob": "allow",
+        "list": "allow",
+        "bash": "deny",
+        "read": "allow",
+        "edit": "deny",
+        "external_directory": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "lsp": "deny",
+        "skill": "deny",
+        "todowrite": "deny",
+        "doom_loop": "deny"
+      }
+    },
+    "plan-implementation-simulator": {
+      "description": "Final read-only implementation simulator. Dry-runs the near-final master plan for missing steps, file ambiguity, sequencing, and validation gaps.",
+      "mode": "subagent",
+      "model": "liteLLM/devstral",
+      "temperature": 0.1,
+      "prompt": "{file:./.opencode/prompts/plan-implementation-simulator.md}",
+      "permission": {
+        "question": "deny",
+        "task": "deny",
+        "grep": "allow",
+        "glob": "allow",
+        "list": "allow",
+        "bash": "deny",
+        "read": "allow",
+        "edit": "deny",
+        "external_directory": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "lsp": "deny",
+        "skill": "deny",
+        "todowrite": "deny",
+        "doom_loop": "deny"
+      }
+    },
+    "plan-contract-checker": {
+      "description": "Final read-only contract checker. Verifies the final-candidate master plan satisfies required sections, ownership rules, scope, validation, and no-leak constraints.",
+      "mode": "subagent",
+      "model": "liteLLM/gemma4",
+      "temperature": 0.1,
+      "prompt": "{file:./.opencode/prompts/plan-contract-checker.md}",
+      "permission": {
+        "question": "deny",
+        "task": "deny",
+        "grep": "allow",
+        "glob": "allow",
+        "list": "allow",
+        "bash": "deny",
+        "read": "allow",
+        "edit": "deny",
+        "external_directory": "deny",
+        "webfetch": "deny",
+        "websearch": "deny",
+        "lsp": "deny",
+        "skill": "deny",
+        "todowrite": "deny",
+        "doom_loop": "deny"
+      }
     }
   }
 }
