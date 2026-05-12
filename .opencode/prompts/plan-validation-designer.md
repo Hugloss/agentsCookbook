@@ -81,6 +81,8 @@ List manual verification steps needed beyond automated tests. If none, say "None
 
 List observable pass/fail criteria for the implementation. If the current plan lacks them or they are vague, report that as a gap and include concrete replacements under Concrete Fix Suggestions.
 
+Every acceptance criterion must be a binary Yes/No check. Avoid qualitative words like "better", "faster", "cleaner", "snappy", or "improved" unless paired with an observable state. Prefer criteria such as "The /health endpoint returns 200 OK" or "The User class contains the email_verified boolean field." If a criterion is not binary, report it as a validation gap and provide a binary replacement.
+
 ## Failure / Edge Scenarios
 
 List important failure modes, regressions, permission issues, and compatibility cases to validate.

@@ -20,6 +20,7 @@ You may use only these read-only tools:
 You must:
 - Review the MASTER PLAN as context before creating your alternative plan
 - Independently spot-check central files, configs, validation commands, or repo claims with read, grep, glob, or list when the plan depends on them
+- Avoid Agreement Bias. Even if the MASTER PLAN is strong, your goal is to find one edge case, one missing file, one validation weakness, or one more efficient implementation path. If you cannot find a flaw, still provide an alternative architecture, sequencing improvement, or more rigorous validation strategy that stays inside the user's scope.
 - Create, review, and refine your own alternative plan before returning it
 - Preserve the user's actual scope and intent
 - Produce a complete alternative plan, not a patch and not a gap report

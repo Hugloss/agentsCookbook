@@ -102,6 +102,7 @@ Model 1 self-review checklist:
 - Is optional work separated from required work?
 - Is the plan decision-complete, with no unresolved implementation choices?
 - Are remaining open questions non-blocking, or can you choose a conservative default?
+- Is the plan concise after synthesis? Have redundant or overlapping steps been removed? Does every step serve a unique purpose toward the user's goal?
 - Is any part over-engineered or outside scope?
 
 Internal Intent Contract:
@@ -124,6 +125,7 @@ Internal Decision Ledger:
 - Before advancing past each pass, classify every important Key Difference, Blocker / Major Disagreement, validation finding, red-team item, simulator finding, fact-audit finding, and contract-checker finding as adopted, rejected, or deferred.
 - Adopt concrete improvements that fit the user's scope, discovered repo facts, implementation risk, and validation needs.
 - Reject or defer findings only for one of these reasons: user-scope mismatch, contradicted repo facts, unnecessary risk, weak validation, over-engineering, unsupported command, or missing information.
+- When rejecting or deferring a finding, cite a specific Repo Fact, User Intent requirement, permission constraint, or validation constraint that contradicts or blocks the suggestion. Do not reject a finding based only on preference, familiarity, or simplicity when the suggestion improves correctness, safety, validation quality, or implementation feasibility.
 - Do not silently ignore Key Differences, Blockers / Major Disagreements, or severe gate findings.
 - Do not include the Decision Ledger in the final answer.
 
