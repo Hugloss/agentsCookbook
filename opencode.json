@@ -6,7 +6,7 @@
     "grep": "allow",
     "glob": "allow",
     "list": "allow",
-    "bash": "allow",
+    "bash": "deny",
     "read": "allow",
     "external_directory": "deny",
     "webfetch": "deny",
@@ -14,32 +14,8 @@
     "doom_loop": "deny"
   },
   "agent": {
-    "plan-improver-model1": {
-      "description": "Improves a current implementation plan directly and returns the complete updated plan.",
-      "mode": "subagent",
-      "model": "liteLLM/gemma4",
-      "temperature": 0.1,
-      "prompt": "{file:./.opencode/prompts/plan-improver.md}",
-      "permission": {
-        "question": "deny",
-        "task": "deny",
-        "grep": "deny",
-        "glob": "deny",
-        "list": "deny",
-        "bash": "deny",
-        "read": "deny",
-        "edit": "deny",
-        "external_directory": "deny",
-        "webfetch": "deny",
-        "websearch": "deny",
-        "lsp": "deny",
-        "skill": "deny",
-        "todowrite": "deny",
-        "doom_loop": "deny"
-      }
-    },
     "plan-improver-model2": {
-      "description": "Second planning pass. Improves the current plan directly and returns the complete updated plan.",
+      "description": "Second-model alternative planning reviewer. Reviews the master plan and returns a complete alternative plan with differences and blockers.",
       "mode": "subagent",
       "model": "liteLLM/devstral",
       "temperature": 0.1,
@@ -47,11 +23,11 @@
       "permission": {
         "question": "deny",
         "task": "deny",
-        "grep": "deny",
-        "glob": "deny",
-        "list": "deny",
+        "grep": "allow",
+        "glob": "allow",
+        "list": "allow",
         "bash": "deny",
-        "read": "deny",
+        "read": "allow",
         "edit": "deny",
         "external_directory": "deny",
         "webfetch": "deny",
@@ -63,7 +39,7 @@
       }
     },
     "plan-improver-model3": {
-      "description": "Third planning pass. Improves the current plan directly and returns the complete updated plan.",
+      "description": "Third-model alternative planning reviewer. Reviews the master plan and returns a complete alternative plan with differences and blockers.",
       "mode": "subagent",
       "model": "liteLLM/gpt-oss",
       "temperature": 0.1,
@@ -71,11 +47,11 @@
       "permission": {
         "question": "deny",
         "task": "deny",
-        "grep": "deny",
-        "glob": "deny",
-        "list": "deny",
+        "grep": "allow",
+        "glob": "allow",
+        "list": "allow",
         "bash": "deny",
-        "read": "deny",
+        "read": "allow",
         "edit": "deny",
         "external_directory": "deny",
         "webfetch": "deny",
