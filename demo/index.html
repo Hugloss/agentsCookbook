@@ -1,0 +1,950 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agents Cookbook Demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172126;
+      --muted: #5b6871;
+      --line: #d8e0e6;
+      --panel: #ffffff;
+      --soft: #f5f7f9;
+      --blue: #2f6f9f;
+      --green: #2f7d5b;
+      --amber: #a8671d;
+      --red: #a6463f;
+      --violet: #6750a4;
+      --shadow: 0 18px 50px rgba(31, 47, 55, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, #eef4f6 0, #f8f9fa 330px, #ffffff 100%);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 44px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+      gap: 28px;
+      align-items: end;
+      padding: 18px 0 28px;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--blue);
+      font-size: 0.86rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 780px;
+      margin: 0;
+      font-size: clamp(2.2rem, 5vw, 4.5rem);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 720px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 1.08rem;
+    }
+
+    .summary {
+      display: grid;
+      gap: 12px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.72);
+      box-shadow: var(--shadow);
+    }
+
+    .summary strong {
+      display: block;
+      font-size: 0.95rem;
+    }
+
+    .summary span {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .step-nav {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      padding: 12px 0;
+      background: rgba(248, 249, 250, 0.94);
+      backdrop-filter: blur(10px);
+    }
+
+    .presenter-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0 18px;
+    }
+
+    .progress {
+      display: inline-flex;
+      align-items: center;
+      min-height: 40px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: #244456;
+      background: #eef6f9;
+      font-weight: 800;
+    }
+
+    .control-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .control-button {
+      min-height: 40px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      background: #ffffff;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .control-button:hover,
+    .control-button:focus-visible,
+    .step-button:hover,
+    .step-button:focus-visible {
+      border-color: var(--blue);
+      outline: 3px solid rgba(47, 111, 159, 0.18);
+      outline-offset: 1px;
+    }
+
+    .step-button {
+      min-height: 54px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      background: #ffffff;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .step-button small {
+      display: block;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .step-button span {
+      display: block;
+      margin-top: 2px;
+      overflow-wrap: anywhere;
+      font-weight: 700;
+    }
+
+    .step-button[aria-selected="true"] {
+      border-color: var(--blue);
+      color: #ffffff;
+      background: var(--blue);
+    }
+
+    .step-button[aria-selected="true"] small {
+      color: rgba(255, 255, 255, 0.78);
+    }
+
+    main {
+      display: grid;
+      gap: 22px;
+    }
+
+    .workspace {
+      display: grid;
+      gap: 18px;
+    }
+
+    .detail-panel,
+    .agents-panel,
+    .handoff {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .detail-panel {
+      padding: 22px;
+    }
+
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    .detail-panel h2,
+    .agents-panel h2,
+    .handoff h2 {
+      margin: 0;
+      font-size: 1.15rem;
+      letter-spacing: 0;
+    }
+
+    .detail-panel p,
+    .agents-panel p,
+    .handoff p {
+      margin: 6px 0 0;
+      color: var(--muted);
+    }
+
+    .scenario-pill {
+      flex: 0 0 auto;
+      max-width: 280px;
+      padding: 10px 12px;
+      border: 1px solid #c9d7df;
+      border-radius: 8px;
+      color: #244456;
+      background: #eef6f9;
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .detail-block {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+
+    .detail-label {
+      margin: 0 0 6px;
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .detail-value {
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    .sample-output {
+      margin: 0;
+      padding: 14px;
+      border-left: 4px solid var(--blue);
+      border-radius: 0 8px 8px 0;
+      background: #f2f7fa;
+      color: #263942;
+    }
+
+    .review-timeline,
+    .gate-timeline {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      align-items: stretch;
+      margin-top: 18px;
+    }
+
+    .review-timeline {
+      display: grid;
+      grid-template-columns: minmax(140px, 1fr) 28px minmax(140px, 1fr) 28px minmax(140px, 1fr) 28px minmax(140px, 1fr) 28px minmax(140px, 1fr);
+      gap: 8px;
+      align-items: stretch;
+      margin-top: 18px;
+    }
+
+    .review-card,
+    .gate-card {
+      min-height: 152px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+    }
+
+    .gate-card.is-master {
+      border-color: #b8cbd8;
+      background: #eef6f9;
+    }
+
+    .review-card strong,
+    .gate-card strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--ink);
+    }
+
+    .review-card span,
+    .gate-card span {
+      display: inline-block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .review-card p,
+    .gate-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .review-arrow,
+    .gate-arrow {
+      display: grid;
+      place-items: center;
+      color: #78909c;
+      font-weight: 900;
+    }
+
+    .review-checks,
+    .gate-checks {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .review-check,
+    .gate-check {
+      padding: 12px;
+      border: 1px solid #d9d2c1;
+      border-radius: 8px;
+      color: #4b3b24;
+      background: #fbf6e8;
+      font-size: 0.92rem;
+      font-weight: 700;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    .presenter-note {
+      margin: 0;
+      padding: 12px;
+      border: 1px solid #d9d2c1;
+      border-radius: 8px;
+      color: #4b3b24;
+      background: #fbf6e8;
+    }
+
+    .agents-panel {
+      padding: 20px;
+    }
+
+    .agent-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .agent-card {
+      min-height: 118px;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+    }
+
+    .agent-card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--ink);
+    }
+
+    .agent-id {
+      display: block;
+      margin-bottom: 8px;
+      color: #3f5360;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.78rem;
+      overflow-wrap: anywhere;
+    }
+
+    .agent-card p {
+      margin: 0;
+      font-size: 0.88rem;
+    }
+
+    .handoff {
+      padding: 20px;
+    }
+
+    .handoff-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .handoff-item {
+      min-height: 94px;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+    }
+
+    .handoff-item strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .handoff-item span {
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    footer {
+      margin-top: 28px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    noscript {
+      display: block;
+      margin: 18px 0;
+      padding: 14px;
+      border: 1px solid #d9d2c1;
+      border-radius: 8px;
+      color: #4b3b24;
+      background: #fbf6e8;
+    }
+
+    @media (max-width: 980px) {
+      header,
+      .detail-grid,
+      .review-checks,
+      .gate-checks {
+        grid-template-columns: 1fr;
+      }
+
+      .step-nav {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .presenter-controls {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .control-actions {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .gate-timeline {
+        grid-template-columns: 1fr;
+      }
+
+      .review-timeline {
+        grid-template-columns: 1fr;
+      }
+
+      .review-arrow,
+      .gate-arrow {
+        min-height: 18px;
+      }
+
+      .agent-grid,
+      .handoff-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 620px) {
+      .page {
+        width: min(100% - 20px, 1180px);
+        padding-top: 18px;
+      }
+
+      h1 {
+        font-size: 2.35rem;
+      }
+
+      .step-nav {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .control-actions {
+        grid-template-columns: 1fr;
+      }
+
+      .detail-header {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .scenario-pill {
+        max-width: none;
+      }
+
+      .agent-grid,
+      .handoff-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div>
+        <p class="eyebrow">Agents Cookbook Demo</p>
+        <h1>One clear plan, checked from every angle.</h1>
+        <p class="lead">A visual walkthrough for non-technical stakeholders. The demo shows how one lead planning agent creates the final answer while specialist reviewers reduce mistakes before implementation.</p>
+      </div>
+      <aside class="summary" aria-label="Demo summary">
+        <div>
+          <strong>Demo request</strong>
+          <span>Add a contact page with a form, opening hours, and a map link.</span>
+        </div>
+        <div>
+          <strong>Important rule</strong>
+          <span>Reviewer outputs here are illustrative samples, not live transcripts.</span>
+        </div>
+        <div>
+          <strong>Final output</strong>
+          <span>One implementation plan for the engineer.</span>
+        </div>
+      </aside>
+    </header>
+
+    <noscript>
+      This page is still readable with JavaScript disabled, but the clickable step details and keyboard navigation need JavaScript.
+    </noscript>
+
+    <nav class="step-nav" aria-label="Demo steps">
+      <button class="step-button" type="button" data-step="request" aria-selected="true">
+        <small>Step 1</small>
+        <span>Request</span>
+      </button>
+      <button class="step-button" type="button" data-step="draft" aria-selected="false">
+        <small>Step 2</small>
+        <span>Draft</span>
+      </button>
+      <button class="step-button" type="button" data-step="review" aria-selected="false">
+        <small>Step 3</small>
+        <span>Review</span>
+      </button>
+      <button class="step-button" type="button" data-step="gates" aria-selected="false">
+        <small>Step 4</small>
+        <span>Quality gates</span>
+      </button>
+      <button class="step-button" type="button" data-step="final" aria-selected="false">
+        <small>Step 5</small>
+        <span>Final plan</span>
+      </button>
+      <button class="step-button" type="button" data-step="agents" aria-selected="false">
+        <small>Reference</small>
+        <span>All agents</span>
+      </button>
+    </nav>
+
+    <div class="presenter-controls" aria-label="Presenter controls">
+      <div class="progress" id="step-progress">Step 1 of 5: Request</div>
+      <div class="control-actions">
+        <button class="control-button" type="button" id="previous-step">Previous</button>
+        <button class="control-button" type="button" id="next-step">Next</button>
+        <button class="control-button" type="button" id="start-over">Start over</button>
+      </div>
+    </div>
+
+    <main>
+      <section class="workspace" aria-label="Interactive walkthrough">
+        <article class="detail-panel" aria-live="polite">
+          <div class="detail-header">
+            <div>
+              <h2 id="detail-title">Request</h2>
+              <p id="detail-summary">The stakeholder asks for a clear business outcome.</p>
+            </div>
+            <div class="scenario-pill">Scenario: contact page request</div>
+          </div>
+
+          <div class="detail-grid">
+            <div class="detail-block">
+              <p class="detail-label">What happens</p>
+              <p class="detail-value" id="detail-happens">The request is captured as a concrete goal: add a simple contact page with a form, opening hours, and a map link.</p>
+            </div>
+
+            <div class="detail-block">
+              <p class="detail-label">What this prevents</p>
+              <p class="detail-value" id="detail-prevents">The team does not jump straight into code without agreeing what the user asked for.</p>
+            </div>
+
+            <div class="detail-block">
+              <p class="detail-label">Sample output</p>
+              <p class="sample-output" id="detail-output">"Add a simple contact page with a form, opening hours, and a map link."</p>
+            </div>
+          </div>
+
+          <section class="review-detail" id="review-detail" hidden>
+            <div class="detail-block">
+              <p class="detail-label">Deep review loop</p>
+              <p class="detail-value">Step 3 is where the plan gets sharper. Reviewers are asked to challenge the draft, not politely agree with it. Consensus means the master plan adopts the strongest grounded feedback, not whatever most models said.</p>
+            </div>
+
+            <div class="review-timeline" aria-label="Step 3 review timeline">
+              <article class="review-card">
+                <span>Master</span>
+                <strong>Drafts plan</strong>
+                <p>The lead planner creates the first working plan from the user request and repo context.</p>
+              </article>
+              <div class="review-arrow" aria-hidden="true">-></div>
+              <article class="review-card">
+                <span>Reviewer A</span>
+                <strong>Challenges assumptions</strong>
+                <p>One LLM tries to find false assumptions, weak facts, missing validation, or a simpler path.</p>
+              </article>
+              <div class="review-arrow" aria-hidden="true">-></div>
+              <article class="review-card">
+                <span>Master</span>
+                <strong>Updates plan</strong>
+                <p>The lead planner accepts useful feedback and rejects anything unsupported or out of scope.</p>
+              </article>
+              <div class="review-arrow" aria-hidden="true">-></div>
+              <article class="review-card">
+                <span>Reviewer B</span>
+                <strong>Reviews again</strong>
+                <p>A second LLM checks the updated plan from another angle and looks for remaining flaws.</p>
+              </article>
+              <div class="review-arrow" aria-hidden="true">-></div>
+              <article class="review-card">
+                <span>Master</span>
+                <strong>Consensus-improves</strong>
+                <p>The lead planner compares both reviews and produces a sharper plan with grounded fixes.</p>
+              </article>
+            </div>
+
+            <div class="review-checks" aria-label="Reviewer challenge examples">
+              <div class="review-check">Did we assume a form component exists without checking?</div>
+              <div class="review-check">Did we miss mobile layout or form error states?</div>
+              <div class="review-check">Did we add unrequested CRM, email, or analytics work?</div>
+            </div>
+          </section>
+
+          <section class="gates-detail" id="gates-detail" hidden>
+            <div class="detail-block">
+              <p class="detail-label">Gate gauntlet</p>
+              <p class="detail-value">Master owns the plan the whole time. Each gate reports findings back to Master, Master updates the canonical plan, and only then does the next quality gate run.</p>
+            </div>
+
+            <div class="gate-timeline" aria-label="Step 4 master-centered gate timeline">
+              <article class="gate-card is-master">
+                <span>Master</span>
+                <strong>Holds improved plan</strong>
+                <p><code>ping-pong-plan</code> starts Step 4 with the improved plan from Step 3 and remains the only owner.</p>
+              </article>
+              <article class="gate-card">
+                <span>Validation</span>
+                <strong>Can we prove it works?</strong>
+                <p><code>plan-validation-designer</code> checks tests, manual checks, and pass/fail acceptance criteria.</p>
+              </article>
+              <article class="gate-card is-master">
+                <span>Master update</span>
+                <strong>Before red-team</strong>
+                <p>Master accepts grounded validation fixes and updates the plan before the next gate.</p>
+              </article>
+              <article class="gate-card">
+                <span>Risk</span>
+                <strong>What could go wrong?</strong>
+                <p><code>plan-red-team-gate</code> looks for blockers, hidden ambiguity, weak validation, and scope creep.</p>
+              </article>
+              <article class="gate-card is-master">
+                <span>Master update</span>
+                <strong>Before simulation</strong>
+                <p>Master fixes real risk findings and rejects unsupported or out-of-scope feedback.</p>
+              </article>
+              <article class="gate-card">
+                <span>Feasibility</span>
+                <strong>Can an engineer follow it?</strong>
+                <p><code>plan-implementation-simulator</code> dry-runs the plan and flags unclear steps or bad sequencing.</p>
+              </article>
+              <article class="gate-card is-master">
+                <span>Master update</span>
+                <strong>Before fact audit</strong>
+                <p>Master clarifies file targets, sequencing, and handoff wording before the next quality gate.</p>
+              </article>
+              <article class="gate-card">
+                <span>Facts</span>
+                <strong>Is it grounded?</strong>
+                <p><code>plan-fact-auditor</code> checks that files, commands, and repo claims are real or labeled as assumptions.</p>
+              </article>
+              <article class="gate-card is-master">
+                <span>Master update</span>
+                <strong>Before contract check</strong>
+                <p>Master labels uncertainty and removes unsupported claims before final quality checking.</p>
+              </article>
+              <article class="gate-card">
+                <span>Final rules</span>
+                <strong>Is the answer clean?</strong>
+                <p><code>plan-contract-checker</code> verifies structure, scope, validation, rollback, and no leaked internal notes.</p>
+              </article>
+              <article class="gate-card is-master">
+                <span>Master</span>
+                <strong>Ends with final plan</strong>
+                <p>Master applies required final fixes and returns the gate-cleared plan to the user.</p>
+              </article>
+            </div>
+
+            <div class="gate-checks" aria-label="Quality gate challenge examples">
+              <div class="gate-check">Can the acceptance criteria be answered yes or no?</div>
+              <div class="gate-check">Would an engineer know which area to inspect first?</div>
+              <div class="gate-check">Are unknown repo details marked as assumptions instead of facts?</div>
+            </div>
+          </section>
+
+          <div class="detail-block">
+            <p class="detail-label">Presenter note</p>
+            <p class="presenter-note" id="detail-note">Start with the plain business request before naming any technical agents.</p>
+          </div>
+        </article>
+      </section>
+
+      <section class="agents-panel" id="agents-panel">
+        <h2>All agents at a glance</h2>
+        <p>Friendly names come first for the presentation. Technical IDs are included for people who want to connect the demo back to the OpenCode config.</p>
+        <div class="agent-grid">
+          <article class="agent-card">
+            <strong>Lead planner</strong>
+            <span class="agent-id">ping-pong-plan</span>
+            <p>Owns the final plan and chooses which feedback to use.</p>
+          </article>
+          <article class="agent-card">
+            <strong>Second opinion</strong>
+            <span class="agent-id">plan-improver-model2</span>
+            <p>Looks for missing details or a better path.</p>
+          </article>
+          <article class="agent-card">
+            <strong>Third opinion</strong>
+            <span class="agent-id">plan-improver-model3</span>
+            <p>Reviews the plan from another model.</p>
+          </article>
+          <article class="agent-card">
+            <strong>Validation designer</strong>
+            <span class="agent-id">plan-validation-designer</span>
+            <p>Defines how to prove the work is complete.</p>
+          </article>
+          <article class="agent-card">
+            <strong>Risk reviewer</strong>
+            <span class="agent-id">plan-red-team-gate</span>
+            <p>Finds blockers, hidden risks, and scope creep.</p>
+          </article>
+          <article class="agent-card">
+            <strong>Implementation dry run</strong>
+            <span class="agent-id">plan-implementation-simulator</span>
+            <p>Checks whether an engineer can follow the plan.</p>
+          </article>
+          <article class="agent-card">
+            <strong>Fact checker</strong>
+            <span class="agent-id">plan-fact-auditor</span>
+            <p>Checks that claims are grounded in repo facts.</p>
+          </article>
+          <article class="agent-card">
+            <strong>Final quality checker</strong>
+            <span class="agent-id">plan-contract-checker</span>
+            <p>Confirms the final answer follows the rules.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="handoff">
+        <h2>What the engineer receives</h2>
+        <p>The final answer is a single implementation plan, not a pile of internal notes.</p>
+        <div class="handoff-grid">
+          <div class="handoff-item">
+            <strong>Goal</strong>
+            <span>What the change should accomplish.</span>
+          </div>
+          <div class="handoff-item">
+            <strong>Steps</strong>
+            <span>What to build and in what order.</span>
+          </div>
+          <div class="handoff-item">
+            <strong>Validation</strong>
+            <span>How to prove the work is complete.</span>
+          </div>
+          <div class="handoff-item">
+            <strong>Risks</strong>
+            <span>What could go wrong or expand scope.</span>
+          </div>
+          <div class="handoff-item">
+            <strong>Rollback</strong>
+            <span>How to recover if the change fails.</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      This page is a standalone presentation demo. Open <code>demo/index.html</code> directly in a browser; it does not call agents or modify the repository.
+    </footer>
+  </div>
+
+  <script>
+    const stepOrder = ["request", "draft", "review", "gates", "final", "agents"];
+
+    const steps = {
+      request: {
+        progress: "Step 1 of 5: Request",
+        title: "Request",
+        summary: "The stakeholder asks for a clear business outcome.",
+        happens: "The request is captured as a concrete goal: add a simple contact page with a form, opening hours, and a map link.",
+        prevents: "The team does not jump straight into code without agreeing what the user asked for.",
+        output: "\"Add a simple contact page with a form, opening hours, and a map link.\"",
+        note: "Start with the plain business request before naming any technical agents."
+      },
+      draft: {
+        progress: "Step 2 of 5: Draft",
+        title: "Draft",
+        summary: "The lead planner creates the first implementation plan.",
+        happens: "The lead planner inspects the project and drafts the build steps, likely files, validation checks, risks, and rollback notes.",
+        prevents: "The implementation does not start from a vague request or an undocumented guess.",
+        output: "\"Create the page, reuse existing website patterns, add form fields, and include tests.\"",
+        note: "Emphasize that this is still planning; no code has changed yet."
+      },
+      review: {
+        progress: "Step 3 of 5: Sharp review loop",
+        title: "Review",
+        summary: "Two LLM reviewers challenge the draft one at a time so the master plan becomes sharper.",
+        happens: "Reviewer A tries to find false assumptions or weak claims, sends feedback back to the master, and the master updates the plan. Reviewer B then reviews the updated plan from another angle, and the master compares both reviews.",
+        prevents: "The plan is less likely to pass through with polite agreement, unsupported assumptions, missed validation, or unrequested extra work.",
+        output: "\"Reviewer A found a weak assumption. Master updated the plan. Reviewer B found a missing edge case. Master kept the grounded feedback and produced a consensus-improved plan.\"",
+        note: "Explain that consensus is not a vote. The master adopts the sharpest grounded feedback and rejects unsupported or out-of-scope ideas."
+      },
+      gates: {
+        progress: "Step 4 of 5: Gate gauntlet",
+        title: "Quality gates",
+        summary: "Master holds the canonical plan while five specialist gate agents try to break it one quality at a time.",
+        happens: "Master starts with the improved plan, sends it to one gate, receives findings, updates the plan, and only then sends the updated plan to the next gate. The sequence ends with Master returning the gate-cleared plan.",
+        prevents: "Gate agents do not replace the plan or create competing final answers. Every accepted fix is folded back into the master plan before the next quality check runs.",
+        output: "\"Master held the plan, validation found weak proof, Master updated it, red team found scope risk, Master updated it, and the same pattern continued until the contract check passed.\"",
+        note: "Emphasize ownership: the gates report findings, but Master decides and updates the plan before the next gate."
+      },
+      final: {
+        progress: "Step 5 of 5: Final plan",
+        title: "Final plan",
+        summary: "The lead planner returns one clean implementation handoff.",
+        happens: "The lead planner uses the useful feedback and produces one final plan for the engineer.",
+        prevents: "Stakeholders do not receive multiple competing plans or a confusing transcript of internal review work.",
+        output: "\"A single implementation plan with steps, validation, risks, rollback, and no blocking open questions.\"",
+        note: "End on the key point: one clear handoff, not a stack of internal reviews."
+      },
+      agents: {
+        progress: "Reference: All agents",
+        title: "All agents",
+        summary: "The full agent list maps friendly presentation names to technical IDs.",
+        happens: "Use the agent grid below when someone asks which configured agents participate in the demo.",
+        prevents: "The presentation stays simple while still giving technical viewers a path back to the OpenCode config.",
+        output: "\"Lead planner plus seven specialist review agents.\"",
+        note: "Only show this view if the audience wants the actual configured agent names."
+      }
+    };
+
+    const buttons = Array.from(document.querySelectorAll(".step-button"));
+    const panel = document.getElementById("agents-panel");
+    const reviewDetail = document.getElementById("review-detail");
+    const gatesDetail = document.getElementById("gates-detail");
+    const progress = document.getElementById("step-progress");
+    const previous = document.getElementById("previous-step");
+    const next = document.getElementById("next-step");
+    const startOver = document.getElementById("start-over");
+    let currentStep = "request";
+
+    function setStep(stepName) {
+      const data = steps[stepName];
+      currentStep = stepName;
+      progress.textContent = data.progress;
+      document.getElementById("detail-title").textContent = data.title;
+      document.getElementById("detail-summary").textContent = data.summary;
+      document.getElementById("detail-happens").textContent = data.happens;
+      document.getElementById("detail-prevents").textContent = data.prevents;
+      document.getElementById("detail-output").textContent = data.output;
+      document.getElementById("detail-note").textContent = data.note;
+
+      buttons.forEach((button) => {
+        button.setAttribute("aria-selected", String(button.dataset.step === stepName));
+      });
+
+      reviewDetail.hidden = stepName !== "review";
+      gatesDetail.hidden = stepName !== "gates";
+
+      if (stepName === "agents") {
+        panel.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+
+    function moveStep(direction) {
+      const currentIndex = stepOrder.indexOf(currentStep);
+      const nextIndex = Math.min(Math.max(currentIndex + direction, 0), stepOrder.length - 1);
+      setStep(stepOrder[nextIndex]);
+    }
+
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => setStep(button.dataset.step));
+    });
+
+    previous.addEventListener("click", () => moveStep(-1));
+    next.addEventListener("click", () => moveStep(1));
+    startOver.addEventListener("click", () => setStep("request"));
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowLeft") {
+        moveStep(-1);
+      }
+      if (event.key === "ArrowRight") {
+        moveStep(1);
+      }
+    });
+  </script>
+</body>
+</html>

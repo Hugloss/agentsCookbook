@@ -4,6 +4,8 @@ This document describes the `.opencode` ping-pong planning agent chain.
 
 The flow is built for local models and intentionally prioritizes plan quality over speed or token cost. The goal is to produce one implementation-ready `MASTER PLAN` that is grounded in repo facts, has concrete validation, and can be handed to an implementer without exposing internal review transcripts.
 
+For a stakeholder-friendly walkthrough with diagrams and sample agent result cards, see `NON_TECH_AGENT_DEMO.md`.
+
 ## Core Model
 
 `ping-pong-plan` is model 1 and the only owner of the canonical `MASTER PLAN`.
