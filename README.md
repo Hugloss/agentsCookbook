@@ -48,6 +48,17 @@ The unlink script removes only symlinks whose resolved targets are inside this r
 
 Use `--dry-run` on either script to preview changes. This setup assumes a Unix-like environment with symlink support, such as Linux, macOS, WSL, or Git Bash with symlinks enabled.
 
+## Before Long Runs
+
+Before starting a long `ping-pong-plan` or `ping-ping-build` run from a target repo, verify the effective setup:
+
+```sh
+scripts/link-opencode-local.sh --dry-run
+scripts/preflight-opencode-ping-pong.sh /path/to/target-repo
+```
+
+The preflight script is read-only. It checks that the global cookbook symlinks point at this checkout, the target repo has the seven reviewer subagents configured with global prompt paths, the primary agent prompts contain the strict task allowlist, and reviewers are effectively read-only in OpenCode. If the preflight fails after you changed links or prompts, run `scripts/link-opencode-local.sh`, restart OpenCode, and run the preflight again. If OpenCode reports a `PRAGMA wal_checkpoint` failure during preflight, close other running OpenCode sessions and rerun the check before starting the long session.
+
 ## OpenCode Agents
 
 The required setup has two primary agents and seven reviewer subagents:
@@ -105,11 +116,13 @@ To check a specific session:
 scripts/check-opencode-session.sh <session-id>
 ```
 
-The checker reports one line for each required subagent and exits non-zero if any required task call is missing. The stable output lines are easy to grep:
+The checker reports one line for each required subagent and exits non-zero if any required task call is missing, duplicated, or if the session used an unexpected task target such as `general` or a missing `subagent_type`. The stable output lines are easy to grep:
 
 ```sh
-scripts/check-opencode-session.sh | rg '^SESSION_ID=|^SUBAGENT |^SUMMARY '
+scripts/check-opencode-session.sh | rg '^SESSION_ID=|^PARSE_MODE=|^SUBAGENT |^DUPLICATE_SUBAGENT |^UNEXPECTED_TASK |^SUMMARY '
 ```
+
+If the checker prints `PARSE_MODE=raw-scan`, strict JSON parsing failed and the checker used a fallback text scan of task calls. The result is still useful for detecting missing reviewer calls and unexpected task calls. Any `UNEXPECTED_TASK` line means the run should be treated as invalid; rerun `scripts/link-opencode-local.sh`, restart OpenCode, and run the request again.
 
 You can also export the session manually and search for task calls:
 

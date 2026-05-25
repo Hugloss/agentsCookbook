@@ -53,12 +53,18 @@ process.stdout.write(sessions[0].id);
 ')"
 fi
 
-if ! export_output="$(opencode export "$session_id")"; then
+export_file="$(mktemp "${TMPDIR:-/tmp}/opencode-session-export.XXXXXX")"
+cleanup() {
+  rm -f "$export_file"
+}
+trap cleanup EXIT
+
+if ! opencode export "$session_id" >"$export_file"; then
   echo "opencode export failed for session: $session_id" >&2
   exit 2
 fi
 
-printf "%s\n" "$export_output" | node -e '
+node -e '
 const fs = require("fs");
 
 const required = [
@@ -132,15 +138,41 @@ function visit(value) {
   }
 }
 
+function collectSubagentTypeMatches(text) {
+  const matches = [];
+  const rawPattern = /"subagent_type"\s*:\s*"([^"]+)"/g;
+  const escapedPattern = /\\"subagent_type\\"\s*:\s*\\"([^\\"]+)\\"/g;
+  let match;
+
+  while ((match = rawPattern.exec(text)) !== null) {
+    matches.push({ index: match.index, value: match[1] });
+  }
+
+  while ((match = escapedPattern.exec(text)) !== null) {
+    matches.push({ index: match.index, value: match[1] });
+  }
+
+  matches.sort((a, b) => a.index - b.index);
+  return matches;
+}
+
 function scanRawExport(text) {
   const cleaned = text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
   const toolPattern = /"tool"\s*:\s*"task"/g;
   let match;
 
   while ((match = toolPattern.exec(cleaned)) !== null) {
-    const window = cleaned.slice(match.index, match.index + 8000);
-    const subagentMatch = window.match(/"subagent_type"\s*:\s*"([^"]+)"/);
-    const subagentType = subagentMatch ? subagentMatch[1] : "<missing subagent_type>";
+    const nextTaskPattern = /"tool"\s*:\s*"task"/g;
+    nextTaskPattern.lastIndex = match.index + match[0].length;
+    const nextTaskMatch = nextTaskPattern.exec(cleaned);
+    const nextTask = nextTaskMatch ? nextTaskMatch.index : -1;
+    const maxWindowEnd = Math.min(cleaned.length, match.index + 250000);
+    const windowEnd = nextTask === -1 ? maxWindowEnd : Math.min(nextTask, maxWindowEnd);
+    const window = cleaned.slice(match.index, windowEnd);
+    const subagentMatches = collectSubagentTypeMatches(window);
+    const subagentType = subagentMatches.length > 0
+      ? subagentMatches[subagentMatches.length - 1].value
+      : "<missing subagent_type>";
 
     taskCalls.push({
       subagentType,
@@ -152,6 +184,8 @@ function scanRawExport(text) {
     }
   }
 }
+
+const parseMode = exported ? "strict" : "raw-scan";
 
 if (exported) {
   visit(exported);
@@ -180,6 +214,7 @@ const sessionDirectory = info.directory || "";
 console.log(`SESSION_ID=${sessionId}`);
 console.log(`SESSION_TITLE=${sessionTitle}`);
 console.log(`SESSION_DIRECTORY=${sessionDirectory}`);
+console.log(`PARSE_MODE=${parseMode}`);
 console.log("");
 console.log(`Session: ${sessionId}${sessionTitle ? ` (${sessionTitle})` : ""}`);
 if (sessionDirectory) {
@@ -190,6 +225,7 @@ console.log("Required reviewer subagent task calls:");
 
 let missing = 0;
 let foundRequired = 0;
+let duplicates = 0;
 for (const name of required) {
   const count = found.get(name) || 0;
   if (count === 0) {
@@ -200,13 +236,32 @@ for (const name of required) {
     foundRequired += 1;
     console.log(`SUBAGENT name=${name} status=found count=${count}`);
     console.log(`- ${name}: found (${count} call${count === 1 ? "" : "s"})`);
+    if (count > 1) {
+      duplicates += 1;
+    }
   }
 }
 
-console.log(`SUMMARY required=${required.length} found=${foundRequired} missing=${missing} task_calls=${taskCalls.length}`);
-
 const otherTaskCalls = taskCalls.filter((call) => !found.has(call.subagentType));
+console.log(`SUMMARY required=${required.length} found=${foundRequired} missing=${missing} duplicates=${duplicates} unexpected=${otherTaskCalls.length} task_calls=${taskCalls.length}`);
+
+if (duplicates > 0) {
+  console.log("");
+  console.log("Duplicate required reviewer task calls:");
+  for (const name of required) {
+    const count = found.get(name) || 0;
+    if (count > 1) {
+      console.log(`DUPLICATE_SUBAGENT name=${name} count=${count}`);
+    }
+  }
+}
+
 if (otherTaskCalls.length > 0) {
+  console.log("");
+  console.log("Unexpected task calls:");
+  for (const call of otherTaskCalls) {
+    console.log(`UNEXPECTED_TASK subagent_type=${call.subagentType} status=${call.status}`);
+  }
   console.log("");
   console.log("Other task calls:");
   for (const call of otherTaskCalls) {
@@ -219,9 +274,17 @@ if (taskCalls.length === 0) {
   console.log("No task-tool calls were found in this exported session.");
 }
 
-if (missing > 0) {
+if (missing > 0 || duplicates > 0 || otherTaskCalls.length > 0) {
   console.error("");
-  console.error(`Missing ${missing} required subagent task call${missing === 1 ? "" : "s"}.`);
+  if (missing > 0) {
+    console.error(`Missing ${missing} required subagent task call${missing === 1 ? "" : "s"}.`);
+  }
+  if (duplicates > 0) {
+    console.error(`Found ${duplicates} duplicated required subagent task target${duplicates === 1 ? "" : "s"}.`);
+  }
+  if (otherTaskCalls.length > 0) {
+    console.error(`Found ${otherTaskCalls.length} unexpected task call${otherTaskCalls.length === 1 ? "" : "s"}.`);
+  }
   process.exit(1);
 }
-'
+' <"$export_file"
