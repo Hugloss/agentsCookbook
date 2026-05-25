@@ -27,8 +27,8 @@ By default, the script uses `${XDG_CONFIG_HOME:-$HOME/.config}/opencode`, which 
 The script creates absolute symlink entries:
 
 ```text
-<global>/agents/ping-pong-plan.md
-  -> <agentsCookbook>/.opencode/agents/ping-pong-plan.md
+<global>/agents/*.md
+  -> <agentsCookbook>/.opencode/agents/*.md
 
 <global>/prompts/*.md
   -> <agentsCookbook>/.opencode/prompts/*.md
@@ -36,7 +36,7 @@ The script creates absolute symlink entries:
 
 The `agents` and `prompts` directories stay as real directories so existing global OpenCode files can coexist. Existing files are preserved by default; pass `--force` only when you want non-matching destinations moved to timestamped backups before linking.
 
-Then copy `.opencode/examples/opencode.local-symlink.example.json` to a target repo's `opencode.json`, or manually merge its `agent` block into an existing target config. The example defines only the seven prompt-backed reviewer subagents. It does not define `ping-pong-plan`; OpenCode discovers that primary agent from the global `agents/ping-pong-plan.md` symlink.
+Then copy `.opencode/examples/opencode.local-symlink.example.json` to a target repo's `opencode.json`, or manually merge its `agent` block into an existing target config. The example defines only the seven prompt-backed reviewer subagents. It does not define primary agents; OpenCode discovers `ping-pong-plan` and `ping-ping-build` from the global `agents/*.md` symlinks.
 
 To remove the cookbook global symlinks:
 
@@ -50,9 +50,17 @@ Use `--dry-run` on either script to preview changes. This setup assumes a Unix-l
 
 ## OpenCode Agents
 
-The required setup has one primary agent and seven subagents:
+The required setup has two primary agents and seven reviewer subagents:
 
-- `ping-pong-plan` is discovered from the global Markdown file symlink at `<global>/agents/ping-pong-plan.md`.
+The primary agents are:
+
+- `ping-pong-plan` is planning-only and is discovered from the global Markdown file symlink at `<global>/agents/ping-pong-plan.md`.
+- `ping-ping-build` is implementation mode and is discovered from the global Markdown file symlink at `<global>/agents/ping-ping-build.md`.
+
+Use `ping-pong-plan` when you want a plan or review without code changes. Use `ping-ping-build` only when you want OpenCode to edit files. In build mode, `ping-ping-build` is the only agent allowed to change files; the seven reviewer subagents stay read-only and only provide feedback.
+
+The reviewer subagents are:
+
 - `plan-improver-model2`
 - `plan-improver-model3`
 - `plan-validation-designer`
@@ -79,7 +87,7 @@ This repo's `.opencode/agents/` and `.opencode/prompts/` files are the source of
 
 ## Troubleshooting Agent Calls
 
-`opencode debug agent ping-pong-plan` verifies that the primary agent is loaded. It does not prove that a session invoked the reviewer subagents.
+`opencode debug agent ping-pong-plan` or `opencode debug agent ping-ping-build` verifies that a primary agent is loaded. It does not prove that a session invoked the reviewer subagents.
 
 If the visible answer starts with an internal draft label such as `STEP0` or omits `## Subagent Run Summary`, treat that run as incomplete. The coordinator should keep draft labels internal, call the reviewer subagents with the task tool, and return only the final `# Final Plan` answer.
 
@@ -109,7 +117,7 @@ You can also export the session manually and search for task calls:
 opencode export <session-id> | rg '"tool": "task"|subagent_type|plan-improver-model2|plan-improver-model3'
 ```
 
-The final `ping-pong-plan` answer must start with `# Final Plan` and include `## Subagent Run Summary`. If a required subagent was skipped or failed, the plan should say the ping-pong run is incomplete instead of claiming the full review flow completed.
+The final `ping-pong-plan` answer must start with `# Final Plan` and include `## Subagent Run Summary`. The final `ping-ping-build` answer must start with `# Implementation Summary` and include `## Reviewer Run Summary`. If a required reviewer was skipped or failed, the answer should say the review loop is incomplete instead of claiming the full review flow completed.
 
 ## Key Idea
 

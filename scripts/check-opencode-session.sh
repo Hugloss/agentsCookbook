@@ -6,7 +6,7 @@ usage() {
 Usage: scripts/check-opencode-session.sh [session-id]
 
 Checks an exported OpenCode session for task-tool calls to the required
-ping-pong-plan subagents. If no session ID is provided, checks the latest
+planning/build reviewer subagents. If no session ID is provided, checks the latest
 OpenCode session for the current working directory.
 
 Options:
@@ -186,7 +186,7 @@ if (sessionDirectory) {
   console.log(`Directory: ${sessionDirectory}`);
 }
 console.log("");
-console.log("Required ping-pong subagent task calls:");
+console.log("Required reviewer subagent task calls:");
 
 let missing = 0;
 let foundRequired = 0;

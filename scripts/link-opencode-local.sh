@@ -89,13 +89,12 @@ else
   global_dir="$(default_global_dir)"
 fi
 
-agent_src="$repo_root/.opencode/agents/ping-pong-plan.md"
+agent_src_dir="$repo_root/.opencode/agents"
 prompt_src_dir="$repo_root/.opencode/prompts"
 agents_dir="$global_dir/agents"
 prompts_dir="$global_dir/prompts"
-agent_dest="$agents_dir/ping-pong-plan.md"
 
-[ -f "$agent_src" ] || die "source agent file is missing: $agent_src"
+[ -d "$agent_src_dir" ] || die "source agents directory is missing: $agent_src_dir"
 [ -d "$prompt_src_dir" ] || die "source prompts directory is missing: $prompt_src_dir"
 
 backup_path_for() {
@@ -181,7 +180,13 @@ ensure_real_dir "$global_dir" false
 ensure_real_dir "$agents_dir" true
 ensure_real_dir "$prompts_dir" true
 
-link_one "$agent_src" "$agent_dest" "Agent"
+agent_count=0
+for agent_src in "$agent_src_dir"/*.md; do
+  [ -f "$agent_src" ] || die "no agent Markdown files found in $agent_src_dir"
+  agent_name="$(basename -- "$agent_src")"
+  link_one "$agent_src" "$agents_dir/$agent_name" "Agent"
+  agent_count=$((agent_count + 1))
+done
 
 prompt_count=0
 for prompt_src in "$prompt_src_dir"/*.md; do
@@ -200,9 +205,11 @@ Next steps for a target repo:
   1. Copy or merge this example into the target repo's opencode.json:
      $repo_root/.opencode/examples/opencode.local-symlink.example.json
   2. OpenCode discovers ping-pong-plan from:
-     $agent_dest
+     $agents_dir/ping-pong-plan.md
+     and ping-ping-build from:
+     $agents_dir/ping-ping-build.md
   3. The example config reads subagent prompts from:
      ~/.config/opencode/prompts/
 
-Linked $prompt_count prompt file(s). This script did not create or edit any opencode.json file.
+Linked $agent_count agent file(s) and $prompt_count prompt file(s). This script did not create or edit any opencode.json file.
 NEXT_STEPS

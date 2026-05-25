@@ -87,7 +87,6 @@ fi
 
 agents_dir="$global_dir/agents"
 prompts_dir="$global_dir/prompts"
-agent_dest="$agents_dir/ping-pong-plan.md"
 
 removed_any=false
 
@@ -149,7 +148,10 @@ remove_empty_dir() {
   fi
 }
 
-remove_if_cookbook_symlink "$agent_dest" "agent"
+for agent_dest in "$agents_dir"/*.md; do
+  [ -e "$agent_dest" ] || [ -L "$agent_dest" ] || continue
+  remove_if_cookbook_symlink "$agent_dest" "agent"
+done
 
 for prompt_dest in "$prompts_dir"/*.md; do
   [ -e "$prompt_dest" ] || [ -L "$prompt_dest" ] || continue
