@@ -1,24 +1,53 @@
 #!/usr/bin/env bash
 set -u
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=scripts/lib-opencode.sh
+. "$script_dir/lib-opencode.sh"
+
 usage() {
   cat <<'USAGE'
-Usage: scripts/preflight-opencode-ping-pong.sh [--global-dir DIR] [target-repo]
+Usage: scripts/preflight-opencode-ping-pong.sh [--global-dir DIR] [--prompt-base PATH] [--quick] [target-repo]
 
 Run read-only checks before starting a long ping-pong-plan or ping-ping-build
 OpenCode session. The target repo defaults to the current directory.
 
 Options:
   --global-dir DIR   OpenCode config dir. Defaults to ${XDG_CONFIG_HOME:-$HOME/.config}/opencode.
+  --prompt-base PATH Expected reviewer prompt base in target opencode.json.
+                      Defaults to ~/.config/opencode/prompts.
+  --quick            Skip opencode debug checks and running-process checks.
   -h, --help         Show this help.
 
 This script does not create, edit, or remove files.
+Set OPENCODE_PREFLIGHT_ALLOW_RUNNING=1 to continue even if other OpenCode
+processes are running.
 USAGE
 }
 
 failures=0
 debug_retries="${OPENCODE_PREFLIGHT_RETRIES:-3}"
 debug_retry_sleep="${OPENCODE_PREFLIGHT_RETRY_SLEEP:-1}"
+
+remediation_for() {
+  case "$1" in
+    global_agent_*|global_prompt_*)
+      printf 'REMEDY check=%s action=run_link_script command=scripts/link-opencode-local.sh\n' "$1"
+      ;;
+    target_opencode_json_exists)
+      printf 'REMEDY check=%s action=copy_or_merge_example example=.opencode/examples/opencode.local-symlink.example.json\n' "$1"
+      ;;
+    target_reviewer_config)
+      printf 'REMEDY check=%s action=merge_exact_reviewer_agent_block example=.opencode/examples/opencode.local-symlink.example.json\n' "$1"
+      ;;
+    opencode_running_processes)
+      printf 'REMEDY check=%s action=close_running_opencode_or_use_quick quick_flag=--quick override=OPENCODE_PREFLIGHT_ALLOW_RUNNING=1\n' "$1"
+      ;;
+    debug_*_tools|debug_*_prompt|debug_plan-*)
+      printf 'REMEDY check=%s action=restart_opencode_after_linking_then_rerun_preflight\n' "$1"
+      ;;
+  esac
+}
 
 pass() {
   printf 'CHECK name=%s status=pass %s\n' "$1" "${2:-}"
@@ -27,42 +56,11 @@ pass() {
 fail() {
   failures=$((failures + 1))
   printf 'CHECK name=%s status=fail %s\n' "$1" "${2:-}"
+  remediation_for "$1"
 }
 
 info() {
   printf 'INFO %s\n' "$*"
-}
-
-default_global_dir() {
-  if [ -n "${XDG_CONFIG_HOME:-}" ]; then
-    printf '%s/opencode\n' "$XDG_CONFIG_HOME"
-    return 0
-  fi
-  if [ -n "${HOME:-}" ]; then
-    printf '%s/.config/opencode\n' "$HOME"
-    return 0
-  fi
-  return 1
-}
-
-absolute_path() {
-  local path="$1"
-  case "$path" in
-    /*)
-      printf '%s\n' "$path"
-      ;;
-    *)
-      printf '%s/%s\n' "$PWD" "$path"
-      ;;
-  esac
-}
-
-resolve_dir() {
-  local path="$1"
-  if [ ! -d "$path" ]; then
-    return 1
-  fi
-  cd -- "$path" 2>/dev/null && pwd -P
 }
 
 check_command() {
@@ -72,6 +70,34 @@ check_command() {
   else
     fail "command_$command_name" "missing"
   fi
+}
+
+check_running_opencode_processes() {
+  local running_lines count
+
+  running_lines="$(ps -ef 2>/dev/null \
+    | grep '[o]pencode' \
+    | grep -v 'opencode debug agent' \
+    | grep -v 'opencode export' \
+    | grep -v 'opencode session list' \
+    | grep -v 'scripts/preflight-opencode-ping-pong.sh' \
+    || true)"
+
+  if [ -z "$running_lines" ]; then
+    pass "opencode_running_processes" "count=0"
+    return 0
+  fi
+
+  count="$(printf '%s\n' "$running_lines" | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')"
+  if [ "${OPENCODE_PREFLIGHT_ALLOW_RUNNING:-}" = "1" ]; then
+    pass "opencode_running_processes" "count=$count override=OPENCODE_PREFLIGHT_ALLOW_RUNNING"
+    printf '%s\n' "$running_lines" | sed 's/^/INFO running_opencode_process=/' >&2
+    return 0
+  fi
+
+  fail "opencode_running_processes" "count=$count close_running_opencode_or_set_OPENCODE_PREFLIGHT_ALLOW_RUNNING=1"
+  printf '%s\n' "$running_lines" | sed 's/^/INFO running_opencode_process=/' >&2
+  return 1
 }
 
 check_symlink_target() {
@@ -168,6 +194,80 @@ if (missing.length > 0) {
   fi
 }
 
+check_primary_debug_tools() {
+  local target_dir="$1"
+  local agent_name="$2"
+  local expected_mode="$3"
+  local output
+
+  if ! output="$(run_debug_agent "$target_dir" "$agent_name")"; then
+    fail "debug_${agent_name}_tools" "agent=$agent_name debug_failed"
+    printf '%s\n' "$output" >&2
+    return
+  fi
+
+  if printf '%s\n' "$output" \
+    | node -e '
+const fs = require("fs");
+const expectedMode = process.argv[1];
+const raw = fs.readFileSync(0, "utf8");
+let data;
+try {
+  data = JSON.parse(raw);
+} catch (error) {
+  console.error(`debug JSON parse failed: ${error.message}`);
+  process.exit(2);
+}
+const tools = data.tools || {};
+const prompt = String(data.prompt || "");
+const bad = [];
+function expect(tool, expected) {
+  if (tools[tool] !== expected) {
+    bad.push(`${tool}=${tools[tool]}`);
+  }
+}
+if (expectedMode === "planning") {
+  for (const tool of ["read", "grep", "glob", "task"]) expect(tool, true);
+  for (const tool of ["edit", "write", "bash", "todowrite"]) expect(tool, false);
+  const requiredPromptText = [
+    "Absolute Plan-Only Contract:",
+    "Do not retry unavailable tools",
+    "revise the MASTER PLAN text only",
+  ];
+  const missingPromptText = requiredPromptText.filter((needle) => !prompt.includes(needle));
+  if (missingPromptText.length > 0) {
+    bad.push(`missing_prompt_text=${missingPromptText.join("|")}`);
+  }
+  const forbiddenPromptText = [
+    "Apply concrete validation fixes",
+    "Apply concrete fixes",
+    "applies accepted validation fixes",
+    "applies accepted red-team fixes",
+    "applies accepted simulator fixes",
+    "applies accepted fact-audit fixes",
+  ];
+  const presentForbiddenText = forbiddenPromptText.filter((needle) => prompt.includes(needle));
+  if (presentForbiddenText.length > 0) {
+    bad.push(`ambiguous_prompt_text=${presentForbiddenText.join("|")}`);
+  }
+} else if (expectedMode === "build") {
+  for (const tool of ["read", "grep", "glob", "task", "edit", "write", "bash"]) expect(tool, true);
+  expect("todowrite", false);
+} else {
+  console.error(`unknown expected mode: ${expectedMode}`);
+  process.exit(2);
+}
+if (bad.length > 0) {
+  console.error(`bad primary tools for ${data.name}: ${bad.join(", ")}`);
+  process.exit(1);
+}
+' "$expected_mode"; then
+    pass "debug_${agent_name}_tools" "agent=$agent_name mode=$expected_mode"
+  else
+    fail "debug_${agent_name}_tools" "agent=$agent_name mode=$expected_mode invalid_effective_tools"
+  fi
+}
+
 check_reviewer_debug() {
   local target_dir="$1"
   local agent_name="$2"
@@ -215,6 +315,8 @@ if (!prompt || !prompt.includes("You may use only these read-only tools")) {
 }
 
 global_dir_arg=""
+prompt_base_arg=""
+quick=false
 target_arg=""
 
 while [ "$#" -gt 0 ]; do
@@ -231,6 +333,18 @@ while [ "$#" -gt 0 ]; do
         exit 2
       fi
       global_dir_arg="$1"
+      ;;
+    --prompt-base)
+      shift
+      if [ "$#" -eq 0 ]; then
+        usage >&2
+        fail "arguments" "--prompt-base requires a path argument"
+        exit 2
+      fi
+      prompt_base_arg="$1"
+      ;;
+    --quick)
+      quick=true
       ;;
     --*)
       usage >&2
@@ -249,18 +363,19 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-repo_root="$(cd -- "$script_dir/.." && pwd -P)"
+repo_root="$(ac_repo_root_from_script "${BASH_SOURCE[0]}")"
 
 if [ -n "$global_dir_arg" ]; then
-  global_dir="$(absolute_path "$global_dir_arg")"
-elif ! global_dir="$(default_global_dir)"; then
+  global_dir="$(ac_absolute_path "$global_dir_arg")"
+elif ! global_dir="$(ac_default_global_dir)"; then
   fail "global_dir" "HOME is not set and --global-dir was not provided"
   exit 1
 fi
 
+prompt_base="${prompt_base_arg:-~/.config/opencode/prompts}"
+
 target_arg="${target_arg:-$PWD}"
-if ! target_dir="$(resolve_dir "$target_arg")"; then
+if ! target_dir="$(ac_resolve_dir "$target_arg")"; then
   fail "target_repo" "path=$target_arg not_a_directory"
   exit 1
 fi
@@ -274,22 +389,28 @@ target_config="$target_dir/opencode.json"
 info "repo_root=$repo_root"
 info "target_repo=$target_dir"
 info "global_dir=$global_dir"
+info "prompt_base=$prompt_base"
+info "quick=$quick"
 
 check_command node
-check_command opencode
 check_command realpath
+if [ "$quick" != true ]; then
+  check_command opencode
+fi
+
+if [ "$quick" = true ]; then
+  pass "opencode_running_processes" "skipped=quick"
+else
+  if ! check_running_opencode_processes; then
+    printf 'SUMMARY status=fail failures=%s\n' "$failures"
+    exit 1
+  fi
+fi
 
 check_symlink_target "global_agent_ping_pong_plan" "$agents_dir/ping-pong-plan.md" "$agent_src_dir/ping-pong-plan.md"
 check_symlink_target "global_agent_ping_ping_build" "$agents_dir/ping-ping-build.md" "$agent_src_dir/ping-ping-build.md"
 
-for prompt_name in \
-  plan-contract-checker.md \
-  plan-fact-auditor.md \
-  plan-implementation-simulator.md \
-  plan-improver.md \
-  plan-red-team-gate.md \
-  plan-validation-designer.md
-do
+for prompt_name in $AC_PROMPT_FILES; do
   check_symlink_target "global_prompt_${prompt_name%.md}" "$prompts_dir/$prompt_name" "$prompt_src_dir/$prompt_name"
 done
 
@@ -303,6 +424,7 @@ if [ -f "$target_config" ]; then
   if node -e '
 const fs = require("fs");
 const path = process.argv[1];
+const promptBase = process.argv[2];
 const required = [
   ["plan-improver-model2", "plan-improver.md"],
   ["plan-improver-model3", "plan-improver.md"],
@@ -323,7 +445,7 @@ for (const [name, promptFile] of required) {
     missing.push(name);
     continue;
   }
-  const expectedPrompt = `{file:~/.config/opencode/prompts/${promptFile}}`;
+  const expectedPrompt = `{file:${promptBase}/${promptFile}}`;
   if (agent.mode !== "subagent") bad.push(`${name}.mode=${agent.mode}`);
   if (agent.prompt !== expectedPrompt) bad.push(`${name}.prompt=${agent.prompt}`);
   const permission = agent.permission || {};
@@ -341,23 +463,28 @@ if (missing.length || bad.length || extra.length) {
   if (extra.length) console.error(`extra=${extra.join(",")}`);
   process.exit(1);
 }
-' "$target_config"; then
-    pass "target_reviewer_config" "required=7 extra=0 prompt_base=~/.config/opencode/prompts"
+' "$target_config" "$prompt_base"; then
+    pass "target_reviewer_config" "required=7 extra=0 prompt_base=$prompt_base"
   else
     fail "target_reviewer_config" "path=$target_config expected_exact_seven_global_prompt_reviewers"
   fi
 fi
 
-check_debug_prompt "$target_dir" "ping-pong-plan" "debug_ping_pong_plan_prompt"
-check_debug_prompt "$target_dir" "ping-ping-build" "debug_ping_ping_build_prompt"
+if [ "$quick" = true ]; then
+  pass "opencode_debug_checks" "skipped=quick"
+else
+  check_debug_prompt "$target_dir" "ping-pong-plan" "debug_ping_pong_plan_prompt"
+  check_primary_debug_tools "$target_dir" "ping-pong-plan" "planning"
+  check_debug_prompt "$target_dir" "ping-ping-build" "debug_ping_ping_build_prompt"
+  check_primary_debug_tools "$target_dir" "ping-ping-build" "build"
 
-check_reviewer_debug "$target_dir" "plan-improver-model2" "plan-improver.md"
-check_reviewer_debug "$target_dir" "plan-improver-model3" "plan-improver.md"
-check_reviewer_debug "$target_dir" "plan-validation-designer" "plan-validation-designer.md"
-check_reviewer_debug "$target_dir" "plan-red-team-gate" "plan-red-team-gate.md"
-check_reviewer_debug "$target_dir" "plan-implementation-simulator" "plan-implementation-simulator.md"
-check_reviewer_debug "$target_dir" "plan-fact-auditor" "plan-fact-auditor.md"
-check_reviewer_debug "$target_dir" "plan-contract-checker" "plan-contract-checker.md"
+  while read -r reviewer_name prompt_name; do
+    [ -n "$reviewer_name" ] || continue
+    check_reviewer_debug "$target_dir" "$reviewer_name" "$prompt_name"
+  done <<REVIEWERS
+$AC_REVIEWER_PROMPT_MAP
+REVIEWERS
+fi
 
 if [ -d "$repo_root/.git" ]; then
   cookbook_status="$(git -C "$repo_root" status --porcelain 2>/dev/null || true)"

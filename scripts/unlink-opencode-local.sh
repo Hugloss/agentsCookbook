@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=scripts/lib-opencode.sh
+. "$script_dir/lib-opencode.sh"
+
 usage() {
   cat <<'USAGE'
 Usage: scripts/unlink-opencode-local.sh [--dry-run] [--global-dir DIR]
@@ -14,36 +18,6 @@ Options:
 
 This script never removes real files, real directories, unrelated symlinks, or any opencode.json file.
 USAGE
-}
-
-die() {
-  printf 'Error: %s\n' "$*" >&2
-  exit 1
-}
-
-info() {
-  printf '%s\n' "$*"
-}
-
-absolute_path() {
-  local path="$1"
-  case "$path" in
-    /*)
-      printf '%s\n' "$path"
-      ;;
-    *)
-      printf '%s/%s\n' "$PWD" "$path"
-      ;;
-  esac
-}
-
-default_global_dir() {
-  if [ -n "${XDG_CONFIG_HOME:-}" ]; then
-    printf '%s/opencode\n' "$XDG_CONFIG_HOME"
-    return 0
-  fi
-  [ -n "${HOME:-}" ] || die "HOME is not set and --global-dir was not provided"
-  printf '%s/.config/opencode\n' "$HOME"
 }
 
 dry_run=false
@@ -60,29 +34,28 @@ while [ "$#" -gt 0 ]; do
       ;;
     --global-dir)
       shift
-      [ "$#" -gt 0 ] || die "--global-dir requires a directory argument"
+      [ "$#" -gt 0 ] || ac_die "--global-dir requires a directory argument"
       global_dir_arg="$1"
       ;;
     --*)
       usage >&2
-      die "unknown option: $1"
+      ac_die "unknown option: $1"
       ;;
     *)
       usage >&2
-      die "unexpected argument: $1"
+      ac_die "unexpected argument: $1"
       ;;
   esac
   shift
 done
 
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-repo_root="$(cd -- "$script_dir/.." && pwd -P)"
+repo_root="$(ac_repo_root_from_script "${BASH_SOURCE[0]}")"
 repo_opencode="$repo_root/.opencode"
 
 if [ -n "$global_dir_arg" ]; then
-  global_dir="$(absolute_path "$global_dir_arg")"
-else
-  global_dir="$(default_global_dir)"
+  global_dir="$(ac_absolute_path "$global_dir_arg")"
+elif ! global_dir="$(ac_default_global_dir)"; then
+  ac_die "HOME is not set and --global-dir was not provided"
 fi
 
 agents_dir="$global_dir/agents"
@@ -96,33 +69,33 @@ remove_if_cookbook_symlink() {
   local resolved
 
   if [ ! -e "$path" ] && [ ! -L "$path" ]; then
-    info "$label link not present: $path"
+    ac_info "UNLINK type=$label status=not_present path=$path"
     return 0
   fi
 
   if [ ! -L "$path" ]; then
-    info "Preserving $label because it is not a symlink: $path"
+    ac_info "UNLINK type=$label status=preserved_not_symlink path=$path"
     return 0
   fi
 
   resolved="$(realpath -- "$path" 2>/dev/null || true)"
   if [ -z "$resolved" ]; then
-    info "Preserving $label because its symlink target cannot be resolved: $path"
+    ac_info "UNLINK type=$label status=preserved_unresolved path=$path"
     return 0
   fi
 
   case "$resolved" in
     "$repo_opencode"|"$repo_opencode"/*)
       if [ "$dry_run" = true ]; then
-        info "DRY RUN: would remove $label link $path -> $resolved"
+        ac_info "UNLINK type=$label status=would_remove path=$path target=$resolved"
       else
         rm -- "$path"
-        info "Removed $label link $path -> $resolved"
+        ac_info "UNLINK type=$label status=removed path=$path target=$resolved"
       fi
       removed_any=true
       ;;
     *)
-      info "Preserving unrelated $label symlink $path -> $resolved"
+      ac_info "UNLINK type=$label status=preserved_unrelated path=$path target=$resolved"
       ;;
   esac
 }
@@ -137,30 +110,30 @@ remove_empty_dir() {
 
   if dir_is_empty "$path"; then
     if [ "$dry_run" = true ]; then
-      info "DRY RUN: would remove empty directory $path"
+      ac_info "DIR status=would_remove_empty path=$path"
     else
       rmdir -- "$path"
-      info "Removed empty directory $path"
+      ac_info "DIR status=removed_empty path=$path"
     fi
     removed_any=true
   elif [ -e "$path" ] || [ -L "$path" ]; then
-    info "Preserving non-empty or non-directory path $path"
+    ac_info "DIR status=preserved_non_empty_or_non_directory path=$path"
   fi
 }
 
-for agent_dest in "$agents_dir"/*.md; do
-  [ -e "$agent_dest" ] || [ -L "$agent_dest" ] || continue
-  remove_if_cookbook_symlink "$agent_dest" "agent"
+for agent_name in $AC_PRIMARY_AGENT_FILES; do
+  remove_if_cookbook_symlink "$agents_dir/$agent_name" "agent"
 done
 
-for prompt_dest in "$prompts_dir"/*.md; do
-  [ -e "$prompt_dest" ] || [ -L "$prompt_dest" ] || continue
-  remove_if_cookbook_symlink "$prompt_dest" "prompt"
+for prompt_name in $AC_PROMPT_FILES; do
+  remove_if_cookbook_symlink "$prompts_dir/$prompt_name" "prompt"
 done
 
 remove_empty_dir "$agents_dir"
 remove_empty_dir "$prompts_dir"
 
 if [ "$removed_any" = false ]; then
-  info "Nothing remains to remove for $global_dir"
+  ac_info "SUMMARY status=pass removed=false global_dir=$global_dir"
+else
+  ac_info "SUMMARY status=pass removed=true dry_run=$dry_run global_dir=$global_dir"
 fi

@@ -2,13 +2,15 @@
 
 This document describes the `.opencode` ping-pong planning agent chain.
 
-The flow is built for local models and intentionally prioritizes plan quality over speed or token cost. The goal is to produce one implementation-ready `MASTER PLAN` that is grounded in repo facts, has concrete validation, and can be handed to an implementer without exposing internal review transcripts.
+The flow is built for local models and intentionally prioritizes plan quality over speed or token cost. The goal is to produce one implementation-ready written `MASTER PLAN` that is grounded in repo facts, has concrete validation, and can be handed to an implementer without exposing internal review transcripts.
 
 For a stakeholder-friendly walkthrough with diagrams and sample agent result cards, see `NON_TECH_AGENT_DEMO.md`.
 
 ## Core Model
 
 `ping-pong-plan` is model 1 and the only owner of the canonical `MASTER PLAN`.
+
+`ping-pong-plan` is planning-only. It must never edit, write, create, delete, move, rename, format, stage, patch, or otherwise modify project files. If the user asks it to fix or change files, it should produce a written plan for that future implementation. Actual file changes belong in a fresh `ping-ping-build` session.
 
 All other agents are read-only evidence providers. They can inspect repo context with read-only tools and return alternative plans or structured reports, but they never replace the canonical plan directly.
 
@@ -20,7 +22,7 @@ The coordinator must:
 - pass a structured `KNOWN CONTEXT` bundle to subagents
 - separate repo facts, assumptions, unresolved uncertainty, and not-inspected areas
 - classify every important subagent finding in one internal Decision Ledger
-- fix severe gate verdicts before advancing unless contradicted by repo facts or user scope
+- resolve severe gate verdicts in the plan text before advancing unless contradicted by repo facts or user scope
 - prefer user intent, repo facts, implementation safety, and validation quality over consensus
 - keep reports, ledgers, transcripts, and hidden process notes out of the final answer
 
@@ -48,15 +50,15 @@ The coordinator must:
 7. Model 1 runs bounded convergence only when a model raised a blocker, major contradiction, or clearly better structure that cannot be safely integrated without one same-model follow-up.
 8. Model 1 creates `MASTER PLAN pre-validation`.
 9. `plan-validation-designer` designs concrete validation and returns a validation report.
-10. Model 1 applies accepted validation fixes and creates `MASTER PLAN pre-final`.
+10. Model 1 incorporates accepted validation plan revisions and creates `MASTER PLAN pre-final`.
 11. `plan-red-team-gate` reviews for blockers, high-risk ambiguity, missing validation, and scope creep.
-12. Model 1 applies accepted red-team fixes and creates `MASTER PLAN near-final`.
+12. Model 1 incorporates accepted red-team plan revisions and creates `MASTER PLAN near-final`.
 13. `plan-implementation-simulator` dry-runs the plan as if implementing it.
-14. Model 1 applies accepted simulator fixes and creates `MASTER PLAN fact-audit-candidate`.
+14. Model 1 incorporates accepted simulator plan revisions and creates `MASTER PLAN fact-audit-candidate`.
 15. `plan-fact-auditor` checks repo grounding, unsupported claims, assumptions, and validation command realism.
-16. Model 1 applies accepted fact-audit fixes and creates `MASTER PLAN final-candidate`.
+16. Model 1 incorporates accepted fact-audit plan revisions and creates `MASTER PLAN final-candidate`.
 17. `plan-contract-checker` verifies the final candidate satisfies the planning contract and does not leak internal reports.
-18. Model 1 applies required contract fixes and returns the final `MASTER PLAN`.
+18. Model 1 incorporates required contract plan revisions and returns the final `MASTER PLAN`.
 
 ## Sequence Diagram
 
@@ -82,19 +84,19 @@ sequenceDiagram
     M1->>M1: Synthesize adopted fixes
     M1->>VD: Request validation design report
     VD-->>M1: Validation findings
-    M1->>M1: Apply accepted validation fixes
+    M1->>M1: Incorporate accepted validation revisions
     M1->>RT: Request red-team report
     RT-->>M1: Risk findings
-    M1->>M1: Apply accepted red-team fixes
+    M1->>M1: Incorporate accepted red-team revisions
     M1->>IS: Request implementation simulation
     IS-->>M1: Feasibility findings
-    M1->>M1: Apply accepted simulator fixes
+    M1->>M1: Incorporate accepted simulator revisions
     M1->>FA: Request fact audit
     FA-->>M1: Factual grounding findings
-    M1->>M1: Apply accepted fact-audit fixes
+    M1->>M1: Incorporate accepted fact-audit revisions
     M1->>CC: Request contract check
     CC-->>M1: Contract findings
-    M1->>M1: Apply required final fixes
+    M1->>M1: Incorporate required final revisions
     M1-->>U: Final MASTER PLAN
 ```
 
@@ -150,6 +152,8 @@ The coordinator can use:
 
 The coordinator cannot edit files, run shell commands, call web tools, ask questions, or invoke arbitrary subagents during planning.
 
+If the coordinator attempts an unavailable implementation tool such as `edit`, `write`, `bash`, `patch`, or `todowrite`, it must not retry that tool. The run should be treated as incomplete and recovered by starting a fresh `ping-ping-build` session when real file changes are wanted.
+
 Subagents can use only read-only repo tools:
 
 - `read`
@@ -164,6 +168,7 @@ Subagents cannot edit files, write files, run bash, invoke tasks, invoke other s
 The final answer from `ping-pong-plan` must be only the final `MASTER PLAN` and should use these sections:
 
 - `Goal`
+- `Subagent Run Summary`
 - `Assumptions`
 - `Steps`
 - `Files / Areas to Inspect`
@@ -173,6 +178,8 @@ The final answer from `ping-pong-plan` must be only the final `MASTER PLAN` and 
 - `Remaining Open Questions`
 
 The final plan should be concise, concrete, implementation-ready, and free of internal gate reports or Decision Ledgers.
+
+The `Subagent Run Summary` section must list all seven required reviewer subagents and mark each as succeeded, failed, or skipped. If any required reviewer did not run successfully, the `Goal` and `Rollback / Recovery` sections must say the ping-pong run is incomplete.
 
 Blocking open questions are not allowed in the final plan. If a question would block implementation, validation, rollback, or file ownership, the coordinator must either choose a conservative default supported by user intent and repo facts or keep revising before final output.
 

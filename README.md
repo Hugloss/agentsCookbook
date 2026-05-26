@@ -57,7 +57,15 @@ scripts/link-opencode-local.sh --dry-run
 scripts/preflight-opencode-ping-pong.sh /path/to/target-repo
 ```
 
-The preflight script is read-only. It checks that the global cookbook symlinks point at this checkout, the target repo has the seven reviewer subagents configured with global prompt paths, the primary agent prompts contain the strict task allowlist, and reviewers are effectively read-only in OpenCode. If the preflight fails after you changed links or prompts, run `scripts/link-opencode-local.sh`, restart OpenCode, and run the preflight again. If OpenCode reports a `PRAGMA wal_checkpoint` failure during preflight, close other running OpenCode sessions and rerun the check before starting the long session.
+The preflight script is read-only. It checks that the global cookbook symlinks point at this checkout, the target repo has the seven reviewer subagents configured with global prompt paths, the primary agent prompts contain the strict task allowlist, and reviewers are effectively read-only in OpenCode. It also fails early if other OpenCode processes are running, because concurrent sessions can cause OpenCode database checkpoint errors during debug checks. If you only want filesystem and `opencode.json` checks, use `--quick`; if you intentionally want to run full preflight anyway, set `OPENCODE_PREFLIGHT_ALLOW_RUNNING=1`.
+
+For custom config locations, keep the expected prompt base explicit:
+
+```sh
+scripts/preflight-opencode-ping-pong.sh --global-dir /path/to/opencode --prompt-base /path/to/opencode/prompts --quick /path/to/target-repo
+```
+
+If the preflight fails after you changed links or prompts, run `scripts/link-opencode-local.sh`, restart OpenCode, and run the preflight again. If OpenCode reports a `PRAGMA wal_checkpoint` failure during preflight, close other running OpenCode sessions and rerun the check before starting the long session.
 
 ## OpenCode Agents
 
@@ -68,7 +76,7 @@ The primary agents are:
 - `ping-pong-plan` is planning-only and is discovered from the global Markdown file symlink at `<global>/agents/ping-pong-plan.md`.
 - `ping-ping-build` is implementation mode and is discovered from the global Markdown file symlink at `<global>/agents/ping-ping-build.md`.
 
-Use `ping-pong-plan` when you want a plan or review without code changes. Use `ping-ping-build` only when you want OpenCode to edit files. In build mode, `ping-ping-build` is the only agent allowed to change files; the seven reviewer subagents stay read-only and only provide feedback.
+Use `ping-pong-plan` when you want a plan or review without code changes. In that mode, words like "fix", "change", "update", "refactor", and "implement" mean "produce a written plan for that future work"; they do not mean edit files. Use `ping-ping-build` only when you want OpenCode to edit files. In build mode, `ping-ping-build` is the only agent allowed to change files; the seven reviewer subagents stay read-only and only provide feedback.
 
 The reviewer subagents are:
 
@@ -100,6 +108,8 @@ This repo's `.opencode/agents/` and `.opencode/prompts/` files are the source of
 
 `opencode debug agent ping-pong-plan` or `opencode debug agent ping-ping-build` verifies that a primary agent is loaded. It does not prove that a session invoked the reviewer subagents.
 
+`ping-pong-plan` must never edit files. If a request says "fix this file", "implement this", or otherwise asks for file changes, `ping-pong-plan` should still return only a written `# Final Plan`. Use `ping-ping-build` in a fresh session for actual changes. Do not solve this by granting write access to `ping-pong-plan`.
+
 If the visible answer starts with an internal draft label such as `STEP0` or omits `## Subagent Run Summary`, treat that run as incomplete. The coordinator should keep draft labels internal, call the reviewer subagents with the task tool, and return only the final `# Final Plan` answer.
 
 OpenCode task calls to subagents must include `description`, `prompt`, and `subagent_type`. If a final answer claims subagents succeeded but the session checker reports missing task calls, treat the run as invalid and rerun after fixing the prompt or config.
@@ -116,13 +126,40 @@ To check a specific session:
 scripts/check-opencode-session.sh <session-id>
 ```
 
-The checker reports one line for each required subagent and exits non-zero if any required task call is missing, duplicated, or if the session used an unexpected task target such as `general` or a missing `subagent_type`. The stable output lines are easy to grep:
+For compact or machine-readable output:
 
 ```sh
-scripts/check-opencode-session.sh | rg '^SESSION_ID=|^PARSE_MODE=|^SUBAGENT |^DUPLICATE_SUBAGENT |^UNEXPECTED_TASK |^SUMMARY '
+scripts/check-opencode-session.sh --failures-only <session-id>
+scripts/check-opencode-session.sh --json <session-id>
 ```
 
-If the checker prints `PARSE_MODE=raw-scan`, strict JSON parsing failed and the checker used a fallback text scan of task calls. The result is still useful for detecting missing reviewer calls and unexpected task calls. Any `UNEXPECTED_TASK` line means the run should be treated as invalid; rerun `scripts/link-opencode-local.sh`, restart OpenCode, and run the request again.
+By default, the checker validates the latest primary-agent segment, not the entire session history. This matters when a session was resumed with a different agent: old reviewer calls from an earlier prompt must not count as proof that the latest `ping-pong-plan` or `ping-ping-build` turn delegated correctly.
+
+Use the scope options when you need a different view:
+
+```sh
+scripts/check-opencode-session.sh --scope latest-segment <session-id>
+scripts/check-opencode-session.sh --scope latest-turn <session-id>
+scripts/check-opencode-session.sh --scope session <session-id>
+```
+
+`latest-segment` is the default and checks from the latest `ping-pong-plan` or `ping-ping-build` switch. `latest-turn` checks only after the latest user prompt. `session` is useful for historical audit context, but it can hide later missed delegation because earlier reviewer calls are counted.
+
+The checker reports one line for each required subagent in the selected scope and exits non-zero if any required task call is missing, duplicated, if the scope used an unexpected task target such as `general` or a missing `subagent_type`, or if the same session mixed `ping-pong-plan` and `ping-ping-build`. The stable output lines are easy to grep:
+
+```sh
+scripts/check-opencode-session.sh | rg '^SESSION_ID=|^TIMELINE_SOURCE=|^CHECK_SCOPE=|^SCOPE_|^AGENT_LOG=|^SESSION_CREATED_AGENT=|^SESSION_PRIMARY_AGENTS=|^PRIMARY_AGENT |^MIXED_PRIMARY_AGENT |^SUBAGENT |^DUPLICATE_SUBAGENT |^UNEXPECTED_TASK |^INVALID_TOOL |^FORBIDDEN_PLANNING_TOOL_ATTEMPT |^SUMMARY '
+```
+
+By default, the checker reads `${XDG_DATA_HOME:-$HOME/.local/share}/opencode/opencode.db` to build an accurate message, agent-switch, and task-call timeline. Use `--db PATH` for a custom database. If the database is unavailable, the checker falls back to `opencode export`; scoped validation then requires `--scope session` because export text does not reliably expose turn boundaries.
+
+The checker also scans `${XDG_DATA_HOME:-$HOME/.local/share}/opencode/log` for extra primary-agent evidence. Use `--log-dir DIR` for a custom log location, or `--no-agent-log-check` when you only want DB/export validation. `AGENT_LOG=missing` means no matching log evidence was found, so the checker relies on the DB/export source.
+
+If `MIXED_PRIMARY_AGENT status=fail`, start a fresh session with only one primary workflow agent. Resuming a `ping-ping-build` session with `ping-pong-plan`, or the reverse, makes the session evidence ambiguous and should not be used as proof that the full review flow ran.
+
+If the checker prints `INVALID_TOOL tool=write`, `INVALID_TOOL tool=edit`, or `INVALID_TOOL tool=bash` for a `ping-pong-plan` scope, or the stable `FORBIDDEN_PLANNING_TOOL_ATTEMPT` line, treat the run as invalid. That means the planning agent tried to implement with a tool it is not allowed to use. Rerun `scripts/link-opencode-local.sh`, restart OpenCode so the strict prompt reloads, and start a fresh `ping-ping-build` session if actual file changes are wanted.
+
+Any `UNEXPECTED_TASK` line means the run should be treated as invalid; rerun `scripts/link-opencode-local.sh`, restart OpenCode, and run the request again.
 
 You can also export the session manually and search for task calls:
 
@@ -131,6 +168,14 @@ opencode export <session-id> | rg '"tool": "task"|subagent_type|plan-improver-mo
 ```
 
 The final `ping-pong-plan` answer must start with `# Final Plan` and include `## Subagent Run Summary`. The final `ping-ping-build` answer must start with `# Implementation Summary` and include `## Reviewer Run Summary`. If a required reviewer was skipped or failed, the answer should say the review loop is incomplete instead of claiming the full review flow completed.
+
+## Script Smoke Tests
+
+The shell smoke test uses only temporary directories. It verifies link/unlink idempotency, force backups, quick preflight behavior, preservation of unrelated paths, and that link does not create a target `opencode.json`:
+
+```sh
+scripts/smoke-opencode-scripts.sh
+```
 
 ## Key Idea
 
