@@ -65,6 +65,49 @@ fs.writeFileSync(path, JSON.stringify({ agent }, null, 2) + "\n");
 ' "$path" "$prompt_base"
 }
 
+create_fake_session_db() {
+  local path="$1"
+  local session_id="$2"
+  local agent="$3"
+  local directory="$4"
+
+  sqlite3 "$path" <<SQL
+CREATE TABLE session (
+  id TEXT PRIMARY KEY,
+  parent_id TEXT,
+  title TEXT,
+  agent TEXT,
+  directory TEXT,
+  time_created INTEGER,
+  time_updated INTEGER
+);
+CREATE TABLE session_message (
+  id TEXT PRIMARY KEY,
+  session_id TEXT,
+  type TEXT,
+  time_created INTEGER,
+  time_updated INTEGER,
+  data TEXT
+);
+CREATE TABLE message (
+  id TEXT PRIMARY KEY,
+  session_id TEXT,
+  time_created INTEGER,
+  time_updated INTEGER,
+  data TEXT
+);
+CREATE TABLE part (
+  id TEXT PRIMARY KEY,
+  session_id TEXT,
+  message_id TEXT,
+  time_created INTEGER,
+  time_updated INTEGER,
+  data TEXT
+);
+INSERT INTO session VALUES ('$session_id', NULL, 'smoke session', '$agent', '$directory', 1710000000000, 1710000000000);
+SQL
+}
+
 temp_root="$(mktemp -d "${TMPDIR:-/tmp}/agents-cookbook-smoke.XXXXXX")"
 cleanup() {
   rm -rf "$temp_root"
@@ -84,6 +127,32 @@ assert_symlink_target "agent_ping_ping_build_link" "$global_dir/agents/ping-ping
 assert_symlink_target "agent_subagent_router_link" "$global_dir/agents/subagent-router.md" "$repo_root/.opencode/agents/subagent-router.md"
 assert_symlink_target "prompt_plan_improver_link" "$global_dir/prompts/plan-improver.md" "$repo_root/.opencode/prompts/plan-improver.md"
 assert_symlink_target "skill_plan_improvement_scout_link" "$global_dir/skills/plan-improvement-scout" "$repo_root/.opencode/skills/plan-improvement-scout"
+
+node --check "$repo_root/scripts/run-opencode-benchmarks.js"
+pass "benchmark_runner_syntax"
+
+"$repo_root/scripts/run-opencode-benchmarks.js" --suite subagent-router --benchmark full-flow-requested --list | grep 'BENCHMARK suite=subagent-router name=full-flow-requested agent=subagent-router expected=none' >/dev/null
+pass "benchmark_runner_manifest"
+
+command -v sqlite3 >/dev/null 2>&1 || fail "sqlite3_missing" "required_for_checker_tests=true"
+
+router_db="$temp_root/router-check.db"
+router_session="ses_router_smoke"
+create_fake_session_db "$router_db" "$router_session" "subagent-router" "$target_dir"
+router_output="$("$repo_root/scripts/check-opencode-session.sh" --scope session --expect-no-subagent --db "$router_db" "$router_session" 2>&1)"
+printf '%s\n' "$router_output" | grep 'ROUTER_SUBAGENT name=none status=pass task_calls=0' >/dev/null
+printf '%s\n' "$router_output" | grep 'SCOPE_SUMMARY mode=router required=0 found=0 missing=0 duplicates=0' >/dev/null
+printf '%s\n' "$router_output" | grep 'SUMMARY mode=router required=0 found=0 missing=0 duplicates=0' >/dev/null
+pass "checker_no_reviewer_summary_zero_counts"
+
+plan_db="$temp_root/plan-check.db"
+plan_session="ses_plan_smoke"
+create_fake_session_db "$plan_db" "$plan_session" "ping-pong-plan" "$target_dir"
+if plan_output="$("$repo_root/scripts/check-opencode-session.sh" --scope session --expect-no-subagent --db "$plan_db" "$plan_session" 2>&1)"; then
+  fail "checker_no_reviewer_invalid_scope_fails" "unexpected_pass=true"
+fi
+printf '%s\n' "$plan_output" | grep -- '--expect-no-subagent is only valid when the selected scope agent is subagent-router' >/dev/null
+pass "checker_no_reviewer_invalid_scope_rejected"
 
 "$repo_root/scripts/link-opencode-local.sh" --global-dir "$global_dir" | grep 'status=already_correct' >/dev/null
 pass "link_idempotent"

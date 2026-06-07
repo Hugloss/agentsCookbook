@@ -4,6 +4,8 @@ Use these manual benchmarks to judge whether `ping-pong-plan` improves productio
 
 The benchmark harness is intentionally Markdown-only. It does not add an agent, command, or runtime dependency. Run a benchmark by giving the user request to `ping-pong-plan`, then score the final `MASTER PLAN` with the rubric below.
 
+For repeatable local replays, use `scripts/run-opencode-benchmarks.js`. That script keeps the manual rubric here, but it gives you a fast loop for rerunning the fixed benchmark set, capturing session IDs, and checking the resulting sessions with `scripts/check-opencode-session.sh`.
+
 ## Scorecard
 
 Score each category from 1 to 5.

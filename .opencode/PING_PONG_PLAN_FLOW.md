@@ -203,3 +203,5 @@ The `Validation` section must include concrete automated checks or manual checks
 ## Evaluation Harness
 
 Use `.opencode/evals/ping-pong-plan-benchmarks.md` to manually compare final plans against repeatable planning tasks. Score each run for decision completeness, repo grounding, validation quality, scope control, and implementability, and fail runs that ignore structured context, severe gate blockers, or concrete acceptance criteria.
+
+For a repeatable local replay loop, use `scripts/run-opencode-benchmarks.js`. It replays the fixed benchmark set in a temporary HOME, captures per-benchmark artifacts, and validates each session with `scripts/check-opencode-session.sh`. The Markdown benchmark file stays the human scoring rubric; the script is the automation layer around it.

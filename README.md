@@ -138,6 +138,12 @@ scripts/check-opencode-session.sh --expect-subagent plan-fact-auditor <session-i
 scripts/check-opencode-session.sh --expect-subagent plan-validation-designer <session-id>
 ```
 
+Use `--expect-no-subagent` when the router request is supposed to explain that no reviewer call should happen:
+
+```sh
+scripts/check-opencode-session.sh --scope session --expect-no-subagent <session-id>
+```
+
 To check the latest run for the current repo:
 
 ```sh
@@ -169,7 +175,7 @@ scripts/check-opencode-session.sh --scope session <session-id>
 
 `latest-segment` is the default and checks from the latest `ping-pong-plan`, `ping-ping-build`, or `subagent-router` switch. `latest-turn` checks only after the latest user prompt. `session` is useful for historical audit context, but it can hide later missed delegation because earlier reviewer calls are counted.
 
-For `ping-pong-plan` and `ping-ping-build`, the checker reports one line for each required subagent in the selected scope and exits non-zero if any required task call is missing, duplicated, if the scope used an unexpected task target such as `general` or a missing `subagent_type`, or if the same session mixed `ping-pong-plan` and `ping-ping-build`. For `subagent-router`, it reports `ROUTER_SUBAGENT`, `ROUTER_EXPECTED`, and `ROUTER_SUMMARY`, and exits non-zero unless exactly one allowed reviewer was called.
+For `ping-pong-plan` and `ping-ping-build`, the checker reports one line for each required subagent in the selected scope and exits non-zero if any required task call is missing, duplicated, if the scope used an unexpected task target such as `general` or a missing `subagent_type`, or if the same session mixed `ping-pong-plan` and `ping-ping-build`. For `subagent-router`, it reports `ROUTER_SUBAGENT`, `ROUTER_EXPECTED`, and `ROUTER_SUMMARY`, and exits non-zero unless exactly one allowed reviewer was called, or zero reviewer calls were explicitly requested with `--expect-no-subagent`.
 
 ```sh
 scripts/check-opencode-session.sh | rg '^SESSION_ID=|^TIMELINE_SOURCE=|^CHECK_SCOPE=|^SCOPE_|^AGENT_LOG=|^SESSION_CREATED_AGENT=|^SESSION_PRIMARY_AGENTS=|^PRIMARY_AGENT |^MIXED_PRIMARY_AGENT |^ROUTER_|^SUBAGENT |^DUPLICATE_SUBAGENT |^UNEXPECTED_TASK |^INVALID_TOOL |^FORBIDDEN_PLANNING_TOOL_ATTEMPT |^SUMMARY '
@@ -192,6 +198,19 @@ opencode export <session-id> | rg '"tool": "task"|subagent_type|plan-improver-mo
 ```
 
 The final `ping-pong-plan` answer must start with `# Final Plan` and include `## Subagent Run Summary`. The final `ping-ping-build` answer must start with `# Implementation Summary` and include `## Reviewer Run Summary`. If a required reviewer was skipped or failed, the answer should say the review loop is incomplete instead of claiming the full review flow completed.
+
+## Benchmark Loop
+
+Use `scripts/run-opencode-benchmarks.js` to replay the fixed local benchmark set in a temporary HOME and write per-benchmark artifacts under a run directory. It validates the resulting sessions with `scripts/check-opencode-session.sh` and keeps the Markdown scorecards in `.opencode/evals/` as the manual review rubric.
+
+```sh
+scripts/run-opencode-benchmarks.js --list
+scripts/run-opencode-benchmarks.js --suite ping-pong-plan
+scripts/run-opencode-benchmarks.js --suite subagent-router --benchmark full-flow-requested
+scripts/run-opencode-benchmarks.js --artifacts-dir /tmp/agents-cookbook-benchmarks
+```
+
+Use `--suite` and `--benchmark` to narrow the replay set. The `subagent-router` benchmark set includes a no-reviewer handoff case, so the runner pairs that benchmark with `scripts/check-opencode-session.sh --expect-no-subagent`.
 
 ## Script Smoke Tests
 

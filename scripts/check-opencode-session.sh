@@ -7,7 +7,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/check-opencode-session.sh [--scope latest-segment|latest-turn|session] [--expect-subagent NAME] [--db PATH] [--log-dir DIR] [--no-agent-log-check] [--failures-only] [--json] [session-id]
+Usage: scripts/check-opencode-session.sh [--scope latest-segment|latest-turn|session] [--expect-subagent NAME] [--expect-no-subagent] [--db PATH] [--log-dir DIR] [--no-agent-log-check] [--failures-only] [--json] [session-id]
 
 Checks an OpenCode session for task-tool calls to the required planning/build
 reviewer subagents, or for one routed reviewer when the scoped primary agent is
@@ -21,6 +21,8 @@ Options:
                             session checks the whole session.
   --expect-subagent NAME    For subagent-router scopes, require this exact
                             reviewer subagent_type.
+  --expect-no-subagent      For subagent-router scopes, require no reviewer
+                            task call at all.
   --db PATH                 OpenCode SQLite DB. Defaults to
                             ${XDG_DATA_HOME:-$HOME/.local/share}/opencode/opencode.db.
   --log-dir DIR             OpenCode log dir. Defaults to
@@ -51,6 +53,7 @@ log_dir=""
 agent_log_check=1
 session_id=""
 expected_subagent=""
+expected_no_subagent=0
 failures_only=0
 json_output=0
 
@@ -77,6 +80,9 @@ while [[ $# -gt 0 ]]; do
         exit 2
       fi
       expected_subagent="$1"
+      ;;
+    --expect-no-subagent)
+      expected_no_subagent=1
       ;;
     --db)
       shift
@@ -137,6 +143,12 @@ if [[ -z "$db_path" || -z "$log_dir" ]]; then
     db_path="${db_path:-$data_dir/opencode.db}"
     log_dir="${log_dir:-$data_dir/log}"
   fi
+fi
+
+if [[ -n "$expected_subagent" && "$expected_no_subagent" -eq 1 ]]; then
+  usage >&2
+  echo "--expect-subagent and --expect-no-subagent are mutually exclusive." >&2
+  exit 2
 fi
 
 temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/opencode-session-check.XXXXXX")"
@@ -229,6 +241,7 @@ export OPENCODE_SESSION_CHECK_PARTS_FILE="$parts_file"
 export OPENCODE_SESSION_CHECK_EXPORT_FILE="$export_file"
 export OPENCODE_SESSION_CHECK_LOG_DIR="$log_dir"
 export OPENCODE_SESSION_CHECK_AGENT_LOG="$agent_log_check"
+export OPENCODE_SESSION_CHECK_EXPECT_NO_SUBAGENT="$expected_no_subagent"
 
 node_stdout="$temp_dir/node.stdout"
 node_stderr="$temp_dir/node.stderr"
@@ -256,9 +269,14 @@ const checkScope = process.env.OPENCODE_SESSION_CHECK_SCOPE || "latest-segment";
 const timelineSource = process.env.OPENCODE_SESSION_CHECK_TIMELINE_SOURCE || "none";
 const requestedSessionId = process.env.OPENCODE_SESSION_CHECK_SESSION_ID || "";
 const expectedSubagent = process.env.OPENCODE_SESSION_CHECK_EXPECT_SUBAGENT || "";
+const expectedNoSubagent = process.env.OPENCODE_SESSION_CHECK_EXPECT_NO_SUBAGENT === "1";
 
 if (expectedSubagent && !requiredSet.has(expectedSubagent)) {
   console.error(`Invalid --expect-subagent value: ${expectedSubagent}`);
+  process.exit(2);
+}
+if (expectedSubagent && expectedNoSubagent) {
+  console.error("--expect-subagent and --expect-no-subagent are mutually exclusive.");
   process.exit(2);
 }
 
@@ -325,11 +343,14 @@ function summarizeRouterCalls(calls, invalidToolCalls) {
   const unexpectedCalls = calls.filter((call) => !requiredSet.has(call.subagentType));
   const selectedCalls = calls.filter((call) => requiredSet.has(call.subagentType));
   const selected = selectedCalls.length === 1 ? selectedCalls[0].subagentType : "";
-  const status = calls.length === 1
+  const noReviewerPass = expectedNoSubagent && calls.length === 0 && invalidToolCalls.length === 0;
+  const status = noReviewerPass || (
+    calls.length === 1
     && unexpectedCalls.length === 0
     && selected
     && (!expectedSubagent || selected === expectedSubagent)
     && invalidToolCalls.length === 0
+  )
     ? "pass"
     : "fail";
   return {
@@ -339,6 +360,8 @@ function summarizeRouterCalls(calls, invalidToolCalls) {
     unexpectedCalls,
     expectedMismatch: Boolean(expectedSubagent && selected && selected !== expectedSubagent),
     missingExpected: Boolean(expectedSubagent && !selected),
+    noReviewerExpected: expectedNoSubagent,
+    noReviewerMatched: noReviewerPass,
   };
 }
 
@@ -777,6 +800,19 @@ const routerSummary = isRouterScope
   ? summarizeRouterCalls(scopedCalls, routerInvalidInScope)
   : null;
 const invalidExpectedScope = Boolean(expectedSubagent && !isRouterScope);
+const invalidNoSubagentScope = Boolean(expectedNoSubagent && !isRouterScope);
+
+if (invalidNoSubagentScope) {
+  console.error("");
+  console.error(`--expect-no-subagent is only valid when the selected scope agent is subagent-router; scope agent is ${scopeInfo.agent || "unknown"}.`);
+  process.exit(2);
+}
+
+const routerNoReviewerPass = Boolean(isRouterScope && expectedNoSubagent && routerSummary && routerSummary.noReviewerMatched);
+const routerSummaryRequired = routerNoReviewerPass ? 0 : 1;
+const routerSummaryFound = routerNoReviewerPass ? 0 : (routerSummary && routerSummary.selected ? 1 : 0);
+const routerSummaryMissing = routerNoReviewerPass ? 0 : (routerSummary && routerSummary.selected ? 0 : 1);
+const routerSummaryDuplicates = routerNoReviewerPass ? 0 : (scopedCalls.length > 1 ? scopedCalls.length - 1 : 0);
 
 console.log(`SESSION_ID=${timeline.session.id}`);
 console.log(`SESSION_TITLE=${timeline.session.title}`);
@@ -810,10 +846,12 @@ if (scopedUnavailable) {
   console.log("Use --scope session for export-only validation, or provide --db PATH.");
 } else if (isRouterScope) {
   console.log("Routed reviewer task call in scope:");
-  const selected = routerSummary.selected || "none";
+  const selected = routerSummary.noReviewerExpected ? "none" : (routerSummary.selected || "none");
   console.log(`ROUTER_SUBAGENT name=${selected} status=${routerSummary.status} task_calls=${scopedCalls.length}`);
   if (expectedSubagent) {
     console.log(`ROUTER_EXPECTED name=${expectedSubagent} status=${routerSummary.expectedMismatch || routerSummary.missingExpected ? "fail" : "pass"}`);
+  } else if (expectedNoSubagent) {
+    console.log(`ROUTER_EXPECTED name=none status=${routerSummary.noReviewerMatched ? "pass" : "fail"}`);
   } else {
     console.log("ROUTER_EXPECTED name=none status=skipped");
   }
@@ -836,12 +874,12 @@ if (scopedUnavailable) {
 
 if (isRouterScope) {
   console.log(`ROUTER_SUMMARY status=${routerSummary.status} selected=${routerSummary.selected || "none"} expected=${expectedSubagent || "none"} task_calls=${scopedCalls.length} unexpected=${routerSummary.unexpectedCalls.length} forbidden_invalid_tools=${routerInvalidInScope.length}`);
-  console.log(`SCOPE_SUMMARY mode=router required=1 found=${routerSummary.selected ? 1 : 0} missing=${routerSummary.selected ? 0 : 1} duplicates=${scopedCalls.length > 1 ? scopedCalls.length - 1 : 0} unexpected=${routerSummary.unexpectedCalls.length} invalid_tools=${scopedInvalidToolCalls.length} forbidden_invalid_tools=${routerInvalidInScope.length} task_calls=${scopedCalls.length}`);
+  console.log(`SCOPE_SUMMARY mode=router required=${routerSummaryRequired} found=${routerSummaryFound} missing=${routerSummaryMissing} duplicates=${routerSummaryDuplicates} unexpected=${routerSummary.unexpectedCalls.length} invalid_tools=${scopedInvalidToolCalls.length} forbidden_invalid_tools=${routerInvalidInScope.length} task_calls=${scopedCalls.length}`);
 } else {
   console.log(`SCOPE_SUMMARY required=${required.length} found=${scopeSummary.foundRequired} missing=${scopeSummary.missing} duplicates=${scopeSummary.duplicates} unexpected=${scopeSummary.unexpectedCalls.length} invalid_tools=${scopedInvalidToolCalls.length} forbidden_invalid_tools=${forbiddenInvalidInScope.length} task_calls=${scopedCalls.length}`);
 }
 if (isRouterScope) {
-  console.log(`SUMMARY mode=router required=1 found=${routerSummary.selected ? 1 : 0} missing=${routerSummary.selected ? 0 : 1} duplicates=${scopedCalls.length > 1 ? scopedCalls.length - 1 : 0} unexpected=${routerSummary.unexpectedCalls.length} invalid_tools=${(timeline.invalidToolCalls || []).length} forbidden_invalid_tools=${routerInvalidInScope.length} mixed_agents=${mixedPrimaryAgents ? 1 : 0} agent_log=${agentLog.status} task_calls=${timeline.taskCalls.length}`);
+  console.log(`SUMMARY mode=router required=${routerSummaryRequired} found=${routerSummaryFound} missing=${routerSummaryMissing} duplicates=${routerSummaryDuplicates} unexpected=${routerSummary.unexpectedCalls.length} invalid_tools=${(timeline.invalidToolCalls || []).length} forbidden_invalid_tools=${routerInvalidInScope.length} mixed_agents=${mixedPrimaryAgents ? 1 : 0} agent_log=${agentLog.status} task_calls=${timeline.taskCalls.length}`);
 } else {
   console.log(`SUMMARY required=${required.length} found=${sessionSummary.foundRequired} missing=${sessionSummary.missing} duplicates=${sessionSummary.duplicates} unexpected=${sessionSummary.unexpectedCalls.length} invalid_tools=${(timeline.invalidToolCalls || []).length} forbidden_invalid_tools=${sessionInvalidSummary.forbiddenCalls.length} mixed_agents=${mixedPrimaryAgents ? 1 : 0} agent_log=${agentLog.status} task_calls=${timeline.taskCalls.length}`);
 }
@@ -896,8 +934,12 @@ if (!scopedUnavailable && scopedCalls.length === 0) {
 }
 
 if (!scopedUnavailable && isRouterScope && scopedCalls.length !== 1) {
-  console.error("");
-  console.error(`Router scope expected exactly one reviewer task call, found ${scopedCalls.length}.`);
+  if (expectedNoSubagent && scopedCalls.length === 0) {
+    // No-reviewer router handoff is valid when explicitly requested.
+  } else {
+    console.error("");
+    console.error(`Router scope expected exactly one reviewer task call, found ${scopedCalls.length}.`);
+  }
 }
 
 if (!scopedUnavailable && isRouterScope && routerSummary.unexpectedCalls.length > 0) {
@@ -908,6 +950,11 @@ if (!scopedUnavailable && isRouterScope && routerSummary.unexpectedCalls.length 
 if (!scopedUnavailable && isRouterScope && routerSummary.expectedMismatch) {
   console.error("");
   console.error(`Router scope selected ${routerSummary.selected}, expected ${expectedSubagent}.`);
+}
+
+if (!scopedUnavailable && isRouterScope && expectedNoSubagent && !routerSummary.noReviewerMatched) {
+  console.error("");
+  console.error(`Router scope expected no reviewer task call, found ${scopedCalls.length}.`);
 }
 
 if (!scopedUnavailable && invalidExpectedScope) {

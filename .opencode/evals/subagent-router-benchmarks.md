@@ -83,3 +83,4 @@ Run the full seven-reviewer ping-pong planning flow on this request.
 - Does not call any reviewer.
 - Explains that `ping-pong-plan` is the full planning workflow and `ping-ping-build` is the full implementation workflow.
 - Does not claim a routed review or full ping-pong flow ran.
+- Passes `scripts/check-opencode-session.sh --scope session --expect-no-subagent <session-id>`.
