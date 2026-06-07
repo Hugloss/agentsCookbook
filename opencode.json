@@ -33,7 +33,10 @@
         "webfetch": "deny",
         "websearch": "deny",
         "lsp": "deny",
-        "skill": "deny",
+        "skill": {
+          "*": "deny",
+          "plan-improvement-scout": "allow"
+        },
         "todowrite": "deny",
         "doom_loop": "deny"
       }
@@ -57,7 +60,10 @@
         "webfetch": "deny",
         "websearch": "deny",
         "lsp": "deny",
-        "skill": "deny",
+        "skill": {
+          "*": "deny",
+          "plan-improvement-scout": "allow"
+        },
         "todowrite": "deny",
         "doom_loop": "deny"
       }
@@ -81,7 +87,10 @@
         "webfetch": "deny",
         "websearch": "deny",
         "lsp": "deny",
-        "skill": "deny",
+        "skill": {
+          "*": "deny",
+          "red-team-leftover-gate": "allow"
+        },
         "todowrite": "deny",
         "doom_loop": "deny"
       }
@@ -105,7 +114,10 @@
         "webfetch": "deny",
         "websearch": "deny",
         "lsp": "deny",
-        "skill": "deny",
+        "skill": {
+          "*": "deny",
+          "validation-gap-finder": "allow"
+        },
         "todowrite": "deny",
         "doom_loop": "deny"
       }
@@ -129,7 +141,10 @@
         "webfetch": "deny",
         "websearch": "deny",
         "lsp": "deny",
-        "skill": "deny",
+        "skill": {
+          "*": "deny",
+          "implementation-dry-run": "allow"
+        },
         "todowrite": "deny",
         "doom_loop": "deny"
       }
@@ -153,7 +168,10 @@
         "webfetch": "deny",
         "websearch": "deny",
         "lsp": "deny",
-        "skill": "deny",
+        "skill": {
+          "*": "deny",
+          "fact-grounding-auditor": "allow"
+        },
         "todowrite": "deny",
         "doom_loop": "deny"
       }
@@ -177,7 +195,10 @@
         "webfetch": "deny",
         "websearch": "deny",
         "lsp": "deny",
-        "skill": "deny",
+        "skill": {
+          "*": "deny",
+          "plan-contract-guard": "allow"
+        },
         "todowrite": "deny",
         "doom_loop": "deny"
       }

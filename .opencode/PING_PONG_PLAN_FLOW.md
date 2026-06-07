@@ -28,16 +28,29 @@ The coordinator must:
 
 ## Agents
 
-| Agent | Role | Output |
-| --- | --- | --- |
-| `ping-pong-plan` | Master coordinator and only canonical plan author. | Final `MASTER PLAN`. |
-| `plan-improver-model2` | Second-model alternative planner. | Complete alternative plan, key differences, blockers or major disagreements. |
-| `plan-improver-model3` | Third-model alternative planner. | Complete alternative plan, key differences, blockers or major disagreements. |
-| `plan-validation-designer` | Validation strategist before red-team review. | Validation design report. |
-| `plan-red-team-gate` | Risk, blocker, ambiguity, validation, and scope-creep reviewer. | Red-team gate report. |
-| `plan-implementation-simulator` | Dry-run reviewer for implementation feasibility. | Implementation simulation report. |
-| `plan-fact-auditor` | Factual grounding reviewer. | Fact audit report. |
-| `plan-contract-checker` | Final protocol, ownership, format, leakage, scope, validation, and rollback checker. | Plan contract report. |
+| Agent | Role | Skill | Output |
+| --- | --- | --- | --- |
+| `ping-pong-plan` | Master coordinator and only canonical plan author. | All specialty skills as internal checklists. | Final `MASTER PLAN`. |
+| `plan-improver-model2` | Second-model alternative planner. | `plan-improvement-scout` | Complete alternative plan, key differences, blockers or major disagreements. |
+| `plan-improver-model3` | Third-model alternative planner. | `plan-improvement-scout` | Complete alternative plan, key differences, blockers or major disagreements. |
+| `plan-validation-designer` | Validation strategist before red-team review. | `validation-gap-finder` | Validation design report. |
+| `plan-red-team-gate` | Risk, blocker, ambiguity, validation, and scope-creep reviewer. | `red-team-leftover-gate` | Red-team gate report. |
+| `plan-implementation-simulator` | Dry-run reviewer for implementation feasibility. | `implementation-dry-run` | Implementation simulation report. |
+| `plan-fact-auditor` | Factual grounding reviewer. | `fact-grounding-auditor` | Fact audit report. |
+| `plan-contract-checker` | Final protocol, ownership, format, leakage, scope, validation, and rollback checker. | `plan-contract-guard` | Plan contract report. |
+
+`subagent-router` is a separate primary utility agent for one-off reviewer feedback. It calls exactly one reviewer subagent with the required `description`, `prompt`, and `subagent_type` task payload shape. It is not part of the full ping-pong planning chain and does not replace `ping-pong-plan`.
+
+## Specialty Skills
+
+Specialty skills live under `.opencode/skills/<name>/SKILL.md` and are linked globally by `scripts/link-opencode-local.sh`. They are concise checklists that help the existing agents find improvement ideas, missing gaps, leftovers, validation weaknesses, factual issues, and contract problems.
+
+Skills do not replace prompts, agents, task calls, or ownership rules:
+
+- `ping-pong-plan` and `ping-ping-build` may use all six specialty skills as checklists.
+- Each reviewer subagent may use only its mapped specialty skill.
+- Skills never authorize reviewers to edit files, run bash, invoke tasks, or own the final answer.
+- OpenCode sessions must be restarted after agent, prompt, config, or skill changes so the new skill registry and permissions are loaded.
 
 ## Ordered Flow
 
@@ -149,8 +162,9 @@ The coordinator can use:
 - `glob`
 - `list`
 - `task`
+- the six specialty skills listed above
 
-The coordinator cannot edit files, run shell commands, call web tools, ask questions, or invoke arbitrary subagents during planning.
+The coordinator cannot edit files, run shell commands, call web tools, ask questions, invoke arbitrary subagents, or invoke arbitrary skills during planning.
 
 If the coordinator attempts an unavailable implementation tool such as `edit`, `write`, `bash`, `patch`, or `todowrite`, it must not retry that tool. The run should be treated as incomplete and recovered by starting a fresh `ping-ping-build` session when real file changes are wanted.
 
@@ -160,8 +174,9 @@ Subagents can use only read-only repo tools:
 - `grep`
 - `glob`
 - `list`
+- their one mapped specialty skill
 
-Subagents cannot edit files, write files, run bash, invoke tasks, invoke other subagents, ask questions, call web tools, or claim ownership of the final plan.
+Subagents cannot edit files, write files, run bash, invoke tasks, invoke other subagents, invoke arbitrary skills, ask questions, call web tools, or claim ownership of the final plan.
 
 ## Final Output Contract
 

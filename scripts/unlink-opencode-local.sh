@@ -9,7 +9,7 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/unlink-opencode-local.sh [--dry-run] [--global-dir DIR]
 
-Remove only this agentsCookbook repo's global OpenCode symlinks.
+Remove only this agentsCookbook repo's global OpenCode agent, prompt, and skill symlinks.
 
 Options:
   --dry-run          Print planned changes without modifying the global OpenCode dir.
@@ -60,6 +60,7 @@ fi
 
 agents_dir="$global_dir/agents"
 prompts_dir="$global_dir/prompts"
+skills_dir="$global_dir/skills"
 
 removed_any=false
 
@@ -129,8 +130,13 @@ for prompt_name in $AC_PROMPT_FILES; do
   remove_if_cookbook_symlink "$prompts_dir/$prompt_name" "prompt"
 done
 
+for skill_name in $AC_SKILL_NAMES; do
+  remove_if_cookbook_symlink "$skills_dir/$skill_name" "skill"
+done
+
 remove_empty_dir "$agents_dir"
 remove_empty_dir "$prompts_dir"
+remove_empty_dir "$skills_dir"
 
 if [ "$removed_any" = false ]; then
   ac_info "SUMMARY status=pass removed=false global_dir=$global_dir"

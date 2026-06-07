@@ -7,10 +7,11 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/check-opencode-session.sh [--scope latest-segment|latest-turn|session] [--db PATH] [--log-dir DIR] [--no-agent-log-check] [--failures-only] [--json] [session-id]
+Usage: scripts/check-opencode-session.sh [--scope latest-segment|latest-turn|session] [--expect-subagent NAME] [--db PATH] [--log-dir DIR] [--no-agent-log-check] [--failures-only] [--json] [session-id]
 
 Checks an OpenCode session for task-tool calls to the required planning/build
-reviewer subagents. If no session ID is provided, checks the latest OpenCode
+reviewer subagents, or for one routed reviewer when the scoped primary agent is
+subagent-router. If no session ID is provided, checks the latest OpenCode
 session for the current working directory.
 
 Options:
@@ -18,6 +19,8 @@ Options:
                             latest-segment checks the latest primary-agent segment.
                             latest-turn checks only after the latest user prompt.
                             session checks the whole session.
+  --expect-subagent NAME    For subagent-router scopes, require this exact
+                            reviewer subagent_type.
   --db PATH                 OpenCode SQLite DB. Defaults to
                             ${XDG_DATA_HOME:-$HOME/.local/share}/opencode/opencode.db.
   --log-dir DIR             OpenCode log dir. Defaults to
@@ -47,6 +50,7 @@ db_path=""
 log_dir=""
 agent_log_check=1
 session_id=""
+expected_subagent=""
 failures_only=0
 json_output=0
 
@@ -64,6 +68,15 @@ while [[ $# -gt 0 ]]; do
         exit 2
       fi
       scope="$1"
+      ;;
+    --expect-subagent)
+      shift
+      if [[ $# -eq 0 ]]; then
+        usage >&2
+        echo "--expect-subagent requires a reviewer subagent name." >&2
+        exit 2
+      fi
+      expected_subagent="$1"
       ;;
     --db)
       shift
@@ -206,6 +219,7 @@ fi
 
 export OPENCODE_SESSION_CHECK_SCOPE="$scope"
 export OPENCODE_SESSION_CHECK_SESSION_ID="$session_id"
+export OPENCODE_SESSION_CHECK_EXPECT_SUBAGENT="$expected_subagent"
 export OPENCODE_SESSION_CHECK_TIMELINE_SOURCE="$timeline_source"
 export OPENCODE_SESSION_CHECK_DB_PATH="$db_path"
 export OPENCODE_SESSION_CHECK_SESSION_FILE="$session_file"
@@ -235,11 +249,18 @@ const required = [
 ];
 const requiredSet = new Set(required);
 const workflowAgents = new Set(["ping-pong-plan", "ping-ping-build"]);
+const scopedPrimaryAgents = new Set(["ping-pong-plan", "ping-ping-build", "subagent-router"]);
 const forbiddenPlanningTools = new Set(["write", "edit", "bash", "patch", "todowrite"]);
 
 const checkScope = process.env.OPENCODE_SESSION_CHECK_SCOPE || "latest-segment";
 const timelineSource = process.env.OPENCODE_SESSION_CHECK_TIMELINE_SOURCE || "none";
 const requestedSessionId = process.env.OPENCODE_SESSION_CHECK_SESSION_ID || "";
+const expectedSubagent = process.env.OPENCODE_SESSION_CHECK_EXPECT_SUBAGENT || "";
+
+if (expectedSubagent && !requiredSet.has(expectedSubagent)) {
+  console.error(`Invalid --expect-subagent value: ${expectedSubagent}`);
+  process.exit(2);
+}
 
 function readJsonFile(file, fallback) {
   try {
@@ -298,6 +319,27 @@ function summarizeCalls(calls) {
   }
   const unexpectedCalls = calls.filter((call) => !requiredSet.has(call.subagentType));
   return { found, foundRequired, missing, duplicates, unexpectedCalls };
+}
+
+function summarizeRouterCalls(calls, invalidToolCalls) {
+  const unexpectedCalls = calls.filter((call) => !requiredSet.has(call.subagentType));
+  const selectedCalls = calls.filter((call) => requiredSet.has(call.subagentType));
+  const selected = selectedCalls.length === 1 ? selectedCalls[0].subagentType : "";
+  const status = calls.length === 1
+    && unexpectedCalls.length === 0
+    && selected
+    && (!expectedSubagent || selected === expectedSubagent)
+    && invalidToolCalls.length === 0
+    ? "pass"
+    : "fail";
+  return {
+    status,
+    selected,
+    selectedCalls,
+    unexpectedCalls,
+    expectedMismatch: Boolean(expectedSubagent && selected && selected !== expectedSubagent),
+    missingExpected: Boolean(expectedSubagent && !selected),
+  };
 }
 
 function summarizeInvalidTools(calls) {
@@ -649,7 +691,7 @@ function buildScope(timeline) {
         available: true,
       };
     }
-    const priorSwitches = timeline.switches.filter((event) => event.time <= latestUser.time && workflowAgents.has(event.agent));
+    const priorSwitches = timeline.switches.filter((event) => event.time <= latestUser.time && scopedPrimaryAgents.has(event.agent));
     const latestSwitch = priorSwitches[priorSwitches.length - 1];
     return {
       start: latestUser.time,
@@ -660,7 +702,7 @@ function buildScope(timeline) {
     };
   }
 
-  const workflowSwitches = timeline.switches.filter((event) => workflowAgents.has(event.agent));
+  const workflowSwitches = timeline.switches.filter((event) => scopedPrimaryAgents.has(event.agent));
   const latestSwitch = workflowSwitches[workflowSwitches.length - 1];
   return {
     start: latestSwitch ? latestSwitch.time : timeline.session.start,
@@ -673,11 +715,11 @@ function buildScope(timeline) {
 
 function primaryCountsFromDb(timeline) {
   const counts = new Map();
-  if (timeline.session.createdAgent && workflowAgents.has(timeline.session.createdAgent)) {
+  if (timeline.session.createdAgent && scopedPrimaryAgents.has(timeline.session.createdAgent)) {
     addCount(counts, timeline.session.createdAgent);
   }
   for (const event of timeline.switches) {
-    if (workflowAgents.has(event.agent)) {
+    if (scopedPrimaryAgents.has(event.agent)) {
       addCount(counts, event.agent);
     }
   }
@@ -724,9 +766,17 @@ const sessionSummary = summarizeCalls(timeline.taskCalls);
 const scopeSummary = summarizeCalls(scopedCalls);
 const sessionInvalidSummary = summarizeInvalidTools(timeline.invalidToolCalls || []);
 const scopeInvalidSummary = summarizeInvalidTools(scopedInvalidToolCalls);
+const isRouterScope = scopeInfo.agent === "subagent-router";
 const forbiddenInvalidInScope = scopeInfo.agent === "ping-pong-plan"
   ? scopeInvalidSummary.forbiddenCalls
   : [];
+const routerInvalidInScope = isRouterScope
+  ? scopeInvalidSummary.forbiddenCalls
+  : [];
+const routerSummary = isRouterScope
+  ? summarizeRouterCalls(scopedCalls, routerInvalidInScope)
+  : null;
+const invalidExpectedScope = Boolean(expectedSubagent && !isRouterScope);
 
 console.log(`SESSION_ID=${timeline.session.id}`);
 console.log(`SESSION_TITLE=${timeline.session.title}`);
@@ -758,6 +808,18 @@ console.log("");
 if (scopedUnavailable) {
   console.log("Scoped validation is unavailable without the OpenCode SQLite timeline.");
   console.log("Use --scope session for export-only validation, or provide --db PATH.");
+} else if (isRouterScope) {
+  console.log("Routed reviewer task call in scope:");
+  const selected = routerSummary.selected || "none";
+  console.log(`ROUTER_SUBAGENT name=${selected} status=${routerSummary.status} task_calls=${scopedCalls.length}`);
+  if (expectedSubagent) {
+    console.log(`ROUTER_EXPECTED name=${expectedSubagent} status=${routerSummary.expectedMismatch || routerSummary.missingExpected ? "fail" : "pass"}`);
+  } else {
+    console.log("ROUTER_EXPECTED name=none status=skipped");
+  }
+  for (const call of scopedCalls) {
+    console.log(`ROUTER_TASK subagent_type=${call.subagentType} status=${call.status}`);
+  }
 } else {
   console.log("Required reviewer subagent task calls in scope:");
   for (const name of required) {
@@ -772,10 +834,19 @@ if (scopedUnavailable) {
   }
 }
 
-console.log(`SCOPE_SUMMARY required=${required.length} found=${scopeSummary.foundRequired} missing=${scopeSummary.missing} duplicates=${scopeSummary.duplicates} unexpected=${scopeSummary.unexpectedCalls.length} invalid_tools=${scopedInvalidToolCalls.length} forbidden_invalid_tools=${forbiddenInvalidInScope.length} task_calls=${scopedCalls.length}`);
-console.log(`SUMMARY required=${required.length} found=${sessionSummary.foundRequired} missing=${sessionSummary.missing} duplicates=${sessionSummary.duplicates} unexpected=${sessionSummary.unexpectedCalls.length} invalid_tools=${(timeline.invalidToolCalls || []).length} forbidden_invalid_tools=${sessionInvalidSummary.forbiddenCalls.length} mixed_agents=${mixedPrimaryAgents ? 1 : 0} agent_log=${agentLog.status} task_calls=${timeline.taskCalls.length}`);
+if (isRouterScope) {
+  console.log(`ROUTER_SUMMARY status=${routerSummary.status} selected=${routerSummary.selected || "none"} expected=${expectedSubagent || "none"} task_calls=${scopedCalls.length} unexpected=${routerSummary.unexpectedCalls.length} forbidden_invalid_tools=${routerInvalidInScope.length}`);
+  console.log(`SCOPE_SUMMARY mode=router required=1 found=${routerSummary.selected ? 1 : 0} missing=${routerSummary.selected ? 0 : 1} duplicates=${scopedCalls.length > 1 ? scopedCalls.length - 1 : 0} unexpected=${routerSummary.unexpectedCalls.length} invalid_tools=${scopedInvalidToolCalls.length} forbidden_invalid_tools=${routerInvalidInScope.length} task_calls=${scopedCalls.length}`);
+} else {
+  console.log(`SCOPE_SUMMARY required=${required.length} found=${scopeSummary.foundRequired} missing=${scopeSummary.missing} duplicates=${scopeSummary.duplicates} unexpected=${scopeSummary.unexpectedCalls.length} invalid_tools=${scopedInvalidToolCalls.length} forbidden_invalid_tools=${forbiddenInvalidInScope.length} task_calls=${scopedCalls.length}`);
+}
+if (isRouterScope) {
+  console.log(`SUMMARY mode=router required=1 found=${routerSummary.selected ? 1 : 0} missing=${routerSummary.selected ? 0 : 1} duplicates=${scopedCalls.length > 1 ? scopedCalls.length - 1 : 0} unexpected=${routerSummary.unexpectedCalls.length} invalid_tools=${(timeline.invalidToolCalls || []).length} forbidden_invalid_tools=${routerInvalidInScope.length} mixed_agents=${mixedPrimaryAgents ? 1 : 0} agent_log=${agentLog.status} task_calls=${timeline.taskCalls.length}`);
+} else {
+  console.log(`SUMMARY required=${required.length} found=${sessionSummary.foundRequired} missing=${sessionSummary.missing} duplicates=${sessionSummary.duplicates} unexpected=${sessionSummary.unexpectedCalls.length} invalid_tools=${(timeline.invalidToolCalls || []).length} forbidden_invalid_tools=${sessionInvalidSummary.forbiddenCalls.length} mixed_agents=${mixedPrimaryAgents ? 1 : 0} agent_log=${agentLog.status} task_calls=${timeline.taskCalls.length}`);
+}
 
-if (!scopedUnavailable && scopeSummary.duplicates > 0) {
+if (!scopedUnavailable && !isRouterScope && scopeSummary.duplicates > 0) {
   console.log("");
   console.log("Duplicate required reviewer task calls in scope:");
   for (const name of required) {
@@ -786,7 +857,7 @@ if (!scopedUnavailable && scopeSummary.duplicates > 0) {
   }
 }
 
-if (!scopedUnavailable && scopeSummary.unexpectedCalls.length > 0) {
+if (!scopedUnavailable && !isRouterScope && scopeSummary.unexpectedCalls.length > 0) {
   console.log("");
   console.log("Unexpected task calls in scope:");
   for (const call of scopeSummary.unexpectedCalls) {
@@ -806,6 +877,8 @@ if (!scopedUnavailable && scopedInvalidToolCalls.length > 0) {
     console.log(`INVALID_TOOL tool=${call.tool} status=${call.status}`);
     if (scopeInfo.agent === "ping-pong-plan" && forbiddenPlanningTools.has(call.tool)) {
       console.log(`FORBIDDEN_PLANNING_TOOL_ATTEMPT tool=${call.tool} agent=ping-pong-plan status=${call.status}`);
+    } else if (scopeInfo.agent === "subagent-router" && forbiddenPlanningTools.has(call.tool)) {
+      console.log(`ROUTER_FORBIDDEN_TOOL_ATTEMPT tool=${call.tool} agent=subagent-router status=${call.status}`);
     }
   }
 }
@@ -817,7 +890,29 @@ if (!scopedUnavailable && scopedCalls.length === 0) {
     console.log("Hint: this scope used ping-ping-build. Reviewer calls should happen after implementation evidence exists; if it ended before review, the review loop is incomplete.");
   } else if (scopeInfo.agent === "ping-pong-plan") {
     console.log("Hint: this scope used ping-pong-plan but did not record reviewer task calls. Start a fresh session after updating global links and confirm the strict prompt is loaded.");
+  } else if (scopeInfo.agent === "subagent-router") {
+    console.log("Hint: this scope used subagent-router but did not record a reviewer task call. Start a fresh router session after updating global links and confirm the router prompt is loaded.");
   }
+}
+
+if (!scopedUnavailable && isRouterScope && scopedCalls.length !== 1) {
+  console.error("");
+  console.error(`Router scope expected exactly one reviewer task call, found ${scopedCalls.length}.`);
+}
+
+if (!scopedUnavailable && isRouterScope && routerSummary.unexpectedCalls.length > 0) {
+  console.error("");
+  console.error(`Router scope found ${routerSummary.unexpectedCalls.length} task call${routerSummary.unexpectedCalls.length === 1 ? "" : "s"} with an unexpected subagent_type.`);
+}
+
+if (!scopedUnavailable && isRouterScope && routerSummary.expectedMismatch) {
+  console.error("");
+  console.error(`Router scope selected ${routerSummary.selected}, expected ${expectedSubagent}.`);
+}
+
+if (!scopedUnavailable && invalidExpectedScope) {
+  console.error("");
+  console.error(`--expect-subagent is only valid when the selected scope agent is subagent-router; scope agent is ${scopeInfo.agent || "unknown"}.`);
 }
 
 if (mixedPrimaryAgents) {
@@ -830,10 +925,14 @@ if (scopedUnavailable) {
   failed = true;
 }
 if (!scopedUnavailable && (
-  scopeSummary.missing > 0
-  || scopeSummary.duplicates > 0
-  || scopeSummary.unexpectedCalls.length > 0
+  (!isRouterScope && (
+    scopeSummary.missing > 0
+    || scopeSummary.duplicates > 0
+    || scopeSummary.unexpectedCalls.length > 0
+  ))
+  || (isRouterScope && routerSummary.status !== "pass")
   || forbiddenInvalidInScope.length > 0
+  || invalidExpectedScope
 )) {
   failed = true;
 }
@@ -847,17 +946,23 @@ if (failed) {
     console.error(`Scoped validation is unavailable for --scope ${checkScope}.`);
   }
   if (!scopedUnavailable && scopeSummary.missing > 0) {
-    console.error(`Missing ${scopeSummary.missing} required subagent task call${scopeSummary.missing === 1 ? "" : "s"} in scope.`);
+    if (!isRouterScope) {
+      console.error(`Missing ${scopeSummary.missing} required subagent task call${scopeSummary.missing === 1 ? "" : "s"} in scope.`);
+    }
   }
-  if (!scopedUnavailable && scopeSummary.duplicates > 0) {
+  if (!scopedUnavailable && !isRouterScope && scopeSummary.duplicates > 0) {
     console.error(`Found ${scopeSummary.duplicates} duplicated required subagent task target${scopeSummary.duplicates === 1 ? "" : "s"} in scope.`);
   }
-  if (!scopedUnavailable && scopeSummary.unexpectedCalls.length > 0) {
+  if (!scopedUnavailable && !isRouterScope && scopeSummary.unexpectedCalls.length > 0) {
     console.error(`Found ${scopeSummary.unexpectedCalls.length} unexpected task call${scopeSummary.unexpectedCalls.length === 1 ? "" : "s"} in scope.`);
   }
   if (!scopedUnavailable && forbiddenInvalidInScope.length > 0) {
     const tools = Array.from(new Set(forbiddenInvalidInScope.map((call) => call.tool))).join(",");
     console.error(`Found ${forbiddenInvalidInScope.length} forbidden unavailable tool attempt${forbiddenInvalidInScope.length === 1 ? "" : "s"} in ping-pong-plan scope: ${tools}. Use ping-ping-build for implementation.`);
+  }
+  if (!scopedUnavailable && isRouterScope && routerInvalidInScope.length > 0) {
+    const tools = Array.from(new Set(routerInvalidInScope.map((call) => call.tool))).join(",");
+    console.error(`Found ${routerInvalidInScope.length} forbidden unavailable tool attempt${routerInvalidInScope.length === 1 ? "" : "s"} in subagent-router scope: ${tools}. The router must stay read-only.`);
   }
   process.exit(1);
 }
@@ -890,6 +995,11 @@ elif [[ "$failures_only" -eq 1 ]]; then
     /^CHECK_SCOPE=/ ||
     /^SCOPE_AGENT=/ ||
     /^MIXED_PRIMARY_AGENT status=fail/ ||
+    /^ROUTER_SUBAGENT / ||
+    /^ROUTER_EXPECTED .*status=fail/ ||
+    /^ROUTER_TASK / ||
+    /^ROUTER_FORBIDDEN_TOOL_ATTEMPT / ||
+    /^ROUTER_SUMMARY / ||
     /^SUBAGENT .*status=missing/ ||
     /^DUPLICATE_SUBAGENT / ||
     /^UNEXPECTED_TASK / ||
@@ -903,6 +1013,8 @@ elif [[ "$failures_only" -eq 1 ]]; then
   awk '
     /^Warning:/ ||
     /^Session mixed primary workflow agents:/ ||
+    /^Router scope / ||
+    /^--expect-subagent / ||
     /^Scoped validation is unavailable/ ||
     /^Missing / ||
     /^Found / {

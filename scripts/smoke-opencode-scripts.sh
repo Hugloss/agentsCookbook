@@ -33,16 +33,16 @@ const fs = require("fs");
 const path = process.argv[1];
 const promptBase = process.argv[2];
 const mapping = [
-  ["plan-improver-model2", "plan-improver.md"],
-  ["plan-improver-model3", "plan-improver.md"],
-  ["plan-validation-designer", "plan-validation-designer.md"],
-  ["plan-red-team-gate", "plan-red-team-gate.md"],
-  ["plan-implementation-simulator", "plan-implementation-simulator.md"],
-  ["plan-fact-auditor", "plan-fact-auditor.md"],
-  ["plan-contract-checker", "plan-contract-checker.md"],
+  ["plan-improver-model2", "plan-improver.md", "plan-improvement-scout"],
+  ["plan-improver-model3", "plan-improver.md", "plan-improvement-scout"],
+  ["plan-validation-designer", "plan-validation-designer.md", "validation-gap-finder"],
+  ["plan-red-team-gate", "plan-red-team-gate.md", "red-team-leftover-gate"],
+  ["plan-implementation-simulator", "plan-implementation-simulator.md", "implementation-dry-run"],
+  ["plan-fact-auditor", "plan-fact-auditor.md", "fact-grounding-auditor"],
+  ["plan-contract-checker", "plan-contract-checker.md", "plan-contract-guard"],
 ];
 const agent = {};
-for (const [name, promptFile] of mapping) {
+for (const [name, promptFile, skillName] of mapping) {
   agent[name] = {
     mode: "subagent",
     prompt: `{file:${promptBase}/${promptFile}}`,
@@ -54,6 +54,10 @@ for (const [name, promptFile] of mapping) {
       grep: "allow",
       glob: "allow",
       list: "allow",
+      skill: {
+        "*": "deny",
+        [skillName]: "allow",
+      },
     },
   };
 }
@@ -77,7 +81,9 @@ pass "link_dry_run"
 "$repo_root/scripts/link-opencode-local.sh" --global-dir "$global_dir" >/dev/null
 assert_symlink_target "agent_ping_pong_plan_link" "$global_dir/agents/ping-pong-plan.md" "$repo_root/.opencode/agents/ping-pong-plan.md"
 assert_symlink_target "agent_ping_ping_build_link" "$global_dir/agents/ping-ping-build.md" "$repo_root/.opencode/agents/ping-ping-build.md"
+assert_symlink_target "agent_subagent_router_link" "$global_dir/agents/subagent-router.md" "$repo_root/.opencode/agents/subagent-router.md"
 assert_symlink_target "prompt_plan_improver_link" "$global_dir/prompts/plan-improver.md" "$repo_root/.opencode/prompts/plan-improver.md"
+assert_symlink_target "skill_plan_improvement_scout_link" "$global_dir/skills/plan-improvement-scout" "$repo_root/.opencode/skills/plan-improvement-scout"
 
 "$repo_root/scripts/link-opencode-local.sh" --global-dir "$global_dir" | grep 'status=already_correct' >/dev/null
 pass "link_idempotent"
@@ -116,6 +122,8 @@ ln -s -- "$temp_root" "$unlink_global/prompts/unrelated.md"
 [ -f "$unlink_global/agents/ping-pong-plan.md" ] || fail "unlink_preserves_real_file"
 [ -L "$unlink_global/prompts/unrelated.md" ] || fail "unlink_preserves_unrelated_symlink"
 [ ! -e "$unlink_global/agents/ping-ping-build.md" ] && [ ! -L "$unlink_global/agents/ping-ping-build.md" ] || fail "unlink_removes_cookbook_agent"
+[ ! -e "$unlink_global/agents/subagent-router.md" ] && [ ! -L "$unlink_global/agents/subagent-router.md" ] || fail "unlink_removes_router_agent"
+[ ! -e "$unlink_global/skills/plan-improvement-scout" ] && [ ! -L "$unlink_global/skills/plan-improvement-scout" ] || fail "unlink_removes_cookbook_skill"
 pass "unlink_preserves_unrelated_paths"
 
 "$repo_root/scripts/unlink-opencode-local.sh" --global-dir "$unlink_global" >/dev/null

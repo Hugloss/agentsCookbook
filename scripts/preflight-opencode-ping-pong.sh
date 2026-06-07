@@ -9,8 +9,10 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/preflight-opencode-ping-pong.sh [--global-dir DIR] [--prompt-base PATH] [--quick] [target-repo]
 
-Run read-only checks before starting a long ping-pong-plan or ping-ping-build
-OpenCode session. The target repo defaults to the current directory.
+Run read-only checks before starting a long ping-pong-plan, ping-ping-build,
+or one-off subagent-router OpenCode session. The target repo defaults to the
+current directory. Checks global agents, prompts, skills, target reviewer
+config, and effective tools.
 
 Options:
   --global-dir DIR   OpenCode config dir. Defaults to ${XDG_CONFIG_HOME:-$HOME/.config}/opencode.
@@ -31,7 +33,7 @@ debug_retry_sleep="${OPENCODE_PREFLIGHT_RETRY_SLEEP:-1}"
 
 remediation_for() {
   case "$1" in
-    global_agent_*|global_prompt_*)
+    global_agent_*|global_prompt_*|global_skill_*)
       printf 'REMEDY check=%s action=run_link_script command=scripts/link-opencode-local.sh\n' "$1"
       ;;
     target_opencode_json_exists)
@@ -168,9 +170,11 @@ check_debug_prompt() {
     | node -e '
 const fs = require("fs");
 const raw = fs.readFileSync(0, "utf8");
+const jsonStart = raw.indexOf("{");
 let data;
 try {
-  data = JSON.parse(raw);
+  if (jsonStart === -1) throw new Error("missing JSON object");
+  data = JSON.parse(raw.slice(jsonStart));
 } catch (error) {
   console.error(`debug JSON parse failed: ${error.message}`);
   process.exit(2);
@@ -211,9 +215,11 @@ check_primary_debug_tools() {
 const fs = require("fs");
 const expectedMode = process.argv[1];
 const raw = fs.readFileSync(0, "utf8");
+const jsonStart = raw.indexOf("{");
 let data;
 try {
-  data = JSON.parse(raw);
+  if (jsonStart === -1) throw new Error("missing JSON object");
+  data = JSON.parse(raw.slice(jsonStart));
 } catch (error) {
   console.error(`debug JSON parse failed: ${error.message}`);
   process.exit(2);
@@ -227,7 +233,7 @@ function expect(tool, expected) {
   }
 }
 if (expectedMode === "planning") {
-  for (const tool of ["read", "grep", "glob", "task"]) expect(tool, true);
+  for (const tool of ["read", "grep", "glob", "task", "skill"]) expect(tool, true);
   for (const tool of ["edit", "write", "bash", "todowrite"]) expect(tool, false);
   const requiredPromptText = [
     "Absolute Plan-Only Contract:",
@@ -251,8 +257,21 @@ if (expectedMode === "planning") {
     bad.push(`ambiguous_prompt_text=${presentForbiddenText.join("|")}`);
   }
 } else if (expectedMode === "build") {
-  for (const tool of ["read", "grep", "glob", "task", "edit", "write", "bash"]) expect(tool, true);
+  for (const tool of ["read", "grep", "glob", "task", "edit", "write", "bash", "skill"]) expect(tool, true);
   expect("todowrite", false);
+} else if (expectedMode === "router") {
+  for (const tool of ["read", "grep", "glob", "task"]) expect(tool, true);
+  for (const tool of ["edit", "write", "bash", "todowrite", "skill"]) expect(tool, false);
+  const requiredPromptText = [
+    "You are the Subagent Router.",
+    "exactly one reviewer subagent",
+    "Allowed Task Calls:",
+    "subagent_type",
+  ];
+  const missingPromptText = requiredPromptText.filter((needle) => !prompt.includes(needle));
+  if (missingPromptText.length > 0) {
+    bad.push(`missing_prompt_text=${missingPromptText.join("|")}`);
+  }
 } else {
   console.error(`unknown expected mode: ${expectedMode}`);
   process.exit(2);
@@ -284,9 +303,11 @@ check_reviewer_debug() {
     | node -e '
 const fs = require("fs");
 const raw = fs.readFileSync(0, "utf8");
+const jsonStart = raw.indexOf("{");
 let data;
 try {
-  data = JSON.parse(raw);
+  if (jsonStart === -1) throw new Error("missing JSON object");
+  data = JSON.parse(raw.slice(jsonStart));
 } catch (error) {
   console.error(`debug JSON parse failed: ${error.message}`);
   process.exit(2);
@@ -297,6 +318,9 @@ for (const tool of ["edit", "bash", "task"]) {
   if (tools[tool] !== false) {
     badTools.push(`${tool}=${tools[tool]}`);
   }
+}
+if (tools.skill !== true) {
+  badTools.push(`skill=${tools.skill}`);
 }
 const prompt = String(data.prompt || "");
 if (badTools.length > 0) {
@@ -384,6 +408,7 @@ agents_dir="$global_dir/agents"
 prompts_dir="$global_dir/prompts"
 agent_src_dir="$repo_root/.opencode/agents"
 prompt_src_dir="$repo_root/.opencode/prompts"
+skill_src_dir="$repo_root/.opencode/skills"
 target_config="$target_dir/opencode.json"
 
 info "repo_root=$repo_root"
@@ -407,11 +432,19 @@ else
   fi
 fi
 
-check_symlink_target "global_agent_ping_pong_plan" "$agents_dir/ping-pong-plan.md" "$agent_src_dir/ping-pong-plan.md"
-check_symlink_target "global_agent_ping_ping_build" "$agents_dir/ping-ping-build.md" "$agent_src_dir/ping-ping-build.md"
+for agent_file in $AC_PRIMARY_AGENT_FILES; do
+  agent_name="${agent_file%.md}"
+  agent_check_name="${agent_name//-/_}"
+  check_symlink_target "global_agent_$agent_check_name" "$agents_dir/$agent_file" "$agent_src_dir/$agent_file"
+done
 
 for prompt_name in $AC_PROMPT_FILES; do
   check_symlink_target "global_prompt_${prompt_name%.md}" "$prompts_dir/$prompt_name" "$prompt_src_dir/$prompt_name"
+done
+
+skills_dir="$global_dir/skills"
+for skill_name in $AC_SKILL_NAMES; do
+  check_symlink_target "global_skill_$skill_name" "$skills_dir/$skill_name" "$skill_src_dir/$skill_name"
 done
 
 if [ -f "$target_config" ]; then
@@ -426,20 +459,20 @@ const fs = require("fs");
 const path = process.argv[1];
 const promptBase = process.argv[2];
 const required = [
-  ["plan-improver-model2", "plan-improver.md"],
-  ["plan-improver-model3", "plan-improver.md"],
-  ["plan-validation-designer", "plan-validation-designer.md"],
-  ["plan-red-team-gate", "plan-red-team-gate.md"],
-  ["plan-implementation-simulator", "plan-implementation-simulator.md"],
-  ["plan-fact-auditor", "plan-fact-auditor.md"],
-  ["plan-contract-checker", "plan-contract-checker.md"],
+  ["plan-improver-model2", "plan-improver.md", "plan-improvement-scout"],
+  ["plan-improver-model3", "plan-improver.md", "plan-improvement-scout"],
+  ["plan-validation-designer", "plan-validation-designer.md", "validation-gap-finder"],
+  ["plan-red-team-gate", "plan-red-team-gate.md", "red-team-leftover-gate"],
+  ["plan-implementation-simulator", "plan-implementation-simulator.md", "implementation-dry-run"],
+  ["plan-fact-auditor", "plan-fact-auditor.md", "fact-grounding-auditor"],
+  ["plan-contract-checker", "plan-contract-checker.md", "plan-contract-guard"],
 ];
 const data = JSON.parse(fs.readFileSync(path, "utf8"));
 const agents = data.agent || {};
 const agentNames = Object.keys(agents);
 const missing = [];
 const bad = [];
-for (const [name, promptFile] of required) {
+for (const [name, promptFile, skillName] of required) {
   const agent = agents[name];
   if (!agent) {
     missing.push(name);
@@ -455,6 +488,15 @@ for (const [name, promptFile] of required) {
   for (const tool of ["read", "grep", "glob", "list"]) {
     if (permission[tool] !== "allow") bad.push(`${name}.permission.${tool}=${permission[tool]}`);
   }
+  const skill = permission.skill || {};
+  if (typeof skill !== "object" || Array.isArray(skill)) {
+    bad.push(`${name}.permission.skill=${JSON.stringify(skill)}`);
+  } else {
+    if (skill["*"] !== "deny") bad.push(`${name}.permission.skill.*=${skill["*"]}`);
+    if (skill[skillName] !== "allow") bad.push(`${name}.permission.skill.${skillName}=${skill[skillName]}`);
+    const extraSkillRules = Object.keys(skill).filter((rule) => rule !== "*" && rule !== skillName);
+    if (extraSkillRules.length > 0) bad.push(`${name}.permission.skill.extra=${extraSkillRules.join(",")}`);
+  }
 }
 const extra = agentNames.filter((name) => !required.some(([requiredName]) => requiredName === name));
 if (missing.length || bad.length || extra.length) {
@@ -464,9 +506,9 @@ if (missing.length || bad.length || extra.length) {
   process.exit(1);
 }
 ' "$target_config" "$prompt_base"; then
-    pass "target_reviewer_config" "required=7 extra=0 prompt_base=$prompt_base"
+    pass "target_reviewer_config" "required=7 extra=0 prompt_base=$prompt_base skills=scoped"
   else
-    fail "target_reviewer_config" "path=$target_config expected_exact_seven_global_prompt_reviewers"
+    fail "target_reviewer_config" "path=$target_config expected_exact_seven_global_prompt_reviewers_with_scoped_skills"
   fi
 fi
 
@@ -477,6 +519,8 @@ else
   check_primary_debug_tools "$target_dir" "ping-pong-plan" "planning"
   check_debug_prompt "$target_dir" "ping-ping-build" "debug_ping_ping_build_prompt"
   check_primary_debug_tools "$target_dir" "ping-ping-build" "build"
+  check_debug_prompt "$target_dir" "subagent-router" "debug_subagent_router_prompt"
+  check_primary_debug_tools "$target_dir" "subagent-router" "router"
 
   while read -r reviewer_name prompt_name; do
     [ -n "$reviewer_name" ] || continue

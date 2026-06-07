@@ -3,6 +3,7 @@
 AC_PRIMARY_AGENT_FILES="
 ping-ping-build.md
 ping-pong-plan.md
+subagent-router.md
 "
 
 AC_PROMPT_FILES="
@@ -12,6 +13,15 @@ plan-implementation-simulator.md
 plan-improver.md
 plan-red-team-gate.md
 plan-validation-designer.md
+"
+
+AC_SKILL_NAMES="
+fact-grounding-auditor
+implementation-dry-run
+plan-contract-guard
+plan-improvement-scout
+red-team-leftover-gate
+validation-gap-finder
 "
 
 AC_REVIEWER_PROMPT_MAP="

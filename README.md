@@ -32,11 +32,14 @@ The script creates absolute symlink entries:
 
 <global>/prompts/*.md
   -> <agentsCookbook>/.opencode/prompts/*.md
+
+<global>/skills/*/
+  -> <agentsCookbook>/.opencode/skills/*/
 ```
 
-The `agents` and `prompts` directories stay as real directories so existing global OpenCode files can coexist. Existing files are preserved by default; pass `--force` only when you want non-matching destinations moved to timestamped backups before linking.
+The `agents`, `prompts`, and `skills` directories stay as real directories so existing global OpenCode files can coexist. Existing files are preserved by default; pass `--force` only when you want non-matching destinations moved to timestamped backups before linking.
 
-Then copy `.opencode/examples/opencode.local-symlink.example.json` to a target repo's `opencode.json`, or manually merge its `agent` block into an existing target config. The example defines only the seven prompt-backed reviewer subagents. It does not define primary agents; OpenCode discovers `ping-pong-plan` and `ping-ping-build` from the global `agents/*.md` symlinks.
+Then copy `.opencode/examples/opencode.local-symlink.example.json` to a target repo's `opencode.json`, or manually merge its `agent` block into an existing target config. The example defines only the seven prompt-backed reviewer subagents. It does not define primary agents; OpenCode discovers `ping-pong-plan`, `ping-ping-build`, and `subagent-router` from the global `agents/*.md` symlinks.
 
 To remove the cookbook global symlinks:
 
@@ -57,7 +60,7 @@ scripts/link-opencode-local.sh --dry-run
 scripts/preflight-opencode-ping-pong.sh /path/to/target-repo
 ```
 
-The preflight script is read-only. It checks that the global cookbook symlinks point at this checkout, the target repo has the seven reviewer subagents configured with global prompt paths, the primary agent prompts contain the strict task allowlist, and reviewers are effectively read-only in OpenCode. It also fails early if other OpenCode processes are running, because concurrent sessions can cause OpenCode database checkpoint errors during debug checks. If you only want filesystem and `opencode.json` checks, use `--quick`; if you intentionally want to run full preflight anyway, set `OPENCODE_PREFLIGHT_ALLOW_RUNNING=1`.
+The preflight script is read-only. It checks that the global cookbook symlinks point at this checkout, the target repo has the seven reviewer subagents configured with global prompt paths and scoped specialty-skill access, the primary agent prompts contain their strict task rules, and reviewers are effectively read-only in OpenCode. It also fails early if other OpenCode processes are running, because concurrent sessions can cause OpenCode database checkpoint errors during debug checks. If you only want filesystem and `opencode.json` checks, use `--quick`; if you intentionally want to run full preflight anyway, set `OPENCODE_PREFLIGHT_ALLOW_RUNNING=1`.
 
 For custom config locations, keep the expected prompt base explicit:
 
@@ -65,18 +68,30 @@ For custom config locations, keep the expected prompt base explicit:
 scripts/preflight-opencode-ping-pong.sh --global-dir /path/to/opencode --prompt-base /path/to/opencode/prompts --quick /path/to/target-repo
 ```
 
-If the preflight fails after you changed links or prompts, run `scripts/link-opencode-local.sh`, restart OpenCode, and run the preflight again. If OpenCode reports a `PRAGMA wal_checkpoint` failure during preflight, close other running OpenCode sessions and rerun the check before starting the long session.
+If the preflight fails after you changed links, prompts, or skills, run `scripts/link-opencode-local.sh`, restart OpenCode, and run the preflight again. If OpenCode reports a `PRAGMA wal_checkpoint` failure during preflight, close other running OpenCode sessions and rerun the check before starting the long session.
 
 ## OpenCode Agents
 
-The required setup has two primary agents and seven reviewer subagents:
+The required setup has three primary agents and seven reviewer subagents:
 
 The primary agents are:
 
 - `ping-pong-plan` is planning-only and is discovered from the global Markdown file symlink at `<global>/agents/ping-pong-plan.md`.
 - `ping-ping-build` is implementation mode and is discovered from the global Markdown file symlink at `<global>/agents/ping-ping-build.md`.
+- `subagent-router` is a one-off read-only dispatcher discovered from the global Markdown file symlink at `<global>/agents/subagent-router.md`.
 
 Use `ping-pong-plan` when you want a plan or review without code changes. In that mode, words like "fix", "change", "update", "refactor", and "implement" mean "produce a written plan for that future work"; they do not mean edit files. Use `ping-ping-build` only when you want OpenCode to edit files. In build mode, `ping-ping-build` is the only agent allowed to change files; the seven reviewer subagents stay read-only and only provide feedback.
+
+Use `subagent-router` when you want feedback from one reviewer without writing the task payload yourself. If you name a reviewer, the router uses that exact `subagent_type`; otherwise it chooses the best-fit reviewer from your request. It calls exactly one reviewer and returns `# Subagent Router Result`; it is not a replacement for the full seven-reviewer `ping-pong-plan` or `ping-ping-build` flows.
+
+Example `subagent-router` requests:
+
+```text
+Ask plan-fact-auditor to check this plan for unsupported repo claims: <plan>
+Find missing tests and acceptance criteria in this plan: <plan>
+Review this plan for blockers and scope creep: <plan>
+Give me one reviewer opinion on this implementation plan: <plan>
+```
 
 The reviewer subagents are:
 
@@ -88,31 +103,40 @@ The reviewer subagents are:
 - `plan-fact-auditor`
 - `plan-contract-checker`
 
-The subagent prompt mapping in the example is:
+The subagent prompt and specialty-skill mapping in the example is:
 
-| Subagent | Prompt |
-| --- | --- |
-| `plan-improver-model2` | `~/.config/opencode/prompts/plan-improver.md` |
-| `plan-improver-model3` | `~/.config/opencode/prompts/plan-improver.md` |
-| `plan-validation-designer` | `~/.config/opencode/prompts/plan-validation-designer.md` |
-| `plan-red-team-gate` | `~/.config/opencode/prompts/plan-red-team-gate.md` |
-| `plan-implementation-simulator` | `~/.config/opencode/prompts/plan-implementation-simulator.md` |
-| `plan-fact-auditor` | `~/.config/opencode/prompts/plan-fact-auditor.md` |
-| `plan-contract-checker` | `~/.config/opencode/prompts/plan-contract-checker.md` |
+| Subagent | Prompt | Skill |
+| --- | --- | --- |
+| `plan-improver-model2` | `~/.config/opencode/prompts/plan-improver.md` | `plan-improvement-scout` |
+| `plan-improver-model3` | `~/.config/opencode/prompts/plan-improver.md` | `plan-improvement-scout` |
+| `plan-validation-designer` | `~/.config/opencode/prompts/plan-validation-designer.md` | `validation-gap-finder` |
+| `plan-red-team-gate` | `~/.config/opencode/prompts/plan-red-team-gate.md` | `red-team-leftover-gate` |
+| `plan-implementation-simulator` | `~/.config/opencode/prompts/plan-implementation-simulator.md` | `implementation-dry-run` |
+| `plan-fact-auditor` | `~/.config/opencode/prompts/plan-fact-auditor.md` | `fact-grounding-auditor` |
+| `plan-contract-checker` | `~/.config/opencode/prompts/plan-contract-checker.md` | `plan-contract-guard` |
 
 `plan-improver-model2` and `plan-improver-model3` intentionally share `plan-improver.md`; they differ by model/config wiring.
 
-This repo's `.opencode/agents/` and `.opencode/prompts/` files are the source of truth. Do not create competing global files at the cookbook symlink destinations, because doing so breaks the cookbook update path. If global files already exist at those paths, either keep them and do not link this cookbook there, or run the link script with `--force` so the existing paths are moved to timestamped backups before the symlinks are created.
+The specialty skills live in `.opencode/skills/`. They are concise checklists that help the existing agents find new improvement ideas, missing gaps, leftovers, validation holes, factual issues, and contract problems. Skills do not replace the prompts or the required reviewer task calls.
+
+This repo's `.opencode/agents/`, `.opencode/prompts/`, and `.opencode/skills/` files are the source of truth. Do not create competing global files at the cookbook symlink destinations, because doing so breaks the cookbook update path. If global files already exist at those paths, either keep them and do not link this cookbook there, or run the link script with `--force` so the existing paths are moved to timestamped backups before the symlinks are created.
 
 ## Troubleshooting Agent Calls
 
-`opencode debug agent ping-pong-plan` or `opencode debug agent ping-ping-build` verifies that a primary agent is loaded. It does not prove that a session invoked the reviewer subagents.
+`opencode debug agent ping-pong-plan`, `opencode debug agent ping-ping-build`, or `opencode debug agent subagent-router` verifies that a primary agent is loaded. It does not prove that a session invoked the reviewer subagents.
 
 `ping-pong-plan` must never edit files. If a request says "fix this file", "implement this", or otherwise asks for file changes, `ping-pong-plan` should still return only a written `# Final Plan`. Use `ping-ping-build` in a fresh session for actual changes. Do not solve this by granting write access to `ping-pong-plan`.
 
 If the visible answer starts with an internal draft label such as `STEP0` or omits `## Subagent Run Summary`, treat that run as incomplete. The coordinator should keep draft labels internal, call the reviewer subagents with the task tool, and return only the final `# Final Plan` answer.
 
 OpenCode task calls to subagents must include `description`, `prompt`, and `subagent_type`. If a final answer claims subagents succeeded but the session checker reports missing task calls, treat the run as invalid and rerun after fixing the prompt or config.
+
+For `subagent-router`, the same checker validates exactly one routed reviewer call in the selected scope. Use `--expect-subagent` when you asked for a specific reviewer:
+
+```sh
+scripts/check-opencode-session.sh --expect-subagent plan-fact-auditor <session-id>
+scripts/check-opencode-session.sh --expect-subagent plan-validation-designer <session-id>
+```
 
 To check the latest run for the current repo:
 
@@ -133,7 +157,7 @@ scripts/check-opencode-session.sh --failures-only <session-id>
 scripts/check-opencode-session.sh --json <session-id>
 ```
 
-By default, the checker validates the latest primary-agent segment, not the entire session history. This matters when a session was resumed with a different agent: old reviewer calls from an earlier prompt must not count as proof that the latest `ping-pong-plan` or `ping-ping-build` turn delegated correctly.
+By default, the checker validates the latest primary-agent segment, not the entire session history. This matters when a session was resumed with a different agent: old reviewer calls from an earlier prompt must not count as proof that the latest `ping-pong-plan`, `ping-ping-build`, or `subagent-router` turn delegated correctly.
 
 Use the scope options when you need a different view:
 
@@ -143,12 +167,12 @@ scripts/check-opencode-session.sh --scope latest-turn <session-id>
 scripts/check-opencode-session.sh --scope session <session-id>
 ```
 
-`latest-segment` is the default and checks from the latest `ping-pong-plan` or `ping-ping-build` switch. `latest-turn` checks only after the latest user prompt. `session` is useful for historical audit context, but it can hide later missed delegation because earlier reviewer calls are counted.
+`latest-segment` is the default and checks from the latest `ping-pong-plan`, `ping-ping-build`, or `subagent-router` switch. `latest-turn` checks only after the latest user prompt. `session` is useful for historical audit context, but it can hide later missed delegation because earlier reviewer calls are counted.
 
-The checker reports one line for each required subagent in the selected scope and exits non-zero if any required task call is missing, duplicated, if the scope used an unexpected task target such as `general` or a missing `subagent_type`, or if the same session mixed `ping-pong-plan` and `ping-ping-build`. The stable output lines are easy to grep:
+For `ping-pong-plan` and `ping-ping-build`, the checker reports one line for each required subagent in the selected scope and exits non-zero if any required task call is missing, duplicated, if the scope used an unexpected task target such as `general` or a missing `subagent_type`, or if the same session mixed `ping-pong-plan` and `ping-ping-build`. For `subagent-router`, it reports `ROUTER_SUBAGENT`, `ROUTER_EXPECTED`, and `ROUTER_SUMMARY`, and exits non-zero unless exactly one allowed reviewer was called.
 
 ```sh
-scripts/check-opencode-session.sh | rg '^SESSION_ID=|^TIMELINE_SOURCE=|^CHECK_SCOPE=|^SCOPE_|^AGENT_LOG=|^SESSION_CREATED_AGENT=|^SESSION_PRIMARY_AGENTS=|^PRIMARY_AGENT |^MIXED_PRIMARY_AGENT |^SUBAGENT |^DUPLICATE_SUBAGENT |^UNEXPECTED_TASK |^INVALID_TOOL |^FORBIDDEN_PLANNING_TOOL_ATTEMPT |^SUMMARY '
+scripts/check-opencode-session.sh | rg '^SESSION_ID=|^TIMELINE_SOURCE=|^CHECK_SCOPE=|^SCOPE_|^AGENT_LOG=|^SESSION_CREATED_AGENT=|^SESSION_PRIMARY_AGENTS=|^PRIMARY_AGENT |^MIXED_PRIMARY_AGENT |^ROUTER_|^SUBAGENT |^DUPLICATE_SUBAGENT |^UNEXPECTED_TASK |^INVALID_TOOL |^FORBIDDEN_PLANNING_TOOL_ATTEMPT |^SUMMARY '
 ```
 
 By default, the checker reads `${XDG_DATA_HOME:-$HOME/.local/share}/opencode/opencode.db` to build an accurate message, agent-switch, and task-call timeline. Use `--db PATH` for a custom database. If the database is unavailable, the checker falls back to `opencode export`; scoped validation then requires `--scope session` because export text does not reliably expose turn boundaries.

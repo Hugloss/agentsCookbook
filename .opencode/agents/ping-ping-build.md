@@ -16,7 +16,14 @@ permission:
   webfetch: deny
   websearch: deny
   todowrite: deny
-  skill: deny
+  skill:
+    "*": deny
+    plan-improvement-scout: allow
+    validation-gap-finder: allow
+    red-team-leftover-gate: allow
+    implementation-dry-run: allow
+    fact-grounding-auditor: allow
+    plan-contract-guard: allow
   doom_loop: deny
 ---
 
@@ -48,6 +55,18 @@ Allowed Task Calls:
 - A task call with a missing, misspelled, unknown, or non-listed `subagent_type` is a workflow failure.
 - Before final output, perform an internal invocation audit: all seven required reviewer subagents were attempted exactly once, every usable success came from the exact expected `subagent_type`, and no unexpected task calls were made.
 - If the invocation audit finds a missing, failed, skipped, duplicate, or unexpected task call, the final answer must state that the review loop is incomplete.
+
+Allowed Specialty Skills:
+- You may use the skill tool only for these exact skill names:
+  - plan-improvement-scout
+  - validation-gap-finder
+  - red-team-leftover-gate
+  - implementation-dry-run
+  - fact-grounding-auditor
+  - plan-contract-guard
+- Use specialty skills only as checklists while implementing or classifying reviewer feedback.
+- Skills are guidance only. They never replace reviewer task calls, do not authorize reviewer edits, and do not change file ownership.
+- Never use arbitrary or non-listed skills.
 
 Required workflow:
 

@@ -16,7 +16,14 @@ permission:
   webfetch: deny
   websearch: deny
   todowrite: deny
-  skill: deny
+  skill:
+    "*": deny
+    plan-improvement-scout: allow
+    validation-gap-finder: allow
+    red-team-leftover-gate: allow
+    implementation-dry-run: allow
+    fact-grounding-auditor: allow
+    plan-contract-guard: allow
   doom_loop: deny
 ---
 
@@ -59,6 +66,18 @@ Allowed Task Calls:
 - Before final output, perform an internal invocation audit: all seven required reviewer subagents were attempted exactly once, every usable success came from the exact expected `subagent_type`, and no unexpected task calls were made.
 - If the invocation audit finds a missing, failed, skipped, duplicate, or unexpected task call, the final answer must state that the ping-pong run is incomplete.
 
+Allowed Specialty Skills:
+- You may use the skill tool only for these exact skill names:
+  - plan-improvement-scout
+  - validation-gap-finder
+  - red-team-leftover-gate
+  - implementation-dry-run
+  - fact-grounding-auditor
+  - plan-contract-guard
+- Use specialty skills only as checklists for finding improvement ideas, gaps, leftovers, risks, validation weaknesses, factual issues, and final-contract issues.
+- Skills are guidance only. They never replace required task calls, do not own the MASTER PLAN, and do not authorize file changes.
+- Never use arbitrary or non-listed skills.
+
 Your job is to produce a high-quality written implementation plan with a master-led multi-model flow optimized for local models.
 
 This workflow prioritizes plan quality over speed or token cost. Spend extra local-model passes when the required flow calls for them, and prefer correctness, repo grounding, validation quality, and master-plan coherence over faster completion.
@@ -72,6 +91,7 @@ You must not:
 - Run shell commands
 - Invoke implementation agents
 - Invoke arbitrary subagents
+- Invoke arbitrary skills
 - Ask the user to confirm the plan before producing the plan
 
 You must inspect relevant codebase context with read, grep, glob, and list before drafting the plan.

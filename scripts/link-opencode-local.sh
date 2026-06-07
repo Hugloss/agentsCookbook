@@ -9,7 +9,7 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/link-opencode-local.sh [--dry-run] [--force] [--global-dir DIR]
 
-Create global OpenCode symlinks that point back to this agentsCookbook checkout.
+Create global OpenCode agent, prompt, and skill symlinks that point back to this agentsCookbook checkout.
 
 Options:
   --dry-run          Print planned changes without modifying the global OpenCode dir.
@@ -64,11 +64,14 @@ fi
 
 agent_src_dir="$repo_root/.opencode/agents"
 prompt_src_dir="$repo_root/.opencode/prompts"
+skill_src_dir="$repo_root/.opencode/skills"
 agents_dir="$global_dir/agents"
 prompts_dir="$global_dir/prompts"
+skills_dir="$global_dir/skills"
 
 [ -d "$agent_src_dir" ] || ac_die "source agents directory is missing: $agent_src_dir"
 [ -d "$prompt_src_dir" ] || ac_die "source prompts directory is missing: $prompt_src_dir"
+[ -d "$skill_src_dir" ] || ac_die "source skills directory is missing: $skill_src_dir"
 
 move_to_backup() {
   local path="$1"
@@ -158,6 +161,7 @@ verify_link_one() {
 ensure_real_dir "$global_dir" false
 ensure_real_dir "$agents_dir" true
 ensure_real_dir "$prompts_dir" true
+ensure_real_dir "$skills_dir" true
 
 agent_count=0
 for agent_name in $AC_PRIMARY_AGENT_FILES; do
@@ -175,12 +179,24 @@ for prompt_name in $AC_PROMPT_FILES; do
   prompt_count=$((prompt_count + 1))
 done
 
+skill_count=0
+for skill_name in $AC_SKILL_NAMES; do
+  skill_src="$skill_src_dir/$skill_name"
+  [ -f "$skill_src/SKILL.md" ] || ac_die "required skill file is missing: $skill_src/SKILL.md"
+  link_one "$skill_src" "$skills_dir/$skill_name" "Skill"
+  skill_count=$((skill_count + 1))
+done
+
 for agent_name in $AC_PRIMARY_AGENT_FILES; do
   verify_link_one "$agent_src_dir/$agent_name" "$agents_dir/$agent_name" "Agent"
 done
 
 for prompt_name in $AC_PROMPT_FILES; do
   verify_link_one "$prompt_src_dir/$prompt_name" "$prompts_dir/$prompt_name" "Prompt"
+done
+
+for skill_name in $AC_SKILL_NAMES; do
+  verify_link_one "$skill_src_dir/$skill_name" "$skills_dir/$skill_name" "Skill"
 done
 
 cat <<NEXT_STEPS
@@ -191,13 +207,15 @@ Installed global OpenCode cookbook symlinks in:
 Next steps for a target repo:
   1. Copy or merge this example into the target repo's opencode.json:
      $repo_root/.opencode/examples/opencode.local-symlink.example.json
-  2. OpenCode discovers ping-pong-plan from:
+  2. OpenCode discovers primary agents from:
      $agents_dir/ping-pong-plan.md
-     and ping-ping-build from:
      $agents_dir/ping-ping-build.md
+     $agents_dir/subagent-router.md
   3. The example config reads subagent prompts from:
      ~/.config/opencode/prompts/
+  4. OpenCode discovers specialty skills from:
+     $skills_dir/
 
-SUMMARY status=pass agents=$agent_count prompts=$prompt_count dry_run=$dry_run global_dir=$global_dir
-Linked $agent_count agent file(s) and $prompt_count prompt file(s). This script did not create or edit any opencode.json file.
+SUMMARY status=pass agents=$agent_count prompts=$prompt_count skills=$skill_count dry_run=$dry_run global_dir=$global_dir
+Linked $agent_count agent file(s), $prompt_count prompt file(s), and $skill_count skill directory symlink(s). This script did not create or edit any opencode.json file.
 NEXT_STEPS
