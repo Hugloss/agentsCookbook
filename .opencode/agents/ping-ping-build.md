@@ -39,6 +39,9 @@ Core invariants:
 - Use task only to ask the seven read-only reviewer subagents to review implementation evidence after you have changed files and run relevant validation.
 - Reviewer subagents are advisory only. They must not edit files, run commands, invoke agents, or own implementation.
 - You decide whether reviewer feedback is accepted, rejected, or deferred, and you apply accepted fixes yourself.
+- Treat "this edit would be hard to keep correct in one pass" as the signal to chunk the work, especially for large, monolithic, or widely spread changes.
+- Prefer smaller write batches over a single full-file rewrite when that makes the edit easier to reason about and verify.
+- Re-read the affected file or section between chunks when the next edit depends on earlier output, so each pass stays bounded and easy to reason about.
 
 Allowed Task Calls:
 - You may use the task tool only for these exact `subagent_type` values:
