@@ -41,6 +41,12 @@ The `agents`, `prompts`, and `skills` directories stay as real directories so ex
 
 Then copy `.opencode/examples/opencode.local-symlink.example.json` to a target repo's `opencode.json`, or manually merge its `agent` block into an existing target config. The example defines only the seven prompt-backed reviewer subagents. It does not define primary agents; OpenCode discovers `ping-pong-plan`, `ping-ping-build`, and `subagent-router` from the global `agents/*.md` symlinks.
 
+Config file roles:
+
+- Root `opencode.json` is the local cookbook development config. Keep reviewer prompts pointed at `./.opencode/prompts/...` so this checkout can be tested without depending on the global prompt paths.
+- `.opencode/examples/opencode.local-symlink.example.json` is the target-repo template. Keep reviewer prompts pointed at `~/.config/opencode/prompts/...`, or at the matching custom `--global-dir` prompt path, because target repos should read prompts through the global symlinks.
+- Do not "fix" one config by copying prompt paths from the other unless you are intentionally changing that file's role.
+
 To remove the cookbook global symlinks:
 
 ```sh
@@ -61,6 +67,12 @@ scripts/preflight-opencode-ping-pong.sh /path/to/target-repo
 ```
 
 The preflight script is read-only. It checks that the global cookbook symlinks point at this checkout, the target repo has the seven reviewer subagents configured with global prompt paths and scoped specialty-skill access, the primary agent prompts contain their strict task rules, and reviewers are effectively read-only in OpenCode. It also fails early if other OpenCode processes are running, because concurrent sessions can cause OpenCode database checkpoint errors during debug checks. If you only want filesystem and `opencode.json` checks, use `--quick`; if you intentionally want to run full preflight anyway, set `OPENCODE_PREFLIGHT_ALLOW_RUNNING=1`.
+
+When validating this cookbook checkout itself, use the local prompt base instead of the target-repo default:
+
+```sh
+scripts/preflight-opencode-ping-pong.sh --quick --prompt-base ./.opencode/prompts .
+```
 
 For custom config locations, keep the expected prompt base explicit:
 
@@ -130,6 +142,8 @@ This repo's `.opencode/agents/`, `.opencode/prompts/`, and `.opencode/skills/` f
 If the visible answer starts with an internal draft label such as `STEP0` or omits `## Subagent Run Summary`, treat that run as incomplete. The coordinator should keep draft labels internal, call the reviewer subagents with the task tool, and return only the final `# Final Plan` answer.
 
 OpenCode task calls to subagents must include `description`, `prompt`, and `subagent_type`. If a final answer claims subagents succeeded but the session checker reports missing task calls, treat the run as invalid and rerun after fixing the prompt or config.
+
+If the visible answer reports reviewer failures such as `Unknown agent type`, first check the active session agent and target directory. A session started with OpenCode's default `build` agent is not the cookbook `ping-ping-build` flow and should be replaced with a fresh `ping-ping-build`, `ping-pong-plan`, or `subagent-router` session as appropriate. Do not assume the prompt paths are wrong until `opencode debug agent <reviewer-name>` and the preflight checks fail in the same target repo.
 
 For `subagent-router`, the same checker validates exactly one routed reviewer call in the selected scope. Use `--expect-subagent` when you asked for a specific reviewer:
 
