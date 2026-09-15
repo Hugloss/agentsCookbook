@@ -7,139 +7,72 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/unlink-opencode-local.sh [--dry-run] [--global-dir DIR]
+Usage: scripts/unlink-opencode-local.sh [--dry-run] [--global-dir DIR] [--pi-agent-dir DIR] [--shared-skill-dir DIR]
 
-Remove only this agentsCookbook repo's global OpenCode agent, prompt, and skill symlinks.
-
-Options:
-  --dry-run          Print planned changes without modifying the global OpenCode dir.
-  --global-dir DIR   OpenCode config dir. Defaults to ${XDG_CONFIG_HOME:-$HOME/.config}/opencode.
-  --help             Show this help.
-
-This script never removes real files, real directories, unrelated symlinks, or any opencode.json file.
+Remove only this checkout's OpenCode/Pi agent and shared-skill symlinks.
+Real files, unrelated symlinks, settings, and configs are preserved.
 USAGE
 }
 
 dry_run=false
 global_dir_arg=""
-
+pi_agent_dir_arg=""
+shared_skill_dir_arg=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --help)
-      usage
-      exit 0
-      ;;
-    --dry-run)
-      dry_run=true
-      ;;
-    --global-dir)
-      shift
-      [ "$#" -gt 0 ] || ac_die "--global-dir requires a directory argument"
-      global_dir_arg="$1"
-      ;;
-    --*)
-      usage >&2
-      ac_die "unknown option: $1"
-      ;;
-    *)
-      usage >&2
-      ac_die "unexpected argument: $1"
-      ;;
+    --help) usage; exit 0 ;;
+    --dry-run) dry_run=true ;;
+    --global-dir) shift; [ "$#" -gt 0 ] || ac_die "--global-dir requires a directory argument"; global_dir_arg="$1" ;;
+    --pi-agent-dir) shift; [ "$#" -gt 0 ] || ac_die "--pi-agent-dir requires a directory argument"; pi_agent_dir_arg="$1" ;;
+    --shared-skill-dir) shift; [ "$#" -gt 0 ] || ac_die "--shared-skill-dir requires a directory argument"; shared_skill_dir_arg="$1" ;;
+    --*) usage >&2; ac_die "unknown option: $1" ;;
+    *) usage >&2; ac_die "unexpected argument: $1" ;;
   esac
   shift
 done
 
 repo_root="$(ac_repo_root_from_script "${BASH_SOURCE[0]}")"
-repo_opencode="$repo_root/.opencode"
-
-if [ -n "$global_dir_arg" ]; then
-  global_dir="$(ac_absolute_path "$global_dir_arg")"
-elif ! global_dir="$(ac_default_global_dir)"; then
-  ac_die "HOME is not set and --global-dir was not provided"
-fi
-
-agents_dir="$global_dir/agents"
-prompts_dir="$global_dir/prompts"
-skills_dir="$global_dir/skills"
+if [ -n "$global_dir_arg" ]; then global_dir="$(ac_absolute_path "$global_dir_arg")"; elif ! global_dir="$(ac_default_global_dir)"; then ac_die "HOME is not set and --global-dir was not provided"; fi
+if [ -n "$pi_agent_dir_arg" ]; then pi_agent_dir="$(ac_absolute_path "$pi_agent_dir_arg")"; elif ! pi_agent_dir="$(ac_default_pi_agent_dir)"; then ac_die "HOME is not set and --pi-agent-dir was not provided"; fi
+if [ -n "$shared_skill_dir_arg" ]; then shared_skill_dir="$(ac_absolute_path "$shared_skill_dir_arg")"; elif ! shared_skill_dir="$(ac_default_shared_skill_dir)"; then ac_die "HOME is not set and --shared-skill-dir was not provided"; fi
 
 removed_any=false
-
-remove_if_cookbook_symlink() {
-  local path="$1"
-  local label="$2"
-  local resolved
-
-  if [ ! -e "$path" ] && [ ! -L "$path" ]; then
-    ac_info "UNLINK type=$label status=not_present path=$path"
-    return 0
-  fi
-
-  if [ ! -L "$path" ]; then
-    ac_info "UNLINK type=$label status=preserved_not_symlink path=$path"
-    return 0
-  fi
-
+remove_owned_link() {
+  local path="$1" expected="$2" label="$3" raw resolved
+  if [ ! -e "$path" ] && [ ! -L "$path" ]; then ac_info "UNLINK type=$label status=not_present path=$path"; return 0; fi
+  if [ ! -L "$path" ]; then ac_info "UNLINK type=$label status=preserved_not_symlink path=$path"; return 0; fi
+  raw="$(readlink -- "$path" 2>/dev/null || true)"
   resolved="$(realpath -- "$path" 2>/dev/null || true)"
-  if [ -z "$resolved" ]; then
-    ac_info "UNLINK type=$label status=preserved_unresolved path=$path"
-    return 0
-  fi
-
-  case "$resolved" in
-    "$repo_opencode"|"$repo_opencode"/*)
-      if [ "$dry_run" = true ]; then
-        ac_info "UNLINK type=$label status=would_remove path=$path target=$resolved"
-      else
-        rm -- "$path"
-        ac_info "UNLINK type=$label status=removed path=$path target=$resolved"
-      fi
-      removed_any=true
-      ;;
-    *)
-      ac_info "UNLINK type=$label status=preserved_unrelated path=$path target=$resolved"
-      ;;
-  esac
-}
-
-dir_is_empty() {
-  local path="$1"
-  [ -d "$path" ] && [ ! -L "$path" ] && [ -z "$(find "$path" -mindepth 1 -maxdepth 1 -print -quit)" ]
+  if [ "$raw" != "$expected" ] && [ "$resolved" != "$expected" ]; then ac_info "UNLINK type=$label status=preserved_unrelated path=$path target=${raw:-<unresolved>}"; return 0; fi
+  if [ "$dry_run" = true ]; then ac_info "UNLINK type=$label status=would_remove path=$path target=$raw"; else rm -- "$path"; ac_info "UNLINK type=$label status=removed path=$path target=$raw"; fi
+  removed_any=true
 }
 
 remove_empty_dir() {
   local path="$1"
-
-  if dir_is_empty "$path"; then
-    if [ "$dry_run" = true ]; then
-      ac_info "DIR status=would_remove_empty path=$path"
-    else
-      rmdir -- "$path"
-      ac_info "DIR status=removed_empty path=$path"
-    fi
+  if [ -d "$path" ] && [ ! -L "$path" ] && [ -z "$(find "$path" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+    if [ "$dry_run" = true ]; then ac_info "DIR status=would_remove_empty path=$path"; else rmdir -- "$path"; ac_info "DIR status=removed_empty path=$path"; fi
     removed_any=true
-  elif [ -e "$path" ] || [ -L "$path" ]; then
-    ac_info "DIR status=preserved_non_empty_or_non_directory path=$path"
   fi
 }
 
-for agent_name in $AC_PRIMARY_AGENT_FILES; do
-  remove_if_cookbook_symlink "$agents_dir/$agent_name" "agent"
+for agent_file in $AC_AGENT_FILES; do
+  remove_owned_link "$global_dir/agents/$agent_file" "$repo_root/.opencode/agents/$agent_file" "OpenCodeAgent"
+  remove_owned_link "$pi_agent_dir/agents/$agent_file" "$repo_root/.opencode/agents/$agent_file" "PiAgent"
 done
-
-for prompt_name in $AC_PROMPT_FILES; do
-  remove_if_cookbook_symlink "$prompts_dir/$prompt_name" "prompt"
-done
-
 for skill_name in $AC_SKILL_NAMES; do
-  remove_if_cookbook_symlink "$skills_dir/$skill_name" "skill"
+  remove_owned_link "$shared_skill_dir/$skill_name" "$repo_root/.agents/skills/$skill_name" "SharedSkill"
+  # Also remove broken links left by the former layout.
+  remove_owned_link "$global_dir/skills/$skill_name" "$repo_root/.opencode/skills/$skill_name" "LegacySkill"
+done
+for prompt_name in $AC_LEGACY_PROMPT_FILES; do
+  remove_owned_link "$global_dir/prompts/$prompt_name" "$repo_root/.opencode/prompts/$prompt_name" "LegacyPrompt"
 done
 
-remove_empty_dir "$agents_dir"
-remove_empty_dir "$prompts_dir"
-remove_empty_dir "$skills_dir"
+remove_empty_dir "$global_dir/agents"
+remove_empty_dir "$pi_agent_dir/agents"
+remove_empty_dir "$shared_skill_dir"
+remove_empty_dir "$global_dir/prompts"
+remove_empty_dir "$global_dir/skills"
 
-if [ "$removed_any" = false ]; then
-  ac_info "SUMMARY status=pass removed=false global_dir=$global_dir"
-else
-  ac_info "SUMMARY status=pass removed=true dry_run=$dry_run global_dir=$global_dir"
-fi
+ac_info "SUMMARY status=pass removed=$removed_any dry_run=$dry_run"

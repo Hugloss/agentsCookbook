@@ -37,7 +37,7 @@ const BENCHMARKS = {
     {
       name: 'prompt-contract-checker',
       title: 'Prompt / Config Edit',
-      prompt: `Improve the \`plan-contract-checker\` prompt so it fails final plans with implementation-blocking open questions. Do not add another agent.`,
+      prompt: `Improve the \`plan-contract-guard\` skill so \`plan-contract-checker\` fails final plans with implementation-blocking open questions. Do not add another agent.`,
       expectedContract: 'ping-pong-plan',
     },
     {
@@ -81,6 +81,13 @@ const BENCHMARKS = {
       expectedContract: 'subagent-router',
     },
     {
+      name: 'best-fit-coverage-design',
+      title: 'Best-Fit Coverage Design',
+      prompt: `Review whether these tests follow real usage and would catch realistic failures instead of merely executing covered lines: <test summary>.`,
+      expectedSubagent: 'plan-coverage-reviewer',
+      expectedContract: 'subagent-router',
+    },
+    {
       name: 'best-fit-risk-review',
       title: 'Best-Fit Risk Review',
       prompt: `Review this plan for blockers, hidden assumptions, and scope creep: <plan text>.`,
@@ -97,7 +104,7 @@ const BENCHMARKS = {
     {
       name: 'full-flow-requested',
       title: 'Full Flow Requested',
-      prompt: `Run the full seven-reviewer ping-pong planning flow on this request.`,
+      prompt: `Run the full eight-reviewer ping-pong planning flow on this request.`,
       expectedNoSubagent: true,
       expectedContract: 'subagent-router',
     },

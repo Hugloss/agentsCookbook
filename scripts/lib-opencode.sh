@@ -6,16 +6,21 @@ ping-pong-plan.md
 subagent-router.md
 "
 
-AC_PROMPT_FILES="
-plan-contract-checker.md
-plan-fact-auditor.md
-plan-implementation-simulator.md
-plan-improver.md
-plan-red-team-gate.md
+AC_REVIEWER_AGENT_FILES="
+plan-coverage-reviewer.md
+plan-improver-model2.md
+plan-improver-model3.md
 plan-validation-designer.md
+plan-red-team-gate.md
+plan-implementation-simulator.md
+plan-fact-auditor.md
+plan-contract-checker.md
 "
 
+AC_AGENT_FILES="$AC_PRIMARY_AGENT_FILES$AC_REVIEWER_AGENT_FILES"
+
 AC_SKILL_NAMES="
+coverage-design-review
 fact-grounding-auditor
 implementation-dry-run
 plan-contract-guard
@@ -24,14 +29,26 @@ red-team-leftover-gate
 validation-gap-finder
 "
 
-AC_REVIEWER_PROMPT_MAP="
-plan-improver-model2 plan-improver.md
-plan-improver-model3 plan-improver.md
-plan-validation-designer plan-validation-designer.md
-plan-red-team-gate plan-red-team-gate.md
-plan-implementation-simulator plan-implementation-simulator.md
-plan-fact-auditor plan-fact-auditor.md
-plan-contract-checker plan-contract-checker.md
+AC_REVIEWER_SKILL_MAP="
+plan-coverage-reviewer coverage-design-review liteLLM/gpt-oss
+plan-improver-model2 plan-improvement-scout liteLLM/gpt-oss
+plan-improver-model3 plan-improvement-scout liteLLM/gpt-oss
+plan-validation-designer validation-gap-finder liteLLM/gpt-oss
+plan-red-team-gate red-team-leftover-gate liteLLM/gpt-oss
+plan-implementation-simulator implementation-dry-run liteLLM/gpt-oss
+plan-fact-auditor fact-grounding-auditor liteLLM/gemma4
+plan-contract-checker plan-contract-guard liteLLM/gemma4
+"
+
+# Removed source files retained only so installers can clean up cookbook-owned
+# symlinks from installations made by older versions.
+AC_LEGACY_PROMPT_FILES="
+plan-contract-checker.md
+plan-fact-auditor.md
+plan-implementation-simulator.md
+plan-improver.md
+plan-red-team-gate.md
+plan-validation-designer.md
 "
 
 ac_die() {
@@ -82,6 +99,26 @@ ac_default_data_dir() {
   fi
   if [ -n "${HOME:-}" ]; then
     printf '%s/.local/share/opencode\n' "$HOME"
+    return 0
+  fi
+  return 1
+}
+
+ac_default_pi_agent_dir() {
+  if [ -n "${PI_CODING_AGENT_DIR:-}" ]; then
+    printf '%s\n' "$PI_CODING_AGENT_DIR"
+    return 0
+  fi
+  if [ -n "${HOME:-}" ]; then
+    printf '%s/.pi/agent\n' "$HOME"
+    return 0
+  fi
+  return 1
+}
+
+ac_default_shared_skill_dir() {
+  if [ -n "${HOME:-}" ]; then
+    printf '%s/.agents/skills\n' "$HOME"
     return 0
   fi
   return 1

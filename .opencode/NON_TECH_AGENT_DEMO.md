@@ -41,9 +41,10 @@ flowchart LR
 | Friendly name | Agent ID | What it adds |
 | --- | --- | --- |
 | Lead planner | `ping-pong-plan` | Owns the final plan and decides what feedback to use. |
-| Second opinion | `plan-improver-model2` | Looks for missing details or a better implementation path. |
-| Third opinion | `plan-improver-model3` | Gives another independent review from a different model. |
+| Gap review | `plan-improver-model2` | Finds missing work, leftovers, ownership, and checks needed before implementation. |
+| Alternative review | `plan-improver-model3` | Challenges assumptions and proposes a genuinely different route. |
 | Validation designer | `plan-validation-designer` | Defines how to prove the work is complete. |
+| Coverage design reviewer | `plan-coverage-reviewer` | Checks whether tests resemble real usage and catch realistic failures. |
 | Risk reviewer | `plan-red-team-gate` | Finds blockers, hidden risks, and unnecessary scope. |
 | Implementation dry run | `plan-implementation-simulator` | Checks whether an engineer can follow the plan. |
 | Fact checker | `plan-fact-auditor` | Checks that repo claims are real or clearly labeled as assumptions. |
@@ -76,7 +77,8 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     Plan[Draft plan] --> Validation[Can we prove it works?]
-    Validation --> Risk[What could go wrong?]
+    Validation --> Coverage[Would the tests catch real failures?]
+    Coverage --> Risk[What could go wrong?]
     Risk --> Feasible[Can an engineer follow it?]
     Feasible --> Facts[Is it based on real repo facts?]
     Facts --> Contract[Does the final answer meet the rules?]
@@ -127,7 +129,15 @@ flowchart LR
 
 **Takeaway:** the plan includes clear pass/fail checks.
 
-### 5. Risk Reviewer
+### 5. Coverage Design Reviewer
+
+**Called when:** validation has been designed.
+
+**Sample result:** "Test the form through its normal page flow and assert the visible success or error state; do not only assert that a mocked submit function was called."
+
+**Takeaway:** executed lines are not confused with confidence in real behavior.
+
+### 6. Risk Reviewer
 
 **Called when:** validation has been added.
 
@@ -135,7 +145,7 @@ flowchart LR
 
 **Takeaway:** the process prevents accidental overbuilding.
 
-### 6. Implementation Dry Run
+### 7. Implementation Dry Run
 
 **Called when:** the plan is close to final.
 
@@ -143,7 +153,7 @@ flowchart LR
 
 **Takeaway:** unclear instructions are caught before handoff.
 
-### 7. Fact Checker
+### 8. Fact Checker
 
 **Called when:** the plan has passed the implementation dry run.
 
@@ -151,7 +161,7 @@ flowchart LR
 
 **Takeaway:** the final plan separates known facts from guesses.
 
-### 8. Final Quality Checker
+### 9. Final Quality Checker
 
 **Called last:** immediately before the final plan is returned.
 
@@ -170,7 +180,7 @@ flowchart LR
 1. "We start with a familiar request: add a contact page."
 2. "The lead planner drafts the implementation plan before anyone changes code."
 3. "Two independent reviewers look for missing details, like reusing an existing form component or checking mobile behavior."
-4. "Then quality gates ask practical questions: Can we prove it works? What could go wrong? Can an engineer follow the steps? Are claims based on real repo facts? Does the final answer meet our rules?"
+4. "Then quality gates ask practical questions: Can we prove it works? Would the tests catch realistic failures? What could go wrong? Can an engineer follow the steps? Are claims based on real repo facts? Does the final answer meet our rules?"
 5. "The final output is one implementation plan with steps, validation, risks, rollback, and no blocking open questions."
 
 ## Important Notes

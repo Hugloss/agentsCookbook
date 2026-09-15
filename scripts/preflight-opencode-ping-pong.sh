@@ -7,544 +7,131 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/preflight-opencode-ping-pong.sh [--global-dir DIR] [--prompt-base PATH] [--quick] [target-repo]
+Usage: scripts/preflight-opencode-ping-pong.sh [--global-dir DIR] [--shared-skill-dir DIR] [--quick] [target-repo]
 
-Run read-only checks before starting a long ping-pong-plan, ping-ping-build,
-or one-off subagent-router OpenCode session. The target repo defaults to the
-current directory. Checks global agents, prompts, skills, target reviewer
-config, and effective tools.
-
-Options:
-  --global-dir DIR   OpenCode config dir. Defaults to ${XDG_CONFIG_HOME:-$HOME/.config}/opencode.
-  --prompt-base PATH Expected reviewer prompt base in target opencode.json.
-                      Defaults to ~/.config/opencode/prompts.
-  --quick            Skip opencode debug checks and running-process checks.
-  -h, --help         Show this help.
-
-This script does not create, edit, or remove files.
-Set OPENCODE_PREFLIGHT_ALLOW_RUNNING=1 to continue even if other OpenCode
-processes are running.
+Read-only OpenCode checks for all eleven agents, seven shared skills, permissions,
+reviewer mappings, and the runtime delegation contract. No target opencode.json
+reviewer block is required.
 USAGE
 }
 
 failures=0
-debug_retries="${OPENCODE_PREFLIGHT_RETRIES:-3}"
-debug_retry_sleep="${OPENCODE_PREFLIGHT_RETRY_SLEEP:-1}"
-
-remediation_for() {
-  case "$1" in
-    global_agent_*|global_prompt_*|global_skill_*)
-      printf 'REMEDY check=%s action=run_link_script command=scripts/link-opencode-local.sh\n' "$1"
-      ;;
-    target_opencode_json_exists)
-      printf 'REMEDY check=%s action=copy_or_merge_example example=.opencode/examples/opencode.local-symlink.example.json\n' "$1"
-      ;;
-    target_reviewer_config)
-      printf 'REMEDY check=%s action=merge_exact_reviewer_agent_block example=.opencode/examples/opencode.local-symlink.example.json\n' "$1"
-      ;;
-    opencode_running_processes)
-      printf 'REMEDY check=%s action=close_running_opencode_or_use_quick quick_flag=--quick override=OPENCODE_PREFLIGHT_ALLOW_RUNNING=1\n' "$1"
-      ;;
-    debug_*_tools|debug_*_prompt|debug_plan-*)
-      printf 'REMEDY check=%s action=restart_opencode_after_linking_then_rerun_preflight\n' "$1"
-      ;;
-  esac
-}
-
-pass() {
-  printf 'CHECK name=%s status=pass %s\n' "$1" "${2:-}"
-}
-
-fail() {
-  failures=$((failures + 1))
-  printf 'CHECK name=%s status=fail %s\n' "$1" "${2:-}"
-  remediation_for "$1"
-}
-
-info() {
-  printf 'INFO %s\n' "$*"
-}
-
-check_command() {
-  local command_name="$1"
-  if command -v "$command_name" >/dev/null 2>&1; then
-    pass "command_$command_name" "path=$(command -v "$command_name")"
-  else
-    fail "command_$command_name" "missing"
-  fi
-}
-
-check_running_opencode_processes() {
-  local running_lines count
-
-  running_lines="$(ps -ef 2>/dev/null \
-    | grep '[o]pencode' \
-    | grep -v 'opencode debug agent' \
-    | grep -v 'opencode export' \
-    | grep -v 'opencode session list' \
-    | grep -v 'scripts/preflight-opencode-ping-pong.sh' \
-    || true)"
-
-  if [ -z "$running_lines" ]; then
-    pass "opencode_running_processes" "count=0"
-    return 0
-  fi
-
-  count="$(printf '%s\n' "$running_lines" | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')"
-  if [ "${OPENCODE_PREFLIGHT_ALLOW_RUNNING:-}" = "1" ]; then
-    pass "opencode_running_processes" "count=$count override=OPENCODE_PREFLIGHT_ALLOW_RUNNING"
-    printf '%s\n' "$running_lines" | sed 's/^/INFO running_opencode_process=/' >&2
-    return 0
-  fi
-
-  fail "opencode_running_processes" "count=$count close_running_opencode_or_set_OPENCODE_PREFLIGHT_ALLOW_RUNNING=1"
-  printf '%s\n' "$running_lines" | sed 's/^/INFO running_opencode_process=/' >&2
-  return 1
-}
-
-check_symlink_target() {
-  local name="$1"
-  local dest="$2"
-  local expected="$3"
-  local resolved
-
-  if [ ! -L "$dest" ]; then
-    fail "$name" "path=$dest expected_symlink_to=$expected"
-    return
-  fi
-
-  resolved="$(realpath -- "$dest" 2>/dev/null || true)"
-  if [ "$resolved" = "$expected" ]; then
-    pass "$name" "path=$dest target=$expected"
-  else
-    fail "$name" "path=$dest resolved=${resolved:-<unresolved>} expected=$expected"
-  fi
-}
-
-run_debug_agent() {
-  local target_dir="$1"
-  local agent_name="$2"
-  local attempt=1
-  local output status
-
-  while [ "$attempt" -le "$debug_retries" ]; do
-    output="$(cd -- "$target_dir" && opencode debug agent "$agent_name" 2>&1)"
-    status="$?"
-    if [ "$status" -eq 0 ]; then
-      printf '%s\n' "$output"
-      return 0
-    fi
-
-    if [ "$attempt" -lt "$debug_retries" ]; then
-      printf 'INFO debug_retry agent=%s attempt=%s status=%s\n' "$agent_name" "$attempt" "$status" >&2
-      sleep "$debug_retry_sleep"
-    fi
-
-    attempt=$((attempt + 1))
-  done
-
-  case "$output" in
-    *"PRAGMA wal_checkpoint"*)
-      output="$output
-Hint: OpenCode reported a database checkpoint failure. Close other running OpenCode sessions and rerun this preflight."
-      ;;
-  esac
-
-  printf '%s\n' "$output"
-  return "$status"
-}
-
-check_debug_prompt() {
-  local target_dir="$1"
-  local agent_name="$2"
-  local check_name="$3"
-  local output
-
-  if ! output="$(run_debug_agent "$target_dir" "$agent_name")"; then
-    fail "$check_name" "agent=$agent_name debug_failed"
-    printf '%s\n' "$output" >&2
-    return
-  fi
-
-  if printf '%s\n' "$output" \
-    | node -e '
-const fs = require("fs");
-const raw = fs.readFileSync(0, "utf8");
-const jsonStart = raw.indexOf("{");
-let data;
-try {
-  if (jsonStart === -1) throw new Error("missing JSON object");
-  data = JSON.parse(raw.slice(jsonStart));
-} catch (error) {
-  console.error(`debug JSON parse failed: ${error.message}`);
-  process.exit(2);
-}
-const prompt = String(data.prompt || "");
-const required = [
-  "Allowed Task Calls:",
-  "Never call `general`",
-  "internal invocation audit",
-  "subagent_type",
-];
-const missing = required.filter((needle) => !prompt.includes(needle));
-if (missing.length > 0) {
-  console.error(`missing prompt text: ${missing.join(", ")}`);
-  process.exit(1);
-}
-'; then
-    pass "$check_name" "agent=$agent_name"
-  else
-    fail "$check_name" "agent=$agent_name missing_required_prompt_text"
-  fi
-}
-
-check_primary_debug_tools() {
-  local target_dir="$1"
-  local agent_name="$2"
-  local expected_mode="$3"
-  local output
-
-  if ! output="$(run_debug_agent "$target_dir" "$agent_name")"; then
-    fail "debug_${agent_name}_tools" "agent=$agent_name debug_failed"
-    printf '%s\n' "$output" >&2
-    return
-  fi
-
-  if printf '%s\n' "$output" \
-    | node -e '
-const fs = require("fs");
-const expectedMode = process.argv[1];
-const raw = fs.readFileSync(0, "utf8");
-const jsonStart = raw.indexOf("{");
-let data;
-try {
-  if (jsonStart === -1) throw new Error("missing JSON object");
-  data = JSON.parse(raw.slice(jsonStart));
-} catch (error) {
-  console.error(`debug JSON parse failed: ${error.message}`);
-  process.exit(2);
-}
-const tools = data.tools || {};
-const prompt = String(data.prompt || "");
-const bad = [];
-function expect(tool, expected) {
-  if (tools[tool] !== expected) {
-    bad.push(`${tool}=${tools[tool]}`);
-  }
-}
-if (expectedMode === "planning") {
-  for (const tool of ["read", "grep", "glob", "task", "skill"]) expect(tool, true);
-  for (const tool of ["edit", "write", "bash", "todowrite"]) expect(tool, false);
-  const requiredPromptText = [
-    "Absolute Plan-Only Contract:",
-    "Do not retry unavailable tools",
-    "revise the MASTER PLAN text only",
-  ];
-  const missingPromptText = requiredPromptText.filter((needle) => !prompt.includes(needle));
-  if (missingPromptText.length > 0) {
-    bad.push(`missing_prompt_text=${missingPromptText.join("|")}`);
-  }
-  const forbiddenPromptText = [
-    "Apply concrete validation fixes",
-    "Apply concrete fixes",
-    "applies accepted validation fixes",
-    "applies accepted red-team fixes",
-    "applies accepted simulator fixes",
-    "applies accepted fact-audit fixes",
-  ];
-  const presentForbiddenText = forbiddenPromptText.filter((needle) => prompt.includes(needle));
-  if (presentForbiddenText.length > 0) {
-    bad.push(`ambiguous_prompt_text=${presentForbiddenText.join("|")}`);
-  }
-} else if (expectedMode === "build") {
-  for (const tool of ["read", "grep", "glob", "task", "edit", "write", "bash", "skill"]) expect(tool, true);
-  expect("todowrite", false);
-} else if (expectedMode === "router") {
-  for (const tool of ["read", "grep", "glob", "task"]) expect(tool, true);
-  for (const tool of ["edit", "write", "bash", "todowrite", "skill"]) expect(tool, false);
-  const requiredPromptText = [
-    "You are the Subagent Router.",
-    "exactly one reviewer subagent",
-    "Allowed Task Calls:",
-    "subagent_type",
-  ];
-  const missingPromptText = requiredPromptText.filter((needle) => !prompt.includes(needle));
-  if (missingPromptText.length > 0) {
-    bad.push(`missing_prompt_text=${missingPromptText.join("|")}`);
-  }
-} else {
-  console.error(`unknown expected mode: ${expectedMode}`);
-  process.exit(2);
-}
-if (bad.length > 0) {
-  console.error(`bad primary tools for ${data.name}: ${bad.join(", ")}`);
-  process.exit(1);
-}
-' "$expected_mode"; then
-    pass "debug_${agent_name}_tools" "agent=$agent_name mode=$expected_mode"
-  else
-    fail "debug_${agent_name}_tools" "agent=$agent_name mode=$expected_mode invalid_effective_tools"
-  fi
-}
-
-check_reviewer_debug() {
-  local target_dir="$1"
-  local agent_name="$2"
-  local prompt_path="$3"
-  local output
-
-  if ! output="$(run_debug_agent "$target_dir" "$agent_name")"; then
-    fail "debug_$agent_name" "agent=$agent_name debug_failed"
-    printf '%s\n' "$output" >&2
-    return
-  fi
-
-  if printf '%s\n' "$output" \
-    | node -e '
-const fs = require("fs");
-const raw = fs.readFileSync(0, "utf8");
-const jsonStart = raw.indexOf("{");
-let data;
-try {
-  if (jsonStart === -1) throw new Error("missing JSON object");
-  data = JSON.parse(raw.slice(jsonStart));
-} catch (error) {
-  console.error(`debug JSON parse failed: ${error.message}`);
-  process.exit(2);
-}
-const tools = data.tools || {};
-const badTools = [];
-for (const tool of ["edit", "bash", "task"]) {
-  if (tools[tool] !== false) {
-    badTools.push(`${tool}=${tools[tool]}`);
-  }
-}
-if (tools.skill !== true) {
-  badTools.push(`skill=${tools.skill}`);
-}
-const prompt = String(data.prompt || "");
-if (badTools.length > 0) {
-  console.error(`bad reviewer tools: ${badTools.join(", ")}`);
-  process.exit(1);
-}
-if (!prompt || !prompt.includes("You may use only these read-only tools")) {
-  console.error("reviewer prompt did not load expected read-only instructions");
-  process.exit(1);
-}
-  '; then
-    pass "debug_$agent_name" "agent=$agent_name read_only=true prompt=$prompt_path"
-  else
-    fail "debug_$agent_name" "agent=$agent_name invalid_effective_config"
-  fi
-}
-
-global_dir_arg=""
-prompt_base_arg=""
 quick=false
-target_arg=""
+global_dir_arg=""
+shared_skill_dir_arg=""
+target_repo=""
+pass() { printf 'CHECK name=%s status=pass %s\n' "$1" "${2:-}"; }
+fail() { failures=$((failures + 1)); printf 'CHECK name=%s status=fail %s\n' "$1" "${2:-}"; }
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    --global-dir)
-      shift
-      if [ "$#" -eq 0 ]; then
-        usage >&2
-        fail "arguments" "--global-dir requires a directory argument"
-        exit 2
-      fi
-      global_dir_arg="$1"
-      ;;
-    --prompt-base)
-      shift
-      if [ "$#" -eq 0 ]; then
-        usage >&2
-        fail "arguments" "--prompt-base requires a path argument"
-        exit 2
-      fi
-      prompt_base_arg="$1"
-      ;;
-    --quick)
-      quick=true
-      ;;
-    --*)
-      usage >&2
-      fail "arguments" "unknown_option=$1"
-      exit 2
-      ;;
-    *)
-      if [ -n "$target_arg" ]; then
-        usage >&2
-        fail "arguments" "too_many_target_repos"
-        exit 2
-      fi
-      target_arg="$1"
-      ;;
+    -h|--help) usage; exit 0 ;;
+    --quick) quick=true ;;
+    --global-dir) shift; [ "$#" -gt 0 ] || ac_die "--global-dir requires a directory argument"; global_dir_arg="$1" ;;
+    --shared-skill-dir) shift; [ "$#" -gt 0 ] || ac_die "--shared-skill-dir requires a directory argument"; shared_skill_dir_arg="$1" ;;
+    --*) usage >&2; ac_die "unknown option: $1" ;;
+    *) [ -z "$target_repo" ] || ac_die "only one target repo may be supplied"; target_repo="$1" ;;
   esac
   shift
 done
 
 repo_root="$(ac_repo_root_from_script "${BASH_SOURCE[0]}")"
+target_repo="${target_repo:-$PWD}"
+target_repo="$(ac_absolute_path "$target_repo")"
+if [ -n "$global_dir_arg" ]; then global_dir="$(ac_absolute_path "$global_dir_arg")"; elif ! global_dir="$(ac_default_global_dir)"; then ac_die "HOME is not set and --global-dir was not provided"; fi
+if [ -n "$shared_skill_dir_arg" ]; then shared_skill_dir="$(ac_absolute_path "$shared_skill_dir_arg")"; elif ! shared_skill_dir="$(ac_default_shared_skill_dir)"; then ac_die "HOME is not set and --shared-skill-dir was not provided"; fi
 
-if [ -n "$global_dir_arg" ]; then
-  global_dir="$(ac_absolute_path "$global_dir_arg")"
-elif ! global_dir="$(ac_default_global_dir)"; then
-  fail "global_dir" "HOME is not set and --global-dir was not provided"
-  exit 1
-fi
-
-prompt_base="${prompt_base_arg:-~/.config/opencode/prompts}"
-
-target_arg="${target_arg:-$PWD}"
-if ! target_dir="$(ac_resolve_dir "$target_arg")"; then
-  fail "target_repo" "path=$target_arg not_a_directory"
-  exit 1
-fi
-
-agents_dir="$global_dir/agents"
-prompts_dir="$global_dir/prompts"
-agent_src_dir="$repo_root/.opencode/agents"
-prompt_src_dir="$repo_root/.opencode/prompts"
-skill_src_dir="$repo_root/.opencode/skills"
-target_config="$target_dir/opencode.json"
-
-info "repo_root=$repo_root"
-info "target_repo=$target_dir"
-info "global_dir=$global_dir"
-info "prompt_base=$prompt_base"
-info "quick=$quick"
-
-check_command node
-check_command realpath
-if [ "$quick" != true ]; then
-  check_command opencode
-fi
-
-if [ "$quick" = true ]; then
-  pass "opencode_running_processes" "skipped=quick"
-else
-  if ! check_running_opencode_processes; then
-    printf 'SUMMARY status=fail failures=%s\n' "$failures"
-    exit 1
-  fi
-fi
-
-for agent_file in $AC_PRIMARY_AGENT_FILES; do
-  agent_name="${agent_file%.md}"
-  agent_check_name="${agent_name//-/_}"
-  check_symlink_target "global_agent_$agent_check_name" "$agents_dir/$agent_file" "$agent_src_dir/$agent_file"
-done
-
-for prompt_name in $AC_PROMPT_FILES; do
-  check_symlink_target "global_prompt_${prompt_name%.md}" "$prompts_dir/$prompt_name" "$prompt_src_dir/$prompt_name"
-done
-
-skills_dir="$global_dir/skills"
-for skill_name in $AC_SKILL_NAMES; do
-  check_symlink_target "global_skill_$skill_name" "$skills_dir/$skill_name" "$skill_src_dir/$skill_name"
-done
-
-if [ -f "$target_config" ]; then
-  pass "target_opencode_json_exists" "path=$target_config"
-else
-  fail "target_opencode_json_exists" "path=$target_config missing"
-fi
-
-if [ -f "$target_config" ]; then
-  if node -e '
-const fs = require("fs");
-const path = process.argv[1];
-const promptBase = process.argv[2];
-const required = [
-  ["plan-improver-model2", "plan-improver.md", "plan-improvement-scout"],
-  ["plan-improver-model3", "plan-improver.md", "plan-improvement-scout"],
-  ["plan-validation-designer", "plan-validation-designer.md", "validation-gap-finder"],
-  ["plan-red-team-gate", "plan-red-team-gate.md", "red-team-leftover-gate"],
-  ["plan-implementation-simulator", "plan-implementation-simulator.md", "implementation-dry-run"],
-  ["plan-fact-auditor", "plan-fact-auditor.md", "fact-grounding-auditor"],
-  ["plan-contract-checker", "plan-contract-checker.md", "plan-contract-guard"],
-];
-const data = JSON.parse(fs.readFileSync(path, "utf8"));
-const agents = data.agent || {};
-const agentNames = Object.keys(agents);
-const missing = [];
-const bad = [];
-for (const [name, promptFile, skillName] of required) {
-  const agent = agents[name];
-  if (!agent) {
-    missing.push(name);
-    continue;
-  }
-  const expectedPrompt = `{file:${promptBase}/${promptFile}}`;
-  if (agent.mode !== "subagent") bad.push(`${name}.mode=${agent.mode}`);
-  if (agent.prompt !== expectedPrompt) bad.push(`${name}.prompt=${agent.prompt}`);
-  const permission = agent.permission || {};
-  for (const tool of ["edit", "bash", "task"]) {
-    if (permission[tool] !== "deny") bad.push(`${name}.permission.${tool}=${permission[tool]}`);
-  }
-  for (const tool of ["read", "grep", "glob", "list"]) {
-    if (permission[tool] !== "allow") bad.push(`${name}.permission.${tool}=${permission[tool]}`);
-  }
-  const skill = permission.skill || {};
-  if (typeof skill !== "object" || Array.isArray(skill)) {
-    bad.push(`${name}.permission.skill=${JSON.stringify(skill)}`);
-  } else {
-    if (skill["*"] !== "deny") bad.push(`${name}.permission.skill.*=${skill["*"]}`);
-    if (skill[skillName] !== "allow") bad.push(`${name}.permission.skill.${skillName}=${skill[skillName]}`);
-    const extraSkillRules = Object.keys(skill).filter((rule) => rule !== "*" && rule !== skillName);
-    if (extraSkillRules.length > 0) bad.push(`${name}.permission.skill.extra=${extraSkillRules.join(",")}`);
-  }
+check_link() {
+  local name="$1" dest="$2" expected="$3" resolved
+  if [ ! -L "$dest" ]; then fail "$name" "path=$dest expected=$expected"; return; fi
+  resolved="$(realpath -- "$dest" 2>/dev/null || true)"
+  if [ "$resolved" = "$expected" ]; then pass "$name" "path=$dest"; else fail "$name" "path=$dest resolved=${resolved:-<unresolved>} expected=$expected"; fi
 }
-const extra = agentNames.filter((name) => !required.some(([requiredName]) => requiredName === name));
-if (missing.length || bad.length || extra.length) {
-  if (missing.length) console.error(`missing=${missing.join(",")}`);
-  if (bad.length) console.error(`bad=${bad.join(",")}`);
-  if (extra.length) console.error(`extra=${extra.join(",")}`);
-  process.exit(1);
-}
-' "$target_config" "$prompt_base"; then
-    pass "target_reviewer_config" "required=7 extra=0 prompt_base=$prompt_base skills=scoped"
+
+for agent_file in $AC_AGENT_FILES; do check_link "global_agent_${agent_file%.md}" "$global_dir/agents/$agent_file" "$repo_root/.opencode/agents/$agent_file"; done
+for skill_name in $AC_SKILL_NAMES; do check_link "shared_skill_$skill_name" "$shared_skill_dir/$skill_name" "$repo_root/.agents/skills/$skill_name"; done
+
+for primary_file in $AC_PRIMARY_AGENT_FILES; do
+  path="$repo_root/.opencode/agents/$primary_file"
+  name="${primary_file%.md}"
+  if grep -q '^mode: primary$' "$path" \
+    && grep -q '^  task:$' "$path" \
+    && { grep -q 'OpenCode: `task({' "$path" || grep -q 'OpenCode exposes `task`' "$path"; } \
+    && { grep -q 'Pi with `pi-open-agents`: `subagent({' "$path" || grep -q 'Pi with `pi-open-agents` exposes `subagent`' "$path"; }; then
+    pass "source_primary_$name" "runtime_adapter=present"
   else
-    fail "target_reviewer_config" "path=$target_config expected_exact_seven_global_prompt_reviewers_with_scoped_skills"
+    fail "source_primary_$name" "missing_primary_mode_task_permission_or_runtime_adapter"
+  fi
+done
+
+while read -r reviewer skill model; do
+  [ -n "$reviewer" ] || continue
+  path="$repo_root/.opencode/agents/$reviewer.md"
+  if [ -f "$path" ] && grep -q '^mode: subagent$' "$path" && grep -q '^maxDepth: 0$' "$path" && grep -q "^model: $model$" "$path" && grep -Fq "skills: [$skill]" "$path" && grep -q '^  task: deny$' "$path" && grep -Fq "Your first action must load \`$skill\`" "$path"; then
+    pass "source_reviewer_$reviewer" "skill=$skill model=$model"
+  else
+    fail "source_reviewer_$reviewer" "expected_skill=$skill expected_model=$model"
+  fi
+done <<EOF
+$AC_REVIEWER_SKILL_MAP
+EOF
+
+plan_source="$repo_root/.opencode/agents/ping-pong-plan.md"
+if grep -q '^  skill: deny$' "$plan_source" \
+  && grep -Fq 'Analysis was performed by model 1 directly` is never a valid status or reason' "$plan_source" \
+  && grep -Fq 'PLAN GAP COMPLETION' "$plan_source" \
+  && grep -Fq 'ALTERNATIVE ROUTE CHALLENGE' "$plan_source" \
+  && ! grep -Fq 'delegated_task_body' "$plan_source"; then
+  pass source_ping_pong_hardening "early_delegation=true distinct_improvers=true coordinator_skill=false"
+else
+  fail source_ping_pong_hardening "missing_prompt_hardening_contract"
+fi
+
+if [ "$quick" = false ]; then
+  if ! command -v opencode >/dev/null 2>&1; then
+    fail command_opencode missing
+  else
+    pass command_opencode "path=$(command -v opencode)"
+    for primary_file in $AC_PRIMARY_AGENT_FILES; do
+      name="${primary_file%.md}"
+      output="$(cd -- "$target_repo" && opencode debug agent "$name" 2>&1)"
+      status=$?
+      if [ "$status" -ne 0 ]; then fail "debug_agent_$name" "status=$status"; continue; fi
+      mode=readonly
+      [ "$name" = ping-ping-build ] && mode=build
+      [ "$name" = subagent-router ] && mode=router
+      if printf '%s\n' "$output" | node -e '
+const fs=require("fs"); const mode=process.argv[1]; const raw=fs.readFileSync(0,"utf8");
+const start=raw.indexOf("{"); if(start<0) process.exit(2); const a=JSON.parse(raw.slice(start)); const t=a.tools||{};
+const expected={task:true,read:true,grep:true,glob:true,skill:mode==="build",edit:mode==="build",write:mode==="build",bash:mode==="build"};
+const bad=Object.entries(expected).filter(([k,v])=>t[k]!==v); if(bad.length){console.error(bad.map(([k,v])=>`${k}=${t[k]} expected=${v}`).join(" "));process.exit(1)}
+' "$mode"; then pass "debug_agent_$name" "tools=correct"; else fail "debug_agent_$name" "tools_incorrect"; fi
+    done
+
+    while read -r reviewer skill model; do
+      [ -n "$reviewer" ] || continue
+      output="$(cd -- "$target_repo" && opencode debug agent "$reviewer" 2>&1)"
+      status=$?
+      if [ "$status" -ne 0 ]; then fail "debug_reviewer_$reviewer" "status=$status"; continue; fi
+      if printf '%s\n' "$output" | node -e '
+const fs=require("fs"); const skill=process.argv[1]; const raw=fs.readFileSync(0,"utf8"); const start=raw.indexOf("{"); if(start<0)process.exit(2);
+const a=JSON.parse(raw.slice(start)),t=a.tools||{},p=String(a.prompt||"");
+if(t.task!==false||t.edit!==false||t.write!==false||t.bash!==false||t.read!==true||t.skill!==true||!p.includes(`first action must load \`${skill}\``))process.exit(1);
+' "$skill"; then pass "debug_reviewer_$reviewer" "skill=$skill tools=readonly"; else fail "debug_reviewer_$reviewer" "effective_contract_incorrect"; fi
+    done <<EOF
+$AC_REVIEWER_SKILL_MAP
+EOF
+
+    skill_output="$(cd -- "$target_repo" && opencode debug skill 2>&1)"
+    skill_status=$?
+    if [ "$skill_status" -ne 0 ]; then fail debug_skills "status=$skill_status"; else
+      missing=""
+      for skill_name in $AC_SKILL_NAMES; do printf '%s\n' "$skill_output" | grep -q "$skill_name" || missing="$missing $skill_name"; done
+      if [ -z "$missing" ]; then pass debug_skills "all=7"; else fail debug_skills "missing=$missing"; fi
+    fi
   fi
 fi
 
-if [ "$quick" = true ]; then
-  pass "opencode_debug_checks" "skipped=quick"
-else
-  check_debug_prompt "$target_dir" "ping-pong-plan" "debug_ping_pong_plan_prompt"
-  check_primary_debug_tools "$target_dir" "ping-pong-plan" "planning"
-  check_debug_prompt "$target_dir" "ping-ping-build" "debug_ping_ping_build_prompt"
-  check_primary_debug_tools "$target_dir" "ping-ping-build" "build"
-  check_debug_prompt "$target_dir" "subagent-router" "debug_subagent_router_prompt"
-  check_primary_debug_tools "$target_dir" "subagent-router" "router"
-
-  while read -r reviewer_name prompt_name; do
-    [ -n "$reviewer_name" ] || continue
-    check_reviewer_debug "$target_dir" "$reviewer_name" "$prompt_name"
-  done <<REVIEWERS
-$AC_REVIEWER_PROMPT_MAP
-REVIEWERS
-fi
-
-if [ -d "$repo_root/.git" ]; then
-  cookbook_status="$(git -C "$repo_root" status --porcelain 2>/dev/null || true)"
-  if [ -z "$cookbook_status" ]; then
-    pass "cookbook_worktree" "changes=none"
-  else
-    pass "cookbook_worktree" "changes=present informational=true"
-  fi
-else
-  pass "cookbook_worktree" "git_repo=false informational=true"
-fi
-
-if [ "$failures" -eq 0 ]; then
-  printf 'SUMMARY status=pass failures=0\n'
-  exit 0
-fi
-
-printf 'SUMMARY status=fail failures=%s\n' "$failures"
+if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass runtime=opencode quick=%s agents=11 skills=7\n' "$quick"; exit 0; fi
+printf 'SUMMARY status=fail runtime=opencode failures=%s\n' "$failures"
 exit 1

@@ -26,33 +26,36 @@ Fail the benchmark regardless of numeric score if the final plan:
 - contains implementation-blocking open questions
 - leaks raw subagent reports, Decision Ledgers, or internal process notes
 - leaks the internal Intent Contract as a standalone artifact
-- omits or fails to use structured `KNOWN CONTEXT` headings in subagent task payloads when reviewing the flow itself
+- omits or fails to use structured `KNOWN CONTEXT` headings in subagent payloads when reviewing the flow itself
 - uses vague steps such as "update relevant tests" without concrete targets
 - omits validation, observable pass/fail acceptance criteria, or rollback / recovery guidance
 - ignores severe gate findings such as `Insufficient`, `Blocking Issues`, `Blocked`, or `Fail` without a repo-fact or user-scope reason
 - delegates canonical plan ownership to a subagent
 - expands scope beyond the user's request without marking it optional
+- skips a reviewer because model 1 performed similar analysis directly
+- reports reviewer success without a matching runtime delegation event
 
-## Benchmark 1: Prompt / Config Edit
+## Benchmark 1: Skill / Agent Edit
 
 ### User Request
 
-Improve the `plan-contract-checker` prompt so it fails final plans with implementation-blocking open questions. Do not add another agent.
+Improve the `plan-contract-guard` skill so `plan-contract-checker` fails final plans with implementation-blocking open questions. Do not add another agent.
 
 ### Expected Inspected Areas
 
-- `.opencode/prompts/plan-contract-checker.md`
+- `.agents/skills/plan-contract-guard/SKILL.md`
+- `.opencode/agents/plan-contract-checker.md`
 - `.opencode/agents/ping-pong-plan.md`
 - `opencode.json`
 
 ### Expected Plan Qualities
 
-- Identifies the checker prompt as the primary change area.
+- Identifies the checker skill as the primary change area.
 - Keeps model 1 as the only canonical plan author.
 - Preserves the internal Intent Contract and Decision Ledger as hidden process artifacts.
 - Adds no new subagent.
 - Includes validation for JSON parsing, diff hygiene, and OpenCode agent resolution.
-- Separates prompt wording changes from config changes.
+- Separates skill-contract changes from agent wiring changes.
 
 ## Benchmark 2: Flow Documentation
 
@@ -63,7 +66,8 @@ Create documentation that explains the ping-pong planning flow, all agents, and 
 ### Expected Inspected Areas
 
 - `.opencode/agents/ping-pong-plan.md`
-- `.opencode/prompts/`
+- `.opencode/agents/`
+- `.agents/skills/`
 - `opencode.json`
 - existing `.opencode` documentation files
 
@@ -72,7 +76,7 @@ Create documentation that explains the ping-pong planning flow, all agents, and 
 - Chooses a docs-only path unless repo facts show a behavior change is needed.
 - Documents the ordered flow, read-only permissions, no-leak rule, and final output contract.
 - Documents structured `KNOWN CONTEXT`, severe gate handling, and pass/fail acceptance criteria.
-- Does not duplicate full prompt text.
+- Does not duplicate full skill text.
 - Includes a lightweight validation plan for Markdown coverage and whitespace.
 
 ## Benchmark 3: Permission Audit
@@ -85,13 +89,14 @@ Review whether all ping-pong subagents have permissions that match their read-on
 
 - `opencode.json`
 - `.opencode/agents/ping-pong-plan.md`
-- all `.opencode/prompts/plan-*.md`
+- all reviewer files in `.opencode/agents/`
+- all reviewer contracts in `.agents/skills/`
 - `opencode debug agent` output when validation is allowed
 
 ### Expected Plan Qualities
 
-- Compares prompt tool rules against resolved OpenCode permissions.
-- Flags any task, bash, edit, web, question, or external-directory mismatch.
+- Compares agent and skill tool rules against resolved OpenCode permissions.
+- Flags any subagent, bash, edit, web, question, or external-directory mismatch.
 - Keeps coordinator permissions distinct from subagent permissions.
 - Includes validation by resolving every configured agent.
 
@@ -104,9 +109,9 @@ Make the planning flow stricter about validation quality and rollback verificati
 ### Expected Inspected Areas
 
 - `.opencode/agents/ping-pong-plan.md`
-- `.opencode/prompts/plan-validation-designer.md`
-- `.opencode/prompts/plan-contract-checker.md`
-- `.opencode/prompts/plan-implementation-simulator.md`
+- `.agents/skills/validation-gap-finder/SKILL.md`
+- `.agents/skills/plan-contract-guard/SKILL.md`
+- `.agents/skills/implementation-dry-run/SKILL.md`
 
 ### Expected Plan Qualities
 
@@ -116,7 +121,7 @@ Make the planning flow stricter about validation quality and rollback verificati
 - Blocks advancement on `Insufficient`, `Blocking Issues`, `Blocked`, or `Fail` gate outcomes unless contradicted by repo facts or user scope.
 - Makes final-plan validation decision-complete.
 
-## Benchmark 5: Multi-File Prompt Refactor
+## Benchmark 5: Multi-Skill Review Refactor
 
 ### User Request
 
@@ -125,20 +130,35 @@ Update the ping-pong flow so subagents independently verify central repo claims 
 ### Expected Inspected Areas
 
 - `.opencode/agents/ping-pong-plan.md`
-- `.opencode/prompts/plan-improver.md`
-- `.opencode/prompts/plan-validation-designer.md`
-- `.opencode/prompts/plan-red-team-gate.md`
-- `.opencode/prompts/plan-implementation-simulator.md`
-- `.opencode/prompts/plan-fact-auditor.md`
-- `.opencode/prompts/plan-contract-checker.md`
+- `.agents/skills/plan-improvement-scout/SKILL.md`
+- `.agents/skills/validation-gap-finder/SKILL.md`
+- `.agents/skills/red-team-leftover-gate/SKILL.md`
+- `.agents/skills/implementation-dry-run/SKILL.md`
+- `.agents/skills/fact-grounding-auditor/SKILL.md`
+- `.agents/skills/plan-contract-guard/SKILL.md`
 
 ### Expected Plan Qualities
 
-- Adds read-only spot-check requirements to existing prompts.
+- Adds read-only spot-check requirements to existing skills.
 - Preserves the structured `KNOWN CONTEXT` format in first-round and convergence calls.
-- Does not permit subagents to edit, run bash, invoke tasks, or own the final plan.
+- Does not permit subagents to edit, run bash, invoke subagents, or own the final plan.
 - Requires unverifiable claims to be labeled as assumptions, missing evidence, risks, or blockers.
 - Includes validation that no new agent was added.
+
+## Benchmark 6: Complementary Improvers
+
+### User Request
+
+Find N+1 database lookups in inner loops and plan a bulk-loading refactor without changing behavior.
+
+### Expected Plan Qualities
+
+- Calls all eight reviewers rather than finishing after the coordinator's repository scan.
+- Uses `plan-improver-model2` to identify omissions, leftovers, ownership, and validation that the draft missed.
+- Uses `plan-improver-model3` to challenge assumptions and test a genuinely different implementation route.
+- Preserves useful master-plan findings if one attempted reviewer call fails, then continues attempting later gates.
+- Never uses "analysis was performed by model 1" as a skip reason.
+- Passes the runtime session checker; prose-only success claims do not count.
 
 ## Review Notes Template
 
@@ -171,7 +191,7 @@ Use this template after each run.
 
 <short notes>
 
-## Prompt / Flow Fixes Suggested
+## Skill / Flow Fixes Suggested
 
 <short notes>
 ```

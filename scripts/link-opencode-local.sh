@@ -7,215 +7,149 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/link-opencode-local.sh [--dry-run] [--force] [--global-dir DIR]
+Usage: scripts/link-opencode-local.sh [--dry-run] [--force] [--global-dir DIR] [--pi-agent-dir DIR] [--shared-skill-dir DIR]
 
-Create global OpenCode agent, prompt, and skill symlinks that point back to this agentsCookbook checkout.
+Link this checkout's agents for both OpenCode and Pi, and link their shared
+reviewer skills. Pi requires the pi-open-agents extension.
 
 Options:
-  --dry-run          Print planned changes without modifying the global OpenCode dir.
-  --force            Back up existing non-matching destinations before linking.
-  --global-dir DIR   OpenCode config dir. Defaults to ${XDG_CONFIG_HOME:-$HOME/.config}/opencode.
-  --help             Show this help.
+  --dry-run               Print planned changes without modifying anything.
+  --force                 Back up conflicting destinations before linking.
+  --global-dir DIR        OpenCode config dir (default: ${XDG_CONFIG_HOME:-$HOME/.config}/opencode).
+  --pi-agent-dir DIR      Pi agent dir (default: ${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}).
+  --shared-skill-dir DIR  Cross-runtime skill dir (default: $HOME/.agents/skills).
+  --help                  Show this help.
 
-This script never creates or edits any opencode.json file.
+This script never creates or edits opencode.json or Pi settings.json.
 USAGE
 }
 
 dry_run=false
 force=false
 global_dir_arg=""
+pi_agent_dir_arg=""
+shared_skill_dir_arg=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --help)
-      usage
-      exit 0
-      ;;
-    --dry-run)
-      dry_run=true
-      ;;
-    --force)
-      force=true
-      ;;
-    --global-dir)
-      shift
-      [ "$#" -gt 0 ] || ac_die "--global-dir requires a directory argument"
-      global_dir_arg="$1"
-      ;;
-    --*)
-      usage >&2
-      ac_die "unknown option: $1"
-      ;;
-    *)
-      usage >&2
-      ac_die "unexpected argument: $1"
-      ;;
+    --help) usage; exit 0 ;;
+    --dry-run) dry_run=true ;;
+    --force) force=true ;;
+    --global-dir) shift; [ "$#" -gt 0 ] || ac_die "--global-dir requires a directory argument"; global_dir_arg="$1" ;;
+    --pi-agent-dir) shift; [ "$#" -gt 0 ] || ac_die "--pi-agent-dir requires a directory argument"; pi_agent_dir_arg="$1" ;;
+    --shared-skill-dir) shift; [ "$#" -gt 0 ] || ac_die "--shared-skill-dir requires a directory argument"; shared_skill_dir_arg="$1" ;;
+    --*) usage >&2; ac_die "unknown option: $1" ;;
+    *) usage >&2; ac_die "unexpected argument: $1" ;;
   esac
   shift
 done
 
 repo_root="$(ac_repo_root_from_script "${BASH_SOURCE[0]}")"
-
-if [ -n "$global_dir_arg" ]; then
-  global_dir="$(ac_absolute_path "$global_dir_arg")"
-elif ! global_dir="$(ac_default_global_dir)"; then
-  ac_die "HOME is not set and --global-dir was not provided"
-fi
+if [ -n "$global_dir_arg" ]; then global_dir="$(ac_absolute_path "$global_dir_arg")"; elif ! global_dir="$(ac_default_global_dir)"; then ac_die "HOME is not set and --global-dir was not provided"; fi
+if [ -n "$pi_agent_dir_arg" ]; then pi_agent_dir="$(ac_absolute_path "$pi_agent_dir_arg")"; elif ! pi_agent_dir="$(ac_default_pi_agent_dir)"; then ac_die "HOME is not set and --pi-agent-dir was not provided"; fi
+if [ -n "$shared_skill_dir_arg" ]; then shared_skill_dir="$(ac_absolute_path "$shared_skill_dir_arg")"; elif ! shared_skill_dir="$(ac_default_shared_skill_dir)"; then ac_die "HOME is not set and --shared-skill-dir was not provided"; fi
 
 agent_src_dir="$repo_root/.opencode/agents"
-prompt_src_dir="$repo_root/.opencode/prompts"
-skill_src_dir="$repo_root/.opencode/skills"
-agents_dir="$global_dir/agents"
-prompts_dir="$global_dir/prompts"
-skills_dir="$global_dir/skills"
-
+skill_src_dir="$repo_root/.agents/skills"
+opencode_agents_dir="$global_dir/agents"
+pi_agents_dir="$pi_agent_dir/agents"
 [ -d "$agent_src_dir" ] || ac_die "source agents directory is missing: $agent_src_dir"
-[ -d "$prompt_src_dir" ] || ac_die "source prompts directory is missing: $prompt_src_dir"
 [ -d "$skill_src_dir" ] || ac_die "source skills directory is missing: $skill_src_dir"
 
 move_to_backup() {
-  local path="$1"
-  local backup
+  local path="$1" backup
   backup="$(ac_backup_path_for "$path")"
-  if [ "$dry_run" = true ]; then
-    ac_info "DRY_RUN action=backup path=$path backup=$backup"
-  else
-    mv -- "$path" "$backup"
-    ac_info "BACKUP path=$path backup=$backup"
-  fi
+  if [ "$dry_run" = true ]; then ac_info "DRY_RUN action=backup path=$path backup=$backup"; else mv -- "$path" "$backup"; ac_info "BACKUP path=$path backup=$backup"; fi
 }
 
 ensure_real_dir() {
   local path="$1"
-  local forceable="${2:-false}"
-
   if [ -e "$path" ] || [ -L "$path" ]; then
-    if [ -d "$path" ] && [ ! -L "$path" ]; then
-      return 0
-    fi
-    if [ "$force" = true ] && [ "$forceable" = true ]; then
-      move_to_backup "$path"
-    else
-      ac_die "conflict at $path; expected a real directory"
-    fi
+    if [ -d "$path" ] && [ ! -L "$path" ]; then return 0; fi
+    if [ "$force" = true ]; then move_to_backup "$path"; else ac_die "conflict at $path; expected a real directory"; fi
   fi
-
-  if [ "$dry_run" = true ]; then
-    ac_info "DIR status=would_create path=$path"
-  else
-    mkdir -p -- "$path"
-    ac_info "DIR status=created path=$path"
-  fi
+  if [ "$dry_run" = true ]; then ac_info "DIR status=would_create path=$path"; else mkdir -p -- "$path"; ac_info "DIR status=created path=$path"; fi
 }
 
 link_one() {
-  local src="$1"
-  local dest="$2"
-  local label="$3"
-  local resolved
-
+  local src="$1" dest="$2" label="$3" resolved
   if [ -L "$dest" ]; then
     resolved="$(realpath -- "$dest" 2>/dev/null || true)"
-    if [ "$resolved" = "$src" ]; then
-      ac_info "LINK type=$label status=already_correct path=$dest target=$src"
-      return 0
-    fi
-    if [ "$force" != true ]; then
-      ac_die "conflict at $dest; pass --force to back it up before linking"
-    fi
+    if [ "$resolved" = "$src" ]; then ac_info "LINK type=$label status=already_correct path=$dest target=$src"; return 0; fi
+    [ "$force" = true ] || ac_die "conflict at $dest; pass --force to back it up before linking"
     move_to_backup "$dest"
   elif [ -e "$dest" ]; then
-    if [ "$force" != true ]; then
-      ac_die "conflict at $dest; pass --force to back it up before linking"
-    fi
+    [ "$force" = true ] || ac_die "conflict at $dest; pass --force to back it up before linking"
     move_to_backup "$dest"
   fi
-
-  if [ "$dry_run" = true ]; then
-    ac_info "LINK type=$label status=would_create path=$dest target=$src"
-  else
-    ln -s -- "$src" "$dest"
-    ac_info "LINK type=$label status=created path=$dest target=$src"
-  fi
+  if [ "$dry_run" = true ]; then ac_info "LINK type=$label status=would_create path=$dest target=$src"; else ln -s -- "$src" "$dest"; ac_info "LINK type=$label status=created path=$dest target=$src"; fi
 }
 
-verify_link_one() {
-  local src="$1"
-  local dest="$2"
-  local label="$3"
-  local resolved
-
-  if [ "$dry_run" = true ]; then
-    return 0
-  fi
-  if [ ! -L "$dest" ]; then
-    ac_die "post-link verification failed for $dest; expected $label symlink"
-  fi
+remove_legacy_link() {
+  local dest="$1" expected="$2" label="$3" raw resolved
+  [ -L "$dest" ] || return 0
+  raw="$(readlink -- "$dest" 2>/dev/null || true)"
   resolved="$(realpath -- "$dest" 2>/dev/null || true)"
-  if [ "$resolved" != "$src" ]; then
-    ac_die "post-link verification failed for $dest; resolved=${resolved:-<unresolved>} expected=$src"
-  fi
-  ac_info "VERIFY type=$label status=pass path=$dest target=$src"
+  if [ "$raw" != "$expected" ] && [ "$resolved" != "$expected" ]; then return 0; fi
+  if [ "$dry_run" = true ]; then ac_info "MIGRATE type=$label status=would_remove_legacy path=$dest target=$raw"; else rm -- "$dest"; ac_info "MIGRATE type=$label status=removed_legacy path=$dest target=$raw"; fi
 }
 
-ensure_real_dir "$global_dir" false
-ensure_real_dir "$agents_dir" true
-ensure_real_dir "$prompts_dir" true
-ensure_real_dir "$skills_dir" true
+verify_link() {
+  local src="$1" dest="$2" label="$3" resolved
+  [ "$dry_run" = true ] && return 0
+  [ -L "$dest" ] || ac_die "post-link verification failed for $dest; expected $label symlink"
+  resolved="$(realpath -- "$dest" 2>/dev/null || true)"
+  [ "$resolved" = "$src" ] || ac_die "post-link verification failed for $dest; resolved=${resolved:-<unresolved>} expected=$src"
+}
 
-agent_count=0
-for agent_name in $AC_PRIMARY_AGENT_FILES; do
-  agent_src="$agent_src_dir/$agent_name"
-  [ -f "$agent_src" ] || ac_die "required agent Markdown file is missing: $agent_src"
-  link_one "$agent_src" "$agents_dir/$agent_name" "Agent"
-  agent_count=$((agent_count + 1))
+ensure_real_dir "$global_dir"
+ensure_real_dir "$opencode_agents_dir"
+ensure_real_dir "$pi_agent_dir"
+ensure_real_dir "$pi_agents_dir"
+ensure_real_dir "$(dirname -- "$shared_skill_dir")"
+ensure_real_dir "$shared_skill_dir"
+
+# Safely remove only symlinks created by the old prompt/skill installer.
+for prompt_name in $AC_LEGACY_PROMPT_FILES; do
+  remove_legacy_link "$global_dir/prompts/$prompt_name" "$repo_root/.opencode/prompts/$prompt_name" "legacy_prompt"
+done
+for skill_name in $AC_SKILL_NAMES; do
+  remove_legacy_link "$global_dir/skills/$skill_name" "$repo_root/.opencode/skills/$skill_name" "legacy_skill"
 done
 
-prompt_count=0
-for prompt_name in $AC_PROMPT_FILES; do
-  prompt_src="$prompt_src_dir/$prompt_name"
-  [ -f "$prompt_src" ] || ac_die "required prompt Markdown file is missing: $prompt_src"
-  link_one "$prompt_src" "$prompts_dir/$prompt_name" "Prompt"
-  prompt_count=$((prompt_count + 1))
+agent_count=0
+for agent_file in $AC_AGENT_FILES; do
+  src="$agent_src_dir/$agent_file"
+  [ -f "$src" ] || ac_die "required agent Markdown file is missing: $src"
+  link_one "$src" "$opencode_agents_dir/$agent_file" "OpenCodeAgent"
+  link_one "$src" "$pi_agents_dir/$agent_file" "PiAgent"
+  agent_count=$((agent_count + 1))
 done
 
 skill_count=0
 for skill_name in $AC_SKILL_NAMES; do
-  skill_src="$skill_src_dir/$skill_name"
-  [ -f "$skill_src/SKILL.md" ] || ac_die "required skill file is missing: $skill_src/SKILL.md"
-  link_one "$skill_src" "$skills_dir/$skill_name" "Skill"
+  src="$skill_src_dir/$skill_name"
+  [ -f "$src/SKILL.md" ] || ac_die "required skill file is missing: $src/SKILL.md"
+  link_one "$src" "$shared_skill_dir/$skill_name" "SharedSkill"
   skill_count=$((skill_count + 1))
 done
 
-for agent_name in $AC_PRIMARY_AGENT_FILES; do
-  verify_link_one "$agent_src_dir/$agent_name" "$agents_dir/$agent_name" "Agent"
+for agent_file in $AC_AGENT_FILES; do
+  verify_link "$agent_src_dir/$agent_file" "$opencode_agents_dir/$agent_file" "OpenCode agent"
+  verify_link "$agent_src_dir/$agent_file" "$pi_agents_dir/$agent_file" "Pi agent"
 done
-
-for prompt_name in $AC_PROMPT_FILES; do
-  verify_link_one "$prompt_src_dir/$prompt_name" "$prompts_dir/$prompt_name" "Prompt"
-done
-
-for skill_name in $AC_SKILL_NAMES; do
-  verify_link_one "$skill_src_dir/$skill_name" "$skills_dir/$skill_name" "Skill"
-done
+for skill_name in $AC_SKILL_NAMES; do verify_link "$skill_src_dir/$skill_name" "$shared_skill_dir/$skill_name" "shared skill"; done
 
 cat <<NEXT_STEPS
 
-Installed global OpenCode cookbook symlinks in:
-  $global_dir
+Installed cookbook links for both runtimes:
+  OpenCode agents: $opencode_agents_dir
+  Pi agents:       $pi_agents_dir
+  Shared skills:   $shared_skill_dir
 
-Next steps for a target repo:
-  1. Copy or merge this example into the target repo's opencode.json:
-     $repo_root/.opencode/examples/opencode.local-symlink.example.json
-  2. OpenCode discovers primary agents from:
-     $agents_dir/ping-pong-plan.md
-     $agents_dir/ping-ping-build.md
-     $agents_dir/subagent-router.md
-  3. The example config reads subagent prompts from:
-     ~/.config/opencode/prompts/
-  4. OpenCode discovers specialty skills from:
-     $skills_dir/
+Pi must have pi-open-agents installed and enabled. Run both preflights before a long workflow:
+  scripts/preflight-opencode-ping-pong.sh
+  scripts/preflight-pi-ping-pong.sh
 
-SUMMARY status=pass agents=$agent_count prompts=$prompt_count skills=$skill_count dry_run=$dry_run global_dir=$global_dir
-Linked $agent_count agent file(s), $prompt_count prompt file(s), and $skill_count skill directory symlink(s). This script did not create or edit any opencode.json file.
+SUMMARY status=pass agents_per_runtime=$agent_count skills=$skill_count dry_run=$dry_run
 NEXT_STEPS

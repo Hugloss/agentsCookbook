@@ -255,6 +255,7 @@ const required = [
   "plan-improver-model2",
   "plan-improver-model3",
   "plan-validation-designer",
+  "plan-coverage-reviewer",
   "plan-red-team-gate",
   "plan-implementation-simulator",
   "plan-fact-auditor",
