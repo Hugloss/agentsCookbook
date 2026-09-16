@@ -6,6 +6,22 @@ import { tool } from "@opencode-ai/plugin"
 const MAX_REPORT_CHARS = 65536
 const MAX_SUMMARY_CHARS = 1200
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/
+const REVIEWER_AGENT_IDS = new Set([
+  "plan-improver-model2",
+  "plan-improver-model3",
+  "plan-validation-designer",
+  "plan-coverage-reviewer",
+  "plan-red-team-gate",
+  "plan-implementation-simulator",
+  "plan-fact-auditor",
+  "plan-contract-checker",
+  "code-performance-optimization-auditor",
+])
+const PRIMARY_AGENT_IDS = new Set([
+  "ping-pong-plan",
+  "ping-ping-build",
+  "subagent-router",
+])
 
 function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex")
@@ -31,18 +47,23 @@ function ensureChildDir(root, name) {
 function validateId(value) {
   const id = String(value || "")
   if (!SAFE_ID.test(id)) throw new Error("artifact_id must match [A-Za-z0-9][A-Za-z0-9._-]{0,95}")
+  if (!REVIEWER_AGENT_IDS.has(id)) throw new Error(`unknown reviewer artifact_id: ${id}`)
   return id
+}
+
+function currentAgent(context) {
+  return String(context && context.agent ? context.agent : "")
 }
 
 function writeArtifact(args, context) {
   const root = requireRunRoot()
   const reviews = ensureChildDir(root, "reviews")
   const receipts = ensureChildDir(root, "receipts")
-  const agent = String(context.agent || "")
+  const agent = currentAgent(context)
   const requestedId = validateId(args.artifact_id)
-  if (agent && SAFE_ID.test(agent) && agent !== requestedId) {
-    throw new Error(`artifact_id must equal current agent name: ${agent}`)
-  }
+  if (!REVIEWER_AGENT_IDS.has(agent)) throw new Error(`review_artifact is reviewer-only; current agent: ${agent || "unknown"}`)
+  if (agent !== requestedId) throw new Error(`artifact_id must equal current reviewer name: ${agent}`)
+
   const report = String(args.content || "").trim()
   const summary = String(args.summary || "").trim()
   if (!report) throw new Error("content must not be empty")
@@ -61,7 +82,7 @@ function writeArtifact(args, context) {
     schema_version: 1,
     runtime: "opencode",
     run_id: path.basename(root),
-    reviewer: agent || requestedId,
+    reviewer: agent,
     artifact_id: requestedId,
     session_id: context.sessionID || null,
     subject_id: args.subject_id || null,
@@ -82,7 +103,10 @@ function writeArtifact(args, context) {
   return receipt
 }
 
-function readArtifact(args) {
+function readArtifact(args, context) {
+  const agent = currentAgent(context)
+  if (!PRIMARY_AGENT_IDS.has(agent)) throw new Error(`review_artifact_read is primary-only; current agent: ${agent || "unknown"}`)
+
   const root = requireRunRoot()
   const reviews = ensureChildDir(root, "reviews")
   const id = validateId(args.artifact_id)
@@ -118,8 +142,8 @@ export const AgentsCookbookReviewArtifacts = async () => {
         args: {
           artifact_id: tool.schema.string().describe("Reviewer artifact id to read."),
         },
-        async execute(args) {
-          return readArtifact(args)
+        async execute(args, context) {
+          return readArtifact(args, context)
         },
       }),
     },
