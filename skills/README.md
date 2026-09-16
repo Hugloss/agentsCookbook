@@ -22,6 +22,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `coverage-design-review` — Check whether tests prove real production behavior.
 - `implementation-dry-run` — Simulate implementation to find missing steps and sequencing.
 - `fact-grounding-auditor` — Verify repo-specific claims and uncertainty.
+- `codebase-finding-derivation` — Turn inspected code paths into defensible evidence-backed findings.
 - `plan-contract-guard` — Check final handoff completeness and executability.
 - `red-team-leftover-gate` — Find material blockers and leftovers before handoff.
 - `code-performance-optimization-audit` — Find material runtime scaling and repeated-work cost.
@@ -72,6 +73,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 
 Use the narrowest skill that owns the question:
 
+- `codebase-finding-derivation` asks **whether inspected code evidence justifies a finding at all**; `fact-grounding-auditor` asks **whether an existing repository-specific claim is supported**; `architecture-risk-triage` asks **which narrow specialist should inspect a proven hotspot next**.
 - `coverage-design-review` asks **what real behavior is not proved**; `test-contract-coupling-review` asks **what tests freeze private implementation**.
 - `code-performance-optimization-audit` asks **where runtime cost scales badly**; `test-work-amplification-review` starts from measured slow tests; `single-observation-review` asks whether one logical operation observes the same input world twice.
 - `semantic-redecision-review` catches the same semantic answer being made repeatedly; `resolved-fact-regression-review` catches a resolved answer being discarded so downstream code returns to raw facts.
