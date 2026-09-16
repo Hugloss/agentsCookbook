@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Agents Cookbook — Architecture Demo</title>
+  <title>Agents Cookbook — Prompt Library Demo</title>
   <style>
     :root { color-scheme: light dark; font-family: Inter, system-ui, sans-serif; }
     body { margin: 0; background: Canvas; color: CanvasText; }
@@ -28,25 +28,30 @@
 <body>
 <main>
   <p class="muted">Agents Cookbook</p>
-  <h1>Standalone specialists. Composable flows. Small active context.</h1>
-  <p class="lead">The same canonical agents and skills work in OpenCode and Pi. Full flows compose independent reviewers without making those reviewers dependent on the flow.</p>
+  <h1>A reusable Markdown prompt library for coding agents.</h1>
+  <p class="lead">Use one sharp skill directly, wrap it in an agent role, or compose several prompts into an optional flow. OpenCode, Pi, or another compatible host owns execution and isolation.</p>
 
-  <section class="metrics" aria-label="architecture summary">
-    <div class="metric"><strong>12</strong><span>installable agents</span></div>
-    <div class="metric"><strong>33</strong><span>installable skills</span></div>
-    <div class="metric"><strong>8</strong><span>mandatory full-flow reviewers</span></div>
+  <section class="metrics" aria-label="library summary">
+    <div class="metric"><strong>12</strong><span>installable agent prompts</span></div>
+    <div class="metric"><strong>35</strong><span>installable skills</span></div>
+    <div class="metric"><strong>8</strong><span>optional full-flow reviewers</span></div>
     <div class="metric"><strong>98,304</strong><span>local-model context ceiling</span></div>
   </section>
 
-  <h2>Repository model</h2>
+  <h2>Library model</h2>
   <div class="grid">
-    <div class="card"><strong>agents/</strong><p>Actors and hard authority: who may edit, read, delegate, or execute.</p></div>
-    <div class="card"><strong>skills/</strong><p>Standalone methodologies. Manually triggerable and reusable in other flows.</p></div>
-    <div class="card"><strong>flows/</strong><p>Composition and ordering only. No duplicate reviewer intelligence.</p></div>
-    <div class="card"><strong>protocols/</strong><p>Bounded evidence packets, context budgets, and optional run-local external memory.</p></div>
+    <div class="card"><strong>skills/</strong><p>The library core: standalone review, discovery, and reasoning methodologies.</p></div>
+    <div class="card"><strong>agents/</strong><p>Thin host-ready prompt wrappers around skills or coordinator roles.</p></div>
+    <div class="card"><strong>flows/</strong><p>Optional composition recipes. No duplicate reviewer intelligence.</p></div>
+    <div class="card"><strong>protocols/</strong><p>Portable evidence, context, and output conventions for compatible hosts.</p></div>
   </div>
 
-  <h2>Full planning flow</h2>
+  <h2>Repository discovery sequence</h2>
+  <div class="flow" aria-label="repository discovery sequence">
+    <span>repository signal</span><b>→</b><span>improvement scout</span><b>→</b><span>finding derivation</span><b>→</b><span>narrow specialist</span><b>→</b><span>smallest correction</span>
+  </div>
+
+  <h2>Optional full planning recipe</h2>
   <div class="flow" aria-label="review sequence">
     <span>MASTER v1</span><b>→</b><span>gap review</span><b>→</b><span>alternative route</span><b>→</b><span>synthesis</span><b>→</b><span>validation</span><b>→</b><span>coverage</span><b>→</b><span>red team</span><b>→</b><span>simulation</span><b>→</b><span>fact audit</span><b>→</b><span>contract</span><b>→</b><span>FINAL</span>
   </div>
@@ -54,30 +59,21 @@
   <h2>Standalone means standalone</h2>
   <div class="card">
     <ul>
-      <li>A user can invoke one reviewer directly.</li>
+      <li>A compatible host can load one skill directly.</li>
+      <li>A user can invoke one reviewer wrapper directly.</li>
       <li><code>subagent-router</code> can route one focused configured reviewer.</li>
-      <li>Ping-Pong/Ping-Ping can compose the exact eight mandatory reviewers.</li>
-      <li>Specialist skills can be loaded directly by compatible agents and reused by future flows.</li>
-      <li>Installable specialist skills do not silently become additional mandatory gates.</li>
+      <li>Ping-Pong/Ping-Ping can compose the exact eight optional reviewers.</li>
+      <li>Adding a new skill does not silently add another mandatory workflow step.</li>
     </ul>
   </div>
 
-  <h2>Low-context design</h2>
-  <pre>current subject
-+ compact verified facts
-+ relevant evidence
-+ reviewer-specific task
--------------------------
-= bounded review packet</pre>
-  <p>The workflow does not carry whole sibling reports forward. Optional run artifacts can preserve full Markdown reports plus compact receipts outside active context; synthesis reads receipts first and full reports only when needed.</p>
-
-  <h2>Runtime boundary</h2>
+  <h2>Host boundary</h2>
   <div class="grid">
-    <div class="card"><strong>OpenCode</strong><p>Canonical sources are linked into OpenCode's runtime discovery paths. Effective tool permissions are checked after loading.</p></div>
-    <div class="card"><strong>Pi</strong><p>The same canonical sources are exposed through Pi + <code>pi-open-agents</code>. Preflight checks links, allowed agents, and shadowing.</p></div>
+    <div class="card"><strong>Cookbook owns</strong><p>Markdown prompts, methodology, role contracts, evidence conventions, and optional composition examples.</p></div>
+    <div class="card"><strong>Host owns</strong><p>Model execution, tools, sandboxing, filesystem/process/network isolation, delegation, sessions, and persistence.</p></div>
   </div>
 
-  <p class="muted" style="margin-top:40px">Runtime directories are adapters. They are not the repository architecture.</p>
+  <p class="muted" style="margin-top:40px">OpenCode and Pi are supported consumers of the prompt library, not the product boundary.</p>
 </main>
 </body>
 </html>
