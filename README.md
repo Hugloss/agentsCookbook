@@ -10,13 +10,23 @@ The library works with **OpenCode, Pi, or another compatible agent runtime**. Th
 
 ## 30-second setup
 
-Clone the repository and link the canonical prompts into the supported local runtimes:
+The Markdown prompts are platform-independent. The repository helper installer is currently **tested on Ubuntu/Linux and WSL**; native macOS and native Windows installer support is not claimed yet.
+
+Clone the repository and inspect what the installer would change:
 
 ```bash
 git clone https://github.com/Hugloss/agentsCookbook.git
 cd agentsCookbook
+scripts/link-opencode-local.sh --dry-run
+```
+
+Then link the canonical prompts into the supported local runtimes:
+
+```bash
 scripts/link-opencode-local.sh
 ```
+
+The installer fails closed on unrelated conflicts unless you explicitly pass `--force`; forced conflicts are moved to timestamped backup paths before links are created.
 
 That installs the same canonical agent and skill sources for OpenCode and Pi. You can also ignore the adapters completely and copy or load any `SKILL.md` directly in another agent system.
 
@@ -27,6 +37,8 @@ scripts/check-canonical-sources.sh
 scripts/preflight-opencode-ping-pong.sh
 scripts/preflight-pi-ping-pong.sh
 ```
+
+See [`docs/installation.md`](docs/installation.md) for prerequisites, custom install locations, removal guidance, update behavior, and platform support.
 
 ## Start here
 
@@ -176,11 +188,21 @@ flow   -> optional composition recipe
 
 The repository currently has **12 agent prompts**.
 
+The `liteLLM/...` model names in these wrappers are repository-owner deployment aliases, not requirements of the underlying skills. Adapt or override them for your environment.
+
 ### Flows
 
 `flows/` contains optional compositions. They sequence existing prompts but do not own unique reviewer intelligence.
 
 The provided `ping-pong-plan` and `ping-ping-build` flows use exactly eight independent reviewers. Adding a new standalone skill does **not** silently enlarge that gate.
+
+## Stability and reproducibility
+
+`main` is active development. Until the project publishes a formal tagged-release/backport policy, do not assume an older checkout will receive compatibility or security fixes.
+
+For reproducible use, pin your clone or dependency reference to a known commit/tag instead of automatically tracking `main`.
+
+Prompt methodology is intended to remain portable, but host-specific frontmatter, model aliases, and adapter behavior can change as OpenCode/Pi evolve.
 
 ## OpenCode and Pi
 
@@ -239,8 +261,17 @@ The host owns:
 
 That boundary is intentional. The useful thing in this repository should remain the **prompts**.
 
+## Contributing and security
+
+Contributions are welcome when they sharpen a distinct prompt boundary, add a missing failure class, improve evidence quality, or make the public library easier to use without adding runtime scope.
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before proposing a new skill. Security-sensitive issues in installer/adapter code should follow [`SECURITY.md`](SECURITY.md) rather than posting exploit details publicly.
+
+The repository is licensed under the [`MIT License`](LICENSE).
+
 ## Documentation
 
+- [Installation and platform support](docs/installation.md)
 - [Skill catalog](skills/README.md)
 - [Architecture](docs/architecture.md)
 - [Ping-Pong planning example](docs/ping-pong-plan-flow.md)
@@ -249,4 +280,6 @@ That boundary is intentional. The useful thing in this repository should remain 
 - [Run artifacts](protocols/run-artifacts.md)
 - [Evaluation guidance](evals/README.md)
 - [Sharp skill discrimination](evals/sharp-skill-discrimination.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
 - [Non-technical walkthrough](docs/non-technical-walkthrough.md)
