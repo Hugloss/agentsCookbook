@@ -1,32 +1,38 @@
 ---
 name: coverage-design-review
-description: Checks whether tests follow real production usage and would catch plausible broken behavior.
+description: Checks whether tests prove real production behavior and plausible failures instead of merely executing code.
 license: MIT
 ---
 
 # Coverage Design Review
 
-Standalone, read-only coverage-design review. Evaluate behavioral confidence rather than coverage percentage.
+Standalone, read-only behavioral coverage review. Coverage percentage is not the target.
 
-Do not assume a coordinator, Ping-Pong, prior validation gate, run store, or sibling reviewer. The subject may be a plan, existing tests, implementation evidence, or a direct coverage question.
+## INVARIANT
 
-## Method
+> **Tests should prove real behavior and plausible failure modes, not merely execute lines.**
 
-- Establish the normal production entry path and observable behavior relevant to the subject.
-- Identify realistic failures: input variation, invalid input, repeated operations, state changes, partial failure, retries, interruption, recovery, lifecycle, and cross-component interaction where applicable.
-- Compare those behaviors with proposed/existing tests.
-- Flag tests that only execute lines, only prove no exception occurred, use artificial call paths, mock away the behavior under review, or omit meaningful outcome assertions.
-- Prefer the simplest suitable level: isolated unit tests, realistic component tests, and a few workflow tests for critical paths.
-- For each important test ask what plausible broken implementation could still pass.
-- In `BUILD REVIEW MODE`, tie findings to changed files, diff/test evidence, or skipped checks.
-- Never edit files, run commands, invoke agents, or provide patches.
+## HUNT
 
-## Output
+Start from real production entry paths and observable outcomes. Hunt for missing coverage of:
+- input variation and invalid input;
+- repeated operations and state changes;
+- partial failure, retry, interruption, and recovery;
+- lifecycle and cross-component behavior;
+- tests that mock away the behavior they claim to verify.
 
-Normal mode: `# Coverage Design Review` with Coverage Design Verdict (`Strong`, `Needs Improvement`, or `Insufficient Evidence`); Real Usage Model; Meaningful Coverage Gaps; Mocking And Artificial-Path Risks; Missing Outcome Assertions; Recommended Test Portfolio; Repo Facts Used.
+## PROVE
 
-For each meaningful gap include Problem, Real-world risk, Current test weakness, Better test, and Priority (`HIGH`, `MEDIUM`, `LOW`).
+For each material gap name a plausible broken implementation that would still pass today. Tie the gap to a real production path and observable outcome.
 
-Build mode: `# Build Review Report` with Blocking Findings; Non-Blocking Findings; Missing Validation; Suggested Fixes; Evidence Inspected; Confidence / Remaining Risk.
+## DO NOT REPORT
 
-Use `None` rather than manufacturing findings.
+Do not report line coverage alone, artificial edge cases with no production path, or implementation coupling unless it creates false confidence. `test-contract-coupling-review` owns tests that freeze private choreography.
+
+## PREFER
+
+Use the smallest test level that proves the behavior: isolated logic, component/integration boundary, then a few critical workflow tests. Keep meaningful behavior real rather than replacing it with mocks.
+
+## OUTPUT
+
+Return `# Coverage Design Review` with verdict, real-usage model, meaningful gaps, mocking/artificial-path risks, missing outcome assertions, and recommended test portfolio. For each gap: problem, real-world risk, current weakness, better test, priority.
