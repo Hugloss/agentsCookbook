@@ -31,6 +31,13 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `stale-work-race-review` — Find old async work that can commit after newer ownership exists.
 - `ui-lifecycle-race-review` — Find delayed UI work that outlives its view or interaction.
 
+## Execution integrity
+
+- `atomic-operation-review` — Find logical operations that can expose partial externally visible state.
+- `retry-idempotency-review` — Find replay/retry paths that can repeat one-shot effects.
+- `resource-lifetime-review` — Find resources that leak, close too early, or outlive their owner.
+- `failure-contract-review` — Find failure meaning or recovery contracts that diverge across layers.
+
 ## Semantic authority
 
 - `semantic-redecision-review` — Find the same semantic answer being independently decided twice.
@@ -69,7 +76,10 @@ Use the narrowest skill that owns the question:
 - `code-performance-optimization-audit` asks **where runtime cost scales badly**; `test-work-amplification-review` starts from measured slow tests; `single-observation-review` asks whether one logical operation observes the same input world twice.
 - `semantic-redecision-review` catches the same semantic answer being made repeatedly; `resolved-fact-regression-review` catches a resolved answer being discarded so downstream code returns to raw facts.
 - `state-authority-review` asks **which representation is truth**; `invalid-state-model-review` asks **whether that representation can express impossible states**.
-- `stale-work-race-review` asks whether ordering lets old work commit; `durable-commit-path-review` asks why the same durable transition has multiple commit authorities at all.
+- `stale-work-race-review` asks whether superseded old work can still commit; `retry-idempotency-review` asks whether the **same logical operation** can repeat a one-shot effect.
+- `durable-commit-path-review` asks why one transition has multiple commit authorities; `atomic-operation-review` asks whether one legitimate path can expose only part of its required outcome.
+- `resource-lifetime-review` owns general acquire/use/release lifetime; `ui-lifecycle-race-review` owns delayed work specifically outliving a UI/view generation.
+- `failure-contract-review` owns failure meaning, retryability, and recovery semantics; `semantic-redecision-review` owns broader repeated policy interpretation.
 - `call-chain-collapse-review` targets no-value hops; `dependency-surface-review` targets oversized inputs/contexts even when the call depth is reasonable.
 - `red-team-leftover-gate` reviews a supplied plan/change for material blockers; `architecture-risk-triage` routes repository hotspots to specialist architecture reviews.
 

@@ -19,6 +19,9 @@ jobs:
       - name: Canonical source contracts
         run: ./scripts/check-canonical-sources.sh
 
+      - name: Sharp skill corpus contracts
+        run: node scripts/run-skill-benchmarks.js --validate-corpus
+
       - name: Adapter smoke tests
         run: ./scripts/smoke-opencode-scripts.sh
 
@@ -33,9 +36,11 @@ jobs:
           node --check scripts/check-pi-session.js
           node --check scripts/check-pi-reviewer-boundary.js
           node --check scripts/run-opencode-benchmarks.js
+          node --check scripts/run-skill-benchmarks.js
           node --check scripts/export-review-artifacts.js
           node --check scripts/check-run-artifacts.js
           node --check adapters/opencode/review-artifact.js
+          node --check adapters/pi/index.js
           node --check adapters/pi/reviewer-tool-boundary.js
           node --check adapters/pi/review-artifact.js
 

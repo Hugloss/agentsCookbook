@@ -15,7 +15,11 @@ Standalone, read-only discovery/router skill. It identifies where to aim deeper 
 ## HUNT
 
 Trace important production paths and hunt strong signals:
-- stale async completion;
+- stale async completion or UI work outliving its owner;
+- partial multi-effect commit;
+- retry/redelivery repeating a one-shot effect;
+- leaked, prematurely closed, or ambiguously owned resources;
+- inconsistent failure meaning, retryability, or recovery;
 - repeated semantic decisions;
 - multiple durable commit paths;
 - resolved facts reconstructed from raw inputs;

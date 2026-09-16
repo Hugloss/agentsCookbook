@@ -27,7 +27,7 @@ There are **12 installable agents**:
 - 8 mandatory read-only reviewers used by the full Ping-Pong/Ping-Ping gate;
 - 1 standalone performance auditor: `code-performance-optimization-auditor`.
 
-There are **29 installable skills**. Every skill and reviewer is independently usable outside the full flows; no capability requires Ping-Pong state, sibling reviewer output, or a run store. The complete grouped catalog and overlap boundaries live in [`skills/README.md`](skills/README.md).
+There are **33 installable skills**. Every skill and reviewer is independently usable outside the full flows; no capability requires Ping-Pong state, sibling reviewer output, or a run store. The complete grouped catalog and overlap boundaries live in [`skills/README.md`](skills/README.md).
 
 | Reviewer | Skill | Default local-model alias |
 | --- | --- | --- |
@@ -127,6 +127,7 @@ Repository/adapter qualification:
 
 ```bash
 scripts/check-canonical-sources.sh
+node scripts/run-skill-benchmarks.js --validate-corpus
 scripts/smoke-opencode-scripts.sh
 scripts/smoke-run-artifacts.sh
 ```
@@ -136,6 +137,13 @@ Runtime qualification on a machine with the actual harnesses and local model end
 ```bash
 scripts/preflight-opencode-ping-pong.sh
 scripts/preflight-pi-ping-pong.sh
+```
+
+Sharp specialist behavior is qualified separately from install/discovery. The same canonical corpus runs on either runtime:
+
+```bash
+node scripts/run-skill-benchmarks.js --runtime opencode --skill stale-work-race-review --artifacts-dir .runs/skill-evals
+node scripts/run-skill-benchmarks.js --runtime pi --skill stale-work-race-review --artifacts-dir .runs/skill-evals
 ```
 
 Current `pi-open-agents` cannot turn a wildcard permission block into a finite child `--tools` whitelist. The Pi adapter closes that runtime-specific gap for cookbook reviewer children with an exact active-tool set (`read`, `grep`, `find`, `ls`, plus `review_artifact` only in artifact mode) and a second `tool_call` blocking gate. Canonical reviewers keep their OpenCode-compatible `"*": deny` contract; no Pi-specific behavioral copies are introduced.
@@ -158,7 +166,7 @@ OpenCode details live in [`adapters/opencode/`](adapters/opencode/); Pi details 
 
 The cookbook borrows useful ideas from strong skill repositories—progressive disclosure, short routing metadata, selective reference loading, and context isolation—without copying another repository's taxonomy or workflows.
 
-Its differentiators are explicit authority, independent multi-model review, standalone capabilities, dual OpenCode/Pi operation, runtime auditing, and context economics designed for local models.
+Its differentiators are explicit authority, independent multi-model review, standalone capabilities, dual OpenCode/Pi operation, runtime auditing, behavioral skill discrimination, and context economics designed for local models.
 
 ## Documentation
 
@@ -169,5 +177,5 @@ Its differentiators are explicit authority, independent multi-model review, stan
 - [Run artifacts](protocols/run-artifacts.md)
 - [Non-technical walkthrough](docs/non-technical-walkthrough.md)
 - [Evaluation guidance](evals/README.md)
-- [Sharp skill discrimination corpus](evals/sharp-skill-discrimination.md)
+- [Sharp skill discrimination](evals/sharp-skill-discrimination.md)
 - [Browser demo](demo/index.html)
