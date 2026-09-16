@@ -29,7 +29,7 @@ There are **12 installable agents**:
 
 There are **8 installable skills**. Every skill and reviewer is independently usable outside the full flows; no capability requires Ping-Pong state, sibling reviewer output, or a run store.
 
-| Reviewer | Skill | Model |
+| Reviewer | Skill | Default local-model alias |
 | --- | --- | --- |
 | `plan-improver-model2` | `plan-improvement-scout` | `liteLLM/gpt-oss` |
 | `plan-improver-model3` | `plan-improvement-scout` | `liteLLM/gpt-oss` |
@@ -40,7 +40,7 @@ There are **8 installable skills**. Every skill and reviewer is independently us
 | `plan-fact-auditor` | `fact-grounding-auditor` | `liteLLM/gemma4` |
 | `plan-contract-checker` | `plan-contract-guard` | `liteLLM/gemma4` |
 
-The performance auditor uses `code-performance-optimization-audit` and `liteLLM/devstral`; it is deliberately **not** silently added to the eight-review full-flow gate.
+The model names are deployment aliases, not reviewer-methodology requirements. Point them at the local endpoints you want through your LiteLLM deployment while preserving the required tool use, context window, and output contracts. The standalone performance auditor defaults to `liteLLM/devstral`; it is deliberately **not** silently added to the eight-review full-flow gate.
 
 ## Standalone first
 
@@ -55,7 +55,7 @@ The primary local profile assumes a **98,304-token maximum context**. This is a 
 - reserve roughly 25% for tool schemas, evidence variance, reasoning/compaction, and final output;
 - descriptions target <=120 characters and must be <=160 characters.
 
-See [`protocols/context-budget.md`](protocols/context-budget.md).
+See [`protocols/context-budget.md`](protocols/context-budget.md). Real deployment promotion also requires the model-backed checks in [`docs/local-runtime-qualification.md`](docs/local-runtime-qualification.md).
 
 ## Bounded review context
 
@@ -127,14 +127,14 @@ scripts/smoke-opencode-scripts.sh
 scripts/smoke-run-artifacts.sh
 ```
 
-Runtime qualification on a machine with the actual harnesses:
+Runtime qualification on a machine with the actual harnesses and local model endpoints:
 
 ```bash
 scripts/preflight-opencode-ping-pong.sh
 scripts/preflight-pi-ping-pong.sh
 ```
 
-Then run the existing session/benchmark checks. For artifact-backed Pi runs, `check-pi-session.js` additionally requires each successful reviewer child to have called `review_artifact` with its own fixed artifact ID.
+Then follow [`docs/local-runtime-qualification.md`](docs/local-runtime-qualification.md) for the real OpenCode/Pi full-review acceptance runs. In artifact-backed Pi runs, `check-pi-session.js` additionally requires each successful reviewer child to have called `review_artifact` with its own fixed artifact ID.
 
 OpenCode details live in [`adapters/opencode/`](adapters/opencode/); Pi details live in [`adapters/pi/`](adapters/pi/).
 
@@ -157,6 +157,7 @@ Its differentiators are explicit authority, independent multi-model review, stan
 
 - [Architecture](docs/architecture.md)
 - [Ping-Pong planning flow](docs/ping-pong-plan-flow.md)
+- [Local runtime qualification](docs/local-runtime-qualification.md)
 - [Run artifacts](protocols/run-artifacts.md)
 - [Non-technical walkthrough](docs/non-technical-walkthrough.md)
 - [Evaluation guidance](evals/README.md)
