@@ -34,6 +34,8 @@ Do not proceed if a preflight fails. Fix the runtime or installation rather than
 
 Artifact-backed mode keeps full reviewer reports out of the coordinator's active context.
 
+For OpenCode:
+
 ```bash
 export AGENTS_COOKBOOK_RUN_DIR="$PWD/.runs/opencode-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$AGENTS_COOKBOOK_RUN_DIR"
@@ -41,7 +43,7 @@ mkdir -p "$AGENTS_COOKBOOK_RUN_DIR"
 
 The directory must be absolute and fresh. Existing reviewer IDs are never overwritten.
 
-For a Pi qualification run, use a different fresh directory so the exact eight reviewer IDs cannot collide with the OpenCode run.
+Use a different fresh directory for Pi so the exact eight reviewer IDs cannot collide with the OpenCode run.
 
 ## 3. Qualify OpenCode
 
@@ -63,17 +65,27 @@ scripts/check-opencode-session.sh --scope latest-segment
 scripts/check-run-artifacts.js --run-dir "$AGENTS_COOKBOOK_RUN_DIR"
 ```
 
-For broader regression coverage, run the fixed benchmark suite separately:
+For broader regression coverage, run the fixed benchmark suite **without reusing the single-run artifact root**:
 
 ```bash
+unset AGENTS_COOKBOOK_RUN_DIR
 scripts/run-opencode-benchmarks.js --suite all --repo "$PWD" --artifacts-dir "$PWD/.runs/benchmarks"
 ```
 
+The benchmark runner owns its own evidence directory. A live artifact root must be unique per review run because reviewer artifact IDs are intentionally create-only.
+
 ## 4. Qualify Pi
+
+Create a fresh Pi-specific artifact root:
+
+```bash
+export AGENTS_COOKBOOK_RUN_DIR="$PWD/.runs/pi-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$AGENTS_COOKBOOK_RUN_DIR"
+```
 
 Start Pi from the target repository, use `/agent` to select `ping-pong-plan`, and send the same bounded planning request.
 
-With `AGENTS_COOKBOOK_RUN_DIR` still pointing at a fresh Pi-specific directory, verify both child behavior and durable evidence:
+Then verify both child behavior and durable evidence:
 
 ```bash
 scripts/check-pi-session.js --scope latest-turn
@@ -81,6 +93,8 @@ scripts/check-run-artifacts.js --run-dir "$AGENTS_COOKBOOK_RUN_DIR"
 ```
 
 In artifact-backed mode, the Pi session audit requires every successful reviewer child to load its declared skill first and to call `review_artifact` using its own fixed reviewer ID.
+
+Pi's subagent wrapper returns the child `result.output` as parent-visible tool text while retaining child tool traces separately in result details. The qualification run should therefore show compact receipt output returning to the coordinator rather than the full reviewer report.
 
 ## 5. Acceptance criteria
 
