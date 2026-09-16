@@ -6,7 +6,9 @@ Agents Cookbook separates product concepts from runtime discovery layouts.
 
 ### Agents
 
-`agents/` contains actors and hard authority boundaries: who may edit, delegate, read, or execute commands. Agents may be invoked directly when the runtime supports it.
+`agents/` contains actors and hard authority boundaries: who may edit, delegate, read, execute commands, or use the bounded run-artifact tools. Agents may be invoked directly when the runtime supports it.
+
+Reviewer agents are deny-by-default. They keep normal project read-only authority and may optionally receive only `review_artifact`, a fixed-run-store sink. Primary agents may receive only `review_artifact_read` for selective named-report retrieval.
 
 ### Skills
 
@@ -18,11 +20,13 @@ Agents Cookbook separates product concepts from runtime discovery layouts.
 
 ### Protocols
 
-`protocols/` defines portable context/evidence conventions. Protocols are not additional authority systems.
+`protocols/` defines portable context/evidence conventions: bounded evidence packets, local-model context budgets, and run-artifact identity/retention rules. Protocols are not additional authority systems.
 
 ### Adapters
 
 `adapters/` and installation/preflight scripts bridge canonical sources into OpenCode and Pi. Runtime-specific path conventions do not become repository source conventions.
+
+The artifact adapters are installed but inert unless `AGENTS_COOKBOOK_RUN_DIR` is set. They accept artifact IDs rather than arbitrary paths and confine all storage to the configured per-run root.
 
 ## Ownership
 
@@ -43,7 +47,24 @@ Every reviewer and skill must work when:
 - composed by the full planning/build flow;
 - reused by a future flow.
 
-Optional infrastructure such as run-local artifact persistence must not become a hidden prerequisite.
+Artifact persistence is optional transport, never a hidden prerequisite. With artifact mode disabled, reviewers return their complete review normally.
+
+## Low-context evidence flow
+
+Artifact-backed mode externalizes full reports without making them disappear from authority/audit:
+
+```text
+reviewer
+  -> complete skill-defined report
+  -> bounded review_artifact sink
+  -> compact receipt/summary returned to coordinator
+
+coordinator
+  -> synthesize from compact receipts
+  -> selectively read one full report only when needed
+```
+
+The run-store checker validates exact reviewer sets, receipt identity, hashes, output sizes, summary budgets, and runtime identity. A separate post-run exporter can materialize ordinary non-artifact-mode sessions for later audit, but it does not reduce context during the original run.
 
 ## Mandatory versus installable capabilities
 
