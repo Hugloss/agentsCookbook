@@ -14,7 +14,7 @@ protocols/    bounded evidence, context, and optional run-artifact contracts
 adapters/     OpenCode/Pi runtime integration notes
 evals/        evaluation ownership and benchmark guidance
 docs/         architecture and usage documentation
-scripts/      installation, preflight, session auditing, and benchmarks
+scripts/      installation, preflight, session auditing, artifacts, and benchmarks
 ```
 
 There is one canonical source for each agent and skill. Runtime installation links those sources into the locations each harness expects.
@@ -72,9 +72,25 @@ See [`protocols/context-budget.md`](protocols/context-budget.md).
 
 Reviewers receive a self-contained evidence packet rather than the whole conversation or all previous reviewer output. See [`protocols/evidence-packet.md`](protocols/evidence-packet.md).
 
-For low-context runs, full reviewer reports may be persisted outside active context with compact receipts. The synthesizer consumes receipts first and retrieves full reports selectively. This storage is optional infrastructure; standalone reviewers cannot depend on it. See [`protocols/run-artifacts.md`](protocols/run-artifacts.md).
+For low-context runs, reviewer reports can be persisted outside active context with compact deterministic receipts. Standalone reviewers do not depend on that storage.
 
-Reviewers remain read-only. The cookbook does **not** grant broad filesystem write access merely so reviewers can save Markdown. A runtime must first provide a safe bounded artifact-write mechanism; otherwise the caller captures returned reports.
+Reviewers remain read-only. The default persistence boundary is **after the reviewer call**, using real runtime session evidence:
+
+```bash
+node scripts/export-review-artifacts.js \
+  --runtime pi \
+  --input /path/to/session.jsonl \
+  --out runs/<run-id>
+
+node scripts/export-review-artifacts.js \
+  --runtime opencode \
+  --input /path/to/opencode-export.json \
+  --out runs/<run-id>
+```
+
+The exporter writes one immutable Markdown artifact and one compact JSON receipt per real reviewer call, plus `manifest.json`. It hashes every artifact and represents failed calls explicitly instead of inventing reviews. See [`protocols/run-artifacts.md`](protocols/run-artifacts.md).
+
+A future runtime-native artifact tool may reduce live coordinator context further, but it must preserve the same rule: no generic project write authority for reviewers.
 
 ## OpenCode and Pi
 
