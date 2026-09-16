@@ -1,7 +1,7 @@
 import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
-import { Type } from "@sinclair/typebox"
+import { Type } from "typebox"
 
 const MAX_REPORT_CHARS = 65536
 const MAX_SUMMARY_CHARS = 1200
