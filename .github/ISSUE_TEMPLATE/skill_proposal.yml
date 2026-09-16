@@ -1,0 +1,53 @@
+name: Skill proposal
+description: Propose a new narrow skill or a meaningful boundary change to an existing one.
+title: "[skill] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        New skills should own one narrow review or discovery question. Prefer sharpening an existing skill when the failure class already fits.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Repository/agent failure mode
+      description: What concrete failure or missed review behavior should this skill address?
+    validations:
+      required: true
+  - type: textarea
+    id: invariant
+    attributes:
+      label: Proposed invariant
+      description: One sentence the skill should defend.
+    validations:
+      required: true
+  - type: textarea
+    id: hunt
+    attributes:
+      label: What should it hunt?
+      description: Name the concrete repository signals or paths worth inspecting.
+    validations:
+      required: true
+  - type: textarea
+    id: proof
+    attributes:
+      label: What must be proved before reporting?
+    validations:
+      required: true
+  - type: textarea
+    id: false_positives
+    attributes:
+      label: Main false positives / DO NOT REPORT
+    validations:
+      required: true
+  - type: textarea
+    id: overlap
+    attributes:
+      label: Why existing skills are insufficient
+      description: Name the closest existing skills and explain the boundary.
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Example real-world case
+      description: Give a small scenario where this skill would produce a useful result.
