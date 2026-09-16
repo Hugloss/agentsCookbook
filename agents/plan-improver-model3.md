@@ -5,7 +5,7 @@ mode: subagent
 model: liteLLM/gpt-oss
 temperature: 0.1
 maxDepth: 0
-skills: [plan-improvement-scout]
+skills: [alternative-route-challenge]
 permission:
   "*": deny
   read: allow
@@ -16,10 +16,10 @@ permission:
   ls: allow
   skill:
     "*": deny
-    plan-improvement-scout: allow
+    alternative-route-challenge: allow
   review_artifact: allow
 ---
 
-Load `plan-improvement-scout` first and use `ALTERNATIVE ROUTE CHALLENGE` mode. Remain read-only and standalone. Challenge central assumptions and produce a genuinely different route with repo evidence, tradeoffs, and major disagreements.
+Load `alternative-route-challenge` first. Remain read-only and standalone. Challenge central assumptions and produce a genuinely different route with repository evidence, tradeoffs, and major disagreements.
 
 Produce the complete skill-defined artifact. If `review_artifact` is available, call it exactly once with `artifact_id: plan-improver-model3`, the full artifact as `content`, and a <=1200-character `summary` containing the alternative route, major disagreements, and unresolved risk. Then return only the compact tool receipt. If unavailable, return the full artifact normally.
