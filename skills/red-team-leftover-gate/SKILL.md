@@ -1,6 +1,6 @@
 ---
 name: red-team-leftover-gate
-description: Finds concrete blockers, hidden risk, missing proof, stale assumptions, leftovers, and scope creep before handoff.
+description: Finds concrete blockers, hidden risk, stale assumptions, leftovers, and scope creep before handoff.
 license: MIT
 ---
 
@@ -28,12 +28,18 @@ A blocker must have a concrete failure mode and evidence. Explain location, impa
 
 ## DO NOT REPORT
 
-Do not produce generic warnings, duplicate non-blocking style feedback, or label uncertainty as blocking without showing how it prevents safe completion. In BUILD REVIEW MODE, anchor findings in changed files/evidence.
+Do not produce generic warnings, duplicate non-blocking style feedback, or label uncertainty as blocking without showing how it prevents safe completion.
 
 ## PREFER
 
 Block only material risk. Keep corrections narrow and evidence-driven.
 
+## BUILD REVIEW MODE
+
+When input starts with `BUILD REVIEW MODE`, anchor every finding in changed files, supplied evidence, or a production path affected by the change. Hunt especially for surviving old paths, stale authority, incomplete cleanup, and unproved failure behavior.
+
+Return `# Build Red-Team Review` with blocking findings, non-blocking findings, missing validation/evidence, concrete fixes, and remaining risk. Use `None` when clean.
+
 ## OUTPUT
 
-Return `# Red-Team Gate Report` with blocking issues, high-risk ambiguities, missing validation, scope creep, concrete fixes, and repo facts used. Use `None` when clean.
+Otherwise return `# Red-Team Gate Report` with blocking issues, high-risk ambiguities, missing validation, scope creep, concrete fixes, and repo facts used. Use `None` when clean.
