@@ -38,6 +38,10 @@ red-team-leftover-gate
 code-performance-optimization-audit
 stale-work-race-review
 ui-lifecycle-race-review
+atomic-operation-review
+retry-idempotency-review
+resource-lifetime-review
+failure-contract-review
 semantic-redecision-review
 durable-commit-path-review
 resolved-fact-regression-review
