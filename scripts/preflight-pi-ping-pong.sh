@@ -43,14 +43,21 @@ check_link() {
   if [ ! -L "$dest" ]; then fail "$name" "path=$dest expected=$expected"; return; fi
   resolved="$(realpath -- "$dest" 2>/dev/null || true)"; [ "$resolved" = "$expected" ] && pass "$name" "path=$dest" || fail "$name" "resolved=${resolved:-<unresolved>} expected=$expected"
 }
+version_at_least() {
+  local minimum="$1" actual="$2"
+  [ -n "$actual" ] && [ "$(printf '%s\n%s\n' "$minimum" "$actual" | sort -V | head -n 1)" = "$minimum" ]
+}
 
 if command -v pi >/dev/null 2>&1; then
   pi_version="$(pi --version 2>/dev/null | sed -n '1s/[^0-9]*\([0-9][0-9.]*\).*/\1/p')"
-  if [ -n "$pi_version" ] && [ "$(printf '%s\n%s\n' 0.85.0 "$pi_version" | sort -V | head -n 1)" = 0.85.0 ]; then pass command_pi "version=$pi_version"; else fail command_pi "version=${pi_version:-unknown} minimum=0.85.0"; fi
+  if version_at_least 0.85.0 "$pi_version"; then pass command_pi "version=$pi_version minimum=0.85.0"; else fail command_pi "version=${pi_version:-unknown} minimum=0.85.0"; fi
 else fail command_pi missing; fi
 
 package_json="$pi_agent_dir/npm/node_modules/pi-open-agents/package.json"
-if [ -f "$package_json" ]; then package_version="$(node -e 'const p=require(process.argv[1]);process.stdout.write(String(p.version||""))' "$package_json" 2>/dev/null || true)"; [ "$package_version" = 0.1.20 ] && pass pi_open_agents_package "version=$package_version" || fail pi_open_agents_package "version=${package_version:-unknown} expected=0.1.20"; else fail pi_open_agents_package "missing=$package_json"; fi
+if [ -f "$package_json" ]; then
+  package_version="$(node -e 'const p=require(process.argv[1]);process.stdout.write(String(p.version||""))' "$package_json" 2>/dev/null || true)"
+  if version_at_least 0.1.20 "$package_version"; then pass pi_open_agents_package "version=$package_version minimum=0.1.20"; else fail pi_open_agents_package "version=${package_version:-unknown} minimum=0.1.20"; fi
+else fail pi_open_agents_package "missing=$package_json"; fi
 
 settings="$pi_agent_dir/settings.json"
 if [ -f "$settings" ] && node -e 'const fs=require("fs"),s=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const v=[...(Array.isArray(s.extensions)?s.extensions:[]),...(Array.isArray(s.packages)?s.packages:[])];process.exit(v.some(x=>typeof x==="string"&&/^npm:pi-open-agents(?:@|$)/.test(x))?0:1)' "$settings" 2>/dev/null; then pass pi_open_agents_enabled "settings=$settings"; else fail pi_open_agents_enabled "settings=$settings extension=npm:pi-open-agents"; fi
@@ -86,5 +93,5 @@ for agent_file in $AC_AGENT_FILES; do
   done
 done
 
-if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass runtime=pi agents=12 skills=8 adapters=1 mandatory_flow_reviewers=8 plugin=pi-open-agents@0.1.20\n'; exit 0; fi
+if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass runtime=pi agents=12 skills=8 adapters=1 mandatory_flow_reviewers=8 pi_open_agents=%s\n' "$package_version"; exit 0; fi
 printf 'SUMMARY status=fail runtime=pi failures=%s\n' "$failures"; exit 1
