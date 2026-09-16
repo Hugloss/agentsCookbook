@@ -1,6 +1,6 @@
 # Local Runtime Qualification
 
-GitHub CI proves repository structure, adapter safety, deterministic smoke behavior, and script syntax. It does **not** prove that your installed OpenCode/Pi versions, local model endpoints, tokenizer, or 98,304-token serving configuration behave correctly together.
+GitHub CI proves repository structure, adapter safety, deterministic smoke behavior, corpus consistency, and script syntax. It does **not** prove that your installed OpenCode/Pi versions, local model endpoints, tokenizer, 98,304-token serving configuration, or specialist discrimination behave correctly together.
 
 Use this as the promotion gate for a real local deployment.
 
@@ -22,13 +22,14 @@ From this repository:
 ```bash
 scripts/link-opencode-local.sh
 scripts/check-canonical-sources.sh
+node scripts/run-skill-benchmarks.js --validate-corpus
 scripts/smoke-opencode-scripts.sh
 scripts/smoke-run-artifacts.sh
 scripts/preflight-opencode-ping-pong.sh
 scripts/preflight-pi-ping-pong.sh
 ```
 
-Do not proceed if a preflight fails. Fix the runtime or installation rather than weakening the gate.
+Do not proceed if a preflight or corpus contract fails. Fix the runtime, installation, skill registry, or evaluation data rather than weakening the gate.
 
 ## 2. Use a fresh artifact root per run
 
@@ -45,7 +46,7 @@ The directory must be absolute and fresh. Existing reviewer IDs are never overwr
 
 Use a different fresh directory for Pi so the exact eight reviewer IDs cannot collide with the OpenCode run.
 
-## 3. Qualify OpenCode
+## 3. Qualify OpenCode full flow
 
 Run one full planning flow against a bounded real repository task:
 
@@ -74,7 +75,7 @@ scripts/run-opencode-benchmarks.js --suite all --repo "$PWD" --artifacts-dir "$P
 
 The benchmark runner owns its own evidence directory. A live artifact root must be unique per review run because reviewer artifact IDs are intentionally create-only.
 
-## 4. Qualify Pi
+## 4. Qualify Pi full flow
 
 Create a fresh Pi-specific artifact root:
 
@@ -96,11 +97,47 @@ In artifact-backed mode, the Pi session audit requires every successful reviewer
 
 Pi's subagent wrapper returns the child `result.output` as parent-visible tool text while retaining child tool traces separately in result details. The qualification run should therefore show compact receipt output returning to the coordinator rather than the full reviewer report.
 
-## 5. Acceptance criteria
+## 5. Qualify sharp specialist discrimination
 
-A runtime is qualified only when all of the following are true:
+Install/discovery and full-flow success do not prove that a narrow skill keeps its edge. Run the canonical positive/control/confusion corpus against the intended local model profile.
 
-- all eight mandatory reviewers are attempted exactly once and all eight succeed;
+Start with a few high-overlap specialists:
+
+```bash
+unset AGENTS_COOKBOOK_RUN_DIR
+node scripts/run-skill-benchmarks.js \
+  --runtime opencode \
+  --skill stale-work-race-review \
+  --skill durable-commit-path-review \
+  --skill retry-idempotency-review \
+  --artifacts-dir "$PWD/.runs/skill-evals"
+
+node scripts/run-skill-benchmarks.js \
+  --runtime pi \
+  --skill stale-work-race-review \
+  --skill durable-commit-path-review \
+  --skill retry-idempotency-review \
+  --artifacts-dir "$PWD/.runs/skill-evals"
+```
+
+Then run the full corpus when promoting a model/profile intended to use all specialists:
+
+```bash
+node scripts/run-skill-benchmarks.js --runtime opencode --all --artifacts-dir "$PWD/.runs/skill-evals"
+node scripts/run-skill-benchmarks.js --runtime pi --all --artifacts-dir "$PWD/.runs/skill-evals"
+```
+
+Use `--model ID` or `SKILL_EVAL_MODEL` when the benchmark should target a specific local endpoint.
+
+A specialist is behaviorally qualified only when its positive cases produce in-scope findings, its control cases stay clean, and its confusion cases refuse neighboring failure classes. The runner requires concise evidence for every verdict and records elapsed time/output size per case.
+
+Do not compare OpenCode and Pi by exact prose. Compare verdict, scope, evidence quality, false-positive behavior, and runtime/context economics.
+
+## 6. Acceptance criteria
+
+A runtime/profile is qualified only when the relevant claims below are true:
+
+- all eight mandatory reviewers are attempted exactly once and all eight succeed in the full flow;
 - no unexpected reviewer is invoked;
 - reviewer authority remains deny-by-default;
 - every reviewer produces one immutable artifact and one matching receipt;
@@ -109,12 +146,14 @@ A runtime is qualified only when all of the following are true:
 - the coordinator uses receipt content by default and does not reproduce raw reviewer reports in the final answer;
 - selective `review_artifact_read` is used only when detailed evidence is materially needed;
 - the final response satisfies the primary agent's output contract;
+- every specialist claimed as qualified passes its positive and control cases;
+- confusion cases pass for the high-overlap skill boundaries being promoted;
 - no context overflow, silent truncation, or model-server rejection occurs;
 - actual context usage, when exposed by the runtime/model server, stays below the 98,304-token model maximum and should stay below the 73,728-token workflow target.
 
 If actual token usage cannot be measured, record that limitation. Do not claim the 98k deployment profile is empirically qualified solely from character-count gates.
 
-## 6. Fallback mode
+## 7. Fallback mode
 
 If live artifact mode was not enabled for a run, reviewers return their complete reports normally. The run can still be audited and materialized afterward:
 
@@ -127,4 +166,4 @@ Post-run export is an audit/recovery path. It does not provide the live context 
 
 ## Promotion rule
 
-Do not promote a runtime profile merely because repository CI is green. Promotion requires one successful real OpenCode full-review run and one successful real Pi full-review run on the intended local model configuration, plus the evidence checks above.
+Do not promote a runtime profile merely because repository CI is green. Promotion requires one successful real OpenCode full-review run and one successful real Pi full-review run on the intended local model configuration, plus the evidence checks above. Any specialist advertised as qualified must also have model-backed discrimination results for that runtime/profile.
