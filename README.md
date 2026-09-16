@@ -12,6 +12,8 @@ skills/       standalone reusable review methodologies
 flows/        compositions of agents; no unique reviewer methodology
 protocols/    bounded evidence, context, and optional run-artifact contracts
 adapters/     OpenCode/Pi runtime integration notes
+evals/        evaluation ownership and benchmark guidance
+docs/         architecture and usage documentation
 scripts/      installation, preflight, session auditing, and benchmarks
 ```
 
@@ -87,6 +89,7 @@ scripts/link-opencode-local.sh
 Run qualification before long workflows:
 
 ```bash
+scripts/check-canonical-sources.sh
 scripts/preflight-opencode-ping-pong.sh
 scripts/preflight-pi-ping-pong.sh
 scripts/smoke-opencode-scripts.sh
@@ -109,10 +112,10 @@ The cookbook borrows useful ideas from strong skill repositories—especially pr
 
 Its differentiators are explicit agent authority, independent multi-model review, reusable standalone capabilities, dual OpenCode/Pi operation, runtime invocation auditing, and context economics designed for local models.
 
-## Demo and historical references
+## Documentation
 
+- [Architecture](docs/architecture.md)
+- [Ping-Pong planning flow](docs/ping-pong-plan-flow.md)
+- [Non-technical walkthrough](docs/non-technical-walkthrough.md)
+- [Evaluation guidance](evals/README.md)
 - [Browser demo](demo/index.html)
-- [Non-technical walkthrough](.opencode/NON_TECH_AGENT_DEMO.md)
-- [Existing technical flow reference](.opencode/PING_PONG_PLAN_FLOW.md)
-
-Those historical docs will be moved out of `.opencode/` separately if they are refreshed; they are documentation, not canonical agent sources.
