@@ -10,6 +10,7 @@ const repoRoot = path.resolve(path.dirname(fs.realpathSync(__filename)), '..');
 const defaultCorpus = path.join(repoRoot, 'evals', 'sharp-skill-cases.json');
 const specialistSections = new Set([
   'Concurrency',
+  'Execution integrity',
   'Semantic authority',
   'Structural simplicity',
   'Test-derived architecture',
