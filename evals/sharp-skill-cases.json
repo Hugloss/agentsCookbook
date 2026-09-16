@@ -1,0 +1,315 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "stale-work-race-positive",
+      "skill": "stale-work-race-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "fixture": "evals/fixtures/async-ownership",
+      "scenario": "Two selections may overlap. Selection A starts first, selection B becomes current, B completes, then A completes. Determine whether older work can still overwrite state owned by B."
+    },
+    {
+      "id": "stale-work-race-control",
+      "skill": "stale-work-race-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Operations execute through one serialized queue. Operation B cannot start until operation A has completed or failed, and only the queue owner mutates the projection."
+    },
+    {
+      "id": "ui-lifecycle-race-positive",
+      "skill": "ui-lifecycle-race-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "View A schedules requestAnimationFrame work. Navigation replaces A with view B before the callback runs. The callback still dereferences a shared current DOM ref and mutates it without checking view identity."
+    },
+    {
+      "id": "ui-lifecycle-race-control",
+      "skill": "ui-lifecycle-race-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A view schedules delayed measurement work. Cleanup cancels the handle, and the callback also checks the exact render generation before touching the DOM."
+    },
+    {
+      "id": "semantic-redecision-positive",
+      "skill": "semantic-redecision-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "fixture": "evals/fixtures/semantic-authority",
+      "scenario": "The API layer and worker layer both decide the same can-run policy from the same raw configuration. There is no documented distinction between the two decisions."
+    },
+    {
+      "id": "semantic-redecision-control",
+      "skill": "semantic-redecision-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Admission decides eligibility once. Persistence later verifies that the admitted identity still matches the stored record but does not reinterpret eligibility."
+    },
+    {
+      "id": "durable-commit-path-positive",
+      "skill": "durable-commit-path-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "An API cancellation handler writes terminal status directly. Worker cleanup contains a separate direct write that can mark the same operation cancelled using its own conditions."
+    },
+    {
+      "id": "durable-commit-path-control",
+      "skill": "durable-commit-path-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "fixture": "evals/fixtures/async-ownership",
+      "scenario": "Inspect whether this example has multiple independent durable transition authorities. Ignore unrelated asynchronous ordering defects."
+    },
+    {
+      "id": "resolved-fact-regression-positive",
+      "skill": "resolved-fact-regression-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Admission resolves and returns a canonical repository identity. Execution receives both that identity and the raw path, ignores the identity, and resolves ownership again from the path."
+    },
+    {
+      "id": "resolved-fact-regression-control",
+      "skill": "resolved-fact-regression-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "fixture": "evals/fixtures/semantic-authority",
+      "scenario": "Inspect whether a previously resolved fact is discarded and reconstructed from raw inputs. Do not report simple duplicate policy logic unless a resolved-result boundary was actually crossed backward."
+    },
+    {
+      "id": "state-authority-positive",
+      "skill": "state-authority-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A database row and a writable process cache can both update lifecycle status. Reads sometimes prefer the cache and sometimes the database, with no declared canonical owner or freshness rule."
+    },
+    {
+      "id": "state-authority-control",
+      "skill": "state-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The database is explicitly canonical. An immutable receipt records the historical terminal outcome and is never read as current mutable state."
+    },
+    {
+      "id": "invalid-state-model-positive",
+      "skill": "invalid-state-model-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A model independently stores status, cancelled, completed_at, and result. It can represent status=running, cancelled=true, completed_at set, and a success result at the same time although the domain forbids that combination."
+    },
+    {
+      "id": "invalid-state-model-control",
+      "skill": "invalid-state-model-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Several optional metadata fields are independent observations. Every combination is valid in the domain and no downstream branch must repair contradictory lifecycle meaning."
+    },
+    {
+      "id": "single-observation-positive",
+      "skill": "single-observation-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "One command walks an include graph and reads every module to validate it. Planning later receives the source root rather than the graph, walks the includes again, and rereads the same modules."
+    },
+    {
+      "id": "single-observation-control",
+      "skill": "single-observation-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Two separate user commands run minutes apart. Each command independently scans the repository because each is a distinct logical operation with its own observation boundary."
+    },
+    {
+      "id": "call-chain-collapse-positive",
+      "skill": "call-chain-collapse-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A route calls a helper, which calls a service, which calls a facade. Each layer forwards the same values and errors unchanged to the existing domain owner and adds no invariant, protocol conversion, transaction, or trust boundary."
+    },
+    {
+      "id": "call-chain-collapse-control",
+      "skill": "call-chain-collapse-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A thin adapter converts a public HTTP payload into a validated domain command and prevents untrusted fields from crossing the boundary."
+    },
+    {
+      "id": "alternate-path-removal-positive",
+      "skill": "alternate-path-removal-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "All current execution uses admittedRun.execute(), except one remaining caller that still invokes legacyDirectExecute() with equivalent supported semantics and bypasses the canonical owner."
+    },
+    {
+      "id": "alternate-path-removal-control",
+      "skill": "alternate-path-removal-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Two entry paths remain because one performs an interactive dry run and the other performs a durable production execution. Their contracts and effects are intentionally different."
+    },
+    {
+      "id": "hidden-side-effect-positive",
+      "skill": "hidden-side-effect-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A function named getCurrentProfile() reads the profile and, as an undocumented part of the getter, persists a last_seen timestamp and emits an event."
+    },
+    {
+      "id": "hidden-side-effect-control",
+      "skill": "hidden-side-effect-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A command named recordProfileAccess() explicitly documents and performs the durable write and event emission at the application boundary."
+    },
+    {
+      "id": "dependency-surface-positive",
+      "skill": "dependency-surface-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A validator receives a 30-field application context, reads two fields, and forwards most of the remainder through three layers solely because the context type is used everywhere."
+    },
+    {
+      "id": "dependency-surface-control",
+      "skill": "dependency-surface-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A cohesive Order aggregate has many fields, but its validation invariant genuinely depends on most of them and callers treat the aggregate as one domain concept."
+    },
+    {
+      "id": "test-work-amplification-positive",
+      "skill": "test-work-amplification-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A test asserting one local normalization rule enters the public production API, which always performs a full repository scan and starts a subprocess before reaching the normalization."
+    },
+    {
+      "id": "test-work-amplification-control",
+      "skill": "test-work-amplification-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "fixture": "evals/fixtures/test-causality",
+      "scenario": "Inspect whether this test is slow because it performs disproportionate production work. Ignore nondeterministic waiting if that is the actual issue."
+    },
+    {
+      "id": "repeated-test-setup-positive",
+      "skill": "repeated-test-setup-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Forty small logic tests each construct the same expensive application graph, rebuild repository indexes, and initialize unrelated services because the production object cannot be cheaply constructed."
+    },
+    {
+      "id": "repeated-test-setup-control",
+      "skill": "repeated-test-setup-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Each persistence integration test creates a clean database because isolation of transaction and constraint semantics is exactly what the suite is proving."
+    },
+    {
+      "id": "test-isolation-boundary-positive",
+      "skill": "test-isolation-boundary-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A deterministic tax calculation cannot be invoked without starting a database and HTTP server because the only production API bundles loading, networking, persistence, and calculation together."
+    },
+    {
+      "id": "test-isolation-boundary-control",
+      "skill": "test-isolation-boundary-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The test explicitly verifies transaction isolation and the HTTP serialization contract, so the database and server are part of the behavior under test."
+    },
+    {
+      "id": "test-orchestration-complexity-positive",
+      "skill": "test-orchestration-complexity-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "To prove one narrow cancellation rule, a test constructs five subsystems, patches internal callbacks, drives four lifecycle states, coordinates cleanup, and asserts private intermediate state from each subsystem."
+    },
+    {
+      "id": "test-orchestration-complexity-control",
+      "skill": "test-orchestration-complexity-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A single end-to-end test intentionally verifies a workflow whose public contract spans those same five subsystems; lower-level tests already cover their individual rules."
+    },
+    {
+      "id": "deterministic-causality-positive",
+      "skill": "deterministic-causality-test-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "fixture": "evals/fixtures/test-causality",
+      "scenario": "Inspect how the test knows background work is complete before it asserts."
+    },
+    {
+      "id": "deterministic-causality-control",
+      "skill": "deterministic-causality-test-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The test holds a barrier, starts the worker, releases the barrier at a deterministic point, waits on the worker's explicit completion promise, and then asserts."
+    },
+    {
+      "id": "test-state-contamination-positive",
+      "skill": "test-state-contamination-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A mutable module-global cache survives between tests. Running test B alone passes, but running test A before B changes B's result unless a broad reset fixture clears the cache."
+    },
+    {
+      "id": "test-state-contamination-control",
+      "skill": "test-state-contamination-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Tests share an immutable parsed schema object. No test can mutate it and execution order does not change any result."
+    },
+    {
+      "id": "test-contract-coupling-positive",
+      "skill": "test-contract-coupling-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A behavior-preserving refactor breaks tests because they assert the exact order of three private helper calls and patch internal module functions rather than observing the public result."
+    },
+    {
+      "id": "test-contract-coupling-control",
+      "skill": "test-contract-coupling-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A structural test fails when UI modules import the persistence client directly because that import boundary is an explicit architecture invariant."
+    },
+    {
+      "id": "architecture-risk-triage-positive",
+      "skill": "architecture-risk-triage",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A repository hotspot contains repeated include-graph reads and the same eligibility rule independently implemented in two production layers. Identify which narrow specialist reviews should inspect the evidence next."
+    },
+    {
+      "id": "architecture-risk-triage-control",
+      "skill": "architecture-risk-triage",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The request already names stale-work-race-review and provides the exact asynchronous path and ownership evidence to inspect. No discovery or routing decision is needed."
+    },
+    {
+      "id": "confusion-stale-vs-commit",
+      "skill": "durable-commit-path-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "fixture": "evals/fixtures/async-ownership",
+      "scenario": "There is a real stale asynchronous overwrite in this fixture. Determine whether that also means the durable transition has multiple independent commit authorities. Report only this skill's failure class."
+    },
+    {
+      "id": "confusion-semantic-vs-regression",
+      "skill": "resolved-fact-regression-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "fixture": "evals/fixtures/semantic-authority",
+      "scenario": "There is duplicate policy interpretation in this fixture. Determine whether any already-resolved semantic result is discarded so downstream code moves backward to raw inputs. Report only this skill's failure class."
+    },
+    {
+      "id": "confusion-causality-vs-work",
+      "skill": "test-work-amplification-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "fixture": "evals/fixtures/test-causality",
+      "scenario": "The fixture contains a weak timing synchronization technique. Determine whether the test also performs disproportionate production work relative to the behavior it proves. Report only this skill's failure class."
+    }
+  ]
+}
