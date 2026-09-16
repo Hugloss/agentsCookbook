@@ -46,14 +46,17 @@ pi
 
 When enabled:
 
-- reviewer children gain the bounded `review_artifact` sink but never `review_artifact_read`;
-- primary agents may use `review_artifact_read` according to their canonical permission contract;
+- delegated reviewer children register only the bounded `review_artifact` sink and never `review_artifact_read`;
+- the top-level Pi process registers only `review_artifact_read`; it never registers the reviewer write sink;
+- only the nine known cookbook reviewer artifact IDs are accepted;
 - the extension accepts no arbitrary filesystem path from the model;
 - reports are confined to `reviews/` and deterministic receipts to `receipts/` under the configured run root;
-- artifact IDs are bound to the active reviewer identity and cannot overwrite existing reports;
+- artifact IDs are bound to the active reviewer child identity and cannot overwrite existing reports;
 - reviewers return a <=1200-character material-finding summary/receipt while the full Markdown remains in the run store;
 - primary agents read a full named report only when its compact summary is insufficient.
 
-Leave `AGENTS_COOKBOOK_RUN_DIR` unset for normal standalone behavior where reviewers return full review artifacts directly; the finite reviewer child tool boundary still applies.
+A reviewer remains standalone in Pi even when invoked directly rather than as a child. Direct/top-level standalone invocation returns the full review normally. For a one-reviewer Pi run that also needs live low-context persistence, invoke the reviewer through `subagent-router` so it runs behind the delegated reviewer boundary.
 
-`preflight-pi-ping-pong.sh` validates Pi version, compatible `pi-open-agents`, canonical contracts, adapter links, exact eight-review flow allowlists, and project-local shadowing. `scripts/check-pi-reviewer-boundary.js` separately gates the finite reviewer identity/tool set and adapter defense-in-depth wiring. Real model-backed execution remains a local runtime qualification step.
+Leave `AGENTS_COOKBOOK_RUN_DIR` unset for normal standalone behavior where reviewers return full review artifacts directly; the finite reviewer child tool boundary still applies to delegated reviewers.
+
+`preflight-pi-ping-pong.sh` validates Pi version, compatible `pi-open-agents`, canonical contracts, adapter links, exact eight-review flow allowlists, and project-local shadowing. `scripts/check-pi-reviewer-boundary.js` separately gates the finite reviewer identity/tool set, role-separated artifact tools, known artifact IDs, session-start reapplication, and the execution blocker. Real model-backed execution remains a local runtime qualification step.
