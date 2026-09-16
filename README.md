@@ -134,6 +134,8 @@ scripts/preflight-opencode-ping-pong.sh
 scripts/preflight-pi-ping-pong.sh
 ```
 
+Current `pi-open-agents` cannot turn a wildcard permission block into a finite child `--tools` whitelist. The Pi adapter closes that runtime-specific gap for cookbook reviewer children with an exact active-tool set (`read`, `grep`, `find`, `ls`, plus `review_artifact` only in artifact mode) and a second `tool_call` blocking gate. Canonical reviewers keep their OpenCode-compatible `"*": deny` contract; no Pi-specific behavioral copies are introduced.
+
 Then follow [`docs/local-runtime-qualification.md`](docs/local-runtime-qualification.md) for the real OpenCode/Pi full-review acceptance runs. In artifact-backed Pi runs, `check-pi-session.js` additionally requires each successful reviewer child to have called `review_artifact` with its own fixed artifact ID.
 
 OpenCode details live in [`adapters/opencode/`](adapters/opencode/); Pi details live in [`adapters/pi/`](adapters/pi/).
