@@ -84,6 +84,20 @@ MASTER
 
 Reviewers remain deny-by-default and receive `review_artifact` but not generic project write/edit or artifact-read authority. Primary agents receive `review_artifact_read` but cannot write review artifacts. Neither model-facing tool accepts a filesystem path; writes are confined beneath the configured run root and existing artifact IDs cannot be overwritten.
 
+After a full eight-review artifact-backed run, validate the durable evidence:
+
+```bash
+scripts/check-run-artifacts.js --run-dir "$AGENTS_COOKBOOK_RUN_DIR"
+```
+
+For a routed or manually invoked single reviewer:
+
+```bash
+scripts/check-run-artifacts.js \
+  --run-dir "$AGENTS_COOKBOOK_RUN_DIR" \
+  --reviewer plan-coverage-reviewer
+```
+
 Leave the environment variable unset for normal standalone behavior where reviewers return full artifacts directly.
 
 ### Post-run fallback export
@@ -91,8 +105,8 @@ Leave the environment variable unset for normal standalone behavior where review
 Runs made without live artifact mode can still be materialized from real runtime evidence:
 
 ```bash
-node scripts/export-review-artifacts.js --runtime pi --input /path/to/session.jsonl --out runs/<run-id>
-node scripts/export-review-artifacts.js --runtime opencode --input /path/to/opencode-export.json --out runs/<run-id>
+scripts/export-review-artifacts.js --runtime pi --input /path/to/session.jsonl --out runs/<run-id>
+scripts/export-review-artifacts.js --runtime opencode --input /path/to/opencode-export.json --out runs/<run-id>
 ```
 
 The fallback exporter writes immutable Markdown reports, compact receipts, hashes, and a manifest; failed calls are represented explicitly rather than invented. See [`protocols/run-artifacts.md`](protocols/run-artifacts.md).
@@ -105,14 +119,22 @@ Install/update canonical agents, skills, and adapters:
 scripts/link-opencode-local.sh
 ```
 
-Qualification:
+Repository/adapter qualification:
 
 ```bash
 scripts/check-canonical-sources.sh
+scripts/smoke-opencode-scripts.sh
+scripts/smoke-run-artifacts.sh
+```
+
+Runtime qualification on a machine with the actual harnesses:
+
+```bash
 scripts/preflight-opencode-ping-pong.sh
 scripts/preflight-pi-ping-pong.sh
-scripts/smoke-opencode-scripts.sh
 ```
+
+Then run the existing session/benchmark checks. For artifact-backed Pi runs, `check-pi-session.js` additionally requires each successful reviewer child to have called `review_artifact` with its own fixed artifact ID.
 
 OpenCode details live in [`adapters/opencode/`](adapters/opencode/); Pi details live in [`adapters/pi/`](adapters/pi/).
 
