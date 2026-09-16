@@ -11,6 +11,17 @@ import {
 const MAX_REPORT_CHARS = 65536
 const MAX_SUMMARY_CHARS = 1200
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/
+const REVIEWER_ARTIFACT_IDS = new Set([
+  "plan-improver-model2",
+  "plan-improver-model3",
+  "plan-validation-designer",
+  "plan-coverage-reviewer",
+  "plan-red-team-gate",
+  "plan-implementation-simulator",
+  "plan-fact-auditor",
+  "plan-contract-checker",
+  "code-performance-optimization-auditor",
+])
 
 function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex")
@@ -42,6 +53,7 @@ function ensureChildDir(root, name) {
 function validateId(value) {
   const id = String(value || "")
   if (!SAFE_ID.test(id)) throw new Error("artifact_id must match [A-Za-z0-9][A-Za-z0-9._-]{0,95}")
+  if (!REVIEWER_ARTIFACT_IDS.has(id)) throw new Error(`unknown reviewer artifact_id: ${id}`)
   return id
 }
 
@@ -50,7 +62,8 @@ function writeArtifact(args, reviewerName) {
   const reviews = ensureChildDir(root, "reviews")
   const receipts = ensureChildDir(root, "receipts")
   const id = validateId(args.artifact_id)
-  if (reviewerName && id !== reviewerName) {
+  if (!reviewerName) throw new Error("review_artifact is available only to a delegated reviewer child")
+  if (id !== reviewerName) {
     throw new Error(`artifact_id must equal current reviewer name: ${reviewerName}`)
   }
 
@@ -72,7 +85,7 @@ function writeArtifact(args, reviewerName) {
     schema_version: 1,
     runtime: "pi",
     run_id: path.basename(root),
-    reviewer: reviewerName || id,
+    reviewer: reviewerName,
     artifact_id: id,
     subject_id: args.subject_id || null,
     subject_revision: args.subject_revision || null,
@@ -110,7 +123,7 @@ export default function registerAgentsCookbookReviewArtifacts(pi) {
   const runRoot = configuredRunRoot()
   const artifactEnabled = Boolean(runRoot)
 
-  if (artifactEnabled) {
+  if (artifactEnabled && reviewerName) {
     pi.registerTool({
       name: "review_artifact",
       label: "Save review artifact",
@@ -130,7 +143,9 @@ export default function registerAgentsCookbookReviewArtifacts(pi) {
         }
       },
     })
+  }
 
+  if (artifactEnabled && !reviewerName) {
     pi.registerTool({
       name: "review_artifact_read",
       label: "Read review artifact",
