@@ -42,12 +42,14 @@ assert_link pi_artifact_extension "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION"
 "$repo_root/scripts/preflight-opencode-ping-pong.sh" --quick --global-dir "$global_dir" --shared-skill-dir "$skills_dir" "$target_dir" >/dev/null
 pass opencode_quick_preflight
 
+# Exercise a compatible version newer than the minimum so this smoke test
+# protects the >= policy rather than accidentally reintroducing an exact pin.
 mkdir -p "$pi_dir/npm/node_modules/pi-open-agents"
-printf '{"version":"0.1.20"}\n' >"$pi_dir/npm/node_modules/pi-open-agents/package.json"
-printf '{"extensions":["npm:pi-open-agents@0.1.20"]}\n' >"$pi_dir/settings.json"
+printf '{"version":"0.1.22"}\n' >"$pi_dir/npm/node_modules/pi-open-agents/package.json"
+printf '{"extensions":["npm:pi-open-agents@0.1.22"]}\n' >"$pi_dir/settings.json"
 printf '#!/usr/bin/env bash\nprintf "pi 0.85.0\\n"\n' >"$temp_root/bin/pi"; chmod +x "$temp_root/bin/pi"
 PATH="$temp_root/bin:$PATH" "$repo_root/scripts/preflight-pi-ping-pong.sh" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" "$target_dir" >/dev/null
-pass pi_preflight
+pass pi_preflight_newer_compatible_plugin
 
 "$repo_root/scripts/link-opencode-local.sh" --global-dir "$global_dir" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" | grep 'status=already_correct' >/dev/null
 pass link_idempotent
@@ -65,8 +67,6 @@ pass force_backup
 ! printf '%s\n' $AC_FLOW_REVIEWER_AGENT_FILES | grep -qx 'code-performance-optimization-auditor.md' || fail standalone_leaked_into_flow_gate
 pass registry_boundaries
 
-# Adapter sources must remain opt-in, bounded, non-overwriting, and path-free at
-# their model-facing schema boundary.
 for adapter in "$repo_root/adapters/opencode/review-artifact.js" "$repo_root/adapters/pi/review-artifact.js"; do
   grep -Fq 'AGENTS_COOKBOOK_RUN_DIR' "$adapter" || fail artifact_adapter_env "file=$adapter"
   grep -Fq 'flag: "wx"' "$adapter" || fail artifact_adapter_no_overwrite "file=$adapter"
@@ -74,8 +74,6 @@ for adapter in "$repo_root/adapters/opencode/review-artifact.js" "$repo_root/ada
 done
 pass artifact_adapter_static_safety
 
-# Post-run fallback exporter remains available when native artifact mode was not
-# enabled for the original run.
 pi_trace="$temp_root/pi-trace.jsonl"; opencode_trace="$temp_root/opencode-export.json"; pi_artifacts="$temp_root/pi-artifacts"; opencode_artifacts="$temp_root/opencode-artifacts"
 node - "$pi_trace" "$opencode_trace" <<'NODE'
 const fs=require('fs');const [piPath,ocPath]=process.argv.slice(2);
