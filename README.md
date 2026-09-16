@@ -2,7 +2,7 @@
 
 Reusable local-LLM agents, skills, and composable review flows for **OpenCode and Pi**.
 
-The cookbook is intentionally not structured around runtime discovery directories. OpenCode and Pi are deployment targets; the repository models the product concepts directly.
+The cookbook is intentionally not structured around runtime discovery directories. OpenCode and Pi are deployment targets; the repository models product concepts directly.
 
 ## Repository architecture
 
@@ -10,8 +10,8 @@ The cookbook is intentionally not structured around runtime discovery directorie
 agents/       standalone actors and authority boundaries
 skills/       standalone reusable review methodologies
 flows/        compositions of agents; no unique reviewer methodology
-protocols/    bounded evidence, context, and optional run-artifact contracts
-adapters/     OpenCode/Pi runtime integration notes
+protocols/    bounded evidence, context, and run-artifact contracts
+adapters/     OpenCode/Pi runtime integration
 evals/        evaluation ownership and benchmark guidance
 docs/         architecture and usage documentation
 scripts/      installation, preflight, session auditing, artifacts, and benchmarks
@@ -23,13 +23,11 @@ There is one canonical source for each agent and skill. Runtime installation lin
 
 There are **12 installable agents**:
 
-- 3 flow-facing agents: `ping-pong-plan`, `ping-ping-build`, `subagent-router`.
-- 8 mandatory read-only reviewers used by the full Ping-Pong/Ping-Ping gate.
+- 3 flow-facing agents: `ping-pong-plan`, `ping-ping-build`, `subagent-router`;
+- 8 mandatory read-only reviewers used by the full Ping-Pong/Ping-Ping gate;
 - 1 standalone performance auditor: `code-performance-optimization-auditor`.
 
 There are **8 installable skills**. Every skill and reviewer is independently usable outside the full flows; no capability requires Ping-Pong state, sibling reviewer output, or a run store.
-
-The mandatory eight reviewers remain:
 
 | Reviewer | Skill | Model |
 | --- | --- | --- |
@@ -46,63 +44,68 @@ The performance auditor uses `code-performance-optimization-audit` and `liteLLM/
 
 ## Standalone first
 
-A reviewer/skill must work in all of these cases:
-
-1. composed by `ping-pong-plan` or `ping-ping-build`;
-2. composed by another future flow;
-3. routed through `subagent-router`;
-4. manually invoked by a user.
-
-Flows may select, sequence, provide bounded context, collect results, and synthesize decisions. They do not own reviewer-specific methodology.
+A reviewer/skill must work when composed by a full flow, another future flow, the one-reviewer router, or directly by a user. Flows may select, sequence, provide bounded context, collect results, and synthesize decisions. They do not own reviewer-specific methodology.
 
 ## Local-model context profile
 
-The primary supported local profile assumes a **98,304-token maximum context**. This is a ceiling, not a normal working target.
-
-Design targets:
+The primary local profile assumes a **98,304-token maximum context**. This is a ceiling, not a normal target.
 
 - normal working context: about 65k tokens or less;
 - workflow hard target: about 73k tokens or less;
 - reserve roughly 25% for tool schemas, evidence variance, reasoning/compaction, and final output;
-- agent/skill descriptions target <=120 characters and must be <=160 characters in this repository.
+- descriptions target <=120 characters and must be <=160 characters.
 
 See [`protocols/context-budget.md`](protocols/context-budget.md).
 
 ## Bounded review context
 
-Reviewers receive a self-contained evidence packet rather than the whole conversation or all previous reviewer output. See [`protocols/evidence-packet.md`](protocols/evidence-packet.md).
+Reviewers receive a self-contained evidence packet rather than the whole conversation or previous reviewer history. See [`protocols/evidence-packet.md`](protocols/evidence-packet.md).
 
-For low-context runs, reviewer reports can be persisted outside active context with compact deterministic receipts. Standalone reviewers do not depend on that storage.
+### Live artifact-backed mode
 
-Reviewers remain read-only. The default persistence boundary is **after the reviewer call**, using real runtime session evidence:
+`scripts/link-opencode-local.sh` installs narrow artifact adapters for both runtimes. They register **no artifact tools by default**. To enable live low-context transport, start the runtime with an absolute per-run root:
 
 ```bash
-node scripts/export-review-artifacts.js \
-  --runtime pi \
-  --input /path/to/session.jsonl \
-  --out runs/<run-id>
-
-node scripts/export-review-artifacts.js \
-  --runtime opencode \
-  --input /path/to/opencode-export.json \
-  --out runs/<run-id>
+export AGENTS_COOKBOOK_RUN_DIR="$PWD/.runs/$(date +%Y%m%d-%H%M%S)"
 ```
 
-The exporter writes one immutable Markdown artifact and one compact JSON receipt per real reviewer call, plus `manifest.json`. It hashes every artifact and represents failed calls explicitly instead of inventing reviews. See [`protocols/run-artifacts.md`](protocols/run-artifacts.md).
+In this mode:
 
-A future runtime-native artifact tool may reduce live coordinator context further, but it must preserve the same rule: no generic project write authority for reviewers.
+```text
+reviewer
+  -> full skill-defined report
+  -> review_artifact (bounded run store)
+  -> <=1200-char receipt summary returned to MASTER
+
+MASTER
+  -> uses receipt summary by default
+  -> review_artifact_read(<one reviewer id>) only when detailed evidence is needed
+```
+
+Reviewers remain deny-by-default and receive `review_artifact` but not generic project write/edit or artifact-read authority. Primary agents receive `review_artifact_read` but cannot write review artifacts. Neither model-facing tool accepts a filesystem path; writes are confined beneath the configured run root and existing artifact IDs cannot be overwritten.
+
+Leave the environment variable unset for normal standalone behavior where reviewers return full artifacts directly.
+
+### Post-run fallback export
+
+Runs made without live artifact mode can still be materialized from real runtime evidence:
+
+```bash
+node scripts/export-review-artifacts.js --runtime pi --input /path/to/session.jsonl --out runs/<run-id>
+node scripts/export-review-artifacts.js --runtime opencode --input /path/to/opencode-export.json --out runs/<run-id>
+```
+
+The fallback exporter writes immutable Markdown reports, compact receipts, hashes, and a manifest; failed calls are represented explicitly rather than invented. See [`protocols/run-artifacts.md`](protocols/run-artifacts.md).
 
 ## OpenCode and Pi
 
-Both runtimes use the same canonical `agents/` and `skills/` sources.
-
-Install/update local links:
+Install/update canonical agents, skills, and adapters:
 
 ```bash
 scripts/link-opencode-local.sh
 ```
 
-Run qualification before long workflows:
+Qualification:
 
 ```bash
 scripts/check-canonical-sources.sh
@@ -111,27 +114,28 @@ scripts/preflight-pi-ping-pong.sh
 scripts/smoke-opencode-scripts.sh
 ```
 
-OpenCode integration details live in [`adapters/opencode/`](adapters/opencode/); Pi details live in [`adapters/pi/`](adapters/pi/).
+OpenCode details live in [`adapters/opencode/`](adapters/opencode/); Pi details live in [`adapters/pi/`](adapters/pi/).
 
 ## Authority model
 
-- `ping-pong-plan` alone owns the canonical plan.
-- `ping-ping-build` alone owns implementation edits in its flow.
-- reviewers are read-only evidence providers;
+- `ping-pong-plan` alone owns the canonical plan;
+- `ping-ping-build` alone owns implementation edits in its flow;
+- reviewers are read-only evidence providers with only a bounded optional artifact sink;
 - skills provide methodology;
-- runtime session evidence, not prose claims, proves reviewer invocation;
-- failed/skipped reviewer or validation work must never be reported as successful.
+- runtime evidence, not prose claims, proves reviewer invocation;
+- failed/skipped review or validation work must never be reported as successful.
 
 ## Design direction
 
-The cookbook borrows useful ideas from strong skill repositories—especially progressive disclosure, short routing metadata, selective reference loading, and context isolation—but it does not copy another repository's taxonomy or workflows.
+The cookbook borrows useful ideas from strong skill repositories—progressive disclosure, short routing metadata, selective reference loading, and context isolation—without copying another repository's taxonomy or workflows.
 
-Its differentiators are explicit agent authority, independent multi-model review, reusable standalone capabilities, dual OpenCode/Pi operation, runtime invocation auditing, and context economics designed for local models.
+Its differentiators are explicit authority, independent multi-model review, standalone capabilities, dual OpenCode/Pi operation, runtime auditing, and context economics designed for local models.
 
 ## Documentation
 
 - [Architecture](docs/architecture.md)
 - [Ping-Pong planning flow](docs/ping-pong-plan-flow.md)
+- [Run artifacts](protocols/run-artifacts.md)
 - [Non-technical walkthrough](docs/non-technical-walkthrough.md)
 - [Evaluation guidance](evals/README.md)
 - [Browser demo](demo/index.html)
