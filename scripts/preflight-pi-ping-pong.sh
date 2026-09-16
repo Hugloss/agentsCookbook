@@ -9,8 +9,8 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/preflight-pi-ping-pong.sh [--pi-agent-dir DIR] [--shared-skill-dir DIR] [target-repo]
 
-Validate Pi, pi-open-agents, canonical agents/ and skills/, runtime links,
-standalone capability contracts, and the exact eight-review flow gate.
+Validate Pi, pi-open-agents, canonical source contracts, runtime links,
+project shadowing, standalone capabilities, and the exact eight-review gate.
 USAGE
 }
 
@@ -39,6 +39,10 @@ target_repo="$(ac_absolute_path "${target_repo:-$PWD}")"
 if [ -n "$pi_agent_dir_arg" ]; then pi_agent_dir="$(ac_absolute_path "$pi_agent_dir_arg")"; elif ! pi_agent_dir="$(ac_default_pi_agent_dir)"; then ac_die "HOME is not set"; fi
 if [ -n "$shared_skill_dir_arg" ]; then shared_skill_dir="$(ac_absolute_path "$shared_skill_dir_arg")"; elif ! shared_skill_dir="$(ac_default_shared_skill_dir)"; then ac_die "HOME is not set"; fi
 
+canonical_output="$(bash "$repo_root/scripts/check-canonical-sources.sh" 2>&1)"; canonical_status=$?
+printf '%s\n' "$canonical_output"
+[ "$canonical_status" -eq 0 ] && pass canonical_source_contract status=pass || fail canonical_source_contract "status=$canonical_status"
+
 check_link() {
   local name="$1" dest="$2" expected="$3" resolved
   if [ ! -L "$dest" ]; then fail "$name" "path=$dest expected=$expected"; return; fi
@@ -63,7 +67,7 @@ fi
 
 settings="$pi_agent_dir/settings.json"
 if [ -f "$settings" ] && node -e '
-const fs=require("fs"); const s=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const values=[...(Array.isArray(s.extensions)?s.extensions:[]),...(Array.isArray(s.packages)?s.packages:[])]; process.exit(values.some(v=>typeof v==="string" && /^npm:pi-open-agents(?:@|$)/.test(v))?0:1);
+const fs=require("fs");const s=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const values=[...(Array.isArray(s.extensions)?s.extensions:[]),...(Array.isArray(s.packages)?s.packages:[])];process.exit(values.some(v=>typeof v==="string"&&/^npm:pi-open-agents(?:@|$)/.test(v))?0:1);
 ' "$settings" 2>/dev/null; then pass pi_open_agents_enabled "settings=$settings"; else fail pi_open_agents_enabled "settings=$settings extension=npm:pi-open-agents"; fi
 
 for agent_file in $AC_AGENT_FILES; do check_link "pi_agent_${agent_file%.md}" "$pi_agent_dir/agents/$agent_file" "$agent_src_dir/$agent_file"; done
@@ -72,7 +76,7 @@ for skill_name in $AC_SKILL_NAMES; do check_link "shared_skill_$skill_name" "$sh
 expected_allowed='allowedAgents: [plan-improver-model2, plan-improver-model3, plan-validation-designer, plan-coverage-reviewer, plan-red-team-gate, plan-implementation-simulator, plan-fact-auditor, plan-contract-checker]'
 for primary_file in $AC_PRIMARY_AGENT_FILES; do
   path="$agent_src_dir/$primary_file"
-  if grep -Fqx "$expected_allowed" "$path" && grep -q '^maxDepth: 1$' "$path"; then pass "pi_contract_${primary_file%.md}" "allowed_reviewers=8"; else fail "pi_contract_${primary_file%.md}" "allowedAgents_must_be_exact_eight"; fi
+  if grep -Fqx "$expected_allowed" "$path" && grep -q '^maxDepth: 1$' "$path"; then pass "pi_contract_${primary_file%.md}" allowed_reviewers=8; else fail "pi_contract_${primary_file%.md}" allowedAgents_must_be_exact_eight; fi
 done
 
 while read -r reviewer skill model; do
@@ -90,38 +94,21 @@ EOF
 while read -r reviewer skill model; do
   [ -n "$reviewer" ] || continue
   path="$agent_src_dir/$reviewer.md"
-  if grep -Fqx "skills: [$skill]" "$path" && grep -q '^maxDepth: 0$' "$path" && grep -Fq 'not part of the mandatory eight-review' "$path"; then
-    pass "pi_standalone_$reviewer" "skill=$skill flow_gate=false"
-  else
-    fail "pi_standalone_$reviewer" "standalone_contract_mismatch"
-  fi
+  if grep -Fqx "skills: [$skill]" "$path" && grep -q '^maxDepth: 0$' "$path" && grep -Fq 'not part of the mandatory eight-review' "$path"; then pass "pi_standalone_$reviewer" "skill=$skill flow_gate=false"; else fail "pi_standalone_$reviewer" standalone_contract_mismatch; fi
 done <<EOF
 $AC_STANDALONE_AGENT_SKILL_MAP
 EOF
 
-plan_source="$agent_src_dir/ping-pong-plan.md"
-if grep -Fq 'Attempt every reviewer exactly once' "$plan_source" && grep -Fq '98,304' "$plan_source" && ! grep -Fq 'code-performance-optimization-auditor' "$plan_source"; then
-  pass pi_prompt_gate "mandatory_reviewers=8 context_98k=true"
-else
-  fail pi_prompt_gate "flow_gate_contract_mismatch"
-fi
-
-# Project-local agent files can shadow installed Pi definitions. Allow canonical
-# self-links only; fail other same-name definitions.
+# Project-local definitions can shadow installed Pi definitions. Allow only
+# canonical self-links; fail independent same-name copies.
 for agent_file in $AC_AGENT_FILES; do
   canonical="$agent_src_dir/$agent_file"
   for candidate in "$target_repo/.opencode/agents/$agent_file" "$target_repo/.pi/agents/$agent_file" "$target_repo/.agents/$agent_file"; do
     [ -e "$candidate" ] || [ -L "$candidate" ] || continue
     resolved="$(realpath -- "$candidate" 2>/dev/null || true)"
-    if [ "$resolved" = "$canonical" ]; then pass "project_override_${agent_file%.md}" "path=$candidate canonical=true"; else fail "project_override_${agent_file%.md}" "path=$candidate shadows=$canonical"; fi
+    [ "$resolved" = "$canonical" ] && pass "project_override_${agent_file%.md}" "path=$candidate canonical=true" || fail "project_override_${agent_file%.md}" "path=$candidate shadows=$canonical"
   done
 done
-
-if [ -d "$repo_root/.opencode/agents" ] || [ -d "$repo_root/.agents/skills" ]; then
-  fail canonical_layout "legacy_hidden_source_dirs_present"
-else
-  pass canonical_layout "hidden_source_dirs=absent"
-fi
 
 if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass runtime=pi agents=12 skills=8 mandatory_flow_reviewers=8 plugin=pi-open-agents@0.1.20\n'; exit 0; fi
 printf 'SUMMARY status=fail runtime=pi failures=%s\n' "$failures"
