@@ -53,8 +53,8 @@ node - "$pi_good" "$pi_missing" "$pi_unsafe" <<'NODE'
 const fs=require('fs');
 const [goodPath,missingPath,unsafePath]=process.argv.slice(2);
 const reviewers=[
- ['plan-improver-model2','plan-improvement-scout'],
- ['plan-improver-model3','plan-improvement-scout'],
+ ['plan-improver-model2','plan-gap-scout'],
+ ['plan-improver-model3','alternative-route-challenge'],
  ['plan-validation-designer','validation-gap-finder'],
  ['plan-coverage-reviewer','coverage-design-review'],
  ['plan-red-team-gate','red-team-leftover-gate'],
