@@ -57,6 +57,20 @@ for pair in "opencode:$opencode_adapter" "pi:$pi_adapter"; do
   if grep -Fq 'AGENTS_COOKBOOK_RUN_DIR' "$file" && grep -Fq 'flag: "wx"' "$file" && grep -Fq 'review_artifact_read' "$file" && ! grep -Eq 'path:[[:space:]]*(Type\.|tool\.schema)' "$file"; then pass "artifact_adapter_$runtime" bounded_root=true no_arbitrary_path=true no_overwrite=true; else fail "artifact_adapter_$runtime" safety_contract_mismatch; fi
 done
 
+# OpenCode custom tools expose the current agent in execution context. Bind
+# write/read authority to the cookbook reviewer/primary identities even if a
+# future permission visibility regression exposes the wrong tool.
+if grep -Fq 'const REVIEWER_AGENT_IDS = new Set([' "$opencode_adapter" \
+  && grep -Fq 'const PRIMARY_AGENT_IDS = new Set([' "$opencode_adapter" \
+  && grep -Fq 'review_artifact is reviewer-only' "$opencode_adapter" \
+  && grep -Fq 'review_artifact_read is primary-only' "$opencode_adapter" \
+  && grep -Fq 'unknown reviewer artifact_id' "$opencode_adapter" \
+  && grep -Fq 'artifact_id must equal current reviewer name' "$opencode_adapter"; then
+  pass opencode_artifact_role_binding reviewers=9 primaries=3 known_ids_only=true
+else
+  fail opencode_artifact_role_binding contract_mismatch
+fi
+
 # This Pi family exposes TypeBox through the `typebox` peer used by
 # pi-open-agents. Pin the import contract so syntax-only checks cannot hide a
 # dependency that the runtime will not resolve.
