@@ -27,12 +27,12 @@ There are **12 installable agents**:
 - 8 mandatory read-only reviewers used by the full Ping-Pong/Ping-Ping gate;
 - 1 standalone performance auditor: `code-performance-optimization-auditor`.
 
-There are **8 installable skills**. Every skill and reviewer is independently usable outside the full flows; no capability requires Ping-Pong state, sibling reviewer output, or a run store.
+There are **29 installable skills**. Every skill and reviewer is independently usable outside the full flows; no capability requires Ping-Pong state, sibling reviewer output, or a run store. The complete grouped catalog and overlap boundaries live in [`skills/README.md`](skills/README.md).
 
 | Reviewer | Skill | Default local-model alias |
 | --- | --- | --- |
-| `plan-improver-model2` | `plan-improvement-scout` | `liteLLM/gpt-oss` |
-| `plan-improver-model3` | `plan-improvement-scout` | `liteLLM/gpt-oss` |
+| `plan-improver-model2` | `plan-gap-scout` | `liteLLM/gpt-oss` |
+| `plan-improver-model3` | `alternative-route-challenge` | `liteLLM/gpt-oss` |
 | `plan-validation-designer` | `validation-gap-finder` | `liteLLM/gpt-oss` |
 | `plan-coverage-reviewer` | `coverage-design-review` | `liteLLM/gpt-oss` |
 | `plan-red-team-gate` | `red-team-leftover-gate` | `liteLLM/gpt-oss` |
@@ -157,6 +157,7 @@ Its differentiators are explicit authority, independent multi-model review, stan
 
 ## Documentation
 
+- [Skill catalog](skills/README.md)
 - [Architecture](docs/architecture.md)
 - [Ping-Pong planning flow](docs/ping-pong-plan-flow.md)
 - [Local runtime qualification](docs/local-runtime-qualification.md)
