@@ -27,6 +27,8 @@ jobs:
           node --check scripts/check-pi-session.js
           node --check scripts/run-opencode-benchmarks.js
           node --check scripts/export-review-artifacts.js
+          node --check adapters/opencode/review-artifact.js
+          node --check adapters/pi/review-artifact.js
 
       - name: Shell syntax
         run: |
