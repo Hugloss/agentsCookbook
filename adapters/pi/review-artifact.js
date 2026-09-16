@@ -155,7 +155,18 @@ export default function registerAgentsCookbookReviewArtifacts(pi) {
   // equivalent finite boundary here using the authoritative child identity.
   if (reviewerName) {
     const allowedTools = reviewerAllowedTools({ artifactEnabled })
-    pi.setActiveTools(allowedTools)
+    const applyReviewerToolBoundary = () => pi.setActiveTools(allowedTools)
+
+    // Apply during extension registration and again after Pi has completed
+    // session initialization. The latter is the documented lifecycle point for
+    // runtime tool selection and protects against later startup configuration.
+    applyReviewerToolBoundary()
+    pi.on("session_start", async () => {
+      applyReviewerToolBoundary()
+    })
+
+    // Defense-in-depth: even if another extension later changes visibility,
+    // execution still fails closed for every out-of-policy tool.
     pi.on("tool_call", async (event) => {
       if (reviewerToolAllowed(event.toolName, { artifactEnabled })) return undefined
       return {
