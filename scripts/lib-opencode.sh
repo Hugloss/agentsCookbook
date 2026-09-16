@@ -1,4 +1,4 @@
-# Shared helpers for the agentsCookbook OpenCode shell scripts.
+# Shared helpers for the agentsCookbook OpenCode/Pi scripts.
 
 AC_PRIMARY_AGENT_FILES="
 ping-ping-build.md
@@ -6,7 +6,8 @@ ping-pong-plan.md
 subagent-router.md
 "
 
-AC_REVIEWER_AGENT_FILES="
+# Exactly these eight reviewers are mandatory in Ping-Pong/Ping-Ping.
+AC_FLOW_REVIEWER_AGENT_FILES="
 plan-coverage-reviewer.md
 plan-improver-model2.md
 plan-improver-model3.md
@@ -17,7 +18,13 @@ plan-fact-auditor.md
 plan-contract-checker.md
 "
 
-AC_AGENT_FILES="$AC_PRIMARY_AGENT_FILES$AC_REVIEWER_AGENT_FILES"
+# Standalone capabilities are installable but are not silently added to the
+# mandatory eight-review workflow.
+AC_STANDALONE_AGENT_FILES="
+code-performance-optimization-auditor.md
+"
+
+AC_AGENT_FILES="$AC_PRIMARY_AGENT_FILES$AC_FLOW_REVIEWER_AGENT_FILES$AC_STANDALONE_AGENT_FILES"
 
 AC_SKILL_NAMES="
 coverage-design-review
@@ -27,9 +34,10 @@ plan-contract-guard
 plan-improvement-scout
 red-team-leftover-gate
 validation-gap-finder
+code-performance-optimization-audit
 "
 
-AC_REVIEWER_SKILL_MAP="
+AC_FLOW_REVIEWER_SKILL_MAP="
 plan-coverage-reviewer coverage-design-review liteLLM/gpt-oss
 plan-improver-model2 plan-improvement-scout liteLLM/gpt-oss
 plan-improver-model3 plan-improvement-scout liteLLM/gpt-oss
@@ -40,16 +48,13 @@ plan-fact-auditor fact-grounding-auditor liteLLM/gemma4
 plan-contract-checker plan-contract-guard liteLLM/gemma4
 "
 
-# Removed source files retained only so installers can clean up cookbook-owned
-# symlinks from installations made by older versions.
-AC_LEGACY_PROMPT_FILES="
-plan-contract-checker.md
-plan-fact-auditor.md
-plan-implementation-simulator.md
-plan-improver.md
-plan-red-team-gate.md
-plan-validation-designer.md
+AC_STANDALONE_AGENT_SKILL_MAP="
+code-performance-optimization-auditor code-performance-optimization-audit liteLLM/devstral
 "
+
+AC_AGENT_DESCRIPTION_MAX=160
+AC_SKILL_DESCRIPTION_MAX=160
+AC_DESCRIPTION_TARGET=120
 
 ac_die() {
   printf 'Error: %s\n' "$*" >&2
@@ -63,77 +68,60 @@ ac_info() {
 ac_absolute_path() {
   local path="$1"
   case "$path" in
-    /*)
-      printf '%s\n' "$path"
-      ;;
-    *)
-      printf '%s/%s\n' "$PWD" "$path"
-      ;;
+    /*) printf '%s\n' "$path" ;;
+    *) printf '%s/%s\n' "$PWD" "$path" ;;
   esac
 }
 
 ac_resolve_dir() {
   local path="$1"
-  if [ ! -d "$path" ]; then
-    return 1
-  fi
+  [ -d "$path" ] || return 1
   cd -- "$path" 2>/dev/null && pwd -P
 }
 
 ac_default_global_dir() {
-  if [ -n "${XDG_CONFIG_HOME:-}" ]; then
-    printf '%s/opencode\n' "$XDG_CONFIG_HOME"
-    return 0
-  fi
-  if [ -n "${HOME:-}" ]; then
-    printf '%s/.config/opencode\n' "$HOME"
-    return 0
-  fi
+  if [ -n "${XDG_CONFIG_HOME:-}" ]; then printf '%s/opencode\n' "$XDG_CONFIG_HOME"; return 0; fi
+  if [ -n "${HOME:-}" ]; then printf '%s/.config/opencode\n' "$HOME"; return 0; fi
   return 1
 }
 
 ac_default_data_dir() {
-  if [ -n "${XDG_DATA_HOME:-}" ]; then
-    printf '%s/opencode\n' "$XDG_DATA_HOME"
-    return 0
-  fi
-  if [ -n "${HOME:-}" ]; then
-    printf '%s/.local/share/opencode\n' "$HOME"
-    return 0
-  fi
+  if [ -n "${XDG_DATA_HOME:-}" ]; then printf '%s/opencode\n' "$XDG_DATA_HOME"; return 0; fi
+  if [ -n "${HOME:-}" ]; then printf '%s/.local/share/opencode\n' "$HOME"; return 0; fi
   return 1
 }
 
 ac_default_pi_agent_dir() {
-  if [ -n "${PI_CODING_AGENT_DIR:-}" ]; then
-    printf '%s\n' "$PI_CODING_AGENT_DIR"
-    return 0
-  fi
-  if [ -n "${HOME:-}" ]; then
-    printf '%s/.pi/agent\n' "$HOME"
-    return 0
-  fi
+  if [ -n "${PI_CODING_AGENT_DIR:-}" ]; then printf '%s\n' "$PI_CODING_AGENT_DIR"; return 0; fi
+  if [ -n "${HOME:-}" ]; then printf '%s/.pi/agent\n' "$HOME"; return 0; fi
   return 1
 }
 
+# This is a runtime install location only. The repository source of truth is
+# skills/, not a hidden .agents/.skills repository layout.
 ac_default_shared_skill_dir() {
-  if [ -n "${HOME:-}" ]; then
-    printf '%s/.agents/skills\n' "$HOME"
-    return 0
-  fi
+  if [ -n "${HOME:-}" ]; then printf '%s/.agents/skills\n' "$HOME"; return 0; fi
   return 1
 }
 
 ac_repo_root_from_script() {
-  local script_path="$1"
-  local script_dir
+  local script_path="$1" script_dir
   script_dir="$(cd -- "$(dirname -- "$script_path")" && pwd -P)"
   cd -- "$script_dir/.." && pwd -P
 }
 
+ac_agent_source_dir() {
+  local root="$1"
+  printf '%s/agents\n' "$root"
+}
+
+ac_skill_source_dir() {
+  local root="$1"
+  printf '%s/skills\n' "$root"
+}
+
 ac_backup_path_for() {
-  local original="$1"
-  local stamp candidate n
+  local original="$1" stamp candidate n
   stamp="$(date +%Y%m%d-%H%M%S)"
   candidate="$original.agents-cookbook-backup-$stamp"
   n=1
