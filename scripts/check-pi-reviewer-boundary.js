@@ -54,6 +54,10 @@ async function main() {
 
   const adapter = fs.readFileSync(adapterPath, 'utf8');
   const requiredFragments = [
+    'if (artifactEnabled && reviewerName)',
+    'if (artifactEnabled && !reviewerName)',
+    'review_artifact is available only to a delegated reviewer child',
+    'unknown reviewer artifact_id',
     'pi.setActiveTools(allowedTools)',
     'pi.on("session_start"',
     'pi.on("tool_call"',
@@ -64,7 +68,7 @@ async function main() {
     if (!adapter.includes(fragment)) fail(`adapter_missing=${JSON.stringify(fragment)}`);
   }
 
-  process.stdout.write('CHECK name=pi_reviewer_runtime_boundary status=pass reviewers=9 normal_tools=4 artifact_tools=5 session_start=true defense_in_depth=true\n');
+  process.stdout.write('CHECK name=pi_reviewer_runtime_boundary status=pass reviewers=9 normal_tools=4 artifact_tools=5 role_separated_artifacts=true known_ids_only=true session_start=true defense_in_depth=true\n');
 }
 
 main().catch((error) => {
