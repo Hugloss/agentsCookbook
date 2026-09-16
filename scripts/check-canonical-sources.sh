@@ -66,6 +66,14 @@ else
   fail pi_adapter_typebox_dependency expected='import { Type } from "typebox"'
 fi
 
+# pi-open-agents cannot derive a finite child --tools whitelist from a
+# wildcard permission block. Canonical reviewers intentionally keep wildcard
+# deny-by-default for OpenCode, so the Pi adapter owns an explicit child-process
+# boundary. Prove that contract independently of the runtime package.
+pi_boundary_output="$(node "$repo_root/scripts/check-pi-reviewer-boundary.js" 2>&1)"; pi_boundary_status=$?
+printf '%s\n' "$pi_boundary_output"
+[ "$pi_boundary_status" -eq 0 ] || fail pi_reviewer_runtime_boundary "status=$pi_boundary_status"
+
 if [ -d "$repo_root/.agents/skills" ] || [ -d "$repo_root/.opencode/agents" ]; then fail hidden_source_layout present; else pass hidden_source_layout absent; fi
 
 if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass agents=12 skills=8 adapters=2 mandatory_flow_reviewers=8\n'; exit 0; fi
