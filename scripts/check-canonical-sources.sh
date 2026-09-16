@@ -28,7 +28,8 @@ expected_agents="$(printf '%s\n' $AC_AGENT_FILES | sed '/^$/d' | sort)"
 [ "$actual_agents" = "$expected_agents" ] && pass agent_registry_exact count=12 || fail agent_registry_exact mismatch
 actual_skills="$(find "$skill_src_dir" -mindepth 2 -maxdepth 2 -type f -name SKILL.md -printf '%h\n' | xargs -r -n1 basename | sort)"
 expected_skills="$(printf '%s\n' $AC_SKILL_NAMES | sed '/^$/d' | sort)"
-[ "$actual_skills" = "$expected_skills" ] && pass skill_registry_exact count=8 || fail skill_registry_exact mismatch
+expected_skill_count="$(printf '%s\n' $AC_SKILL_NAMES | sed '/^$/d' | wc -l)"
+[ "$actual_skills" = "$expected_skills" ] && pass skill_registry_exact "count=$expected_skill_count" || fail skill_registry_exact mismatch
 
 for agent_file in $AC_AGENT_FILES; do check_description agent "${agent_file%.md}" "$agent_src_dir/$agent_file" "$AC_AGENT_DESCRIPTION_MAX"; done
 for skill_name in $AC_SKILL_NAMES; do check_description skill "$skill_name" "$skill_src_dir/$skill_name/SKILL.md" "$AC_SKILL_DESCRIPTION_MAX"; done
@@ -90,5 +91,5 @@ printf '%s\n' "$pi_boundary_output"
 
 if [ -d "$repo_root/.agents/skills" ] || [ -d "$repo_root/.opencode/agents" ]; then fail hidden_source_layout present; else pass hidden_source_layout absent; fi
 
-if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass agents=12 skills=8 adapters=2 mandatory_flow_reviewers=8\n'; exit 0; fi
+if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass agents=12 skills=%s adapters=2 mandatory_flow_reviewers=8\n' "$expected_skill_count"; exit 0; fi
 printf 'SUMMARY status=fail failures=%s\n' "$failures"; exit 1
