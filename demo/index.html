@@ -33,7 +33,7 @@
 
   <section class="metrics" aria-label="architecture summary">
     <div class="metric"><strong>12</strong><span>installable agents</span></div>
-    <div class="metric"><strong>8</strong><span>installable skills</span></div>
+    <div class="metric"><strong>29</strong><span>installable skills</span></div>
     <div class="metric"><strong>8</strong><span>mandatory full-flow reviewers</span></div>
     <div class="metric"><strong>98,304</strong><span>local-model context ceiling</span></div>
   </section>
@@ -55,10 +55,10 @@
   <div class="card">
     <ul>
       <li>A user can invoke one reviewer directly.</li>
-      <li><code>subagent-router</code> can route one focused review.</li>
+      <li><code>subagent-router</code> can route one focused configured reviewer.</li>
       <li>Ping-Pong/Ping-Ping can compose the exact eight mandatory reviewers.</li>
-      <li>A future flow can reuse any reviewer without pretending it is Ping-Pong.</li>
-      <li>The performance auditor is installable but does not silently become a ninth mandatory gate.</li>
+      <li>Specialist skills can be loaded directly by compatible agents and reused by future flows.</li>
+      <li>Installable specialist skills do not silently become additional mandatory gates.</li>
     </ul>
   </div>
 
