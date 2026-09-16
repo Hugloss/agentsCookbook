@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible problem in repository-owned prompts, scripts, docs, or adapters.
+title: "[bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for reproducible repository-owned problems. For security-sensitive issues, follow SECURITY.md instead of posting exploit details publicly.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Skill prompt
+        - Agent prompt
+        - Flow
+        - OpenCode integration
+        - Pi integration
+        - Installation / scripts
+        - Documentation
+        - Evaluation contract
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and why it is a problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence / reproduction
+      description: Include the smallest reproducible prompt, command, path, runtime output, or repository example. Remove secrets and private code.
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Agents Cookbook commit
+      placeholder: git rev-parse HEAD
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime / platform
+      placeholder: e.g. OpenCode on Ubuntu 24.04, Pi on WSL2, prompt-only use
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
