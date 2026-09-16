@@ -1,174 +1,118 @@
 # Agents Cookbook
 
-This repository provides the same eleven-agent planning and implementation
-workflows in OpenCode and in Pi with `pi-open-agents`.
+Reusable local-LLM agents, skills, and composable review flows for **OpenCode and Pi**.
 
-## Start Here
+The cookbook is intentionally not structured around runtime discovery directories. OpenCode and Pi are deployment targets; the repository models the product concepts directly.
 
-- [Browser demo](demo/index.html)
-- [Non-technical walkthrough](.opencode/NON_TECH_AGENT_DEMO.md)
-- [Technical flow reference](.opencode/PING_PONG_PLAN_FLOW.md)
-
-## Architecture
-
-There is one source of truth for each reusable component:
+## Repository architecture
 
 ```text
-.opencode/agents/*.md      3 primary agents + 8 reviewer agents
-.agents/skills/*/SKILL.md  7 reviewer operating contracts
-opencode.json              schema-only project config
+agents/       standalone actors and authority boundaries
+skills/       standalone reusable review methodologies
+flows/        compositions of agents; no unique reviewer methodology
+protocols/    bounded evidence, context, and optional run-artifact contracts
+adapters/     OpenCode/Pi runtime integration notes
+scripts/      installation, preflight, session auditing, and benchmarks
 ```
 
-Reviewer prompts are intentionally not stored separately. Each reviewer is a
-real Markdown agent that loads one dedicated skill. OpenCode discovers the
-agents directly; Pi discovers those same files through `pi-open-agents`.
+There is one canonical source for each agent and skill. Runtime installation links those sources into the locations each harness expects.
 
-The primary agents are:
+## Capabilities
 
-- `ping-pong-plan`: read-only eight-reviewer planning workflow.
-- `ping-ping-build`: implements changes, validates, then runs eight read-only reviews.
-- `subagent-router`: sends one request to the best matching reviewer.
+There are **12 installable agents**:
 
-The reviewer mapping is:
+- 3 flow-facing agents: `ping-pong-plan`, `ping-ping-build`, `subagent-router`.
+- 8 mandatory read-only reviewers used by the full Ping-Pong/Ping-Ping gate.
+- 1 standalone performance auditor: `code-performance-optimization-auditor`.
 
-| Reviewer | Model | Dedicated skill |
+There are **8 installable skills**. Every skill and reviewer is independently usable outside the full flows; no capability requires Ping-Pong state, sibling reviewer output, or a run store.
+
+The mandatory eight reviewers remain:
+
+| Reviewer | Skill | Model |
 | --- | --- | --- |
-| `plan-improver-model2` | `liteLLM/gpt-oss` | `plan-improvement-scout` (gap completion) |
-| `plan-improver-model3` | `liteLLM/gpt-oss` | `plan-improvement-scout` (alternative route) |
-| `plan-validation-designer` | `liteLLM/gpt-oss` | `validation-gap-finder` |
-| `plan-coverage-reviewer` | `liteLLM/gpt-oss` | `coverage-design-review` |
-| `plan-red-team-gate` | `liteLLM/gpt-oss` | `red-team-leftover-gate` |
-| `plan-implementation-simulator` | `liteLLM/gpt-oss` | `implementation-dry-run` |
-| `plan-fact-auditor` | `liteLLM/gemma4` | `fact-grounding-auditor` |
-| `plan-contract-checker` | `liteLLM/gemma4` | `plan-contract-guard` |
+| `plan-improver-model2` | `plan-improvement-scout` | `liteLLM/gpt-oss` |
+| `plan-improver-model3` | `plan-improvement-scout` | `liteLLM/gpt-oss` |
+| `plan-validation-designer` | `validation-gap-finder` | `liteLLM/gpt-oss` |
+| `plan-coverage-reviewer` | `coverage-design-review` | `liteLLM/gpt-oss` |
+| `plan-red-team-gate` | `red-team-leftover-gate` | `liteLLM/gpt-oss` |
+| `plan-implementation-simulator` | `implementation-dry-run` | `liteLLM/gpt-oss` |
+| `plan-fact-auditor` | `fact-grounding-auditor` | `liteLLM/gemma4` |
+| `plan-contract-checker` | `plan-contract-guard` | `liteLLM/gemma4` |
 
-## Install for OpenCode and Pi
+The performance auditor uses `code-performance-optimization-audit` and `liteLLM/devstral`; it is deliberately **not** silently added to the eight-review full-flow gate.
 
-Requirements:
+## Standalone first
 
-- OpenCode with access to the configured `liteLLM/*` models.
-- Pi 0.85.0 or newer.
-- `pi-open-agents` 0.1.20 installed and enabled in Pi:
+A reviewer/skill must work in all of these cases:
 
-```sh
-pi install npm:pi-open-agents@0.1.20
-```
+1. composed by `ping-pong-plan` or `ping-ping-build`;
+2. composed by another future flow;
+3. routed through `subagent-router`;
+4. manually invoked by a user.
 
-Install the cookbook links globally:
+Flows may select, sequence, provide bounded context, collect results, and synthesize decisions. They do not own reviewer-specific methodology.
 
-```sh
+## Local-model context profile
+
+The primary supported local profile assumes a **98,304-token maximum context**. This is a ceiling, not a normal working target.
+
+Design targets:
+
+- normal working context: about 65k tokens or less;
+- workflow hard target: about 73k tokens or less;
+- reserve roughly 25% for tool schemas, evidence variance, reasoning/compaction, and final output;
+- agent/skill descriptions target <=120 characters and must be <=160 characters in this repository.
+
+See [`protocols/context-budget.md`](protocols/context-budget.md).
+
+## Bounded review context
+
+Reviewers receive a self-contained evidence packet rather than the whole conversation or all previous reviewer output. See [`protocols/evidence-packet.md`](protocols/evidence-packet.md).
+
+For low-context runs, full reviewer reports may be persisted outside active context with compact receipts. The synthesizer consumes receipts first and retrieves full reports selectively. This storage is optional infrastructure; standalone reviewers cannot depend on it. See [`protocols/run-artifacts.md`](protocols/run-artifacts.md).
+
+Reviewers remain read-only. The cookbook does **not** grant broad filesystem write access merely so reviewers can save Markdown. A runtime must first provide a safe bounded artifact-write mechanism; otherwise the caller captures returned reports.
+
+## OpenCode and Pi
+
+Both runtimes use the same canonical `agents/` and `skills/` sources.
+
+Install/update local links:
+
+```bash
 scripts/link-opencode-local.sh
 ```
 
-The defaults are:
+Run qualification before long workflows:
 
-```text
-${XDG_CONFIG_HOME:-$HOME/.config}/opencode/agents/*.md
-  -> <checkout>/.opencode/agents/*.md
-
-${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/agents/*.md
-  -> <checkout>/.opencode/agents/*.md
-
-$HOME/.agents/skills/*
-  -> <checkout>/.agents/skills/*
-```
-
-Use `--global-dir`, `--pi-agent-dir`, or `--shared-skill-dir` for custom
-locations. Use `--dry-run` to preview changes and `--force` to back up a
-conflicting destination before linking. The installer also removes only
-cookbook-owned broken symlinks from the retired global `prompts` and OpenCode
-`skills` layout. It does not edit runtime settings or project configs.
-
-Target repositories need no copied reviewer config. A target's existing
-`opencode.json` may remain in place; avoid defining the same agent names there
-or in project-local agent directories because those definitions can shadow the
-global cookbook agents.
-
-To remove cookbook-owned links:
-
-```sh
-scripts/unlink-opencode-local.sh
-```
-
-## Runtime Delegation
-
-The primary-agent instructions adapt to the tool that the runtime exposes:
-
-```text
-OpenCode: task({ description, prompt, subagent_type })
-Pi:       subagent({ agent, task })
-```
-
-The reviewer names remain identical in both environments. Never translate a
-reviewer name into a generic agent type and never use Pi's argument shape in an
-OpenCode `task` call.
-
-## Preflight and Validation
-
-Run both read-only preflights before a long workflow:
-
-```sh
-scripts/preflight-opencode-ping-pong.sh /path/to/target-repo
-scripts/preflight-pi-ping-pong.sh /path/to/target-repo
-```
-
-OpenCode's `--quick` mode checks files, links, mappings, and source contracts
-without running `opencode debug`. Both preflights accept the corresponding
-custom directory flags used by the linker.
-
-To audit an OpenCode session's actual reviewer calls:
-
-```sh
-scripts/check-opencode-session.sh <session-id>
-scripts/check-opencode-session.sh --expect-subagent plan-fact-auditor <session-id>
-```
-
-To audit a Pi JSONL session's actual reviewer calls and verify that every
-reviewer loaded its mapped skill first:
-
-```sh
-scripts/check-pi-session.js /path/to/session.jsonl
-scripts/check-pi-session.js --scope session <session-id>
-```
-
-With no argument, the Pi checker selects the latest session for the current
-directory. The OpenCode checker derives results from `task` calls with
-`subagent_type`; the Pi checker derives them from `subagent` calls with `agent`
-and the child tool trace. Neither trusts success claims in final-answer prose.
-
-Preflight proves that a runtime is configured and capable of delegation. Only
-a session checker proves that delegation actually happened during a run.
-
-Run repository smoke tests with:
-
-```sh
+```bash
+scripts/preflight-opencode-ping-pong.sh
+scripts/preflight-pi-ping-pong.sh
 scripts/smoke-opencode-scripts.sh
 ```
 
-The smoke test uses temporary directories and covers both runtime link trees,
-legacy-link migration, preflights, OpenCode session-schema checking, Pi
-invocation and skill-load traces, dishonest summaries, failed-review
-continuation, idempotency, conflict backups, and safe unlinking.
+OpenCode integration details live in [`adapters/opencode/`](adapters/opencode/); Pi details live in [`adapters/pi/`](adapters/pi/).
 
-## Troubleshooting `Unknown agent type`
+## Authority model
 
-Run the linker and both preflights, then start a fresh runtime session. In
-OpenCode, confirm a reviewer directly with:
+- `ping-pong-plan` alone owns the canonical plan.
+- `ping-ping-build` alone owns implementation edits in its flow.
+- reviewers are read-only evidence providers;
+- skills provide methodology;
+- runtime session evidence, not prose claims, proves reviewer invocation;
+- failed/skipped reviewer or validation work must never be reported as successful.
 
-```sh
-opencode debug agent plan-improver-model2
-```
+## Design direction
 
-If that succeeds but an old session still reports `Unknown agent type`, the old
-session loaded stale config or used Pi's `{agent, task}` call shape. New
-OpenCode sessions must use `subagent_type`; Pi sessions must have
-`pi-open-agents` enabled and use `agent`.
+The cookbook borrows useful ideas from strong skill repositories—especially progressive disclosure, short routing metadata, selective reference loading, and context isolation—but it does not copy another repository's taxonomy or workflows.
 
-## Benchmarks
+Its differentiators are explicit agent authority, independent multi-model review, reusable standalone capabilities, dual OpenCode/Pi operation, runtime invocation auditing, and context economics designed for local models.
 
-The manual scorecards are in `.opencode/evals/`. The OpenCode replay wrapper is:
+## Demo and historical references
 
-```sh
-scripts/run-opencode-benchmarks.js --list
-scripts/run-opencode-benchmarks.js --suite ping-pong-plan
-```
+- [Browser demo](demo/index.html)
+- [Non-technical walkthrough](.opencode/NON_TECH_AGENT_DEMO.md)
+- [Existing technical flow reference](.opencode/PING_PONG_PLAN_FLOW.md)
+
+Those historical docs will be moved out of `.opencode/` separately if they are refreshed; they are documentation, not canonical agent sources.
