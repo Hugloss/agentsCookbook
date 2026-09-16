@@ -9,18 +9,17 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/link-opencode-local.sh [--dry-run] [--force] [--global-dir DIR] [--pi-agent-dir DIR] [--shared-skill-dir DIR]
 
-Link this checkout's agents for both OpenCode and Pi, and link their shared
-reviewer skills. Pi requires the pi-open-agents extension.
+Install the canonical agents/ and skills/ sources for both OpenCode and Pi.
+The runtime destinations may use hidden config directories; the repository
+source of truth does not.
 
 Options:
   --dry-run               Print planned changes without modifying anything.
-  --force                 Back up conflicting destinations before linking.
+  --force                 Back up unrelated conflicting destinations.
   --global-dir DIR        OpenCode config dir (default: ${XDG_CONFIG_HOME:-$HOME/.config}/opencode).
   --pi-agent-dir DIR      Pi agent dir (default: ${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}).
   --shared-skill-dir DIR  Cross-runtime skill dir (default: $HOME/.agents/skills).
   --help                  Show this help.
-
-This script never creates or edits opencode.json or Pi settings.json.
 USAGE
 }
 
@@ -29,7 +28,6 @@ force=false
 global_dir_arg=""
 pi_agent_dir_arg=""
 shared_skill_dir_arg=""
-
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --help) usage; exit 0 ;;
@@ -49,8 +47,8 @@ if [ -n "$global_dir_arg" ]; then global_dir="$(ac_absolute_path "$global_dir_ar
 if [ -n "$pi_agent_dir_arg" ]; then pi_agent_dir="$(ac_absolute_path "$pi_agent_dir_arg")"; elif ! pi_agent_dir="$(ac_default_pi_agent_dir)"; then ac_die "HOME is not set and --pi-agent-dir was not provided"; fi
 if [ -n "$shared_skill_dir_arg" ]; then shared_skill_dir="$(ac_absolute_path "$shared_skill_dir_arg")"; elif ! shared_skill_dir="$(ac_default_shared_skill_dir)"; then ac_die "HOME is not set and --shared-skill-dir was not provided"; fi
 
-agent_src_dir="$repo_root/.opencode/agents"
-skill_src_dir="$repo_root/.agents/skills"
+agent_src_dir="$(ac_agent_source_dir "$repo_root")"
+skill_src_dir="$(ac_skill_source_dir "$repo_root")"
 opencode_agents_dir="$global_dir/agents"
 pi_agents_dir="$pi_agent_dir/agents"
 [ -d "$agent_src_dir" ] || ac_die "source agents directory is missing: $agent_src_dir"
@@ -71,6 +69,15 @@ ensure_real_dir() {
   if [ "$dry_run" = true ]; then ac_info "DIR status=would_create path=$path"; else mkdir -p -- "$path"; ac_info "DIR status=created path=$path"; fi
 }
 
+remove_owned_legacy_link() {
+  local dest="$1" expected="$2" label="$3" raw resolved
+  [ -L "$dest" ] || return 0
+  raw="$(readlink -- "$dest" 2>/dev/null || true)"
+  resolved="$(realpath -- "$dest" 2>/dev/null || true)"
+  if [ "$raw" != "$expected" ] && [ "$resolved" != "$expected" ]; then return 0; fi
+  if [ "$dry_run" = true ]; then ac_info "MIGRATE type=$label status=would_remove path=$dest target=$raw"; else rm -- "$dest"; ac_info "MIGRATE type=$label status=removed path=$dest target=$raw"; fi
+}
+
 link_one() {
   local src="$1" dest="$2" label="$3" resolved
   if [ -L "$dest" ]; then
@@ -83,15 +90,6 @@ link_one() {
     move_to_backup "$dest"
   fi
   if [ "$dry_run" = true ]; then ac_info "LINK type=$label status=would_create path=$dest target=$src"; else ln -s -- "$src" "$dest"; ac_info "LINK type=$label status=created path=$dest target=$src"; fi
-}
-
-remove_legacy_link() {
-  local dest="$1" expected="$2" label="$3" raw resolved
-  [ -L "$dest" ] || return 0
-  raw="$(readlink -- "$dest" 2>/dev/null || true)"
-  resolved="$(realpath -- "$dest" 2>/dev/null || true)"
-  if [ "$raw" != "$expected" ] && [ "$resolved" != "$expected" ]; then return 0; fi
-  if [ "$dry_run" = true ]; then ac_info "MIGRATE type=$label status=would_remove_legacy path=$dest target=$raw"; else rm -- "$dest"; ac_info "MIGRATE type=$label status=removed_legacy path=$dest target=$raw"; fi
 }
 
 verify_link() {
@@ -109,12 +107,14 @@ ensure_real_dir "$pi_agents_dir"
 ensure_real_dir "$(dirname -- "$shared_skill_dir")"
 ensure_real_dir "$shared_skill_dir"
 
-# Safely remove only symlinks created by the old prompt/skill installer.
-for prompt_name in $AC_LEGACY_PROMPT_FILES; do
-  remove_legacy_link "$global_dir/prompts/$prompt_name" "$repo_root/.opencode/prompts/$prompt_name" "legacy_prompt"
+# Migrate symlinks made by prior cookbook layouts without requiring --force.
+for agent_file in $AC_AGENT_FILES; do
+  remove_owned_legacy_link "$opencode_agents_dir/$agent_file" "$repo_root/.opencode/agents/$agent_file" "LegacyOpenCodeAgent"
+  remove_owned_legacy_link "$pi_agents_dir/$agent_file" "$repo_root/.opencode/agents/$agent_file" "LegacyPiAgent"
 done
 for skill_name in $AC_SKILL_NAMES; do
-  remove_legacy_link "$global_dir/skills/$skill_name" "$repo_root/.opencode/skills/$skill_name" "legacy_skill"
+  remove_owned_legacy_link "$shared_skill_dir/$skill_name" "$repo_root/.agents/skills/$skill_name" "LegacySharedSkill"
+  remove_owned_legacy_link "$global_dir/skills/$skill_name" "$repo_root/.opencode/skills/$skill_name" "OlderLegacySkill"
 done
 
 agent_count=0
@@ -141,15 +141,16 @@ done
 for skill_name in $AC_SKILL_NAMES; do verify_link "$skill_src_dir/$skill_name" "$shared_skill_dir/$skill_name" "shared skill"; done
 
 cat <<NEXT_STEPS
+Installed cookbook links from canonical sources:
+  Source agents:    $agent_src_dir
+  Source skills:    $skill_src_dir
+  OpenCode agents:  $opencode_agents_dir
+  Pi agents:        $pi_agents_dir
+  Shared skills:    $shared_skill_dir
 
-Installed cookbook links for both runtimes:
-  OpenCode agents: $opencode_agents_dir
-  Pi agents:       $pi_agents_dir
-  Shared skills:   $shared_skill_dir
-
-Pi must have pi-open-agents installed and enabled. Run both preflights before a long workflow:
+Run both preflights before a long workflow:
   scripts/preflight-opencode-ping-pong.sh
   scripts/preflight-pi-ping-pong.sh
 
-SUMMARY status=pass agents_per_runtime=$agent_count skills=$skill_count dry_run=$dry_run
+SUMMARY status=pass agents_per_runtime=$agent_count skills=$skill_count mandatory_flow_reviewers=8 dry_run=$dry_run
 NEXT_STEPS
