@@ -11,6 +11,7 @@ Usage: scripts/preflight-opencode-ping-pong.sh [--global-dir DIR] [--shared-skil
 
 Validate canonical agents/ and skills/, runtime links, description economics,
 standalone capability contracts, and the exact eight-review Ping-Pong gate.
+Full mode also validates effective OpenCode tool permissions after loading.
 USAGE
 }
 
@@ -48,15 +49,11 @@ check_link() {
   [ "$resolved" = "$expected" ] && pass "$name" "path=$dest" || fail "$name" "resolved=${resolved:-<unresolved>} expected=$expected"
 }
 
-frontmatter_description() {
-  sed -n 's/^description:[[:space:]]*//p' "$1" | head -n 1
-}
-
+frontmatter_description() { sed -n 's/^description:[[:space:]]*//p' "$1" | head -n 1; }
 validate_description() {
   local kind="$1" name="$2" path="$3" max="$4" description length
-  description="$(frontmatter_description "$path")"
-  length=${#description}
-  if [ -z "$description" ]; then fail "${kind}_description_$name" "missing"; return; fi
+  description="$(frontmatter_description "$path")"; length=${#description}
+  if [ -z "$description" ]; then fail "${kind}_description_$name" missing; return; fi
   if [ "$length" -gt "$max" ]; then fail "${kind}_description_$name" "chars=$length max=$max"; return; fi
   pass "${kind}_description_$name" "chars=$length target=$AC_DESCRIPTION_TARGET max=$max"
 }
@@ -75,7 +72,7 @@ for agent_file in $AC_AGENT_FILES; do
     fail "source_agent_${agent_file%.md}" "missing=$path"
   fi
 done
-[ "$agent_count" -eq 12 ] && pass canonical_agent_count "count=12" || fail canonical_agent_count "count=$agent_count expected=12"
+[ "$agent_count" -eq 12 ] && pass canonical_agent_count count=12 || fail canonical_agent_count "count=$agent_count expected=12"
 
 skill_count=0
 for skill_name in $AC_SKILL_NAMES; do
@@ -88,16 +85,14 @@ for skill_name in $AC_SKILL_NAMES; do
     fail "source_skill_$skill_name" "missing=$path"
   fi
 done
-[ "$skill_count" -eq 8 ] && pass canonical_skill_count "count=8" || fail canonical_skill_count "count=$skill_count expected=8"
+[ "$skill_count" -eq 8 ] && pass canonical_skill_count count=8 || fail canonical_skill_count "count=$skill_count expected=8"
 
-# Mandatory full-flow gate remains exactly eight reviewers.
 for primary_file in $AC_PRIMARY_AGENT_FILES; do
-  path="$agent_src_dir/$primary_file"
-  name="${primary_file%.md}"
+  path="$agent_src_dir/$primary_file"; name="${primary_file%.md}"
   if grep -q '^mode: primary$' "$path" && grep -q '^  task:$' "$path" && grep -Fq 'OpenCode: `task({' "$path" && grep -Fq 'Pi + `pi-open-agents`: `subagent({' "$path"; then
-    pass "source_primary_$name" "runtime_adapter=present"
+    pass "source_primary_$name" runtime_adapter=present
   else
-    fail "source_primary_$name" "missing_primary_or_runtime_contract"
+    fail "source_primary_$name" missing_primary_or_runtime_contract
   fi
 done
 
@@ -119,7 +114,7 @@ while read -r reviewer skill model; do
   if [ -f "$path" ] && grep -q '^mode: subagent$' "$path" && grep -q '^maxDepth: 0$' "$path" && grep -q "^model: $model$" "$path" && grep -Fq "skills: [$skill]" "$path" && grep -Fq 'not part of the mandatory eight-review' "$path"; then
     pass "standalone_agent_$reviewer" "skill=$skill flow_gate=false"
   else
-    fail "standalone_agent_$reviewer" "standalone_contract_mismatch"
+    fail "standalone_agent_$reviewer" standalone_contract_mismatch
   fi
 done <<EOF
 $AC_STANDALONE_AGENT_SKILL_MAP
@@ -129,15 +124,10 @@ plan_source="$agent_src_dir/ping-pong-plan.md"
 if grep -q '^  skill: deny$' "$plan_source" && grep -Fq 'Attempt every reviewer exactly once' "$plan_source" && grep -Fq '98,304' "$plan_source" && ! grep -Fq 'code-performance-optimization-auditor' "$plan_source"; then
   pass source_ping_pong_gate "mandatory_reviewers=8 coordinator_skill=false context_98k=true"
 else
-  fail source_ping_pong_gate "authority_or_gate_contract_mismatch"
+  fail source_ping_pong_gate authority_or_gate_contract_mismatch
 fi
 
-# Repository authority must not depend on hidden source directories.
-if [ -d "$repo_root/.opencode/agents" ] || [ -d "$repo_root/.agents/skills" ]; then
-  fail canonical_layout "legacy_hidden_source_dirs_present"
-else
-  pass canonical_layout "hidden_source_dirs=absent"
-fi
+if [ -d "$repo_root/.opencode/agents" ] || [ -d "$repo_root/.agents/skills" ]; then fail canonical_layout legacy_hidden_source_dirs_present; else pass canonical_layout hidden_source_dirs=absent; fi
 
 if [ "$quick" = false ]; then
   if ! command -v opencode >/dev/null 2>&1; then
@@ -150,14 +140,18 @@ if [ "$quick" = false ]; then
       if [ "$status" -ne 0 ]; then fail "debug_agent_$name" "status=$status"; continue; fi
       mode=readonly; [ "$name" = ping-ping-build ] && mode=build; [ "$name" = subagent-router ] && mode=router
       if printf '%s\n' "$output" | node -e '
-const fs=require("fs"); const mode=process.argv[1]; const raw=fs.readFileSync(0,"utf8"); const start=raw.indexOf("{"); if(start<0)process.exit(2); const a=JSON.parse(raw.slice(start)); const t=a.tools||{}; const expected={task:true,read:true,grep:true,glob:true,skill:mode==="build",edit:mode==="build",write:mode==="build",bash:mode==="build"}; const bad=Object.entries(expected).filter(([k,v])=>t[k]!==v); if(bad.length)process.exit(1);
-' "$mode"; then pass "debug_agent_$name" "tools=correct"; else fail "debug_agent_$name" "tools_incorrect"; fi
+const fs=require("fs");const mode=process.argv[1];const raw=fs.readFileSync(0,"utf8");const start=raw.indexOf("{");if(start<0)process.exit(2);const a=JSON.parse(raw.slice(start));const t=a.tools||{};const expected={task:true,read:true,grep:true,glob:true,skill:mode==="build",edit:mode==="build",write:mode==="build",bash:mode==="build"};if(Object.entries(expected).some(([k,v])=>t[k]!==v))process.exit(1);
+' "$mode"; then pass "debug_agent_$name" tools=correct; else fail "debug_agent_$name" tools_incorrect; fi
     done
+
+    effective_output="$(bash "$repo_root/scripts/check-opencode-effective-reviewers.sh" "$target_repo" 2>&1)"; effective_status=$?
+    printf '%s\n' "$effective_output"
+    [ "$effective_status" -eq 0 ] && pass effective_reviewer_contracts reviewers=9 || fail effective_reviewer_contracts "status=$effective_status"
 
     skill_output="$(cd -- "$target_repo" && opencode debug skill 2>&1)"; skill_status=$?
     if [ "$skill_status" -ne 0 ]; then fail debug_skills "status=$skill_status"; else
       missing=""; for skill_name in $AC_SKILL_NAMES; do printf '%s\n' "$skill_output" | grep -q "$skill_name" || missing="$missing $skill_name"; done
-      [ -z "$missing" ] && pass debug_skills "all=8" || fail debug_skills "missing=$missing"
+      [ -z "$missing" ] && pass debug_skills all=8 || fail debug_skills "missing=$missing"
     fi
   fi
 fi
