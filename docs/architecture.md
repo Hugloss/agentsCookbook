@@ -16,6 +16,18 @@ Reviewer agents are deny-by-default. They keep normal project read-only authorit
 
 Skills are intentionally narrow: one hard invariant and one narrow review or discovery question. Specialist review skills own one failure class, explicit `HUNT`, proof requirements, false-positive controls, and a preferred correction direction. The grouped catalog and overlap boundaries live in [`skills/README.md`](../skills/README.md).
 
+Repository discovery may deliberately happen in stages:
+
+```text
+repository-improvement-scout
+  -> evidence-backed investigation lead
+  -> codebase-finding-derivation or narrow specialist
+  -> proven finding
+  -> smallest corrective change
+```
+
+The scout does not manufacture findings; finding derivation does not replace the narrow specialist that owns an exact failure class.
+
 ### Flows
 
 `flows/` composes agents. A flow may select, order, provide bounded context, collect results, and synthesize decisions. It must not duplicate reviewer methodology.
