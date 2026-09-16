@@ -2,6 +2,11 @@ import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 import { Type } from "typebox"
+import {
+  activeReviewerName,
+  reviewerAllowedTools,
+  reviewerToolAllowed,
+} from "./reviewer-tool-boundary.js"
 
 const MAX_REPORT_CHARS = 65536
 const MAX_SUMMARY_CHARS = 1200
@@ -11,12 +16,18 @@ function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex")
 }
 
-function requireRunRoot() {
+function configuredRunRoot() {
   const configured = process.env.AGENTS_COOKBOOK_RUN_DIR || ""
-  if (!configured) throw new Error("AGENTS_COOKBOOK_RUN_DIR is not configured")
+  if (!configured) return ""
   if (!path.isAbsolute(configured)) throw new Error("AGENTS_COOKBOOK_RUN_DIR must be absolute")
   fs.mkdirSync(configured, { recursive: true })
   return fs.realpathSync(configured)
+}
+
+function requireRunRoot() {
+  const root = configuredRunRoot()
+  if (!root) throw new Error("AGENTS_COOKBOOK_RUN_DIR is not configured")
+  return root
 }
 
 function ensureChildDir(root, name) {
@@ -34,11 +45,15 @@ function validateId(value) {
   return id
 }
 
-function writeArtifact(args) {
+function writeArtifact(args, reviewerName) {
   const root = requireRunRoot()
   const reviews = ensureChildDir(root, "reviews")
   const receipts = ensureChildDir(root, "receipts")
   const id = validateId(args.artifact_id)
+  if (reviewerName && id !== reviewerName) {
+    throw new Error(`artifact_id must equal current reviewer name: ${reviewerName}`)
+  }
+
   const report = String(args.content || "").trim()
   const summary = String(args.summary || "").trim()
   if (!report) throw new Error("content must not be empty")
@@ -57,7 +72,7 @@ function writeArtifact(args) {
     schema_version: 1,
     runtime: "pi",
     run_id: path.basename(root),
-    reviewer: id,
+    reviewer: reviewerName || id,
     artifact_id: id,
     subject_id: args.subject_id || null,
     subject_revision: args.subject_revision || null,
@@ -91,41 +106,62 @@ function readArtifact(args) {
 }
 
 export default function registerAgentsCookbookReviewArtifacts(pi) {
-  if (!process.env.AGENTS_COOKBOOK_RUN_DIR) return
+  const reviewerName = activeReviewerName()
+  const runRoot = configuredRunRoot()
+  const artifactEnabled = Boolean(runRoot)
 
-  pi.registerTool({
-    name: "review_artifact",
-    label: "Save review artifact",
-    description: "Save one full reviewer report in the configured run store and return only its compact receipt.",
-    parameters: Type.Object({
-      artifact_id: Type.String({ description: "Stable artifact id; reviewer agents use their exact agent name." }),
-      summary: Type.String({ description: "Compact material findings summary, at most 1200 characters." }),
-      content: Type.String({ description: "Complete skill-defined Markdown review artifact." }),
-      subject_id: Type.Optional(Type.String({ description: "Optional reviewed subject id." })),
-      subject_revision: Type.Optional(Type.String({ description: "Optional reviewed subject revision." })),
-    }),
-    async execute(_toolCallId, params) {
-      const receipt = writeArtifact(params)
-      return {
-        content: [{ type: "text", text: JSON.stringify(receipt) }],
-        details: receipt,
-      }
-    },
-  })
+  if (artifactEnabled) {
+    pi.registerTool({
+      name: "review_artifact",
+      label: "Save review artifact",
+      description: "Save one full reviewer report in the configured run store and return only its compact receipt.",
+      parameters: Type.Object({
+        artifact_id: Type.String({ description: "Stable artifact id; reviewer agents use their exact agent name." }),
+        summary: Type.String({ description: "Compact material findings summary, at most 1200 characters." }),
+        content: Type.String({ description: "Complete skill-defined Markdown review artifact." }),
+        subject_id: Type.Optional(Type.String({ description: "Optional reviewed subject id." })),
+        subject_revision: Type.Optional(Type.String({ description: "Optional reviewed subject revision." })),
+      }),
+      async execute(_toolCallId, params) {
+        const receipt = writeArtifact(params, reviewerName)
+        return {
+          content: [{ type: "text", text: JSON.stringify(receipt) }],
+          details: receipt,
+        }
+      },
+    })
 
-  pi.registerTool({
-    name: "review_artifact_read",
-    label: "Read review artifact",
-    description: "Read one named reviewer artifact from the configured run store; no arbitrary paths are accepted.",
-    parameters: Type.Object({
-      artifact_id: Type.String({ description: "Reviewer artifact id to read." }),
-    }),
-    async execute(_toolCallId, params) {
-      const body = readArtifact(params)
+    pi.registerTool({
+      name: "review_artifact_read",
+      label: "Read review artifact",
+      description: "Read one named reviewer artifact from the configured run store; no arbitrary paths are accepted.",
+      parameters: Type.Object({
+        artifact_id: Type.String({ description: "Reviewer artifact id to read." }),
+      }),
+      async execute(_toolCallId, params) {
+        const body = readArtifact(params)
+        return {
+          content: [{ type: "text", text: body }],
+          details: { artifact_id: params.artifact_id, chars: body.length },
+        }
+      },
+    })
+  }
+
+  // pi-open-agents cannot derive a finite child --tools whitelist when an
+  // OpenCode-compatible permission block contains a wildcard entry, even when
+  // that wildcard is "*": deny. Canonical reviewer agents deliberately retain
+  // wildcard deny-by-default for OpenCode. In a Pi reviewer child, enforce the
+  // equivalent finite boundary here using the authoritative child identity.
+  if (reviewerName) {
+    const allowedTools = reviewerAllowedTools({ artifactEnabled })
+    pi.setActiveTools(allowedTools)
+    pi.on("tool_call", async (event) => {
+      if (reviewerToolAllowed(event.toolName, { artifactEnabled })) return undefined
       return {
-        content: [{ type: "text", text: body }],
-        details: { artifact_id: params.artifact_id, chars: body.length },
+        block: true,
+        reason: `Agents Cookbook reviewer ${reviewerName} is not allowed to use tool ${event.toolName}`,
       }
-    },
-  })
+    })
+  }
 }
