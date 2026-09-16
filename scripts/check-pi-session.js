@@ -5,8 +5,8 @@ const fs = require('fs');
 const path = require('path');
 
 const required = [
-  ['plan-improver-model2', 'plan-improvement-scout'],
-  ['plan-improver-model3', 'plan-improvement-scout'],
+  ['plan-improver-model2', 'plan-gap-scout'],
+  ['plan-improver-model3', 'alternative-route-challenge'],
   ['plan-validation-designer', 'validation-gap-finder'],
   ['plan-coverage-reviewer', 'coverage-design-review'],
   ['plan-red-team-gate', 'red-team-leftover-gate'],
@@ -15,10 +15,12 @@ const required = [
   ['plan-contract-checker', 'plan-contract-guard'],
 ];
 const requiredNames = new Set(required.map(([name]) => name));
+const artifactMode = Boolean(process.env.AGENTS_COOKBOOK_RUN_DIR);
+const allowedReviewerTools = new Set(['read', 'grep', 'find', 'ls', ...(artifactMode ? ['review_artifact'] : [])]);
 
 function usage() {
   process.stdout.write('Usage: scripts/check-pi-session.js [--scope latest-turn|session] [session-file-or-id]\n');
-  process.stdout.write('Audits real Pi subagent calls and each reviewer\'s first skill-loading action.\n');
+  process.stdout.write('Audits real Pi reviewer calls, skill loading, finite child tool use, and live artifact writes when enabled.\n');
 }
 
 function parseArgs(argv) {
@@ -26,22 +28,13 @@ function parseArgs(argv) {
   let target = '';
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === '-h' || arg === '--help') {
-      usage();
-      process.exit(0);
-    }
-    if (arg === '--scope') {
-      i += 1;
-      scope = argv[i] || '';
-      continue;
-    }
+    if (arg === '-h' || arg === '--help') { usage(); process.exit(0); }
+    if (arg === '--scope') { i += 1; scope = argv[i] || ''; continue; }
     if (arg.startsWith('--')) throw new Error(`Unknown option: ${arg}`);
     if (target) throw new Error('Only one session file or ID may be supplied.');
     target = arg;
   }
-  if (!['latest-turn', 'session'].includes(scope)) {
-    throw new Error(`Invalid --scope value: ${scope}`);
-  }
+  if (!['latest-turn', 'session'].includes(scope)) throw new Error(`Invalid --scope value: ${scope}`);
   return { scope, target };
 }
 
@@ -61,16 +54,10 @@ function walkJsonlFiles(root) {
 }
 
 function readEntries(file) {
-  return fs.readFileSync(file, 'utf8')
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line, index) => {
-      try {
-        return JSON.parse(line);
-      } catch (error) {
-        throw new Error(`${file}:${index + 1}: invalid JSON: ${error.message}`);
-      }
-    });
+  return fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean).map((line, index) => {
+    try { return JSON.parse(line); }
+    catch (error) { throw new Error(`${file}:${index + 1}: invalid JSON: ${error.message}`); }
+  });
 }
 
 function sessionCwd(file) {
@@ -78,30 +65,20 @@ function sessionCwd(file) {
     const firstLine = fs.readFileSync(file, 'utf8').split(/\r?\n/, 1)[0];
     const header = JSON.parse(firstLine);
     return header && header.type === 'session' ? header.cwd : '';
-  } catch {
-    return '';
-  }
+  } catch { return ''; }
 }
 
 function resolveSession(target) {
   if (target && fs.existsSync(target)) return path.resolve(target);
-  const agentDir = process.env.PI_CODING_AGENT_DIR
-    ? path.resolve(process.env.PI_CODING_AGENT_DIR)
-    : path.join(process.env.HOME || '', '.pi', 'agent');
+  const agentDir = process.env.PI_CODING_AGENT_DIR ? path.resolve(process.env.PI_CODING_AGENT_DIR) : path.join(process.env.HOME || '', '.pi', 'agent');
   const files = walkJsonlFiles(path.join(agentDir, 'sessions'));
   let candidates = files;
-  if (target) {
-    candidates = files.filter((file) => path.basename(file).includes(target) || fs.readFileSync(file, 'utf8').split(/\r?\n/, 1)[0].includes(target));
-  } else {
+  if (target) candidates = files.filter((file) => path.basename(file).includes(target) || fs.readFileSync(file, 'utf8').split(/\r?\n/, 1)[0].includes(target));
+  else {
     const cwd = fs.realpathSync(process.cwd());
     candidates = files.filter((file) => {
-      const candidate = sessionCwd(file);
-      if (!candidate) return false;
-      try {
-        return fs.realpathSync(candidate) === cwd;
-      } catch {
-        return path.resolve(candidate) === cwd;
-      }
+      const candidate = sessionCwd(file); if (!candidate) return false;
+      try { return fs.realpathSync(candidate) === cwd; } catch { return path.resolve(candidate) === cwd; }
     });
   }
   candidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
@@ -113,10 +90,7 @@ function activeBranch(entries) {
   const byId = new Map(entries.filter((entry) => entry.id).map((entry) => [entry.id, entry]));
   let current = [...entries].reverse().find((entry) => entry.id);
   const branchIds = new Set();
-  while (current && current.id && !branchIds.has(current.id)) {
-    branchIds.add(current.id);
-    current = current.parentId ? byId.get(current.parentId) : undefined;
-  }
+  while (current && current.id && !branchIds.has(current.id)) { branchIds.add(current.id); current = current.parentId ? byId.get(current.parentId) : undefined; }
   return entries.filter((entry) => !entry.id || branchIds.has(entry.id));
 }
 
@@ -124,9 +98,7 @@ function scopedEntries(entries, scope) {
   const branch = activeBranch(entries);
   if (scope === 'session') return branch;
   let start = 0;
-  for (let i = 0; i < branch.length; i += 1) {
-    if (branch[i].type === 'message' && branch[i].message && branch[i].message.role === 'user') start = i;
-  }
+  for (let i = 0; i < branch.length; i += 1) if (branch[i].type === 'message' && branch[i].message && branch[i].message.role === 'user') start = i;
   return branch.slice(start);
 }
 
@@ -136,17 +108,35 @@ function objectArgs(value) {
   try { return JSON.parse(value); } catch { return {}; }
 }
 
+function childTools(result) {
+  return result && result.details && Array.isArray(result.details.tools) ? result.details.tools : [];
+}
+
 function skillWasLoaded(result, skill) {
-  const tools = result && result.details && Array.isArray(result.details.tools) ? result.details.tools : [];
+  const tools = childTools(result);
   if (tools.length === 0) return false;
   const first = tools[0];
   const args = objectArgs(first.args || first.arguments);
-  if (first.name === 'skill') {
-    return Object.values(args).some((value) => String(value).includes(skill));
-  }
+  if (first.name === 'skill') return Object.values(args).some((value) => String(value).includes(skill));
   if (first.name !== 'read') return false;
   const candidate = String(args.path || args.file_path || args.filePath || '');
   return candidate.replaceAll('\\', '/').endsWith(`/${skill}/SKILL.md`);
+}
+
+function artifactWasSaved(result, reviewer) {
+  if (!artifactMode) return true;
+  return childTools(result).some((entry) => {
+    if (!entry || entry.name !== 'review_artifact') return false;
+    const args = objectArgs(entry.args || entry.arguments);
+    const status = String(entry.status || '').toLowerCase();
+    return args.artifact_id === reviewer && (!status || status === 'done' || status === 'completed' || status === 'success');
+  });
+}
+
+function unexpectedChildTools(result) {
+  return childTools(result)
+    .map((entry) => String(entry && entry.name ? entry.name : ''))
+    .filter((name) => name && !allowedReviewerTools.has(name));
 }
 
 function audit(entries, scope) {
@@ -154,14 +144,8 @@ function audit(entries, scope) {
   const results = new Map();
   for (const entry of scoped) {
     if (entry.type !== 'message' || !entry.message) continue;
-    if (entry.message.role === 'toolResult' && entry.message.toolCallId) {
-      results.set(entry.message.toolCallId, entry.message);
-    }
-    if (Array.isArray(entry.message.content)) {
-      for (const part of entry.message.content) {
-        if (part.type === 'toolResult' && part.toolCallId) results.set(part.toolCallId, part);
-      }
-    }
+    if (entry.message.role === 'toolResult' && entry.message.toolCallId) results.set(entry.message.toolCallId, entry.message);
+    if (Array.isArray(entry.message.content)) for (const part of entry.message.content) if (part.type === 'toolResult' && part.toolCallId) results.set(part.toolCallId, part);
   }
 
   const calls = [];
@@ -177,46 +161,39 @@ function audit(entries, scope) {
   const rows = required.map(([name, skill]) => {
     const matching = calls.filter((call) => call.agent === name);
     const call = matching[0];
-    const output = call && call.result && call.result.details && typeof call.result.details.output === 'string'
-      ? call.result.details.output.trim()
-      : '';
+    const output = call && call.result && call.result.details && typeof call.result.details.output === 'string' ? call.result.details.output.trim() : '';
     const succeeded = Boolean(call && call.result && !call.result.isError && call.result.details && call.result.details.status === 'done' && output);
+    const unexpectedTools = succeeded ? unexpectedChildTools(call.result) : [];
     return {
-      name,
-      skill,
-      count: matching.length,
+      name, skill, count: matching.length,
       invocation: matching.length === 0 ? 'missing' : matching.length === 1 ? (succeeded ? 'succeeded' : 'failed') : 'duplicate',
       skillLoaded: succeeded && skillWasLoaded(call.result, skill),
+      artifactSaved: succeeded && artifactWasSaved(call.result, name),
+      unexpectedTools,
+      toolBoundary: succeeded && unexpectedTools.length === 0,
     };
   });
   const unexpected = calls.filter((call) => !requiredNames.has(call.agent));
   const expectedOrder = required.map(([name]) => name);
   const orderPass = calls.length === expectedOrder.length && calls.every((call, index) => call.agent === expectedOrder[index]);
-  const pass = rows.every((row) => row.invocation === 'succeeded' && row.skillLoaded) && unexpected.length === 0 && orderPass;
+  const pass = rows.every((row) => row.invocation === 'succeeded' && row.skillLoaded && row.artifactSaved && row.toolBoundary) && unexpected.length === 0 && orderPass;
   return { rows, calls, unexpected, orderPass, pass };
 }
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
   const file = resolveSession(options.target);
-  const entries = readEntries(file);
-  const report = audit(entries, options.scope);
+  const report = audit(readEntries(file), options.scope);
 
-  process.stdout.write(`PI_SESSION=${file}\nSCOPE=${options.scope}\n`);
+  process.stdout.write(`PI_SESSION=${file}\nSCOPE=${options.scope}\nARTIFACT_MODE=${artifactMode ? 'enabled' : 'disabled'}\n`);
   for (const row of report.rows) {
-    process.stdout.write(`REVIEWER name=${row.name} invocation=${row.invocation} count=${row.count} skill=${row.skill} skill_loaded=${row.skillLoaded ? 'yes' : 'no'}\n`);
+    process.stdout.write(`REVIEWER name=${row.name} invocation=${row.invocation} count=${row.count} skill=${row.skill} skill_loaded=${row.skillLoaded ? 'yes' : 'no'} artifact_saved=${artifactMode ? (row.artifactSaved ? 'yes' : 'no') : 'disabled'} tool_boundary=${row.toolBoundary ? 'pass' : 'fail'} unexpected_tools=${row.unexpectedTools.join(',') || 'none'}\n`);
   }
-  for (const call of report.unexpected) {
-    process.stdout.write(`UNEXPECTED_REVIEWER name=${call.agent}\n`);
-  }
+  for (const call of report.unexpected) process.stdout.write(`UNEXPECTED_REVIEWER name=${call.agent}\n`);
   process.stdout.write(`ORDER status=${report.orderPass ? 'pass' : 'fail'} actual=${report.calls.map((call) => call.agent).join(',') || 'none'}\n`);
-  process.stdout.write(`SUMMARY status=${report.pass ? 'pass' : 'fail'} required=${required.length} calls=${report.calls.length} unexpected=${report.unexpected.length}\n`);
+  process.stdout.write(`SUMMARY status=${report.pass ? 'pass' : 'fail'} required=${required.length} calls=${report.calls.length} unexpected=${report.unexpected.length} artifact_mode=${artifactMode ? 'enabled' : 'disabled'}\n`);
   if (!report.pass) process.exitCode = 1;
 }
 
-try {
-  main();
-} catch (error) {
-  process.stderr.write(`Error: ${error.message}\n`);
-  process.exit(2);
-}
+try { main(); }
+catch (error) { process.stderr.write(`Error: ${error.message}\n`); process.exit(2); }
