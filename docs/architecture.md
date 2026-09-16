@@ -14,6 +14,8 @@ Reviewer agents are deny-by-default. They keep normal project read-only authorit
 
 `skills/` contains reusable methodology. Every skill is standalone and must make sense without Ping-Pong, prior reviewers, or a run store.
 
+Skills are intentionally narrow: one hard invariant, one failure class, explicit `HUNT`, proof requirements, false-positive controls, and a preferred correction direction. The grouped catalog and overlap boundaries live in [`skills/README.md`](../skills/README.md).
+
 ### Flows
 
 `flows/` composes agents. A flow may select, order, provide bounded context, collect results, and synthesize decisions. It must not duplicate reviewer methodology.
@@ -70,6 +72,6 @@ The run-store checker validates exact reviewer sets, receipt identity, hashes, o
 
 ## Mandatory versus installable capabilities
 
-The repository currently installs 12 agents and 8 skills. Only eight reviewer agents are mandatory in the Ping-Pong/Ping-Ping full-review gate. Additional standalone agents do not automatically enlarge that gate.
+The repository currently installs 12 agents and 29 skills. Only eight reviewer agents are mandatory in the Ping-Pong/Ping-Ping full-review gate. Additional standalone agents and skills do not automatically enlarge that gate.
 
 This distinction prevents new capabilities from silently changing established workflow cost or semantics.
