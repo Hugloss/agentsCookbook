@@ -33,6 +33,7 @@ validation-gap-finder
 coverage-design-review
 implementation-dry-run
 fact-grounding-auditor
+repository-improvement-scout
 codebase-finding-derivation
 plan-contract-guard
 red-team-leftover-gate
