@@ -39,7 +39,8 @@ else
   fail skill_catalog_exact missing
 fi
 
-if grep -Rqs --exclude-dir=.git 'plan-improvement-scout' "$repo_root"; then fail removed_skill_reference name=plan-improvement-scout; else pass removed_skill_reference absent=true; fi
+stale_skill_name='plan-improvement''-scout'
+if grep -Rqs --exclude-dir=.git "$stale_skill_name" "$repo_root"; then fail removed_skill_reference "name=$stale_skill_name"; else pass removed_skill_reference absent=true; fi
 
 for agent_file in $AC_AGENT_FILES; do check_description agent "${agent_file%.md}" "$agent_src_dir/$agent_file" "$AC_AGENT_DESCRIPTION_MAX"; done
 for skill_name in $AC_SKILL_NAMES; do check_description skill "$skill_name" "$skill_src_dir/$skill_name/SKILL.md" "$AC_SKILL_DESCRIPTION_MAX"; done
