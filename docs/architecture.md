@@ -26,16 +26,18 @@ Reviewer agents are deny-by-default. They keep normal project read-only authorit
 
 `adapters/` and installation/preflight scripts bridge canonical sources into OpenCode and Pi. Runtime-specific path conventions do not become repository source conventions.
 
-The artifact adapters are installed but inert unless `AGENTS_COOKBOOK_RUN_DIR` is set. They accept artifact IDs rather than arbitrary paths and confine all storage to the configured per-run root.
+Artifact storage tools are inert unless `AGENTS_COOKBOOK_RUN_DIR` is set. They accept artifact IDs rather than arbitrary paths and confine all storage to the configured per-run root.
+
+Pi also has one runtime-authority compatibility responsibility: current `pi-open-agents` cannot derive a finite child `--tools` whitelist from canonical reviewer permissions containing `"*"`, even when the wildcard action is `deny`. The Pi adapter therefore recognizes cookbook reviewer child processes from `PI_OPEN_AGENTS_NAME`/`PI_OPEN_AGENTS_DEPTH`, sets an exact read-only active-tool set, and independently blocks any tool call outside that set. This adapter shim preserves the canonical deny-by-default agent contract rather than creating Pi-specific behavioral copies.
 
 ## Ownership
 
 ```text
-agent -> authority
+agent -> authority intent
 skill -> methodology
 flow -> composition
 protocol -> interchange/context contract
-adapter -> runtime exposure
+adapter -> runtime exposure + proven runtime compatibility enforcement
 ```
 
 ## Standalone contract
@@ -47,7 +49,7 @@ Every reviewer and skill must work when:
 - composed by the full planning/build flow;
 - reused by a future flow.
 
-Artifact persistence is optional transport, never a hidden prerequisite. With artifact mode disabled, reviewers return their complete review normally.
+Artifact persistence is optional transport, never a hidden prerequisite. With artifact mode disabled, reviewers return their complete review normally. The Pi reviewer child read-only boundary remains active independently of artifact persistence.
 
 ## Low-context evidence flow
 
