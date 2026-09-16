@@ -16,10 +16,11 @@ const required = [
 ];
 const requiredNames = new Set(required.map(([name]) => name));
 const artifactMode = Boolean(process.env.AGENTS_COOKBOOK_RUN_DIR);
+const allowedReviewerTools = new Set(['read', 'grep', 'find', 'ls', ...(artifactMode ? ['review_artifact'] : [])]);
 
 function usage() {
   process.stdout.write('Usage: scripts/check-pi-session.js [--scope latest-turn|session] [session-file-or-id]\n');
-  process.stdout.write('Audits real Pi reviewer calls, first skill load, and live artifact writes when AGENTS_COOKBOOK_RUN_DIR is enabled.\n');
+  process.stdout.write('Audits real Pi reviewer calls, skill loading, finite child tool use, and live artifact writes when enabled.\n');
 }
 
 function parseArgs(argv) {
@@ -132,6 +133,12 @@ function artifactWasSaved(result, reviewer) {
   });
 }
 
+function unexpectedChildTools(result) {
+  return childTools(result)
+    .map((entry) => String(entry && entry.name ? entry.name : ''))
+    .filter((name) => name && !allowedReviewerTools.has(name));
+}
+
 function audit(entries, scope) {
   const scoped = scopedEntries(entries, scope);
   const results = new Map();
@@ -156,17 +163,20 @@ function audit(entries, scope) {
     const call = matching[0];
     const output = call && call.result && call.result.details && typeof call.result.details.output === 'string' ? call.result.details.output.trim() : '';
     const succeeded = Boolean(call && call.result && !call.result.isError && call.result.details && call.result.details.status === 'done' && output);
+    const unexpectedTools = succeeded ? unexpectedChildTools(call.result) : [];
     return {
       name, skill, count: matching.length,
       invocation: matching.length === 0 ? 'missing' : matching.length === 1 ? (succeeded ? 'succeeded' : 'failed') : 'duplicate',
       skillLoaded: succeeded && skillWasLoaded(call.result, skill),
       artifactSaved: succeeded && artifactWasSaved(call.result, name),
+      unexpectedTools,
+      toolBoundary: succeeded && unexpectedTools.length === 0,
     };
   });
   const unexpected = calls.filter((call) => !requiredNames.has(call.agent));
   const expectedOrder = required.map(([name]) => name);
   const orderPass = calls.length === expectedOrder.length && calls.every((call, index) => call.agent === expectedOrder[index]);
-  const pass = rows.every((row) => row.invocation === 'succeeded' && row.skillLoaded && row.artifactSaved) && unexpected.length === 0 && orderPass;
+  const pass = rows.every((row) => row.invocation === 'succeeded' && row.skillLoaded && row.artifactSaved && row.toolBoundary) && unexpected.length === 0 && orderPass;
   return { rows, calls, unexpected, orderPass, pass };
 }
 
@@ -177,7 +187,7 @@ function main() {
 
   process.stdout.write(`PI_SESSION=${file}\nSCOPE=${options.scope}\nARTIFACT_MODE=${artifactMode ? 'enabled' : 'disabled'}\n`);
   for (const row of report.rows) {
-    process.stdout.write(`REVIEWER name=${row.name} invocation=${row.invocation} count=${row.count} skill=${row.skill} skill_loaded=${row.skillLoaded ? 'yes' : 'no'} artifact_saved=${artifactMode ? (row.artifactSaved ? 'yes' : 'no') : 'disabled'}\n`);
+    process.stdout.write(`REVIEWER name=${row.name} invocation=${row.invocation} count=${row.count} skill=${row.skill} skill_loaded=${row.skillLoaded ? 'yes' : 'no'} artifact_saved=${artifactMode ? (row.artifactSaved ? 'yes' : 'no') : 'disabled'} tool_boundary=${row.toolBoundary ? 'pass' : 'fail'} unexpected_tools=${row.unexpectedTools.join(',') || 'none'}\n`);
   }
   for (const call of report.unexpected) process.stdout.write(`UNEXPECTED_REVIEWER name=${call.agent}\n`);
   process.stdout.write(`ORDER status=${report.orderPass ? 'pass' : 'fail'} actual=${report.calls.map((call) => call.agent).join(',') || 'none'}\n`);
