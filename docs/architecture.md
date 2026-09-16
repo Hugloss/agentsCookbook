@@ -44,12 +44,20 @@ adapter -> runtime exposure + proven runtime compatibility enforcement
 
 ## Standalone contract
 
-Every reviewer and skill must work when:
+Every reviewer agent must work when:
 
 - invoked manually;
-- routed through the one-reviewer router;
+- routed through `subagent-router` when it is one of the configured reviewers;
 - composed by the full planning/build flow;
-- reused by a future flow.
+- reused by a future compatible flow.
+
+Every skill must work when:
+
+- loaded directly by a compatible runtime/agent;
+- used by its owning reviewer when one exists;
+- reused by a future compatible agent or flow.
+
+`subagent-router` routes reviewer agents, not arbitrary skill names. Installable specialist skills therefore do not imply a matching routed reviewer or a mandatory flow step.
 
 Artifact persistence is optional transport, never a hidden prerequisite. With artifact mode disabled, reviewers return their complete review normally. The Pi reviewer child read-only boundary remains active independently of artifact persistence.
 
