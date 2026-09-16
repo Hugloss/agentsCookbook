@@ -27,20 +27,41 @@ code-performance-optimization-auditor.md
 AC_AGENT_FILES="$AC_PRIMARY_AGENT_FILES$AC_FLOW_REVIEWER_AGENT_FILES$AC_STANDALONE_AGENT_FILES"
 
 AC_SKILL_NAMES="
-coverage-design-review
-fact-grounding-auditor
-implementation-dry-run
-plan-contract-guard
-plan-improvement-scout
-red-team-leftover-gate
+plan-gap-scout
+alternative-route-challenge
 validation-gap-finder
+coverage-design-review
+implementation-dry-run
+fact-grounding-auditor
+plan-contract-guard
+red-team-leftover-gate
 code-performance-optimization-audit
+stale-work-race-review
+ui-lifecycle-race-review
+semantic-redecision-review
+durable-commit-path-review
+resolved-fact-regression-review
+state-authority-review
+invalid-state-model-review
+single-observation-review
+call-chain-collapse-review
+alternate-path-removal-review
+hidden-side-effect-review
+dependency-surface-review
+test-work-amplification-review
+repeated-test-setup-review
+test-isolation-boundary-review
+test-orchestration-complexity-review
+deterministic-causality-test-review
+test-state-contamination-review
+test-contract-coupling-review
+architecture-risk-triage
 "
 
 AC_FLOW_REVIEWER_SKILL_MAP="
 plan-coverage-reviewer coverage-design-review liteLLM/gpt-oss
-plan-improver-model2 plan-improvement-scout liteLLM/gpt-oss
-plan-improver-model3 plan-improvement-scout liteLLM/gpt-oss
+plan-improver-model2 plan-gap-scout liteLLM/gpt-oss
+plan-improver-model3 alternative-route-challenge liteLLM/gpt-oss
 plan-validation-designer validation-gap-finder liteLLM/gpt-oss
 plan-red-team-gate red-team-leftover-gate liteLLM/gpt-oss
 plan-implementation-simulator implementation-dry-run liteLLM/gpt-oss
