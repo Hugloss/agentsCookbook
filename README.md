@@ -82,7 +82,8 @@ Model names are deployment aliases, not methodology requirements. Point them at 
 Skills are intentionally small and sharp:
 
 - one hard invariant;
-- one narrow failure class;
+- one narrow review or discovery question;
+- specialist review skills own one failure class;
 - explicit `HUNT` guidance;
 - proof requirements before reporting;
 - false-positive controls;
