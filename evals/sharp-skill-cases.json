@@ -31,6 +31,62 @@
       "scenario": "A view schedules delayed measurement work. Cleanup cancels the handle, and the callback also checks the exact render generation before touching the DOM."
     },
     {
+      "id": "atomic-operation-positive",
+      "skill": "atomic-operation-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "One publish operation first commits metadata in the database and then writes the content file. If the file write fails, the committed metadata remains visible as published although no content exists."
+    },
+    {
+      "id": "atomic-operation-control",
+      "skill": "atomic-operation-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A multi-step import uses explicit durable states PREPARING, READY, and FAILED. Readers only consume READY, restart resumes or cleans PREPARING deterministically, and every intermediate state is part of the documented workflow."
+    },
+    {
+      "id": "retry-idempotency-positive",
+      "skill": "retry-idempotency-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A queue may redeliver the same message after acknowledgement timeout. Each delivery sends the notification and inserts a history row using the same operation id, but neither effect has a duplicate guard."
+    },
+    {
+      "id": "retry-idempotency-control",
+      "skill": "retry-idempotency-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Redelivery is expected. The effect owner performs a create-only write keyed by the logical operation id, returns the existing terminal result on duplicate delivery, and does not repeat external effects."
+    },
+    {
+      "id": "resource-lifetime-positive",
+      "skill": "resource-lifetime-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A request acquires a temporary directory and starts a child process that still reads from it after the request handler returns. The handler's finally block deletes the directory before the child signals completion."
+    },
+    {
+      "id": "resource-lifetime-control",
+      "skill": "resource-lifetime-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A process-wide immutable schema registry is created once at startup, owned by the process lifetime, never closed by request code, and released only during process shutdown."
+    },
+    {
+      "id": "failure-contract-positive",
+      "skill": "failure-contract-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A storage timeout is thrown by the repository, converted to None by one service, interpreted as not-found by the API, but treated as retryable by a worker that calls the repository directly."
+    },
+    {
+      "id": "failure-contract-control",
+      "skill": "failure-contract-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The domain returns one explicit NotFound result. The HTTP boundary maps it once to 404, the worker maps the same stable result to a terminal receipt, and neither boundary changes its semantic meaning."
+    },
+    {
       "id": "semantic-redecision-positive",
       "skill": "semantic-redecision-review",
       "kind": "positive",
@@ -310,6 +366,34 @@
       "expected": "CLEAN",
       "fixture": "evals/fixtures/test-causality",
       "scenario": "The fixture contains a weak timing synchronization technique. Determine whether the test also performs disproportionate production work relative to the behavior it proves. Report only this skill's failure class."
+    },
+    {
+      "id": "confusion-retry-vs-stale",
+      "skill": "stale-work-race-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "The same queue message with the same logical operation id is delivered twice because acknowledgement timed out. No newer owner or superseding operation exists; the concern is duplicate execution of the same operation."
+    },
+    {
+      "id": "confusion-atomic-vs-commit-authority",
+      "skill": "durable-commit-path-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "One canonical publish owner performs two required writes. A crash between them leaves partial state. There is only one semantic transition authority and one commit path."
+    },
+    {
+      "id": "confusion-ui-vs-resource-lifetime",
+      "skill": "resource-lifetime-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "A React view schedules RAF work that runs after navigation replaces the view. The defect is specifically old view-generation work acting on the replacement UI; no general resource acquisition/release contract is involved."
+    },
+    {
+      "id": "confusion-failure-vs-semantic-policy",
+      "skill": "semantic-redecision-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "A storage timeout is converted to None in one layer and treated as not-found, while another caller treats the same timeout as retryable. The disputed semantic fact is specifically failure meaning and retryability."
     }
   ]
 }
