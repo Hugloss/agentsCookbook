@@ -34,6 +34,7 @@ agent_src_dir="$(ac_agent_source_dir "$repo_root")"; skill_src_dir="$(ac_skill_s
 target_repo="$(ac_absolute_path "${target_repo:-$PWD}")"
 if [ -n "$pi_agent_dir_arg" ]; then pi_agent_dir="$(ac_absolute_path "$pi_agent_dir_arg")"; elif ! pi_agent_dir="$(ac_default_pi_agent_dir)"; then ac_die "HOME is not set"; fi
 if [ -n "$shared_skill_dir_arg" ]; then shared_skill_dir="$(ac_absolute_path "$shared_skill_dir_arg")"; elif ! shared_skill_dir="$(ac_default_shared_skill_dir)"; then ac_die "HOME is not set"; fi
+expected_skill_count="$(printf '%s\n' $AC_SKILL_NAMES | sed '/^$/d' | wc -l)"
 
 canonical_output="$(bash "$repo_root/scripts/check-canonical-sources.sh" 2>&1)"; canonical_status=$?; printf '%s\n' "$canonical_output"
 [ "$canonical_status" -eq 0 ] && pass canonical_source_contract status=pass || fail canonical_source_contract "status=$canonical_status"
@@ -93,5 +94,5 @@ for agent_file in $AC_AGENT_FILES; do
   done
 done
 
-if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass runtime=pi agents=12 skills=8 adapters=1 mandatory_flow_reviewers=8 pi_open_agents=%s\n' "$package_version"; exit 0; fi
+if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass runtime=pi agents=12 skills=%s adapters=1 mandatory_flow_reviewers=8 pi_open_agents=%s\n' "$expected_skill_count" "$package_version"; exit 0; fi
 printf 'SUMMARY status=fail runtime=pi failures=%s\n' "$failures"; exit 1
