@@ -22,11 +22,15 @@ jobs:
       - name: Adapter smoke tests
         run: ./scripts/smoke-opencode-scripts.sh
 
+      - name: Live artifact integrity smoke tests
+        run: bash ./scripts/smoke-run-artifacts.sh
+
       - name: JavaScript syntax
         run: |
           node --check scripts/check-pi-session.js
           node --check scripts/run-opencode-benchmarks.js
           node --check scripts/export-review-artifacts.js
+          node --check scripts/check-run-artifacts.js
           node --check adapters/opencode/review-artifact.js
           node --check adapters/pi/review-artifact.js
 
