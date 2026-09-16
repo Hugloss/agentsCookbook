@@ -76,10 +76,50 @@ pass force_backup
 ! printf '%s\n' $AC_FLOW_REVIEWER_AGENT_FILES | grep -qx 'code-performance-optimization-auditor.md' || fail standalone_leaked_into_flow_gate
 pass registry_boundaries
 
+# Post-run external memory is produced by a harness-side exporter, not by
+# granting reviewers write access. Test both supported trace formats.
+pi_trace="$temp_root/pi-trace.jsonl"
+opencode_trace="$temp_root/opencode-export.json"
+pi_artifacts="$temp_root/pi-artifacts"
+opencode_artifacts="$temp_root/opencode-artifacts"
+node - "$pi_trace" "$opencode_trace" <<'NODE'
+const fs = require('fs');
+const [piPath, ocPath] = process.argv.slice(2);
+const pi = [
+  {type:'session',version:3,id:'session-artifacts',cwd:'/repo'},
+  {type:'message',id:'a1',parentId:'u1',message:{role:'assistant',content:[{type:'toolCall',id:'call-1',name:'subagent',arguments:{agent:'plan-coverage-reviewer',task:'review'}}]}},
+  {type:'message',id:'r1',parentId:'a1',message:{role:'toolResult',toolCallId:'call-1',toolName:'subagent',isError:false,content:[{type:'text',text:'review complete'}],details:{agent:'plan-coverage-reviewer',status:'done',output:'# Coverage Design Review\n\n## Meaningful Coverage Gaps\n\nOne realistic gap.'}}},
+  {type:'message',id:'a2',parentId:'r1',message:{role:'assistant',content:[{type:'toolCall',id:'call-2',name:'subagent',arguments:{agent:'plan-red-team-gate',task:'review'}}]}},
+  {type:'message',id:'r2',parentId:'a2',message:{role:'toolResult',toolCallId:'call-2',toolName:'subagent',isError:true,content:[{type:'text',text:'model unavailable'}],details:{agent:'plan-red-team-gate',status:'error',output:''}}},
+];
+fs.writeFileSync(piPath, `${pi.map((entry)=>JSON.stringify(entry)).join('\n')}\n`);
+const oc = {messages:[{info:{role:'assistant'},parts:[{type:'tool',tool:'task',id:'task-1',state:{status:'completed',input:{subagent_type:'plan-fact-auditor'},output:'# Fact Audit Report\n\n## Fact Audit Verdict\n\nPass'}}]}]};
+fs.writeFileSync(ocPath, `${JSON.stringify(oc)}\n`);
+NODE
+
+node "$repo_root/scripts/export-review-artifacts.js" --runtime pi --input "$pi_trace" --out "$pi_artifacts" --run-id smoke-pi --subject-id plan-v2 --subject-revision 2 >/dev/null
+node "$repo_root/scripts/export-review-artifacts.js" --runtime opencode --input "$opencode_trace" --out "$opencode_artifacts" --run-id smoke-opencode >/dev/null
+node - "$pi_artifacts" "$opencode_artifacts" <<'NODE'
+const fs = require('fs');
+const path = require('path');
+const [piDir, ocDir] = process.argv.slice(2);
+const pi = JSON.parse(fs.readFileSync(path.join(piDir,'manifest.json'),'utf8'));
+const oc = JSON.parse(fs.readFileSync(path.join(ocDir,'manifest.json'),'utf8'));
+if (pi.counts.total !== 2 || pi.counts.succeeded !== 1 || pi.counts.failed !== 1) process.exit(1);
+if (pi.subject.id !== 'plan-v2' || pi.subject.revision !== '2') process.exit(1);
+if (!fs.readFileSync(path.join(piDir,pi.reviewers[0].artifact),'utf8').includes('Coverage Design Review')) process.exit(1);
+if (!fs.readFileSync(path.join(piDir,pi.reviewers[1].artifact),'utf8').includes('Reviewer Artifact Unavailable')) process.exit(1);
+const receipt = JSON.parse(fs.readFileSync(path.join(piDir,pi.reviewers[0].receipt),'utf8'));
+if (!receipt.output_sha256 || receipt.reviewer !== 'plan-coverage-reviewer' || !receipt.headings.includes('Coverage Design Review')) process.exit(1);
+if (oc.counts.total !== 1 || oc.counts.succeeded !== 1 || oc.reviewers[0].reviewer !== 'plan-fact-auditor') process.exit(1);
+NODE
+pass review_artifact_export
+
 # Script syntax remains valid even when OpenCode itself is unavailable.
 for script in "$repo_root"/scripts/*.sh; do bash -n "$script"; done
 node --check "$repo_root/scripts/check-pi-session.js"
 node --check "$repo_root/scripts/run-opencode-benchmarks.js"
+node --check "$repo_root/scripts/export-review-artifacts.js"
 pass script_syntax
 
 # Unlink removes only owned links.
