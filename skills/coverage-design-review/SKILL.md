@@ -33,6 +33,12 @@ Do not report line coverage alone, artificial edge cases with no production path
 
 Use the smallest test level that proves the behavior: isolated logic, component/integration boundary, then a few critical workflow tests. Keep meaningful behavior real rather than replacing it with mocks.
 
+## BUILD REVIEW MODE
+
+When input starts with `BUILD REVIEW MODE`, inspect the changed production paths and the tests/validation supplied for them. Find realistic behavior or failure modes the implementation could get wrong while all supplied tests still pass.
+
+Return `# Build Coverage Review` with blocking findings, non-blocking findings, missing behavioral coverage, concrete tests/fixes, and remaining risk. Use `None` when coverage is sufficient.
+
 ## OUTPUT
 
-Return `# Coverage Design Review` with verdict, real-usage model, meaningful gaps, mocking/artificial-path risks, missing outcome assertions, and recommended test portfolio. For each gap: problem, real-world risk, current weakness, better test, priority.
+Otherwise return `# Coverage Design Review` with verdict, real-usage model, meaningful gaps, mocking/artificial-path risks, missing outcome assertions, and recommended test portfolio. For each gap: problem, real-world risk, current weakness, better test, priority.
