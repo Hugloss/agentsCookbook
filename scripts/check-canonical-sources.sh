@@ -42,9 +42,6 @@ for skill_name in $AC_SKILL_NAMES; do
   if grep -Eqi 'use only for the .*reviewer role|must be invoked by ping-pong|requires? .*run store' "$file"; then fail "standalone_skill_$skill_name" flow_specific_dependency; else pass "standalone_skill_$skill_name" independent=true; fi
 done
 
-# All reviewer actors are deny-by-default. The only write-shaped capability
-# they receive is the bounded review_artifact tool; generic project write/edit
-# remains denied by the wildcard. Primary agents may only read named artifacts.
 for reviewer_file in $AC_FLOW_REVIEWER_AGENT_FILES $AC_STANDALONE_AGENT_FILES; do
   file="$agent_src_dir/$reviewer_file"; name="${reviewer_file%.md}"
   if grep -Fq '  "*": deny' "$file" && grep -q '^  review_artifact: allow$' "$file" && ! grep -q '^  review_artifact_read: allow$' "$file"; then pass "reviewer_artifact_authority_$name" deny_by_default=true; else fail "reviewer_artifact_authority_$name" authority_mismatch; fi
@@ -59,6 +56,15 @@ for pair in "opencode:$opencode_adapter" "pi:$pi_adapter"; do
   if [ ! -f "$file" ]; then fail "artifact_adapter_$runtime" missing; continue; fi
   if grep -Fq 'AGENTS_COOKBOOK_RUN_DIR' "$file" && grep -Fq 'flag: "wx"' "$file" && grep -Fq 'review_artifact_read' "$file" && ! grep -Eq 'path:[[:space:]]*(Type\.|tool\.schema)' "$file"; then pass "artifact_adapter_$runtime" bounded_root=true no_arbitrary_path=true no_overwrite=true; else fail "artifact_adapter_$runtime" safety_contract_mismatch; fi
 done
+
+# This Pi family exposes TypeBox through the `typebox` peer used by
+# pi-open-agents. Pin the import contract so syntax-only checks cannot hide a
+# dependency that the runtime will not resolve.
+if grep -Fq 'import { Type } from "typebox"' "$pi_adapter" && ! grep -Fq '@sinclair/typebox' "$pi_adapter"; then
+  pass pi_adapter_typebox_dependency import=typebox
+else
+  fail pi_adapter_typebox_dependency expected='import { Type } from "typebox"'
+fi
 
 if [ -d "$repo_root/.agents/skills" ] || [ -d "$repo_root/.opencode/agents" ]; then fail hidden_source_layout present; else pass hidden_source_layout absent; fi
 
