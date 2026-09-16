@@ -48,7 +48,7 @@ There is one canonical Markdown source for each skill and agent. Runtime install
 
 Use the smallest layer that solves the problem:
 
-1. **Use a skill directly** when you want one methodology, such as stale-work race review, semantic redecision review, or test causality review.
+1. **Use a skill directly** when you want one methodology, such as deriving defensible findings from a codebase, stale-work race review, semantic redecision review, or test causality review.
 2. **Use an agent prompt** when the host benefits from an explicit role, permission contract, model alias, or output contract around a skill.
 3. **Use a flow** when you intentionally want several independent reviewer prompts composed into one planning/build sequence.
 
@@ -56,7 +56,7 @@ The library is standalone-first. Adding a skill does not silently add another ma
 
 ## Capabilities
 
-There are **33 installable skills**. The complete grouped catalog and overlap boundaries live in [`skills/README.md`](skills/README.md).
+There are **34 installable skills**. The complete grouped catalog and overlap boundaries live in [`skills/README.md`](skills/README.md).
 
 There are **12 installable agent prompts**:
 
