@@ -1,6 +1,6 @@
 # Skill Catalog
 
-The repository keeps skills deliberately small and sharp. One skill should hunt one failure class with one hard invariant.
+The repository keeps skills deliberately small and sharp. One skill should own one narrow review or discovery question with one hard invariant. Specialist review skills should hunt one failure class.
 
 ## Skill doctrine
 
