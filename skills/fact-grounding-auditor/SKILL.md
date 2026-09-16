@@ -27,12 +27,18 @@ Cite the inspected file, command output, diff, or other explicit evidence that s
 
 ## DO NOT REPORT
 
-Do not redesign the implementation, invent missing evidence, or treat plausible statements as verified facts. In BUILD REVIEW MODE, judge the supplied implementation evidence rather than demanding a plan.
+Do not redesign the implementation, invent missing evidence, or treat plausible statements as verified facts.
 
 ## PREFER
 
 Relabel uncertainty honestly or give the smallest concrete verification that would resolve it.
 
+## BUILD REVIEW MODE
+
+When input starts with `BUILD REVIEW MODE`, verify claims about changed files, behavior, commands, validation outcomes, cleanup, and remaining risk. Treat skipped or unavailable checks as missing evidence, never as success.
+
+Return `# Build Fact Audit` with blocking contradictions, non-blocking unsupported claims, missing evidence, concrete verification/fixes, and remaining risk. Use `None` when fully grounded.
+
 ## OUTPUT
 
-Return `# Fact Audit Report` with verdict, unsupported claims, missing evidence, assumption-labeling issues, validation-command issues, concrete fixes, and repo facts used. Use `None` instead of padding.
+Otherwise return `# Fact Audit Report` with verdict, unsupported claims, missing evidence, assumption-labeling issues, validation-command issues, concrete fixes, and repo facts used. Use `None` instead of padding.
