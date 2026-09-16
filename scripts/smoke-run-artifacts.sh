@@ -44,13 +44,14 @@ if node "$repo_root/scripts/check-run-artifacts.js" --run-dir "$one_dir" >/dev/n
 fi
 printf 'SMOKE name=run_artifacts_missing_reviewers status=pass\n'
 
-# Pi session evidence must prove each child reviewer loaded its skill first and,
-# in artifact mode, actually called review_artifact with its own fixed id.
+# Pi session evidence must prove skill-first behavior, artifact persistence, and
+# finite reviewer child tool use.
 pi_good="$temp_root/pi-artifact-good.jsonl"
-pi_bad="$temp_root/pi-artifact-missing.jsonl"
-node - "$pi_good" "$pi_bad" <<'NODE'
+pi_missing="$temp_root/pi-artifact-missing.jsonl"
+pi_unsafe="$temp_root/pi-artifact-unsafe-tool.jsonl"
+node - "$pi_good" "$pi_missing" "$pi_unsafe" <<'NODE'
 const fs=require('fs');
-const [goodPath,badPath]=process.argv.slice(2);
+const [goodPath,missingPath,unsafePath]=process.argv.slice(2);
 const reviewers=[
  ['plan-improver-model2','plan-improvement-scout'],
  ['plan-improver-model3','plan-improvement-scout'],
@@ -61,26 +62,31 @@ const reviewers=[
  ['plan-fact-auditor','fact-grounding-auditor'],
  ['plan-contract-checker','plan-contract-guard'],
 ];
-function make(missingArtifact){
+function make(mode){
  const entries=[{type:'session',version:3,id:'session-artifact',cwd:'/repo'},{type:'message',id:'user',parentId:null,message:{role:'user',content:[{type:'text',text:'plan'}]}}];
  let parent='user';
  reviewers.forEach(([agent,skill],index)=>{
    const call=`call-${index}`,aid=`assistant-${index}`,rid=`result-${index}`;
    entries.push({type:'message',id:aid,parentId:parent,message:{role:'assistant',content:[{type:'toolCall',id:call,name:'subagent',arguments:{agent,task:'review'}}]}});
    const tools=[{name:'read',args:{path:`/skills/${skill}/SKILL.md`},status:'done'}];
-   if(!(missingArtifact&&index===0))tools.push({name:'review_artifact',args:{artifact_id:agent,summary:'material finding',content:'# Review'},status:'done'});
+   if(mode==='unsafe'&&index===0)tools.push({name:'bash',args:{command:'echo forbidden'},status:'done'});
+   if(!(mode==='missing'&&index===0))tools.push({name:'review_artifact',args:{artifact_id:agent,summary:'material finding',content:'# Review'},status:'done'});
    entries.push({type:'message',id:rid,parentId:aid,message:{role:'toolResult',toolCallId:call,toolName:'subagent',isError:false,content:[{type:'text',text:'receipt'}],details:{agent,status:'done',output:JSON.stringify({artifact_id:agent,summary:'material finding'}),tools}}});
    parent=rid;
  });
  return `${entries.map(JSON.stringify).join('\n')}\n`;
 }
-fs.writeFileSync(goodPath,make(false));fs.writeFileSync(badPath,make(true));
+fs.writeFileSync(goodPath,make('good'));fs.writeFileSync(missingPath,make('missing'));fs.writeFileSync(unsafePath,make('unsafe'));
 NODE
 AGENTS_COOKBOOK_RUN_DIR="$run_dir" node "$repo_root/scripts/check-pi-session.js" --scope session "$pi_good" >/dev/null
 printf 'SMOKE name=pi_session_artifact_evidence status=pass\n'
-if AGENTS_COOKBOOK_RUN_DIR="$run_dir" node "$repo_root/scripts/check-pi-session.js" --scope session "$pi_bad" >/dev/null 2>&1; then
+if AGENTS_COOKBOOK_RUN_DIR="$run_dir" node "$repo_root/scripts/check-pi-session.js" --scope session "$pi_missing" >/dev/null 2>&1; then
   printf 'SMOKE name=pi_session_missing_artifact_call status=fail\n' >&2; exit 1
 fi
 printf 'SMOKE name=pi_session_missing_artifact_call status=pass\n'
+if AGENTS_COOKBOOK_RUN_DIR="$run_dir" node "$repo_root/scripts/check-pi-session.js" --scope session "$pi_unsafe" >/dev/null 2>&1; then
+  printf 'SMOKE name=pi_session_unsafe_child_tool status=fail\n' >&2; exit 1
+fi
+printf 'SMOKE name=pi_session_unsafe_child_tool status=pass\n'
 
 printf 'SUMMARY status=pass\n'
