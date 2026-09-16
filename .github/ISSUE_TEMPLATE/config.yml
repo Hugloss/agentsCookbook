@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security issue
+    url: https://github.com/Hugloss/agentsCookbook/security
+    about: Do not post exploit details publicly. Follow SECURITY.md and use GitHub's private vulnerability-reporting path when available.
