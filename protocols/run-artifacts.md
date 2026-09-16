@@ -1,25 +1,81 @@
-# Optional Run Artifact Protocol
+# Run Artifact Protocol
 
-Run artifacts are external working memory for low-context models. They are optional infrastructure around standalone capabilities, not a requirement of those capabilities.
+Run artifacts are optional external working memory for low-context models. Standalone capabilities must still work without them.
 
-The preferred persistence boundary is **outside the reviewer agent**. Reviewers stay read-only; a harness-side exporter materializes completed runtime evidence after the call has returned.
+Two persistence modes are supported:
 
-## Materialized run shape
+1. **live artifact-backed mode** — reduces coordinator context during the run;
+2. **post-run export** — materializes evidence after a normal run for audit/reuse.
 
-`scripts/export-review-artifacts.js` writes:
+## Live artifact-backed mode
 
-```text
-<run-dir>/
-├── manifest.json
-├── reviews/
-│   ├── 01-<reviewer>.md
-│   └── ...
-└── receipts/
-    ├── 01-<reviewer>.json
-    └── ...
+Set an absolute run root before starting OpenCode or Pi:
+
+```bash
+export AGENTS_COOKBOOK_RUN_DIR=/absolute/path/to/runs/<run-id>
 ```
 
-Examples:
+The installed runtime adapters then expose two different capabilities under agent permissions:
+
+```text
+reviewers: review_artifact      # write one own report + compact receipt
+primaries: review_artifact_read # read one named report selectively
+```
+
+Reviewers remain deny-by-default and receive no generic project write/edit authority. Primary agents cannot create or replace reviewer reports.
+
+### Reviewer write contract
+
+`review_artifact` accepts only:
+
+```text
+artifact_id
+summary          <= 1200 characters
+content          <= 65536 characters
+subject_id?      optional
+subject_revision? optional
+```
+
+It does **not** accept a path. The adapter chooses:
+
+```text
+<run-root>/reviews/<artifact-id>.md
+<run-root>/receipts/<artifact-id>.json
+```
+
+Writes use create-only semantics; an existing artifact ID cannot be overwritten. The adapters realpath-check their run subdirectories so a symlink cannot redirect writes outside the configured root.
+
+The OpenCode adapter additionally binds the artifact ID to the current reviewer identity when that identity is available from tool context. Pi still relies on the agent permission/contract plus fixed artifact ID instruction; runtime qualification must verify this behavior rather than assuming identity binding that the extension API does not expose.
+
+### Compact live receipt
+
+A successful live write returns a compact receipt containing:
+
+```text
+schema_version
+runtime
+run_id
+reviewer / artifact_id
+subject_id / subject_revision
+artifact
+sha256
+chars
+summary
+```
+
+MASTER uses `summary` first. It reads the full report only when:
+
+- a material finding is ambiguous;
+- two findings conflict;
+- the finding conflicts with verified repo/implementation evidence;
+- a severe verdict cannot be resolved safely from the compact summary;
+- a one-reviewer user request explicitly asks for the full detailed artifact.
+
+Never bulk-read every report merely because it exists.
+
+## Post-run fallback export
+
+Runs performed without live artifact mode can be projected afterward from runtime evidence:
 
 ```bash
 node scripts/export-review-artifacts.js \
@@ -36,65 +92,37 @@ node scripts/export-review-artifacts.js \
   --out runs/<run-id>
 ```
 
-The exporter reads real `subagent` calls from Pi JSONL or real `task` results from an OpenCode exported session. It does not synthesize missing reviews.
+The exporter reads real `subagent` or `task` results and never synthesizes missing reviews.
 
-## Full review artifact
-
-A successful reviewer output is written verbatim to its Markdown artifact. A failed/missing call gets an explicit unavailable artifact rather than an invented review.
-
-Once materialized, treat the artifact as immutable evidence for that run. Its receipt records the SHA-256 and character count.
-
-## Compact receipt
-
-Each receipt contains only cheap indexing/provenance data:
+Its shape is sequence-oriented because it projects a completed runtime trace:
 
 ```text
-run_id
-runtime
-sequence
-reviewer
-status
-runtime_status
-tool_call_id
-subject
-artifact
-output_sha256
-output_chars
-headings
-summary_hint
+<run-dir>/
+├── manifest.json
+├── reviews/
+│   ├── 01-<reviewer>.md
+│   └── ...
+└── receipts/
+    ├── 01-<reviewer>.json
+    └── ...
 ```
 
-The receipt is intentionally not a second AI-authored summary. It is deterministic projection of the runtime result. Consumers inspect receipts first and load full Markdown only when the reviewer identity/status/headings indicate that detailed evidence is needed.
+A failed/missing call gets an explicit unavailable artifact instead of an invented review. Receipts record the output hash, size, headings, status, and a deterministic summary hint.
 
-## Manifest
+## Provenance and identity
 
-`manifest.json` binds the exported reviewer sequence to:
+When available, bind artifacts to run ID, repository identity, subject revision/identity, reviewer identity, capability identity, and runtime tool-call evidence. Never combine findings produced against different subject revisions as though they reviewed the same object.
 
-- run ID;
-- runtime;
-- source trace filename;
-- optional subject ID/revision/SHA-256;
-- per-reviewer artifact and receipt paths;
-- per-reviewer output identity and size;
-- success/failure counts.
-
-## Provenance
-
-When identities are available, bind artifacts to run ID, repository identity, subject revision/identity, reviewer identity, and capability identity. Never silently combine findings produced against different subject revisions as if they reviewed the same object.
-
-The current exporter accepts subject identity fields but does not invent repository or capability identities that the source trace does not contain.
+Current live adapters bind run/reviewer/subject/output identity. The post-run exporter accepts subject identity fields. Neither path invents repository/capability identities that its source evidence does not contain.
 
 ## Authority
 
-Reviewers must not receive broad project write permission merely to persist artifacts. The default authority model is:
+The governing rule is:
 
 ```text
-reviewer (read-only)
-  -> runtime result
-  -> harness-side exporter
-  -> run-local immutable artifacts
+full report durability != generic project write permission
 ```
 
-A future runtime-native artifact sink may replace the post-run exporter only if it can prove path-scoped writes without granting project write authority.
+Live mode uses a fixed run-root tool. Fallback mode writes outside the model from captured runtime evidence. Both preserve reviewer project read-only authority.
 
-Long-lived knowledge is separate from run-local artifacts; promotion across runs must be explicit so stale findings do not silently become current facts.
+Long-lived knowledge remains separate from run-local artifacts; promotion across runs must be explicit so stale findings never silently become current facts.
