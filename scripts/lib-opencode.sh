@@ -52,32 +52,21 @@ AC_STANDALONE_AGENT_SKILL_MAP="
 code-performance-optimization-auditor code-performance-optimization-audit liteLLM/devstral
 "
 
+AC_OPENCODE_ARTIFACT_PLUGIN="agents-cookbook-review-artifact.js"
+AC_PI_ARTIFACT_EXTENSION="agents-cookbook-review-artifact.js"
 AC_AGENT_DESCRIPTION_MAX=160
 AC_SKILL_DESCRIPTION_MAX=160
 AC_DESCRIPTION_TARGET=120
 
-ac_die() {
-  printf 'Error: %s\n' "$*" >&2
-  exit 1
-}
-
-ac_info() {
-  printf '%s\n' "$*"
-}
+ac_die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+ac_info() { printf '%s\n' "$*"; }
 
 ac_absolute_path() {
   local path="$1"
-  case "$path" in
-    /*) printf '%s\n' "$path" ;;
-    *) printf '%s/%s\n' "$PWD" "$path" ;;
-  esac
+  case "$path" in /*) printf '%s\n' "$path" ;; *) printf '%s/%s\n' "$PWD" "$path" ;; esac
 }
 
-ac_resolve_dir() {
-  local path="$1"
-  [ -d "$path" ] || return 1
-  cd -- "$path" 2>/dev/null && pwd -P
-}
+ac_resolve_dir() { local path="$1"; [ -d "$path" ] || return 1; cd -- "$path" 2>/dev/null && pwd -P; }
 
 ac_default_global_dir() {
   if [ -n "${XDG_CONFIG_HOME:-}" ]; then printf '%s/opencode\n' "$XDG_CONFIG_HOME"; return 0; fi
@@ -97,8 +86,7 @@ ac_default_pi_agent_dir() {
   return 1
 }
 
-# This is a runtime install location only. The repository source of truth is
-# skills/, not a hidden .agents/.skills repository layout.
+# Runtime install location only; repository authority is skills/.
 ac_default_shared_skill_dir() {
   if [ -n "${HOME:-}" ]; then printf '%s/.agents/skills\n' "$HOME"; return 0; fi
   return 1
@@ -110,24 +98,16 @@ ac_repo_root_from_script() {
   cd -- "$script_dir/.." && pwd -P
 }
 
-ac_agent_source_dir() {
-  local root="$1"
-  printf '%s/agents\n' "$root"
-}
-
-ac_skill_source_dir() {
-  local root="$1"
-  printf '%s/skills\n' "$root"
-}
+ac_agent_source_dir() { printf '%s/agents\n' "$1"; }
+ac_skill_source_dir() { printf '%s/skills\n' "$1"; }
+ac_opencode_artifact_adapter() { printf '%s/adapters/opencode/review-artifact.js\n' "$1"; }
+ac_pi_artifact_adapter() { printf '%s/adapters/pi/review-artifact.js\n' "$1"; }
 
 ac_backup_path_for() {
   local original="$1" stamp candidate n
   stamp="$(date +%Y%m%d-%H%M%S)"
   candidate="$original.agents-cookbook-backup-$stamp"
   n=1
-  while [ -e "$candidate" ] || [ -L "$candidate" ]; do
-    candidate="$original.agents-cookbook-backup-$stamp.$n"
-    n=$((n + 1))
-  done
+  while [ -e "$candidate" ] || [ -L "$candidate" ]; do candidate="$original.agents-cookbook-backup-$stamp.$n"; n=$((n + 1)); done
   printf '%s\n' "$candidate"
 }
