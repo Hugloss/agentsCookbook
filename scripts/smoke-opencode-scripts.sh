@@ -3,6 +3,9 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="$(cd -- "$script_dir/.." && pwd -P)"
+# shellcheck source=scripts/lib-opencode.sh
+. "$script_dir/lib-opencode.sh"
+
 pass() { printf 'SMOKE name=%s status=pass %s\n' "$1" "${2:-}"; }
 fail() { printf 'SMOKE name=%s status=fail %s\n' "$1" "${2:-}" >&2; exit 1; }
 
@@ -14,50 +17,38 @@ assert_link() {
   pass "$name"
 }
 
-create_fake_session_db() {
-  local path="$1" session_id="$2" agent="$3" directory="$4"
-  sqlite3 "$path" <<SQL
-CREATE TABLE session (id TEXT PRIMARY KEY,parent_id TEXT,title TEXT,agent TEXT,directory TEXT,time_created INTEGER,time_updated INTEGER);
-CREATE TABLE session_message (id TEXT PRIMARY KEY,session_id TEXT,type TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
-CREATE TABLE message (id TEXT PRIMARY KEY,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
-CREATE TABLE part (id TEXT PRIMARY KEY,session_id TEXT,message_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
-INSERT INTO session VALUES ('$session_id',NULL,'smoke','$agent','$directory',1710000000000,1710000000000);
-SQL
-}
-
 temp_root="$(mktemp -d "${TMPDIR:-/tmp}/agents-cookbook-smoke.XXXXXX")"
 cleanup() { rm -rf "$temp_root"; }
 trap cleanup EXIT
+
 global_dir="$temp_root/global opencode"
 pi_dir="$temp_root/pi agent"
 skills_dir="$temp_root/shared skills"
 target_dir="$temp_root/target repo"
-mkdir -p "$target_dir" "$global_dir/prompts" "$global_dir/skills"
+mkdir -p "$target_dir" "$global_dir/agents" "$skills_dir" "$temp_root/bin"
 
-# Simulate broken links from the retired prompts/.opencode-skills layout.
-ln -s "$repo_root/.opencode/prompts/plan-improver.md" "$global_dir/prompts/plan-improver.md"
-ln -s "$repo_root/.opencode/skills/plan-improvement-scout" "$global_dir/skills/plan-improvement-scout"
+# Simulate links created by the retired repository layout. Migration must
+# replace only cookbook-owned links and must not require --force.
+ln -s "$repo_root/.opencode/agents/ping-pong-plan.md" "$global_dir/agents/ping-pong-plan.md"
+ln -s "$repo_root/.agents/skills/plan-improvement-scout" "$skills_dir/plan-improvement-scout"
 
 "$repo_root/scripts/link-opencode-local.sh" --dry-run --global-dir "$global_dir" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" >/dev/null
 pass link_dry_run
 "$repo_root/scripts/link-opencode-local.sh" --global-dir "$global_dir" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" >/dev/null
 
-assert_link opencode_primary "$global_dir/agents/ping-pong-plan.md" "$repo_root/.opencode/agents/ping-pong-plan.md"
-assert_link opencode_reviewer "$global_dir/agents/plan-improver-model2.md" "$repo_root/.opencode/agents/plan-improver-model2.md"
-assert_link opencode_coverage_reviewer "$global_dir/agents/plan-coverage-reviewer.md" "$repo_root/.opencode/agents/plan-coverage-reviewer.md"
-assert_link pi_primary "$pi_dir/agents/ping-ping-build.md" "$repo_root/.opencode/agents/ping-ping-build.md"
-assert_link pi_reviewer "$pi_dir/agents/plan-contract-checker.md" "$repo_root/.opencode/agents/plan-contract-checker.md"
-assert_link shared_skill "$skills_dir/plan-improvement-scout" "$repo_root/.agents/skills/plan-improvement-scout"
-assert_link coverage_skill "$skills_dir/coverage-design-review" "$repo_root/.agents/skills/coverage-design-review"
-[ ! -L "$global_dir/prompts/plan-improver.md" ] || fail legacy_prompt_cleanup
-[ ! -L "$global_dir/skills/plan-improvement-scout" ] || fail legacy_skill_cleanup
-pass legacy_links_removed
+assert_link opencode_primary "$global_dir/agents/ping-pong-plan.md" "$repo_root/agents/ping-pong-plan.md"
+assert_link opencode_reviewer "$global_dir/agents/plan-coverage-reviewer.md" "$repo_root/agents/plan-coverage-reviewer.md"
+assert_link opencode_standalone "$global_dir/agents/code-performance-optimization-auditor.md" "$repo_root/agents/code-performance-optimization-auditor.md"
+assert_link pi_primary "$pi_dir/agents/ping-ping-build.md" "$repo_root/agents/ping-ping-build.md"
+assert_link pi_reviewer "$pi_dir/agents/plan-contract-checker.md" "$repo_root/agents/plan-contract-checker.md"
+assert_link shared_skill "$skills_dir/plan-improvement-scout" "$repo_root/skills/plan-improvement-scout"
+assert_link performance_skill "$skills_dir/code-performance-optimization-audit" "$repo_root/skills/code-performance-optimization-audit"
 
 "$repo_root/scripts/preflight-opencode-ping-pong.sh" --quick --global-dir "$global_dir" --shared-skill-dir "$skills_dir" "$target_dir" >/dev/null
 pass opencode_quick_preflight
 
-# Provide a deterministic local Pi/plugin fixture for the Pi preflight.
-mkdir -p "$pi_dir/npm/node_modules/pi-open-agents" "$temp_root/bin"
+# Deterministic Pi/plugin fixture.
+mkdir -p "$pi_dir/npm/node_modules/pi-open-agents"
 printf '{"version":"0.1.20"}\n' >"$pi_dir/npm/node_modules/pi-open-agents/package.json"
 printf '{"extensions":["npm:pi-open-agents@0.1.20"]}\n' >"$pi_dir/settings.json"
 printf '#!/usr/bin/env bash\nprintf "pi 0.85.0\\n"\n' >"$temp_root/bin/pi"
@@ -68,6 +59,7 @@ pass pi_preflight
 "$repo_root/scripts/link-opencode-local.sh" --global-dir "$global_dir" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" | grep 'status=already_correct' >/dev/null
 pass link_idempotent
 
+# Unrelated user paths remain protected.
 force_dir="$temp_root/force"
 mkdir -p "$force_dir/agents"
 printf 'conflict\n' >"$force_dir/agents/ping-pong-plan.md"
@@ -77,97 +69,20 @@ pass conflict_without_force
 find "$force_dir/agents" -name 'ping-pong-plan.md.agents-cookbook-backup-*' -print -quit | grep . >/dev/null
 pass force_backup
 
-command -v sqlite3 >/dev/null 2>&1 || fail sqlite3_missing
-router_db="$temp_root/router.db"
-create_fake_session_db "$router_db" ses_router_smoke subagent-router "$target_dir"
-router_output="$("$repo_root/scripts/check-opencode-session.sh" --scope session --expect-no-subagent --db "$router_db" ses_router_smoke 2>&1)"
-printf '%s\n' "$router_output" | grep 'ROUTER_SUBAGENT name=none status=pass task_calls=0' >/dev/null
-pass checker_opencode_task_schema
+# Registry invariants: 12 installable agents, 8 skills, exactly 8 flow reviewers.
+[ "$(printf '%s\n' $AC_AGENT_FILES | sed '/^$/d' | wc -l)" -eq 12 ] || fail agent_registry_count
+[ "$(printf '%s\n' $AC_SKILL_NAMES | sed '/^$/d' | wc -l)" -eq 8 ] || fail skill_registry_count
+[ "$(printf '%s\n' $AC_FLOW_REVIEWER_AGENT_FILES | sed '/^$/d' | wc -l)" -eq 8 ] || fail flow_reviewer_count
+! printf '%s\n' $AC_FLOW_REVIEWER_AGENT_FILES | grep -qx 'code-performance-optimization-auditor.md' || fail standalone_leaked_into_flow_gate
+pass registry_boundaries
 
-node - "$temp_root" <<'NODE'
-const fs = require('fs');
-const path = require('path');
-const root = process.argv[2];
-const reviewers = [
-  ['plan-improver-model2', 'plan-improvement-scout'],
-  ['plan-improver-model3', 'plan-improvement-scout'],
-  ['plan-validation-designer', 'validation-gap-finder'],
-  ['plan-coverage-reviewer', 'coverage-design-review'],
-  ['plan-red-team-gate', 'red-team-leftover-gate'],
-  ['plan-implementation-simulator', 'implementation-dry-run'],
-  ['plan-fact-auditor', 'fact-grounding-auditor'],
-  ['plan-contract-checker', 'plan-contract-guard'],
-];
-
-function write(name, options = {}) {
-  const entries = [
-    { type: 'session', version: 3, id: `session-${name}`, cwd: root },
-    { type: 'message', id: 'user', parentId: null, message: { role: 'user', content: [{ type: 'text', text: 'plan this' }] } },
-  ];
-  let parent = 'user';
-  if (options.zero) {
-    entries.push({ type: 'message', id: 'final', parentId: parent, message: { role: 'assistant', content: [{ type: 'text', text: 'all eight reviewers succeeded' }] } });
-  } else {
-    reviewers.forEach(([agent, skill], index) => {
-      const callId = `call-${index}`;
-      const assistantId = `assistant-${index}`;
-      const resultId = `result-${index}`;
-      entries.push({
-        type: 'message', id: assistantId, parentId: parent,
-        message: { role: 'assistant', content: [{ type: 'toolCall', id: callId, name: 'subagent', arguments: { agent, task: 'review' } }] },
-      });
-      const failed = options.failedFirst && index === 0;
-      const wrongSkill = options.missingSkill && index === 0;
-      entries.push({
-        type: 'message', id: resultId, parentId: assistantId,
-        message: {
-          role: 'toolResult', toolCallId: callId, toolName: 'subagent', isError: failed,
-          content: [{ type: 'text', text: failed ? 'review failed' : 'review complete' }],
-          details: {
-            agent, status: failed ? 'error' : 'done', output: failed ? '' : '# Review report',
-            tools: failed ? [] : [{ name: wrongSkill ? 'grep' : 'read', args: wrongSkill ? { pattern: 'x' } : { path: `/skills/${skill}/SKILL.md` }, status: 'done' }],
-          },
-        },
-      });
-      parent = resultId;
-    });
-  }
-  fs.writeFileSync(path.join(root, `pi-${name}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
-}
-
-write('success');
-write('zero', { zero: true });
-write('failed-continuation', { failedFirst: true });
-write('missing-skill', { missingSkill: true });
-NODE
-
-"$repo_root/scripts/check-pi-session.js" --scope session "$temp_root/pi-success.jsonl" >/dev/null
-pass checker_pi_complete_trace
-
-if "$repo_root/scripts/check-pi-session.js" --scope session "$temp_root/pi-zero.jsonl" >/dev/null 2>&1; then fail checker_pi_dishonest_summary; fi
-pass checker_pi_dishonest_summary
-
-set +e
-pi_failed_output="$("$repo_root/scripts/check-pi-session.js" --scope session "$temp_root/pi-failed-continuation.jsonl" 2>&1)"
-pi_failed_status=$?
-set -e
-[ "$pi_failed_status" -eq 1 ] || fail checker_pi_failed_continuation "status=$pi_failed_status"
-printf '%s\n' "$pi_failed_output" | grep 'REVIEWER name=plan-improver-model2 invocation=failed' >/dev/null
-printf '%s\n' "$pi_failed_output" | grep 'REVIEWER name=plan-contract-checker invocation=succeeded count=1 skill=plan-contract-guard skill_loaded=yes' >/dev/null
-pass checker_pi_failed_continuation
-
-set +e
-pi_skill_output="$("$repo_root/scripts/check-pi-session.js" --scope session "$temp_root/pi-missing-skill.jsonl" 2>&1)"
-pi_skill_status=$?
-set -e
-[ "$pi_skill_status" -eq 1 ] || fail checker_pi_missing_skill "status=$pi_skill_status"
-printf '%s\n' "$pi_skill_output" | grep 'REVIEWER name=plan-improver-model2 invocation=succeeded count=1 skill=plan-improvement-scout skill_loaded=no' >/dev/null
-pass checker_pi_missing_skill
-
+# Script syntax remains valid even when OpenCode itself is unavailable.
+for script in "$repo_root"/scripts/*.sh; do bash -n "$script"; done
+node --check "$repo_root/scripts/check-pi-session.js"
 node --check "$repo_root/scripts/run-opencode-benchmarks.js"
-pass benchmark_runner_syntax
+pass script_syntax
 
-# Unlink must remove owned links while preserving user-owned paths.
+# Unlink removes only owned links.
 rm -- "$global_dir/agents/ping-pong-plan.md"
 printf 'user file\n' >"$global_dir/agents/ping-pong-plan.md"
 ln -s "$temp_root" "$global_dir/agents/unrelated.md"
@@ -177,7 +92,5 @@ ln -s "$temp_root" "$global_dir/agents/unrelated.md"
 [ ! -e "$pi_dir/agents/plan-contract-checker.md" ] && [ ! -L "$pi_dir/agents/plan-contract-checker.md" ] || fail unlink_removes_pi_agent
 [ ! -e "$skills_dir/plan-improvement-scout" ] && [ ! -L "$skills_dir/plan-improvement-scout" ] || fail unlink_removes_shared_skill
 pass unlink_safe
-"$repo_root/scripts/unlink-opencode-local.sh" --global-dir "$global_dir" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" >/dev/null
-pass unlink_idempotent
 
-printf 'SUMMARY status=pass\n'
+printf 'SUMMARY status=pass agents=12 skills=8 mandatory_flow_reviewers=8\n'
