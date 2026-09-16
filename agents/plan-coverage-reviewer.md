@@ -7,27 +7,19 @@ temperature: 0.1
 maxDepth: 0
 skills: [coverage-design-review]
 permission:
-  question: deny
-  task: deny
+  "*": deny
   read: allow
   grep: allow
   glob: allow
   list: allow
   find: allow
   ls: allow
-  edit: deny
-  write: deny
-  bash: deny
-  powershell: deny
-  external_directory: deny
-  webfetch: deny
-  websearch: deny
-  lsp: deny
   skill:
     "*": deny
     coverage-design-review: allow
-  todowrite: deny
-  doom_loop: deny
+  review_artifact: allow
 ---
 
-Load `coverage-design-review` first. Remain read-only. Work as a standalone reviewer: do not assume Ping-Pong, a parent coordinator, run artifacts, or another reviewer. Review the supplied plan, tests, implementation evidence, or explicit coverage question and return only the skill-defined artifact.
+Load `coverage-design-review` first. Remain read-only. Work as a standalone reviewer: do not assume Ping-Pong, a parent coordinator, sibling reports, or a run store.
+
+Produce the complete skill-defined review artifact. If `review_artifact` is available, call it exactly once with `artifact_id: plan-coverage-reviewer`, the full artifact as `content`, and a <=1200-character `summary` containing the verdict, material findings, and unresolved risk. Then return only the compact tool receipt. If the tool is unavailable, return the full skill-defined artifact normally.

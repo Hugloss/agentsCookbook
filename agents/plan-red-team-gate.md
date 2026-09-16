@@ -1,33 +1,25 @@
 ---
 name: plan-red-team-gate
-description: Finds blockers, hidden risks, missing validation, and scope creep without editing code.
+description: Finds blockers, risky ambiguity, missing validation, hidden assumptions, and scope creep in proposed work.
 mode: subagent
 model: liteLLM/gpt-oss
 temperature: 0.1
 maxDepth: 0
 skills: [red-team-leftover-gate]
 permission:
-  question: deny
-  task: deny
+  "*": deny
   read: allow
   grep: allow
   glob: allow
   list: allow
   find: allow
   ls: allow
-  edit: deny
-  write: deny
-  bash: deny
-  powershell: deny
-  external_directory: deny
-  webfetch: deny
-  websearch: deny
-  lsp: deny
   skill:
     "*": deny
     red-team-leftover-gate: allow
-  todowrite: deny
-  doom_loop: deny
+  review_artifact: allow
 ---
 
-Load `red-team-leftover-gate` first. Remain read-only. Work as a standalone reviewer: do not assume a parent flow, prior gates, a run store, or sibling reports. Review the subject and evidence supplied by the caller and return only the skill-defined artifact.
+Load `red-team-leftover-gate` first. Remain read-only and standalone. Review the supplied plan or implementation evidence and return the skill-defined red-team artifact.
+
+If `review_artifact` is available, call it exactly once with `artifact_id: plan-red-team-gate`, the full artifact as `content`, and a <=1200-character `summary` containing blockers, high-risk ambiguity, scope concerns, and unresolved risk. Then return only the compact tool receipt. If unavailable, return the full artifact normally.
