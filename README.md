@@ -44,7 +44,11 @@ The model names are deployment aliases, not reviewer-methodology requirements. P
 
 ## Standalone first
 
-A reviewer/skill must work when composed by a full flow, another future flow, the one-reviewer router, or directly by a user. Flows may select, sequence, provide bounded context, collect results, and synthesize decisions. They do not own reviewer-specific methodology.
+Reviewer agents can be invoked directly, routed by `subagent-router` when configured there, composed by the full flows, or reused by future compatible flows.
+
+Skills are independently loadable methodology. A compatible runtime/agent can invoke a specialist directly, an owning reviewer can load its skill, and future flows can reuse it without making it a mandatory reviewer. `subagent-router` routes configured reviewer agents; it does not pretend every installable skill has a matching routed agent.
+
+Flows may select, sequence, provide bounded context, collect results, and synthesize decisions. They do not own reviewer-specific methodology.
 
 ## Local-model context profile
 
@@ -144,6 +148,7 @@ OpenCode details live in [`adapters/opencode/`](adapters/opencode/); Pi details 
 
 - `ping-pong-plan` alone owns the canonical plan;
 - `ping-ping-build` alone owns implementation edits in its flow;
+- `ping-ping-build` runs a bounded final polish after accepted reviewer fixes, then validates again;
 - reviewers are read-only evidence providers with only a bounded optional artifact sink;
 - skills provide methodology;
 - runtime evidence, not prose claims, proves reviewer invocation;
@@ -164,4 +169,5 @@ Its differentiators are explicit authority, independent multi-model review, stan
 - [Run artifacts](protocols/run-artifacts.md)
 - [Non-technical walkthrough](docs/non-technical-walkthrough.md)
 - [Evaluation guidance](evals/README.md)
+- [Sharp skill discrimination corpus](evals/sharp-skill-discrimination.md)
 - [Browser demo](demo/index.html)
