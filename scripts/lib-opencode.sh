@@ -74,7 +74,8 @@ code-performance-optimization-auditor code-performance-optimization-audit liteLL
 "
 
 AC_OPENCODE_ARTIFACT_PLUGIN="agents-cookbook-review-artifact.js"
-AC_PI_ARTIFACT_EXTENSION="agents-cookbook-review-artifact.js"
+AC_PI_ARTIFACT_EXTENSION="agents-cookbook-review-artifact"
+AC_PI_ARTIFACT_EXTENSION_LEGACY="agents-cookbook-review-artifact.js"
 AC_AGENT_DESCRIPTION_MAX=160
 AC_SKILL_DESCRIPTION_MAX=160
 AC_DESCRIPTION_TARGET=120

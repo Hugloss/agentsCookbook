@@ -25,7 +25,10 @@ mkdir -p "$target_dir" "$global_dir/agents" "$skills_dir" "$temp_root/bin"
 
 ln -s "$repo_root/.opencode/agents/ping-pong-plan.md" "$global_dir/agents/ping-pong-plan.md"
 ln -s "$repo_root/.agents/skills/plan-gap-scout" "$skills_dir/plan-gap-scout"
+mkdir -p "$pi_dir/extensions"
+ln -s "$repo_root/adapters/pi/review-artifact.js" "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY"
 "$repo_root/scripts/link-opencode-local.sh" --dry-run --global-dir "$global_dir" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" >/dev/null
+[ -L "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY" ] || fail dry_run_preserves_legacy_pi_extension
 pass link_dry_run
 "$repo_root/scripts/link-opencode-local.sh" --global-dir "$global_dir" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" >/dev/null
 
@@ -38,7 +41,11 @@ assert_link shared_skill "$skills_dir/plan-gap-scout" "$repo_root/skills/plan-ga
 assert_link alternative_route_skill "$skills_dir/alternative-route-challenge" "$repo_root/skills/alternative-route-challenge"
 assert_link performance_skill "$skills_dir/code-performance-optimization-audit" "$repo_root/skills/code-performance-optimization-audit"
 assert_link opencode_artifact_plugin "$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN" "$repo_root/adapters/opencode/review-artifact.js"
-assert_link pi_artifact_extension "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION" "$repo_root/adapters/pi/review-artifact.js"
+assert_link pi_artifact_extension "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION" "$repo_root/adapters/pi"
+[ -f "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION/index.js" ] || fail pi_extension_entry_missing
+[ -f "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION/reviewer-tool-boundary.js" ] || fail pi_extension_helper_missing
+[ ! -e "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY" ] && [ ! -L "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY" ] || fail pi_legacy_extension_not_migrated
+pass pi_extension_directory_complete
 
 "$repo_root/scripts/preflight-opencode-ping-pong.sh" --quick --global-dir "$global_dir" --shared-skill-dir "$skills_dir" "$target_dir" >/dev/null
 pass opencode_quick_preflight
@@ -52,8 +59,19 @@ printf '#!/usr/bin/env bash\nprintf "pi 0.85.0\\n"\n' >"$temp_root/bin/pi"; chmo
 PATH="$temp_root/bin:$PATH" "$repo_root/scripts/preflight-pi-ping-pong.sh" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" "$target_dir" >/dev/null
 pass pi_preflight_newer_compatible_plugin
 
+ln -s "$repo_root/adapters/pi/review-artifact.js" "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY"
+if PATH="$temp_root/bin:$PATH" "$repo_root/scripts/preflight-pi-ping-pong.sh" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" "$target_dir" >/dev/null 2>&1; then fail pi_preflight_accepts_duplicate_legacy_extension; fi
+pass pi_preflight_rejects_duplicate_legacy_extension
+"$repo_root/scripts/link-opencode-local.sh" --global-dir "$global_dir" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" >/dev/null
+
 "$repo_root/scripts/link-opencode-local.sh" --global-dir "$global_dir" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" | grep 'status=already_correct' >/dev/null
 pass link_idempotent
+
+printf 'unrelated extension\n' >"$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY"
+if "$repo_root/scripts/link-opencode-local.sh" --global-dir "$global_dir" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" >/dev/null 2>&1; then fail pi_legacy_conflict_without_force; fi
+"$repo_root/scripts/link-opencode-local.sh" --force --global-dir "$global_dir" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" >/dev/null
+find "$pi_dir/extensions" -name "$AC_PI_ARTIFACT_EXTENSION_LEGACY.agents-cookbook-backup-*" -print -quit | grep . >/dev/null || fail pi_legacy_force_backup
+pass pi_legacy_conflict_preserved
 
 force_dir="$temp_root/force"; mkdir -p "$force_dir/agents"; printf 'conflict\n' >"$force_dir/agents/ping-pong-plan.md"
 if "$repo_root/scripts/link-opencode-local.sh" --global-dir "$force_dir" --pi-agent-dir "$temp_root/force-pi" --shared-skill-dir "$temp_root/force-skills" >/dev/null 2>&1; then fail conflict_without_force; fi
@@ -95,7 +113,9 @@ node --check "$repo_root/scripts/check-pi-session.js"
 node --check "$repo_root/scripts/run-opencode-benchmarks.js"
 node --check "$repo_root/scripts/export-review-artifacts.js"
 node --check "$repo_root/adapters/opencode/review-artifact.js"
+node --check "$repo_root/adapters/pi/index.js"
 node --check "$repo_root/adapters/pi/review-artifact.js"
+node --check "$repo_root/adapters/pi/reviewer-tool-boundary.js"
 pass script_syntax
 
 rm -- "$global_dir/agents/ping-pong-plan.md"; printf 'user file\n' >"$global_dir/agents/ping-pong-plan.md"; ln -s "$temp_root" "$global_dir/agents/unrelated.md"
@@ -107,6 +127,7 @@ rm -- "$global_dir/agents/ping-pong-plan.md"; printf 'user file\n' >"$global_dir
 [ ! -e "$skills_dir/alternative-route-challenge" ] && [ ! -L "$skills_dir/alternative-route-challenge" ] || fail unlink_removes_alternative_skill
 [ ! -e "$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN" ] && [ ! -L "$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN" ] || fail unlink_removes_opencode_adapter
 [ ! -e "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION" ] && [ ! -L "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION" ] || fail unlink_removes_pi_adapter
+[ ! -e "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY" ] && [ ! -L "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY" ] || fail unlink_removes_legacy_pi_adapter
 pass unlink_safe
 
 printf 'SUMMARY status=pass agents=12 skills=%s adapters=2 mandatory_flow_reviewers=8\n' "$expected_skill_count"

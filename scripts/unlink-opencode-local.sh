@@ -32,6 +32,7 @@ agent_src_dir="$(ac_agent_source_dir "$repo_root")"
 skill_src_dir="$(ac_skill_source_dir "$repo_root")"
 opencode_adapter="$(ac_opencode_artifact_adapter "$repo_root")"
 pi_adapter="$(ac_pi_artifact_adapter "$repo_root")"
+pi_adapter_dir="$(dirname -- "$pi_adapter")"
 if [ -n "$global_dir_arg" ]; then global_dir="$(ac_absolute_path "$global_dir_arg")"; elif ! global_dir="$(ac_default_global_dir)"; then ac_die "HOME is not set"; fi
 if [ -n "$pi_agent_dir_arg" ]; then pi_agent_dir="$(ac_absolute_path "$pi_agent_dir_arg")"; elif ! pi_agent_dir="$(ac_default_pi_agent_dir)"; then ac_die "HOME is not set"; fi
 if [ -n "$shared_skill_dir_arg" ]; then shared_skill_dir="$(ac_absolute_path "$shared_skill_dir_arg")"; elif ! shared_skill_dir="$(ac_default_shared_skill_dir)"; then ac_die "HOME is not set"; fi
@@ -67,7 +68,8 @@ for skill_name in $AC_SKILL_NAMES; do
   remove_owned_link "$global_dir/skills/$skill_name" "$repo_root/.opencode/skills/$skill_name" "OlderLegacySkill"
 done
 remove_owned_link "$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN" "$opencode_adapter" "OpenCodeArtifactPlugin"
-remove_owned_link "$pi_agent_dir/extensions/$AC_PI_ARTIFACT_EXTENSION" "$pi_adapter" "PiArtifactExtension"
+remove_owned_link "$pi_agent_dir/extensions/$AC_PI_ARTIFACT_EXTENSION" "$pi_adapter_dir" "PiArtifactExtension"
+remove_owned_link "$pi_agent_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY" "$pi_adapter" "LegacyPiArtifactExtension"
 
 remove_empty_dir "$global_dir/agents"
 remove_empty_dir "$global_dir/plugins"

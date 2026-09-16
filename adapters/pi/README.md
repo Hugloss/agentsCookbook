@@ -2,7 +2,7 @@
 
 The repository source of truth is `agents/` and `skills/`.
 
-Pi uses the same canonical agent files through `pi-open-agents`. `scripts/link-opencode-local.sh` links agents into the configured Pi agent directory, skills into the shared skill directory, and `review-artifact.js` into the Pi extensions directory.
+Pi uses the same canonical agent files through `pi-open-agents`. `scripts/link-opencode-local.sh` links agents into the configured Pi agent directory, skills into the shared skill directory, and this adapter directory into the Pi extensions directory. Pi discovers `index.js`; the adapter and its `reviewer-tool-boundary.js` helper remain together so relative imports resolve.
 
 Do not maintain Pi-specific behavioral copies unless a proven runtime incompatibility requires one. Runtime differences belong in adapters/install/preflight logic.
 

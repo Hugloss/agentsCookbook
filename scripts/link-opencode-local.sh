@@ -39,6 +39,7 @@ agent_src_dir="$(ac_agent_source_dir "$repo_root")"
 skill_src_dir="$(ac_skill_source_dir "$repo_root")"
 opencode_adapter="$(ac_opencode_artifact_adapter "$repo_root")"
 pi_adapter="$(ac_pi_artifact_adapter "$repo_root")"
+pi_adapter_dir="$(dirname -- "$pi_adapter")"
 opencode_agents_dir="$global_dir/agents"
 opencode_plugins_dir="$global_dir/plugins"
 pi_agents_dir="$pi_agent_dir/agents"
@@ -48,6 +49,8 @@ pi_extensions_dir="$pi_agent_dir/extensions"
 [ -d "$skill_src_dir" ] || ac_die "source skills directory missing: $skill_src_dir"
 [ -f "$opencode_adapter" ] || ac_die "OpenCode adapter missing: $opencode_adapter"
 [ -f "$pi_adapter" ] || ac_die "Pi adapter missing: $pi_adapter"
+[ -f "$pi_adapter_dir/index.js" ] || ac_die "Pi extension entry missing: $pi_adapter_dir/index.js"
+[ -f "$pi_adapter_dir/reviewer-tool-boundary.js" ] || ac_die "Pi extension helper missing: $pi_adapter_dir/reviewer-tool-boundary.js"
 
 move_to_backup() {
   local path="$1" backup; backup="$(ac_backup_path_for "$path")"
@@ -114,6 +117,16 @@ ensure_real_dir "$pi_extensions_dir"
 ensure_real_dir "$(dirname -- "$shared_skill_dir")"
 ensure_real_dir "$shared_skill_dir"
 
+legacy_pi_extension="$pi_extensions_dir/$AC_PI_ARTIFACT_EXTENSION_LEGACY"
+if [ -e "$legacy_pi_extension" ] || [ -L "$legacy_pi_extension" ]; then
+  if link_target_matches "$legacy_pi_extension" "$pi_adapter"; then
+    remove_owned_legacy_link "$legacy_pi_extension" "$pi_adapter" "PiArtifactExtension"
+  else
+    [ "$force" = true ] || ac_die "conflict at $legacy_pi_extension; pass --force to back it up before linking"
+    move_to_backup "$legacy_pi_extension"
+  fi
+fi
+
 for skill_name in $AC_SKILL_NAMES; do remove_owned_legacy_link "$global_dir/skills/$skill_name" "$repo_root/.opencode/skills/$skill_name" "OlderLegacySkill"; done
 
 agent_count=0
@@ -134,7 +147,7 @@ for skill_name in $AC_SKILL_NAMES; do
 done
 
 link_one "$opencode_adapter" "$opencode_plugins_dir/$AC_OPENCODE_ARTIFACT_PLUGIN" "OpenCodeArtifactPlugin"
-link_one "$pi_adapter" "$pi_extensions_dir/$AC_PI_ARTIFACT_EXTENSION" "PiArtifactExtension"
+link_one "$pi_adapter_dir" "$pi_extensions_dir/$AC_PI_ARTIFACT_EXTENSION" "PiArtifactExtension"
 
 for agent_file in $AC_AGENT_FILES; do
   verify_link "$agent_src_dir/$agent_file" "$opencode_agents_dir/$agent_file" "OpenCode agent"
@@ -142,7 +155,7 @@ for agent_file in $AC_AGENT_FILES; do
 done
 for skill_name in $AC_SKILL_NAMES; do verify_link "$skill_src_dir/$skill_name" "$shared_skill_dir/$skill_name" "shared skill"; done
 verify_link "$opencode_adapter" "$opencode_plugins_dir/$AC_OPENCODE_ARTIFACT_PLUGIN" "OpenCode artifact plugin"
-verify_link "$pi_adapter" "$pi_extensions_dir/$AC_PI_ARTIFACT_EXTENSION" "Pi artifact extension"
+verify_link "$pi_adapter_dir" "$pi_extensions_dir/$AC_PI_ARTIFACT_EXTENSION" "Pi artifact extension"
 
 cat <<NEXT_STEPS
 Installed cookbook links from canonical sources:

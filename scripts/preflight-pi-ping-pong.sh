@@ -30,7 +30,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 repo_root="$(ac_repo_root_from_script "${BASH_SOURCE[0]}")"
-agent_src_dir="$(ac_agent_source_dir "$repo_root")"; skill_src_dir="$(ac_skill_source_dir "$repo_root")"; pi_adapter="$(ac_pi_artifact_adapter "$repo_root")"
+agent_src_dir="$(ac_agent_source_dir "$repo_root")"; skill_src_dir="$(ac_skill_source_dir "$repo_root")"; pi_adapter="$(ac_pi_artifact_adapter "$repo_root")"; pi_adapter_dir="$(dirname -- "$pi_adapter")"
 target_repo="$(ac_absolute_path "${target_repo:-$PWD}")"
 if [ -n "$pi_agent_dir_arg" ]; then pi_agent_dir="$(ac_absolute_path "$pi_agent_dir_arg")"; elif ! pi_agent_dir="$(ac_default_pi_agent_dir)"; then ac_die "HOME is not set"; fi
 if [ -n "$shared_skill_dir_arg" ]; then shared_skill_dir="$(ac_absolute_path "$shared_skill_dir_arg")"; elif ! shared_skill_dir="$(ac_default_shared_skill_dir)"; then ac_die "HOME is not set"; fi
@@ -65,7 +65,13 @@ if [ -f "$settings" ] && node -e 'const fs=require("fs"),s=JSON.parse(fs.readFil
 
 for agent_file in $AC_AGENT_FILES; do check_link "pi_agent_${agent_file%.md}" "$pi_agent_dir/agents/$agent_file" "$agent_src_dir/$agent_file"; done
 for skill_name in $AC_SKILL_NAMES; do check_link "shared_skill_$skill_name" "$shared_skill_dir/$skill_name" "$skill_src_dir/$skill_name"; done
-check_link pi_artifact_extension "$pi_agent_dir/extensions/$AC_PI_ARTIFACT_EXTENSION" "$pi_adapter"
+pi_extension_dir="$pi_agent_dir/extensions/$AC_PI_ARTIFACT_EXTENSION"
+check_link pi_artifact_extension "$pi_extension_dir" "$pi_adapter_dir"
+for entry in index.js review-artifact.js reviewer-tool-boundary.js; do
+  if [ -f "$pi_extension_dir/$entry" ]; then pass "pi_artifact_$entry" "path=$pi_extension_dir/$entry"; else fail "pi_artifact_$entry" "missing=$pi_extension_dir/$entry"; fi
+done
+legacy_pi_extension="$pi_agent_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY"
+if [ -e "$legacy_pi_extension" ] || [ -L "$legacy_pi_extension" ]; then fail pi_legacy_artifact_extension "duplicate=$legacy_pi_extension"; else pass pi_legacy_artifact_extension absent; fi
 
 expected_allowed='allowedAgents: [plan-improver-model2, plan-improver-model3, plan-validation-designer, plan-coverage-reviewer, plan-red-team-gate, plan-implementation-simulator, plan-fact-auditor, plan-contract-checker]'
 for primary_file in $AC_PRIMARY_AGENT_FILES; do
