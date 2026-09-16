@@ -45,7 +45,12 @@ It does **not** accept a path. The adapter chooses:
 
 Writes use create-only semantics; an existing artifact ID cannot be overwritten. The adapters realpath-check their run subdirectories so a symlink cannot redirect writes outside the configured root.
 
-The OpenCode adapter additionally binds the artifact ID to the current reviewer identity when that identity is available from tool context. Pi still relies on the agent permission/contract plus fixed artifact ID instruction; runtime qualification must verify this behavior rather than assuming identity binding that the extension API does not expose.
+Both live adapters bind writes to reviewer identity rather than trusting a free-form artifact name:
+
+- OpenCode binds `artifact_id` to the current reviewer identity exposed in tool context when available;
+- Pi registers the write tool only inside a recognized delegated cookbook reviewer child, accepts only the nine known reviewer IDs, and requires `artifact_id` to equal `PI_OPEN_AGENTS_NAME`.
+
+Pi's top-level process never registers `review_artifact`; it may register only `review_artifact_read`. A directly selected standalone reviewer therefore still works but returns its full report normally. Use `subagent-router` for a one-reviewer Pi run that also needs live low-context persistence.
 
 ### Compact live receipt
 
