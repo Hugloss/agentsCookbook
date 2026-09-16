@@ -73,6 +73,8 @@ MASTER uses `summary` first. It reads the full report only when:
 
 Never bulk-read every report merely because it exists.
 
+For Pi specifically, `pi-open-agents` returns the child `result.output` as the parent-visible subagent tool text and retains the richer child `AgentResult` separately in `details`. In artifact-backed mode the reviewer therefore returns the compact receipt as its final output; the full report remains in the run store unless MASTER selectively reads it. Runtime qualification still verifies this on the deployed Pi/plugin versions.
+
 ## Post-run fallback export
 
 Runs performed without live artifact mode can be projected afterward from runtime evidence:
@@ -126,3 +128,5 @@ full report durability != generic project write permission
 Live mode uses a fixed run-root tool. Fallback mode writes outside the model from captured runtime evidence. Both preserve reviewer project read-only authority.
 
 Long-lived knowledge remains separate from run-local artifacts; promotion across runs must be explicit so stale findings never silently become current facts.
+
+For real model-backed promotion, use [`../docs/local-runtime-qualification.md`](../docs/local-runtime-qualification.md).
