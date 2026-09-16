@@ -1,29 +1,45 @@
 ---
 name: validation-gap-finder
-description: Designs concrete validation with observable checks, failure cases, acceptance criteria, and rollback proof.
+description: Designs decisive validation with observable checks, failure cases, acceptance criteria, and recovery proof.
 license: MIT
 ---
 
 # Validation Gap Finder
 
-Standalone, read-only validation design for plans, changes, implementation evidence, or direct validation questions.
+Standalone, read-only validation design for plans, changes, or implementation evidence.
 
-Do not assume a coordinator, Ping-Pong, prior gate, run store, or sibling reviewer. Work from the subject and evidence supplied to this invocation.
+## INVARIANT
 
-## Method
+> **Completion must be observable; checks must prove the behavior that matters.**
 
-- Compare intended behavior with available repo evidence.
-- Design the minimum complete set of automated checks, necessary manual checks, failure scenarios, binary acceptance criteria, and rollback/recovery verification.
-- Mark uncertain paths and commands as assumptions; never present skipped checks as passed.
-- Replace vague quality claims with observable pass/fail outcomes.
-- Use `Insufficient` when completion cannot be judged because implementation-blocking evidence is missing.
-- In `BUILD REVIEW MODE`, review supplied implementation/validation evidence instead of designing a replacement plan.
-- Never edit files, run commands, invoke agents, or claim validation was executed when it was only proposed.
+## HUNT
 
-## Output
+Hunt for:
+- vague `tests pass` claims;
+- missing failure/retry/recovery scenarios;
+- checks that exercise artificial paths;
+- acceptance criteria with no binary outcome;
+- rollback/recovery that is untested or unverifiable;
+- skipped checks described as success.
 
-Normal mode: `# Validation Design Report` with Validation Verdict (`Strong`, `Needs Fixes`, or `Insufficient`); Validation Strategy; Automated Checks; Manual Checks; Acceptance Criteria; Failure / Edge Scenarios; Rollback Verification; Missing Repo Facts; Concrete Fix Suggestions; Repo Facts Used.
+## PROVE
 
-Build mode: `# Build Review Report` with Blocking Findings; Non-Blocking Findings; Missing Validation; Suggested Fixes; Evidence Inspected; Confidence / Remaining Risk.
+Map each important invariant or user-visible behavior to the smallest decisive check. Mark commands or paths as assumptions until verified.
 
-Keep only material findings. Use `None` for empty sections.
+## DO NOT REPORT
+
+Do not claim proposed validation ran. Do not maximize test count. `coverage-design-review` owns the broader question of whether the test portfolio covers real behavior.
+
+## PREFER
+
+Use a minimum complete validation set: automated checks first, necessary manual checks only, explicit failure cases, binary exit criteria, and recovery proof when relevant.
+
+## BUILD REVIEW MODE
+
+When input starts with `BUILD REVIEW MODE`, audit the validation actually supplied: what ran, what failed or was skipped, what behavior it proves, and what decisive checks are still missing. Never convert proposed checks into claimed evidence.
+
+Return `# Build Validation Review` with blocking findings, non-blocking findings, missing validation/evidence, concrete checks/fixes, and remaining risk. Use `None` when complete.
+
+## OUTPUT
+
+Otherwise return `# Validation Design Report` with verdict, strategy, automated checks, manual checks, acceptance criteria, failure/edge scenarios, rollback verification, missing repo facts, and concrete fixes.

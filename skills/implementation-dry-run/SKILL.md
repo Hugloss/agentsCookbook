@@ -1,30 +1,44 @@
 ---
 name: implementation-dry-run
-description: Dry-runs implementation for missing steps, ownership, sequencing, feasibility, and validation gaps.
+description: Dry-runs planned or completed work to expose missing steps, ownership, sequencing, feasibility, and proof gaps.
 license: MIT
 ---
 
 # Implementation Dry Run
 
-Standalone, read-only implementation simulation for plans or implementation evidence.
+Standalone, read-only implementation simulation. Walk the proposed or completed work as if responsible for shipping it now.
 
-Do not assume a coordinator, Ping-Pong, prior gates, run store, or sibling reviewer. Treat the supplied subject as the simulation input.
+## INVARIANT
 
-## Method
+> **A change is implementable only when execution does not require guessing material behavior, ownership, order, or proof.**
 
-- Walk each material step in order and identify target area, intended behavior, prerequisites, ownership, and proof of completion.
-- Verify central repo facts with available read-only tools when useful.
-- Flag steps that require guessing, missing assets, ownership conflicts, dependency assumptions, bad sequencing, or infeasible validation.
-- Require observable completion criteria where they matter.
-- In `BUILD REVIEW MODE`, evaluate supplied implementation evidence instead of producing a replacement plan.
-- Never edit files, run commands, invoke agents, provide patches, or claim implementation occurred.
+## HUNT
 
-## Output
+For every material step hunt for:
+- missing target files/areas or prerequisites;
+- ownership conflicts and hidden dependencies;
+- impossible or unsafe sequencing;
+- missing cleanup and leftover paths;
+- completion criteria that cannot be observed.
 
-Normal mode: `# Implementation Simulation Report` with Simulation Outcome (`Implementable`, `Implementable With Fixes`, or `Blocked`); Execution Walkthrough; Missing Or Ambiguous Steps; File / Ownership Risks; Validation Gaps; Concrete Fix Suggestions; Repo Facts Used.
+## PROVE
 
-Each issue includes severity, affected step, problem, impact, and suggested fix.
+Walk the steps in order against current repository evidence. Show exactly where implementation would have to guess or where the proposed sequence breaks.
 
-Build mode: `# Build Review Report` with Blocking Findings; Non-Blocking Findings; Missing Validation; Suggested Fixes; Evidence Inspected; Confidence / Remaining Risk.
+## DO NOT REPORT
 
-Use `None` for empty sections.
+Do not redesign a usable direction merely to prefer another style. Do not claim implementation or validation was executed unless evidence proves it.
+
+## PREFER
+
+Add the smallest missing step, prerequisite, ordering constraint, cleanup, or proof needed to make execution deterministic.
+
+## BUILD REVIEW MODE
+
+When input starts with `BUILD REVIEW MODE`, replay the supplied implementation path rather than demanding a plan. Check whether changed files, callers, cleanup, ordering, and validation form a complete shippable sequence.
+
+Return `# Build Implementation Simulation` with blocking findings, non-blocking findings, missing steps/cleanup, missing validation/evidence, concrete fixes, and remaining risk. Use `None` when complete.
+
+## OUTPUT
+
+Otherwise return `# Implementation Simulation Report` with outcome, execution walkthrough, missing/ambiguous steps, ownership risks, validation gaps, and concrete fixes. Each issue: severity, affected step, problem, impact, fix.

@@ -35,6 +35,7 @@ opencode_adapter="$(ac_opencode_artifact_adapter "$repo_root")"
 target_repo="$(ac_absolute_path "${target_repo:-$PWD}")"
 if [ -n "$global_dir_arg" ]; then global_dir="$(ac_absolute_path "$global_dir_arg")"; elif ! global_dir="$(ac_default_global_dir)"; then ac_die "HOME is not set"; fi
 if [ -n "$shared_skill_dir_arg" ]; then shared_skill_dir="$(ac_absolute_path "$shared_skill_dir_arg")"; elif ! shared_skill_dir="$(ac_default_shared_skill_dir)"; then ac_die "HOME is not set"; fi
+expected_skill_count="$(printf '%s\n' $AC_SKILL_NAMES | sed '/^$/d' | wc -l)"
 
 check_link() {
   local name="$1" dest="$2" expected="$3" resolved
@@ -67,7 +68,7 @@ for skill_name in $AC_SKILL_NAMES; do
   path="$skill_src_dir/$skill_name/SKILL.md"
   if [ -f "$path" ]; then skill_count=$((skill_count + 1)); validate_description skill "$skill_name" "$path" "$AC_SKILL_DESCRIPTION_MAX"; check_link "shared_skill_$skill_name" "$shared_skill_dir/$skill_name" "$skill_src_dir/$skill_name"; else fail "source_skill_$skill_name" "missing=$path"; fi
 done
-[ "$skill_count" -eq 8 ] && pass canonical_skill_count count=8 || fail canonical_skill_count "count=$skill_count expected=8"
+[ "$skill_count" -eq "$expected_skill_count" ] && pass canonical_skill_count "count=$expected_skill_count" || fail canonical_skill_count "count=$skill_count expected=$expected_skill_count"
 check_link opencode_artifact_plugin "$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN" "$opencode_adapter"
 
 for primary_file in $AC_PRIMARY_AGENT_FILES; do
@@ -107,9 +108,9 @@ const fs=require("fs");const mode=process.argv[1],artifact=process.argv[2]==="tr
     done
     effective_output="$(bash "$repo_root/scripts/check-opencode-effective-reviewers.sh" "$target_repo" 2>&1)"; effective_status=$?; printf '%s\n' "$effective_output"; [ "$effective_status" -eq 0 ] && pass effective_reviewer_contracts reviewers=9 || fail effective_reviewer_contracts "status=$effective_status"
     skill_output="$(cd -- "$target_repo" && opencode debug skill 2>&1)"; skill_status=$?
-    if [ "$skill_status" -ne 0 ]; then fail debug_skills "status=$skill_status"; else missing=""; for skill_name in $AC_SKILL_NAMES; do printf '%s\n' "$skill_output" | grep -q "$skill_name" || missing="$missing $skill_name"; done; [ -z "$missing" ] && pass debug_skills all=8 || fail debug_skills "missing=$missing"; fi
+    if [ "$skill_status" -ne 0 ]; then fail debug_skills "status=$skill_status"; else missing=""; for skill_name in $AC_SKILL_NAMES; do printf '%s\n' "$skill_output" | grep -q "$skill_name" || missing="$missing $skill_name"; done; [ -z "$missing" ] && pass debug_skills "all=$expected_skill_count" || fail debug_skills "missing=$missing"; fi
   fi
 fi
 
-if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass runtime=opencode quick=%s agents=12 skills=8 adapters=1 mandatory_flow_reviewers=8\n' "$quick"; exit 0; fi
+if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass runtime=opencode quick=%s agents=12 skills=%s adapters=1 mandatory_flow_reviewers=8\n' "$quick" "$expected_skill_count"; exit 0; fi
 printf 'SUMMARY status=fail runtime=opencode failures=%s\n' "$failures"; exit 1

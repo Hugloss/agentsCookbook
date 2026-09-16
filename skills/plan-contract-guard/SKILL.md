@@ -1,30 +1,49 @@
 ---
 name: plan-contract-guard
-description: Checks plans for completeness, ownership, scope, validation, rollback, and process leakage.
+description: Checks whether a handoff is scoped, executable, verifiable, recoverable, and free of material ambiguity.
 license: MIT
 ---
 
 # Plan Contract Guard
 
-Standalone, read-only final-contract review for implementation plans or implementation evidence.
+Standalone, read-only final handoff review.
 
-Do not assume Ping-Pong, a coordinator, prior gates, or a run store. The caller supplies the subject whose handoff quality must be checked.
+## INVARIANT
 
-## Method
+> **A handoff must function as an executable contract, not a collection of intentions.**
 
-- Require meaningful Goal, Assumptions, Steps, Files / Areas to Inspect, Risks and Edge Cases, Validation, Rollback / Recovery, and Remaining Open Questions where the subject is a final plan.
-- Treat pasted reviewer transcripts, raw process ledgers, hidden scratch notes, and workflow-internal bookkeeping as leakage when they do not belong in the deliverable.
-- Flag vague directions that lack concrete targets, behavior, validation, or acceptance criteria.
-- Require observable completion criteria and executable rollback/recovery appropriate to the change.
-- Treat blocking open questions, missing ownership, unresolved severe findings, or non-verifiable completion as failures.
-- Reject scope beyond the request unless clearly optional.
-- In `BUILD REVIEW MODE`, check the supplied implementation evidence rather than requiring a plan-shaped document.
-- Never edit files, run commands, invoke agents, redesign implementation, or claim ownership.
+## HUNT
 
-## Output
+Hunt for missing or weak:
+- goal and scope;
+- assumptions;
+- ordered implementation steps or completed-change evidence;
+- concrete files/areas;
+- ownership;
+- risks and edge cases;
+- validation and acceptance criteria;
+- rollback/recovery;
+- material open questions.
+Also hunt for workflow transcripts, scratch ledgers, or reviewer bookkeeping leaked into the deliverable.
 
-Normal mode: `# Plan Contract Report` with Contract Verdict (`Pass`, `Pass With Fixes`, or `Fail`); Required Section Check; Master Ownership Check; Ledger / Transcript Leakage Check; Scope And Intent Check; Decision Completeness Check; Validation And Rollback Check; Concrete Fix Suggestions; Repo Facts Used.
+## PROVE
 
-Build mode: `# Build Review Report` with Blocking Findings; Non-Blocking Findings; Missing Validation; Suggested Fixes; Evidence Inspected; Confidence / Remaining Risk.
+Show why each missing item prevents safe execution or objective completion. Blocking open questions, unresolved severe findings, and unverifiable completion fail the contract.
 
-Use `None` for empty sections.
+## DO NOT REPORT
+
+Do not fail a handoff for cosmetic structure or optional detail.
+
+## PREFER
+
+Make decisions explicit, keep scope tight, and turn vague quality claims into observable completion criteria.
+
+## BUILD REVIEW MODE
+
+When input starts with `BUILD REVIEW MODE`, compare the completed implementation evidence against the user request and claimed end state. Check scope completion, validation, recovery where relevant, unresolved ambiguity, and whether the handoff can truthfully claim completion.
+
+Return `# Build Contract Review` with verdict, blocking findings, non-blocking findings, missing validation/evidence, concrete fixes, and remaining risk. Use `None` when the implementation contract is complete.
+
+## OUTPUT
+
+Otherwise return `# Plan Contract Report` with verdict, required-contract check, scope/intent check, decision completeness, validation/recovery check, leakage check, and concrete fixes.

@@ -27,12 +27,12 @@ There are **12 installable agents**:
 - 8 mandatory read-only reviewers used by the full Ping-Pong/Ping-Ping gate;
 - 1 standalone performance auditor: `code-performance-optimization-auditor`.
 
-There are **8 installable skills**. Every skill and reviewer is independently usable outside the full flows; no capability requires Ping-Pong state, sibling reviewer output, or a run store.
+There are **29 installable skills**. Every skill and reviewer is independently usable outside the full flows; no capability requires Ping-Pong state, sibling reviewer output, or a run store. The complete grouped catalog and overlap boundaries live in [`skills/README.md`](skills/README.md).
 
 | Reviewer | Skill | Default local-model alias |
 | --- | --- | --- |
-| `plan-improver-model2` | `plan-improvement-scout` | `liteLLM/gpt-oss` |
-| `plan-improver-model3` | `plan-improvement-scout` | `liteLLM/gpt-oss` |
+| `plan-improver-model2` | `plan-gap-scout` | `liteLLM/gpt-oss` |
+| `plan-improver-model3` | `alternative-route-challenge` | `liteLLM/gpt-oss` |
 | `plan-validation-designer` | `validation-gap-finder` | `liteLLM/gpt-oss` |
 | `plan-coverage-reviewer` | `coverage-design-review` | `liteLLM/gpt-oss` |
 | `plan-red-team-gate` | `red-team-leftover-gate` | `liteLLM/gpt-oss` |
@@ -44,7 +44,11 @@ The model names are deployment aliases, not reviewer-methodology requirements. P
 
 ## Standalone first
 
-A reviewer/skill must work when composed by a full flow, another future flow, the one-reviewer router, or directly by a user. Flows may select, sequence, provide bounded context, collect results, and synthesize decisions. They do not own reviewer-specific methodology.
+Reviewer agents can be invoked directly, routed by `subagent-router` when configured there, composed by the full flows, or reused by future compatible flows.
+
+Skills are independently loadable methodology. A compatible runtime/agent can invoke a specialist directly, an owning reviewer can load its skill, and future flows can reuse it without making it a mandatory reviewer. `subagent-router` routes configured reviewer agents; it does not pretend every installable skill has a matching routed agent.
+
+Flows may select, sequence, provide bounded context, collect results, and synthesize decisions. They do not own reviewer-specific methodology.
 
 ## Local-model context profile
 
@@ -144,6 +148,7 @@ OpenCode details live in [`adapters/opencode/`](adapters/opencode/); Pi details 
 
 - `ping-pong-plan` alone owns the canonical plan;
 - `ping-ping-build` alone owns implementation edits in its flow;
+- `ping-ping-build` runs a bounded final polish after accepted reviewer fixes, then validates again;
 - reviewers are read-only evidence providers with only a bounded optional artifact sink;
 - skills provide methodology;
 - runtime evidence, not prose claims, proves reviewer invocation;
@@ -157,10 +162,12 @@ Its differentiators are explicit authority, independent multi-model review, stan
 
 ## Documentation
 
+- [Skill catalog](skills/README.md)
 - [Architecture](docs/architecture.md)
 - [Ping-Pong planning flow](docs/ping-pong-plan-flow.md)
 - [Local runtime qualification](docs/local-runtime-qualification.md)
 - [Run artifacts](protocols/run-artifacts.md)
 - [Non-technical walkthrough](docs/non-technical-walkthrough.md)
 - [Evaluation guidance](evals/README.md)
+- [Sharp skill discrimination corpus](evals/sharp-skill-discrimination.md)
 - [Browser demo](demo/index.html)

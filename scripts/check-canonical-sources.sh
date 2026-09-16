@@ -28,7 +28,19 @@ expected_agents="$(printf '%s\n' $AC_AGENT_FILES | sed '/^$/d' | sort)"
 [ "$actual_agents" = "$expected_agents" ] && pass agent_registry_exact count=12 || fail agent_registry_exact mismatch
 actual_skills="$(find "$skill_src_dir" -mindepth 2 -maxdepth 2 -type f -name SKILL.md -printf '%h\n' | xargs -r -n1 basename | sort)"
 expected_skills="$(printf '%s\n' $AC_SKILL_NAMES | sed '/^$/d' | sort)"
-[ "$actual_skills" = "$expected_skills" ] && pass skill_registry_exact count=8 || fail skill_registry_exact mismatch
+expected_skill_count="$(printf '%s\n' $AC_SKILL_NAMES | sed '/^$/d' | wc -l)"
+[ "$actual_skills" = "$expected_skills" ] && pass skill_registry_exact "count=$expected_skill_count" || fail skill_registry_exact mismatch
+
+catalog_file="$skill_src_dir/README.md"
+if [ -f "$catalog_file" ]; then
+  catalog_skills="$(awk '/^## Overlap boundaries/{exit} /^- `[^`]+` —/{line=$0; sub(/^- `/,"",line); sub(/`.*/,"",line); print line}' "$catalog_file" | sort)"
+  [ "$catalog_skills" = "$expected_skills" ] && pass skill_catalog_exact "count=$expected_skill_count" || fail skill_catalog_exact mismatch
+else
+  fail skill_catalog_exact missing
+fi
+
+stale_skill_name='plan-improvement''-scout'
+if grep -Rqs --exclude-dir=.git "$stale_skill_name" "$repo_root"; then fail removed_skill_reference "name=$stale_skill_name"; else pass removed_skill_reference absent=true; fi
 
 for agent_file in $AC_AGENT_FILES; do check_description agent "${agent_file%.md}" "$agent_src_dir/$agent_file" "$AC_AGENT_DESCRIPTION_MAX"; done
 for skill_name in $AC_SKILL_NAMES; do check_description skill "$skill_name" "$skill_src_dir/$skill_name/SKILL.md" "$AC_SKILL_DESCRIPTION_MAX"; done
@@ -41,6 +53,20 @@ for skill_name in $AC_SKILL_NAMES; do
   file="$skill_src_dir/$skill_name/SKILL.md"
   if grep -Eqi 'use only for the .*reviewer role|must be invoked by ping-pong|requires? .*run store' "$file"; then fail "standalone_skill_$skill_name" flow_specific_dependency; else pass "standalone_skill_$skill_name" independent=true; fi
 done
+
+for reviewer_file in $AC_FLOW_REVIEWER_AGENT_FILES; do
+  file="$agent_src_dir/$reviewer_file"; reviewer_name="${reviewer_file%.md}"
+  reviewer_skill="$(sed -n 's/^skills: \[\([^]]*\)\]$/\1/p' "$file" | head -n 1)"
+  if [ -n "$reviewer_skill" ] && [ -f "$skill_src_dir/$reviewer_skill/SKILL.md" ] && grep -q '^## BUILD REVIEW MODE$' "$skill_src_dir/$reviewer_skill/SKILL.md"; then
+    pass "build_review_contract_$reviewer_name" "skill=$reviewer_skill"
+  else
+    fail "build_review_contract_$reviewer_name" "skill=${reviewer_skill:-missing}"
+  fi
+done
+
+build_master="$agent_src_dir/ping-ping-build.md"
+if grep -q '^  skill:' "$build_master"; then fail build_master_skill_authority direct_skill_permission_present; else pass build_master_skill_authority reviewer_owned=true; fi
+if grep -q '^## Final polish$' "$build_master" && grep -Fq '`## Final Polish`' "$build_master"; then pass build_final_polish_contract bounded=true; else fail build_final_polish_contract missing; fi
 
 for reviewer_file in $AC_FLOW_REVIEWER_AGENT_FILES $AC_STANDALONE_AGENT_FILES; do
   file="$agent_src_dir/$reviewer_file"; name="${reviewer_file%.md}"
@@ -90,5 +116,5 @@ printf '%s\n' "$pi_boundary_output"
 
 if [ -d "$repo_root/.agents/skills" ] || [ -d "$repo_root/.opencode/agents" ]; then fail hidden_source_layout present; else pass hidden_source_layout absent; fi
 
-if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass agents=12 skills=8 adapters=2 mandatory_flow_reviewers=8\n'; exit 0; fi
+if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass agents=12 skills=%s adapters=2 mandatory_flow_reviewers=8\n' "$expected_skill_count"; exit 0; fi
 printf 'SUMMARY status=fail failures=%s\n' "$failures"; exit 1

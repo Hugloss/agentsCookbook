@@ -24,7 +24,7 @@ global_dir="$temp_root/global opencode"; pi_dir="$temp_root/pi agent"; skills_di
 mkdir -p "$target_dir" "$global_dir/agents" "$skills_dir" "$temp_root/bin"
 
 ln -s "$repo_root/.opencode/agents/ping-pong-plan.md" "$global_dir/agents/ping-pong-plan.md"
-ln -s "$repo_root/.agents/skills/plan-improvement-scout" "$skills_dir/plan-improvement-scout"
+ln -s "$repo_root/.agents/skills/plan-gap-scout" "$skills_dir/plan-gap-scout"
 "$repo_root/scripts/link-opencode-local.sh" --dry-run --global-dir "$global_dir" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" >/dev/null
 pass link_dry_run
 "$repo_root/scripts/link-opencode-local.sh" --global-dir "$global_dir" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" >/dev/null
@@ -34,7 +34,8 @@ assert_link opencode_reviewer "$global_dir/agents/plan-coverage-reviewer.md" "$r
 assert_link opencode_standalone "$global_dir/agents/code-performance-optimization-auditor.md" "$repo_root/agents/code-performance-optimization-auditor.md"
 assert_link pi_primary "$pi_dir/agents/ping-ping-build.md" "$repo_root/agents/ping-ping-build.md"
 assert_link pi_reviewer "$pi_dir/agents/plan-contract-checker.md" "$repo_root/agents/plan-contract-checker.md"
-assert_link shared_skill "$skills_dir/plan-improvement-scout" "$repo_root/skills/plan-improvement-scout"
+assert_link shared_skill "$skills_dir/plan-gap-scout" "$repo_root/skills/plan-gap-scout"
+assert_link alternative_route_skill "$skills_dir/alternative-route-challenge" "$repo_root/skills/alternative-route-challenge"
 assert_link performance_skill "$skills_dir/code-performance-optimization-audit" "$repo_root/skills/code-performance-optimization-audit"
 assert_link opencode_artifact_plugin "$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN" "$repo_root/adapters/opencode/review-artifact.js"
 assert_link pi_artifact_extension "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION" "$repo_root/adapters/pi/review-artifact.js"
@@ -61,8 +62,9 @@ pass conflict_without_force
 find "$force_dir/agents" -name 'ping-pong-plan.md.agents-cookbook-backup-*' -print -quit | grep . >/dev/null
 pass force_backup
 
+expected_skill_count="$(printf '%s\n' $AC_SKILL_NAMES | sed '/^$/d' | wc -l)"
 [ "$(printf '%s\n' $AC_AGENT_FILES | sed '/^$/d' | wc -l)" -eq 12 ] || fail agent_registry_count
-[ "$(printf '%s\n' $AC_SKILL_NAMES | sed '/^$/d' | wc -l)" -eq 8 ] || fail skill_registry_count
+[ "$expected_skill_count" -gt 0 ] || fail skill_registry_empty
 [ "$(printf '%s\n' $AC_FLOW_REVIEWER_AGENT_FILES | sed '/^$/d' | wc -l)" -eq 8 ] || fail flow_reviewer_count
 ! printf '%s\n' $AC_FLOW_REVIEWER_AGENT_FILES | grep -qx 'code-performance-optimization-auditor.md' || fail standalone_leaked_into_flow_gate
 pass registry_boundaries
@@ -101,9 +103,10 @@ rm -- "$global_dir/agents/ping-pong-plan.md"; printf 'user file\n' >"$global_dir
 [ -f "$global_dir/agents/ping-pong-plan.md" ] || fail unlink_preserves_real_file
 [ -L "$global_dir/agents/unrelated.md" ] || fail unlink_preserves_unrelated_link
 [ ! -e "$pi_dir/agents/plan-contract-checker.md" ] && [ ! -L "$pi_dir/agents/plan-contract-checker.md" ] || fail unlink_removes_pi_agent
-[ ! -e "$skills_dir/plan-improvement-scout" ] && [ ! -L "$skills_dir/plan-improvement-scout" ] || fail unlink_removes_shared_skill
+[ ! -e "$skills_dir/plan-gap-scout" ] && [ ! -L "$skills_dir/plan-gap-scout" ] || fail unlink_removes_shared_skill
+[ ! -e "$skills_dir/alternative-route-challenge" ] && [ ! -L "$skills_dir/alternative-route-challenge" ] || fail unlink_removes_alternative_skill
 [ ! -e "$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN" ] && [ ! -L "$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN" ] || fail unlink_removes_opencode_adapter
 [ ! -e "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION" ] && [ ! -L "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION" ] || fail unlink_removes_pi_adapter
 pass unlink_safe
 
-printf 'SUMMARY status=pass agents=12 skills=8 adapters=2 mandatory_flow_reviewers=8\n'
+printf 'SUMMARY status=pass agents=12 skills=%s adapters=2 mandatory_flow_reviewers=8\n' "$expected_skill_count"

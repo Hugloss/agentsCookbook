@@ -14,6 +14,8 @@ Reviewer agents are deny-by-default. They keep normal project read-only authorit
 
 `skills/` contains reusable methodology. Every skill is standalone and must make sense without Ping-Pong, prior reviewers, or a run store.
 
+Skills are intentionally narrow: one hard invariant, one failure class, explicit `HUNT`, proof requirements, false-positive controls, and a preferred correction direction. The grouped catalog and overlap boundaries live in [`skills/README.md`](../skills/README.md).
+
 ### Flows
 
 `flows/` composes agents. A flow may select, order, provide bounded context, collect results, and synthesize decisions. It must not duplicate reviewer methodology.
@@ -42,12 +44,20 @@ adapter -> runtime exposure + proven runtime compatibility enforcement
 
 ## Standalone contract
 
-Every reviewer and skill must work when:
+Every reviewer agent must work when:
 
 - invoked manually;
-- routed through the one-reviewer router;
+- routed through `subagent-router` when it is one of the configured reviewers;
 - composed by the full planning/build flow;
-- reused by a future flow.
+- reused by a future compatible flow.
+
+Every skill must work when:
+
+- loaded directly by a compatible runtime/agent;
+- used by its owning reviewer when one exists;
+- reused by a future compatible agent or flow.
+
+`subagent-router` routes reviewer agents, not arbitrary skill names. Installable specialist skills therefore do not imply a matching routed reviewer or a mandatory flow step.
 
 Artifact persistence is optional transport, never a hidden prerequisite. With artifact mode disabled, reviewers return their complete review normally. The Pi reviewer child read-only boundary remains active independently of artifact persistence.
 
@@ -70,6 +80,6 @@ The run-store checker validates exact reviewer sets, receipt identity, hashes, o
 
 ## Mandatory versus installable capabilities
 
-The repository currently installs 12 agents and 8 skills. Only eight reviewer agents are mandatory in the Ping-Pong/Ping-Ping full-review gate. Additional standalone agents do not automatically enlarge that gate.
+The repository currently installs 12 agents and 29 skills. Only eight reviewer agents are mandatory in the Ping-Pong/Ping-Ping full-review gate. Additional standalone agents and skills do not automatically enlarge that gate.
 
 This distinction prevents new capabilities from silently changing established workflow cost or semantics.

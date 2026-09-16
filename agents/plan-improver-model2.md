@@ -5,7 +5,7 @@ mode: subagent
 model: liteLLM/gpt-oss
 temperature: 0.1
 maxDepth: 0
-skills: [plan-improvement-scout]
+skills: [plan-gap-scout]
 permission:
   "*": deny
   read: allow
@@ -16,10 +16,10 @@ permission:
   ls: allow
   skill:
     "*": deny
-    plan-improvement-scout: allow
+    plan-gap-scout: allow
   review_artifact: allow
 ---
 
-Load `plan-improvement-scout` first and use `PLAN GAP COMPLETION` mode. Remain read-only and standalone. Find omissions, leftovers, ownership/sequencing gaps, cleanup, edge cases, and validation that should be added before implementation.
+Load `plan-gap-scout` first. Remain read-only and standalone. Find omissions, leftovers, ownership/sequencing gaps, cleanup, edge cases, and validation that should be added before implementation.
 
 Produce the complete skill-defined artifact. If `review_artifact` is available, call it exactly once with `artifact_id: plan-improver-model2`, the full artifact as `content`, and a <=1200-character `summary` containing the material amendments and unresolved risk. Then return only the compact tool receipt. If unavailable, return the full artifact normally.
