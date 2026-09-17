@@ -305,6 +305,40 @@ def _classification(
     return classification, expected_match, failures
 
 
+
+def contract_candidate_as_legacy_row(candidate: dict[str, object]) -> dict[str, object]:
+    evidence = candidate.get("evidence", {})
+    facts = candidate.get("facts", {})
+    derived = candidate.get("derived", {})
+    interpretation = candidate.get("interpretation", {})
+    recommendations = candidate.get("recommendations", {})
+    assert isinstance(evidence, dict)
+    assert isinstance(facts, dict)
+    assert isinstance(derived, dict)
+    assert isinstance(interpretation, dict)
+    assert isinstance(recommendations, dict)
+    confirmed = list(evidence.get("confirmed", []))
+    supporting = list(evidence.get("supporting", []))
+    heuristic = list(evidence.get("candidate", []))
+    matches = [*confirmed, *supporting, *heuristic]
+    return {
+        "source_path": candidate.get("target"),
+        "matches": matches,
+        "confirmed_matches": confirmed,
+        "supporting_matches": supporting,
+        "candidate_matches": heuristic,
+        "corresponding_test_count": facts.get("corresponding_test_count"),
+        "supporting_test_count": facts.get("supporting_test_count"),
+        "candidate_test_count": facts.get("candidate_test_count"),
+        "has_corresponding_tests": derived.get("has_corresponding_tests"),
+        "correspondence_status": derived.get("correspondence_status"),
+        "test_sync_required_if_split": derived.get("test_sync_required_if_split"),
+        "max_test_lines": facts.get("max_confirmed_test_lines"),
+        "risk_score": interpretation.get("risk_score"),
+        "recommended_test_action": recommendations.get("test_action"),
+        "recommended_strategy": recommendations.get("strategy"),
+    }
+
 def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="agent-economics-refactor-focus-") as tmp:
         root = Path(tmp)
@@ -317,8 +351,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             root, top_n=3, artifact_name="bounded.json"
         )
 
-        rows = full["rows"]
-        assert isinstance(rows, list)
+        candidates = full["candidates"]
+        assert isinstance(candidates, list)
+        rows = [contract_candidate_as_legacy_row(item) for item in candidates if isinstance(item, dict)]
         rows_by_source = {
             row["source_path"]: row
             for row in rows
@@ -377,8 +412,11 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         precision = tp / (tp + fp) if tp + fp else 1.0
         recall = tp / (tp + fn) if tp + fn else 1.0
 
-        oversized = int(full["oversized_source_count"])
-        selected = int(bounded["selected_count"])
+        full_derived = full["derived"]
+        bounded_derived = bounded["derived"]
+        assert isinstance(full_derived, dict) and isinstance(bounded_derived, dict)
+        oversized = int(full_derived["oversized_source_count"])
+        selected = int(bounded_derived["selected_count"])
         candidate_reduction = 1.0 - (selected / oversized) if oversized else 0.0
 
         python_files = sorted(root.rglob("*.py"))
@@ -437,8 +475,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             if economics.get("transitive_max_depth") != 2:
                 failures.append(f"{label}: transitive bound missing or changed")
 
-        bounded_rows = bounded["rows"]
-        assert isinstance(bounded_rows, list)
+        bounded_candidates = bounded["candidates"]
+        assert isinstance(bounded_candidates, list)
+        bounded_rows = [contract_candidate_as_legacy_row(item) for item in bounded_candidates if isinstance(item, dict)]
         evidence_paths = {
             str(row["source_path"])
             for row in bounded_rows

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,6 +14,7 @@ class PythonFileAnalysis:
     line_count: int
     byte_count: int
     parse_error: str | None
+    content_sha256: str | None
 
 
 class AnalysisCache:
@@ -45,12 +47,14 @@ class AnalysisCache:
                 line_count=0,
                 byte_count=0,
                 parse_error=f"read_error:{type(exc).__name__}",
+                content_sha256=None,
             )
             self._records[key] = record
             return record
 
         self.files_read += 1
         self.bytes_read += len(raw)
+        content_sha256 = hashlib.sha256(raw).hexdigest()
         source = raw.decode("utf-8", errors="replace")
         self.ast_parses += 1
         try:
@@ -68,6 +72,7 @@ class AnalysisCache:
             line_count=len(source.splitlines()),
             byte_count=len(raw),
             parse_error=parse_error,
+            content_sha256=content_sha256,
         )
         self._records[key] = record
         return record

@@ -69,7 +69,11 @@ P3 qualification requires all expected structural relationships to be confirmed,
 
 ## Phase 4 — Common Agent Economics Probe contract
 
-Define a versioned output contract shared by all probes. Include schema/tool version, repository/config identity, evidence, derived facts, interpretation, uncertainty, warnings, candidates, required next evidence, deferred evidence, verification suggestions, and economics. Keep facts and recommendations separately represented.
+Status: **complete** on the Agent Economics Probes branch.
+
+All probe artifacts use the versioned `agent-economics-probe` v1 envelope. The common sections are schema/tool identity, portable repository identity, semantic configuration identity, evidence, derived facts, interpretation, uncertainty, warnings, bounded candidates, required next evidence, deferred evidence, verification suggestions, and economics. Candidate facts, derived state, interpretation, and recommendations are separate objects so an agent cannot accidentally treat a recommendation as measured repository truth.
+
+Repository identity is a checkout-location-independent SHA-256 over analyzed repository inputs. Configuration identity is a canonical SHA-256 over semantic probe configuration and excludes the artifact destination. Optional ownership-hint content identity is included in configuration identity. P4 qualification proves schema validity, identity stability and invalidation, repository-relative paths, deferred-evidence accounting, facts/recommendation separation, uncertainty-to-next-evidence linkage, and verification suggestions for confirmed ownership. P1–P3 qualification must remain green under the v1 envelope.
 
 ## Phase 5 — Repository discovery semantics
 

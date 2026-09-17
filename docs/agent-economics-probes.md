@@ -102,6 +102,40 @@ python -m scripts.agent_economics.refactor_focus_p3_qualification
 
 Runtime-built dynamic module names remain unknown rather than guessed. Supporting filename/path conventions and candidate token overlap remain non-authoritative.
 
+## Common probe contract
+
+Every probe artifact now uses the same versioned `agent-economics-probe` v1 envelope:
+
+```text
+schema
+tool
+generated_at
+repository
+configuration
+evidence
+derived
+interpretation
+uncertainty
+warnings
+candidates
+required_next_evidence
+deferred_evidence
+verification_suggestions
+economics
+```
+
+The contract deliberately separates **measured facts**, **derived state**, **interpretation**, and **recommendations**. A candidate recommendation such as a refactoring strategy cannot appear in its `facts` object. Confirmed source/test evidence can yield focused verification suggestions; supporting or ambiguous evidence yields explicit uncertainty plus the next evidence the agent should obtain. Candidates omitted by a bounded `top_n` budget are preserved as `deferred_evidence` rather than disappearing silently.
+
+Repository identity is a SHA-256 over the analyzed repository inputs and is independent of the checkout path. Configuration identity is a SHA-256 over semantic probe configuration; changing the artifact destination does not change it, while changing a depth/budget/threshold does. Ownership-hint bytes, when configured, participate through their content identity. Paths in the portable contract are repository-relative.
+
+Run the P4 contract qualification with:
+
+```bash
+python -m scripts.agent_economics.probe_contract_qualification
+```
+
+P4 qualification also reruns the earlier probe behavior indirectly and checks contract validation, identity invalidation/stability, facts-versus-recommendations separation, deferred-evidence accounting, uncertainty requirements, and verification suggestions.
+
 ## Roadmap
 
 See [Agent Economics Probe phases](agent-economics-probe-phases.md) for the hardening sequence and planned `context-focus`, `test-focus`, `change-impact`, `coupling-focus`, `hotspot-focus`, and `tool-budget` probes.

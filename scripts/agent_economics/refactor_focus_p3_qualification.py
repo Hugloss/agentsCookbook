@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 from .refactor_focus_p2_qualification import qualify as qualify_p2
+from .refactor_focus_qualification import contract_candidate_as_legacy_row
 from .refactor_focus_workflow import refactor_focus_audit
 
 Expectation = Literal["confirmed", "not_confirmed"]
@@ -402,8 +403,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         root = Path(tmp)
         hints = materialize_p3_corpus(root)
         payload = _run_probe(root, hints)
-        rows = payload.get("rows", [])
-        assert isinstance(rows, list)
+        candidates = payload.get("candidates", [])
+        assert isinstance(candidates, list)
+        rows = [contract_candidate_as_legacy_row(item) for item in candidates if isinstance(item, dict)]
         rows_by_source = {
             row.get("source_path"): row
             for row in rows

@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 
 from .refactor_focus_analysis import AnalysisCache
+from .refactor_focus_contract import build_refactor_focus_contract
 from .refactor_focus_hints import (
     OwnershipHintsError,
     load_declared_ownership_hints,
@@ -199,6 +200,7 @@ def refactor_focus_audit(
     declared_test_evidence = []
     ownership_hints_bytes_read = 0
     ownership_hints_files_read = 0
+    ownership_hints_sha256: str | None = None
     if ownership_hints_path is not None:
         try:
             hints_load = load_declared_ownership_hints(
@@ -210,6 +212,7 @@ def refactor_focus_audit(
             declared_test_evidence = list(hints_load.relationships)
             ownership_hints_bytes_read = hints_load.bytes_read
             ownership_hints_files_read = 1
+            ownership_hints_sha256 = hints_load.content_sha256
         except OwnershipHintsError as exc:
             emit(
                 "ERROR",
@@ -487,34 +490,31 @@ def refactor_focus_audit(
         "total_files_read": analysis_cache.files_read + ownership_hints_files_read,
         "total_bytes_read": analysis_cache.bytes_read + ownership_hints_bytes_read,
     }
-    payload = {
-        "generated_at": iso_utc_now(),
-        "repository_root": effective_repository_root.as_posix(),
-        "source_root": report_path(
-            path=source_root,
-            anchor=effective_repository_root,
-        ),
-        "tests_root": report_path(
-            path=tests_root,
-            anchor=effective_repository_root,
-        ),
-        "package_name": effective_package_name,
-        "tests_package_name": effective_tests_package_name,
-        "thresholds": {
-            "file_lines": file_line_threshold,
-            "function_lines": function_line_threshold,
-            "transitive_max_depth": transitive_max_depth,
-            "helper_max_depth": helper_max_depth,
-            "pytest_max_depth": pytest_max_depth,
-        },
-        "source_files_scanned": len(source_files),
-        "test_files_scanned": len(test_files),
-        "test_python_files_scanned": len(all_test_python_files),
-        "oversized_source_count": oversized_source_count,
-        "selected_count": len(selected_rows),
-        "economics": economics,
-        "rows": selected_rows,
-    }
+    payload = build_refactor_focus_contract(
+        generated_at=iso_utc_now(),
+        repository_root=effective_repository_root,
+        source_root=source_root,
+        tests_root=tests_root,
+        package_name=effective_package_name,
+        tests_package_name=effective_tests_package_name,
+        file_line_threshold=file_line_threshold,
+        function_line_threshold=function_line_threshold,
+        top_n=top_n,
+        transitive_max_depth=transitive_max_depth,
+        helper_max_depth=helper_max_depth,
+        pytest_max_depth=pytest_max_depth,
+        ownership_hints_path=ownership_hints_path,
+        ownership_hints_sha256=ownership_hints_sha256,
+        analysis_cache=analysis_cache,
+        analyzed_python_files=unique_python_files,
+        source_files_scanned=len(source_files),
+        test_files_scanned=len(test_files),
+        test_python_files_scanned=len(all_test_python_files),
+        oversized_source_count=oversized_source_count,
+        all_rows=rows,
+        selected_rows=selected_rows,
+        economics=economics,
+    )
 
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     artifact_path.write_text(

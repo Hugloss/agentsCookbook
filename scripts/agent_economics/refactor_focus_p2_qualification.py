@@ -9,7 +9,11 @@ from collections import Counter
 from pathlib import Path
 from unittest.mock import patch
 
-from .refactor_focus_qualification import materialize_corpus, qualify as qualify_p1
+from .refactor_focus_qualification import (
+    contract_candidate_as_legacy_row,
+    materialize_corpus,
+    qualify as qualify_p1,
+)
 from .refactor_focus_workflow import refactor_focus_audit
 
 
@@ -164,16 +168,19 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             failures=failures,
         )
 
-        oversized = int(bounded["oversized_source_count"])
-        selected = int(bounded["selected_count"])
+        bounded_derived = bounded.get("derived", {})
+        assert isinstance(bounded_derived, dict)
+        oversized = int(bounded_derived["oversized_source_count"])
+        selected = int(bounded_derived["selected_count"])
         expected_candidate_reduction = (
             1.0 - (selected / oversized) if oversized else 0.0
         )
         if bounded_economics.get("candidate_reduction") != expected_candidate_reduction:
             failures.append("bounded: candidate_reduction accounting mismatch")
 
-        rows = bounded.get("rows", [])
-        assert isinstance(rows, list)
+        candidates = bounded.get("candidates", [])
+        assert isinstance(candidates, list)
+        rows = [contract_candidate_as_legacy_row(item) for item in candidates if isinstance(item, dict)]
         evidence_paths: set[str] = set()
         for row in rows:
             if not isinstance(row, dict):

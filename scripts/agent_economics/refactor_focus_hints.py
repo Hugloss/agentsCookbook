@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,7 @@ class DeclaredOwnershipHint:
 class OwnershipHintsLoad:
     relationships: tuple[DeclaredOwnershipHint, ...]
     bytes_read: int
+    content_sha256: str
 
 
 class OwnershipHintsError(ValueError):
@@ -107,7 +109,11 @@ def load_declared_ownership_hints(
                 ),
             )
         )
-    return OwnershipHintsLoad(relationships=tuple(results), bytes_read=len(raw))
+    return OwnershipHintsLoad(
+        relationships=tuple(results),
+        bytes_read=len(raw),
+        content_sha256=hashlib.sha256(raw).hexdigest(),
+    )
 
 
 def _resolve_repository_relative(
