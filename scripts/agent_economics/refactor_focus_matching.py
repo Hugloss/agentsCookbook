@@ -1,10 +1,11 @@
 from collections import defaultdict, deque
+from dataclasses import dataclass
 from pathlib import Path
 
 from .refactor_focus_analysis import AnalysisCache
 from .refactor_focus_imports import (
     internal_imports_for_file,
-    parse_dynamic_loaded_source_modules,
+    parse_dynamic_loaded_source_module_evidence,
 )
 from .refactor_focus_models import (
     MATCH_AUTHORITY,
@@ -19,7 +20,15 @@ from .refactor_focus_paths import (
 )
 
 
-def build_direct_test_owners(
+@dataclass(frozen=True)
+class TestOwnershipEvidence:
+    source_path: Path
+    test_path: Path
+    match_type: str
+    provenance: str
+
+
+def build_test_ownership_evidence(
     *,
     test_files: list[Path],
     all_test_python_files: list[Path],
@@ -29,59 +38,153 @@ def build_direct_test_owners(
     package_name: str,
     tests_package_name: str,
     analysis_cache: AnalysisCache,
-) -> dict[Path, set[Path]]:
-    owners: dict[Path, set[Path]] = defaultdict(set)
-    test_modules_to_path = {
-        module_path_for_file(path=path, root=tests_root, package_name=tests_package_name): path
+    repository_root: Path,
+    helper_max_depth: int = 2,
+) -> list[TestOwnershipEvidence]:
+    """Recover confirmed source/test relationships through Python imports.
+
+    Direct static and literal dynamic imports are confirmed. Test-helper chains are
+    also confirmed when every hop is a statically resolved test-package import and
+    the chain stays within ``helper_max_depth``.
+    """
+
+    test_module_to_path = {
+        module_path_for_file(
+            path=path,
+            root=tests_root,
+            package_name=tests_package_name,
+        ): path
         for path in all_test_python_files
     }
-    helper_source_modules: dict[Path, set[str]] = {}
+    test_imports_by_path: dict[Path, set[Path]] = {}
+    source_static_by_path: dict[Path, set[str]] = {}
+    source_dynamic_by_path: dict[Path, dict[str, set[str]]] = {}
 
     for path in all_test_python_files:
-        direct_imports = internal_imports_for_file(
+        test_imports_by_path[path] = {
+            resolved
+            for module in internal_imports_for_file(
+                path=path,
+                root=tests_root,
+                current_package_name=tests_package_name,
+                package_names={tests_package_name},
+                analysis_cache=analysis_cache,
+            )
+            if (resolved := test_module_to_path.get(module)) is not None
+            and resolved != path
+        }
+        source_static_by_path[path] = internal_imports_for_file(
             path=path,
             root=tests_root,
             current_package_name=tests_package_name,
             package_names={package_name},
             analysis_cache=analysis_cache,
         )
-        dynamic_imports = parse_dynamic_loaded_source_modules(
+        source_dynamic_by_path[path] = parse_dynamic_loaded_source_module_evidence(
             path=path,
             source_root=source_root,
             package_name=package_name,
             analysis_cache=analysis_cache,
         )
-        helper_source_modules[path] = direct_imports | dynamic_imports
+
+    evidence: list[TestOwnershipEvidence] = []
+    seen: set[tuple[Path, Path, str, str]] = set()
+
+    def append(
+        *,
+        source_module: str,
+        test_file: Path,
+        match_type: str,
+        provenance: str,
+    ) -> None:
+        source_path = module_to_path.get(source_module)
+        if source_path is None:
+            return
+        key = (source_path, test_file, match_type, provenance)
+        if key in seen:
+            return
+        seen.add(key)
+        evidence.append(
+            TestOwnershipEvidence(
+                source_path=source_path,
+                test_path=test_file,
+                match_type=match_type,
+                provenance=provenance,
+            )
+        )
 
     for test_file in test_files:
-        for module in internal_imports_for_file(
-            path=test_file,
-            root=tests_root,
-            current_package_name=tests_package_name,
-            package_names={package_name},
-            analysis_cache=analysis_cache,
-        ):
-            owner_path = module_to_path.get(module)
-            if owner_path is not None:
-                owners[owner_path].add(test_file)
+        test_report = report_path(path=test_file, anchor=repository_root)
+        for source_module in sorted(source_static_by_path.get(test_file, set())):
+            append(
+                source_module=source_module,
+                test_file=test_file,
+                match_type="import_exact",
+                provenance=f"static_import:test={test_report}:source={source_module}",
+            )
+        for source_module, kinds in sorted(source_dynamic_by_path.get(test_file, {}).items()):
+            append(
+                source_module=source_module,
+                test_file=test_file,
+                match_type="dynamic_import_literal",
+                provenance=(
+                    f"dynamic_import:test={test_report}:source={source_module}:"
+                    f"kind={','.join(sorted(kinds))}"
+                ),
+            )
 
-        helper_modules = internal_imports_for_file(
-            path=test_file,
-            root=tests_root,
-            current_package_name=tests_package_name,
-            package_names={tests_package_name},
-            analysis_cache=analysis_cache,
+        if helper_max_depth <= 0:
+            continue
+        queue: deque[tuple[Path, int, tuple[Path, ...]]] = deque(
+            (helper, 1, (helper,))
+            for helper in sorted(test_imports_by_path.get(test_file, set()))
         )
-        for helper_module in helper_modules:
-            helper_path = test_modules_to_path.get(helper_module)
-            if helper_path is None:
+        seen_helpers: set[Path] = set()
+        while queue:
+            helper, depth, chain = queue.popleft()
+            if helper in seen_helpers or depth > helper_max_depth:
                 continue
-            for source_module in helper_source_modules.get(helper_path, set()):
-                owner_path = module_to_path.get(source_module)
-                if owner_path is not None:
-                    owners[owner_path].add(test_file)
+            seen_helpers.add(helper)
+            chain_report = "->".join(
+                report_path(path=path, anchor=repository_root) for path in chain
+            )
+            for source_module in sorted(source_static_by_path.get(helper, set())):
+                append(
+                    source_module=source_module,
+                    test_file=test_file,
+                    match_type="support_loader",
+                    provenance=(
+                        f"helper_chain:test={test_report}:helpers={chain_report}:"
+                        f"depth={depth}:source={source_module}:kind=static_import"
+                    ),
+                )
+            for source_module, kinds in sorted(source_dynamic_by_path.get(helper, {}).items()):
+                append(
+                    source_module=source_module,
+                    test_file=test_file,
+                    match_type="support_loader",
+                    provenance=(
+                        f"helper_chain:test={test_report}:helpers={chain_report}:"
+                        f"depth={depth}:source={source_module}:"
+                        f"kind={','.join(sorted(kinds))}"
+                    ),
+                )
+            if depth >= helper_max_depth:
+                continue
+            for child in sorted(test_imports_by_path.get(helper, set())):
+                if child not in seen_helpers:
+                    queue.append((child, depth + 1, (*chain, child)))
 
-    return {path: tests for path, tests in owners.items() if tests}
+    return evidence
+
+
+def ownership_map_from_evidence(
+    evidence: list[TestOwnershipEvidence],
+) -> dict[Path, set[Path]]:
+    owners: dict[Path, set[Path]] = defaultdict(set)
+    for item in evidence:
+        owners[item.source_path].add(item.test_path)
+    return dict(owners)
 
 
 def transitive_owner_matches(
@@ -131,19 +234,27 @@ def add_match(
     match_type: str,
     test_lines_by_path: dict[Path, int],
     test_path_anchor: Path,
+    provenance: str,
 ) -> None:
     key = test_path.as_posix()
     candidate_priority = MATCH_PRIORITY.get(match_type, 100)
     existing = matches_by_path.get(key)
     if existing is not None:
         existing_priority = MATCH_PRIORITY.get(existing["match_type"], 100)
-        if existing_priority <= candidate_priority:
+        if existing_priority < candidate_priority:
+            return
+        if existing_priority == candidate_priority:
+            if provenance != existing["provenance"]:
+                parts = {part for part in existing["provenance"].split(" | ") if part}
+                parts.add(provenance)
+                existing["provenance"] = " | ".join(sorted(parts))
             return
     match_record: MatchRecord = {
         "test_path": report_path(path=test_path, anchor=test_path_anchor),
         "test_lines": test_lines_by_path.get(test_path, 0),
         "match_type": match_type,
         "evidence_authority": MATCH_AUTHORITY.get(match_type, "candidate"),
+        "provenance": provenance,
     }
     matches_by_path[key] = match_record
 

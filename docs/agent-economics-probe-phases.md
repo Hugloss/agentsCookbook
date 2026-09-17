@@ -61,7 +61,11 @@ Qualification independently instruments `Path.read_bytes` and `ast.parse` so rep
 
 ## Phase 3 — Python/pytest ownership closure
 
-Extend test evidence without pretending heuristics are facts. Add parameterized support for `conftest.py` ancestry, fixtures, `pytest_plugins`, helper-to-helper test imports, common dynamic imports, and declared repository-specific ownership hints. Every evidence source gets an authority class and provenance.
+Status: **complete** on the Agent Economics Probes branch.
+
+Extend test evidence without pretending heuristics are facts. P3 adds parameterized, bounded support for test-helper chains, ancestor `conftest.py` fixtures, autouse fixtures, fixture dependencies, literal `request.getfixturevalue`, repository-local `pytest_plugins`, active plugin fixtures, literal dynamic imports, and versioned repository ownership hints. Every admitted relationship carries provenance. Runtime-computed module names remain unknown. Unused fixtures, depth-overflow helper/plugin chains, and naming/path heuristics cannot become confirmed ownership. Ownership-hint paths must be repository-relative, discovered files; stale, absolute, or escaping declarations fail closed. Auxiliary hint-file reads are reported separately in probe economics and included in total read/byte accounting.
+
+P3 qualification requires all expected structural relationships to be confirmed, zero false authority across bounded/unused negative cases, P2 parse-once qualification to remain green, and all invalid ownership-hint cases to fail closed.
 
 ## Phase 4 — Common Agent Economics Probe contract
 

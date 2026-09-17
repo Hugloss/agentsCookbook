@@ -20,8 +20,7 @@ def parse_internal_imported_modules(
     package_names: set[str],
     analysis_cache: AnalysisCache,
 ) -> set[str]:
-    analysis = analysis_cache.get(path)
-    tree = analysis.tree
+    tree = analysis_cache.get(path).tree
     if tree is None:
         return set()
 
@@ -122,23 +121,28 @@ def internal_imports_for_file(
     )
 
 
-def parse_dynamic_loaded_source_modules(
+def parse_dynamic_loaded_source_module_evidence(
     *,
     path: Path,
     source_root: Path,
     package_name: str,
     analysis_cache: AnalysisCache,
-) -> set[str]:
-    analysis = analysis_cache.get(path)
-    tree = analysis.tree
+) -> dict[str, set[str]]:
+    """Return literal dynamic source-module loads grouped by provenance kind.
+
+    Only statically recoverable literal relationships are admitted. Runtime-built
+    module names remain unsupported/unknown instead of being guessed.
+    """
+
+    tree = analysis_cache.get(path).tree
     if tree is None:
-        return set()
+        return {}
 
     env: dict[str, Path] = {}
-    modules: set[str] = set()
+    evidence: dict[str, set[str]] = defaultdict(set)
     current_file = path.resolve()
 
-    for node in tree.body:
+    for node in getattr(tree, "body", []):
         if (
             isinstance(node, ast.Assign)
             and len(node.targets) == 1
@@ -151,30 +155,85 @@ def parse_dynamic_loaded_source_modules(
             )
             if evaluated is not None:
                 env[node.targets[0].id] = evaluated
-        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
             continue
-        call = node.value
-        if not is_spec_from_file_location_call(call):
-            continue
-        if len(call.args) < 2:
-            continue
-        loaded_path = evaluate_path_expression(
-            call.args[1],
-            current_file=current_file,
-            env=env,
-        )
-        if loaded_path is None:
-            continue
-        try:
-            module = source_module_path(
-                source_path=loaded_path.resolve(),
-                source_root=source_root.resolve(),
-                package_name=package_name,
+
+        if is_spec_from_file_location_call(node) and len(node.args) >= 2:
+            loaded_path = evaluate_path_expression(
+                node.args[1],
+                current_file=current_file,
+                env=env,
             )
-        except ValueError:
+            if loaded_path is not None:
+                try:
+                    module = source_module_path(
+                        source_path=loaded_path.resolve(),
+                        source_root=source_root.resolve(),
+                        package_name=package_name,
+                    )
+                except ValueError:
+                    pass
+                else:
+                    evidence[module].add("spec_from_file_location")
             continue
-        modules.add(module)
-    return modules
+
+        module = literal_dynamic_module_name_for_call(node)
+        if module and is_first_party_module(module, {package_name}):
+            evidence[module].add(dynamic_call_kind(node))
+
+    return dict(evidence)
+
+
+def parse_dynamic_loaded_source_modules(
+    *,
+    path: Path,
+    source_root: Path,
+    package_name: str,
+    analysis_cache: AnalysisCache,
+) -> set[str]:
+    return set(
+        parse_dynamic_loaded_source_module_evidence(
+            path=path,
+            source_root=source_root,
+            package_name=package_name,
+            analysis_cache=analysis_cache,
+        )
+    )
+
+
+def literal_dynamic_module_name_for_call(node: ast.Call) -> str | None:
+    if not node.args:
+        return None
+    if not isinstance(node.args[0], ast.Constant) or not isinstance(node.args[0].value, str):
+        return None
+    value = node.args[0].value.strip()
+    if not value or value.startswith("."):
+        return None
+    call_kind = dynamic_call_kind(node)
+    if call_kind not in {"importlib.import_module", "import_module", "__import__"}:
+        return None
+    return value
+
+
+def dynamic_call_kind(node: ast.Call) -> str:
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        prefix = attribute_name(func.value)
+        return f"{prefix}.{func.attr}" if prefix else func.attr
+    return "unknown"
+
+
+def attribute_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        prefix = attribute_name(node.value)
+        return f"{prefix}.{node.attr}" if prefix else node.attr
+    return ""
 
 
 def is_spec_from_file_location_call(node: ast.Call) -> bool:

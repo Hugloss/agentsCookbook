@@ -72,7 +72,33 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--file-line-threshold", type=int, default=800)
     parser.add_argument("--function-line-threshold", type=int, default=80)
     parser.add_argument("--top-n", type=int, default=3)
-    parser.add_argument("--transitive-max-depth", type=int, default=2)
+    parser.add_argument(
+        "--transitive-max-depth",
+        type=int,
+        default=2,
+        help="Bound reverse source-dependency ownership traversal. Default: 2.",
+    )
+    parser.add_argument(
+        "--helper-max-depth",
+        type=int,
+        default=2,
+        help="Bound test helper-to-helper import traversal. Default: 2.",
+    )
+    parser.add_argument(
+        "--pytest-max-depth",
+        type=int,
+        default=2,
+        help="Bound pytest fixture dependency and pytest_plugins traversal. Default: 2.",
+    )
+    parser.add_argument(
+        "--ownership-hints-path",
+        type=Path,
+        default=None,
+        help=(
+            "Optional JSON file with explicit repository-relative source/test "
+            "ownership relationships. Invalid or stale hints fail closed."
+        ),
+    )
     return parser
 
 
@@ -91,6 +117,9 @@ def main(argv: list[str] | None = None) -> None:
         function_line_threshold=args.function_line_threshold,
         top_n=args.top_n,
         transitive_max_depth=args.transitive_max_depth,
+        helper_max_depth=args.helper_max_depth,
+        pytest_max_depth=args.pytest_max_depth,
+        ownership_hints_path=args.ownership_hints_path,
     )
 
 

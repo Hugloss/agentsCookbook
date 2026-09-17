@@ -3,19 +3,25 @@ import time
 from pathlib import Path
 
 from .refactor_focus_analysis import AnalysisCache
+from .refactor_focus_hints import (
+    OwnershipHintsError,
+    load_declared_ownership_hints,
+)
 from .refactor_focus_imports import (
     build_import_index,
     internal_imports_for_file,
 )
 from .refactor_focus_matching import (
     add_match,
-    build_direct_test_owners,
+    build_test_ownership_evidence,
     direct_name_test_candidates,
     feature_fallback_matches,
     mirrored_test_candidates,
+    ownership_map_from_evidence,
     transitive_owner_matches,
 )
 from .refactor_focus_models import Emit, ExitCode, FocusRow, MatchRecord
+from .refactor_focus_pytest import build_pytest_ownership_evidence
 from .refactor_focus_paths import (
     collect_python_files,
     common_path_anchor,
@@ -49,6 +55,9 @@ def refactor_focus_audit(
     function_line_threshold: int = 80,
     top_n: int = 3,
     transitive_max_depth: int = 2,
+    helper_max_depth: int = 2,
+    pytest_max_depth: int = 2,
+    ownership_hints_path: Path | None = None,
 ) -> None:
     started = time.perf_counter()
     source_root = source_root.resolve()
@@ -73,6 +82,11 @@ def refactor_focus_audit(
         function_line_threshold=function_line_threshold,
         top_n=top_n,
         transitive_max_depth=transitive_max_depth,
+        helper_max_depth=helper_max_depth,
+        pytest_max_depth=pytest_max_depth,
+        ownership_hints_path=(
+            ownership_hints_path.as_posix() if ownership_hints_path is not None else None
+        ),
     )
 
     if not source_root.exists():
@@ -95,11 +109,13 @@ def refactor_focus_audit(
         exit_code(2)
         return
 
-    if transitive_max_depth < 0:
+    if transitive_max_depth < 0 or helper_max_depth < 0 or pytest_max_depth < 0:
         emit(
             "ERROR",
-            "refactor_focus_audit_invalid_transitive_depth",
+            "refactor_focus_audit_invalid_depth_bounds",
             transitive_max_depth=transitive_max_depth,
+            helper_max_depth=helper_max_depth,
+            pytest_max_depth=pytest_max_depth,
         )
         exit_code(2)
         return
@@ -145,13 +161,6 @@ def refactor_focus_audit(
         **{module: path for path, module in test_module_by_path.items()},
     }
 
-    test_import_index = build_import_index(
-        files=test_files,
-        root=tests_root,
-        current_package_name=effective_tests_package_name,
-        package_names={effective_package_name},
-        analysis_cache=analysis_cache,
-    )
     source_import_index = build_import_index(
         files=source_files,
         root=source_root,
@@ -159,7 +168,7 @@ def refactor_focus_audit(
         package_names={effective_package_name},
         analysis_cache=analysis_cache,
     )
-    direct_test_owners = build_direct_test_owners(
+    python_test_evidence = build_test_ownership_evidence(
         test_files=test_files,
         all_test_python_files=all_test_python_files,
         module_to_path=module_to_path,
@@ -168,7 +177,60 @@ def refactor_focus_audit(
         package_name=effective_package_name,
         tests_package_name=effective_tests_package_name,
         analysis_cache=analysis_cache,
+        repository_root=effective_repository_root,
+        helper_max_depth=helper_max_depth,
     )
+    pytest_test_evidence = build_pytest_ownership_evidence(
+        test_files=test_files,
+        all_test_python_files=all_test_python_files,
+        module_to_path=module_to_path,
+        source_root=source_root,
+        tests_root=tests_root,
+        package_name=effective_package_name,
+        tests_package_name=effective_tests_package_name,
+        analysis_cache=analysis_cache,
+        repository_root=effective_repository_root,
+        pytest_max_depth=pytest_max_depth,
+    )
+    direct_test_owners = ownership_map_from_evidence(python_test_evidence)
+    for item in pytest_test_evidence:
+        direct_test_owners.setdefault(item.source_path, set()).add(item.test_path)
+
+    declared_test_evidence = []
+    ownership_hints_bytes_read = 0
+    ownership_hints_files_read = 0
+    if ownership_hints_path is not None:
+        try:
+            hints_load = load_declared_ownership_hints(
+                hints_path=ownership_hints_path,
+                repository_root=effective_repository_root,
+                source_files=set(source_files),
+                test_files=set(test_files),
+            )
+            declared_test_evidence = list(hints_load.relationships)
+            ownership_hints_bytes_read = hints_load.bytes_read
+            ownership_hints_files_read = 1
+        except OwnershipHintsError as exc:
+            emit(
+                "ERROR",
+                "refactor_focus_audit_invalid_ownership_hints",
+                path=ownership_hints_path.as_posix(),
+                error=str(exc),
+            )
+            exit_code(2)
+            return
+        for item in declared_test_evidence:
+            direct_test_owners.setdefault(item.source_path, set()).add(item.test_path)
+
+    python_evidence_by_source: dict[Path, list[object]] = {}
+    for item in python_test_evidence:
+        python_evidence_by_source.setdefault(item.source_path, []).append(item)
+    pytest_evidence_by_source: dict[Path, list[object]] = {}
+    for item in pytest_test_evidence:
+        pytest_evidence_by_source.setdefault(item.source_path, []).append(item)
+    declared_evidence_by_source: dict[Path, list[object]] = {}
+    for item in declared_test_evidence:
+        declared_evidence_by_source.setdefault(item.source_path, []).append(item)
 
     rows: list[FocusRow] = []
     oversized_source_count = 0
@@ -193,6 +255,9 @@ def refactor_focus_audit(
                     match_type="mirrored_path",
                     test_lines_by_path=test_lines_by_path,
                     test_path_anchor=effective_repository_root,
+                    provenance=(
+                        f"mirrored_path:source={report_path(path=source_file, anchor=effective_repository_root)}"
+                    ),
                 )
 
         for candidate in direct_name_test_candidates(
@@ -205,26 +270,39 @@ def refactor_focus_audit(
                 match_type="direct_name",
                 test_lines_by_path=test_lines_by_path,
                 test_path_anchor=effective_repository_root,
+                provenance=(
+                    f"direct_name:source={report_path(path=source_file, anchor=effective_repository_root)}"
+                ),
             )
 
         module_path = source_module_by_path[source_file]
 
-        for test_file in sorted(test_import_index.get(module_path, set())):
+        for item in python_evidence_by_source.get(source_file, []):
             add_match(
                 matches_by_path=matches_by_path,
-                test_path=test_file,
-                match_type="import_exact",
+                test_path=item.test_path,
+                match_type=item.match_type,
                 test_lines_by_path=test_lines_by_path,
                 test_path_anchor=effective_repository_root,
+                provenance=item.provenance,
             )
-
-        for test_file in sorted(direct_test_owners.get(source_file, set())):
+        for item in pytest_evidence_by_source.get(source_file, []):
             add_match(
                 matches_by_path=matches_by_path,
-                test_path=test_file,
-                match_type="support_loader",
+                test_path=item.test_path,
+                match_type=item.match_type,
                 test_lines_by_path=test_lines_by_path,
                 test_path_anchor=effective_repository_root,
+                provenance=item.provenance,
+            )
+        for item in declared_evidence_by_source.get(source_file, []):
+            add_match(
+                matches_by_path=matches_by_path,
+                test_path=item.test_path,
+                match_type="declared_owner",
+                test_lines_by_path=test_lines_by_path,
+                test_path_anchor=effective_repository_root,
+                provenance=item.provenance,
             )
 
         for test_file in transitive_owner_matches(
@@ -241,6 +319,9 @@ def refactor_focus_audit(
                 match_type="transitive_owner",
                 test_lines_by_path=test_lines_by_path,
                 test_path_anchor=effective_repository_root,
+                provenance=(
+                    f"transitive_owner:source={module_path}:max_depth={transitive_max_depth}"
+                ),
             )
 
         for test_file in feature_fallback_matches(
@@ -255,6 +336,7 @@ def refactor_focus_audit(
                 match_type="feature_fallback",
                 test_lines_by_path=test_lines_by_path,
                 test_path_anchor=effective_repository_root,
+                provenance=f"path_feature_overlap:min_tokens=2:source={module_path}",
             )
 
         matches = [matches_by_path[key] for key in sorted(matches_by_path)]
@@ -397,6 +479,13 @@ def refactor_focus_audit(
         "evidence_files_selected": evidence_files_selected,
         "evidence_lines_selected": evidence_lines_selected,
         "transitive_max_depth": transitive_max_depth,
+        "helper_max_depth": helper_max_depth,
+        "pytest_max_depth": pytest_max_depth,
+        "ownership_hints_loaded": len(declared_test_evidence),
+        "auxiliary_files_read": ownership_hints_files_read,
+        "auxiliary_bytes_read": ownership_hints_bytes_read,
+        "total_files_read": analysis_cache.files_read + ownership_hints_files_read,
+        "total_bytes_read": analysis_cache.bytes_read + ownership_hints_bytes_read,
     }
     payload = {
         "generated_at": iso_utc_now(),
@@ -415,6 +504,8 @@ def refactor_focus_audit(
             "file_lines": file_line_threshold,
             "function_lines": function_line_threshold,
             "transitive_max_depth": transitive_max_depth,
+            "helper_max_depth": helper_max_depth,
+            "pytest_max_depth": pytest_max_depth,
         },
         "source_files_scanned": len(source_files),
         "test_files_scanned": len(test_files),

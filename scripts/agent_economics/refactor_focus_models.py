@@ -11,6 +11,7 @@ class MatchRecord(TypedDict):
     test_lines: int
     match_type: str
     evidence_authority: EvidenceAuthority
+    provenance: str
 
 
 class FocusRow(TypedDict):
@@ -38,10 +39,18 @@ class FocusRow(TypedDict):
 
 
 MATCH_AUTHORITY: dict[str, EvidenceAuthority] = {
-    # Direct structural evidence may establish a source/test relationship.
+    # Explicit repository declarations and concrete load/use paths may establish
+    # a source/test relationship.
+    "declared_owner": "confirmed",
     "import_exact": "confirmed",
+    "dynamic_import_literal": "confirmed",
     "support_loader": "confirmed",
-    # Conventions and inferred dependency paths are useful, but require inspection.
+    "conftest_fixture": "confirmed",
+    "pytest_fixture": "confirmed",
+    "pytest_plugin_fixture": "confirmed",
+    "pytest_plugin": "confirmed",
+    # Conventions and inferred source-dependency paths are useful, but require
+    # inspection before they become ownership authority.
     "transitive_owner": "supporting",
     "mirrored_path": "supporting",
     "direct_name": "supporting",
@@ -51,12 +60,18 @@ MATCH_AUTHORITY: dict[str, EvidenceAuthority] = {
 
 # Prefer stronger evidence when more than one matcher finds the same test path.
 MATCH_PRIORITY = {
-    "import_exact": 0,
-    "support_loader": 1,
-    "transitive_owner": 2,
-    "mirrored_path": 3,
-    "direct_name": 4,
-    "feature_fallback": 5,
+    "declared_owner": 0,
+    "import_exact": 1,
+    "dynamic_import_literal": 2,
+    "conftest_fixture": 3,
+    "pytest_fixture": 4,
+    "pytest_plugin_fixture": 5,
+    "pytest_plugin": 6,
+    "support_loader": 7,
+    "transitive_owner": 8,
+    "mirrored_path": 9,
+    "direct_name": 10,
+    "feature_fallback": 11,
 }
 
 MIN_FEATURE_TOKEN_OVERLAP = 2

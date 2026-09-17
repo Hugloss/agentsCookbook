@@ -38,7 +38,7 @@ python -m agent_economics.refactor_focus_cli \
   --tests-package-name checks
 ```
 
-`--repository-root`, package names, output path, file/function thresholds, top-N selection, and transitive depth are configurable. The source package name can be derived from the source-root basename when that is correct for the target repository.
+`--repository-root`, package names, output path, file/function thresholds, top-N selection, source-transitive depth, test-helper depth, and pytest ownership depth are configurable. `--ownership-hints-path` optionally supplies explicit repository-relative source/test relationships. The source package name can be derived from the source-root basename when that is correct for the target repository.
 
 ## Evidence authority
 
@@ -46,7 +46,7 @@ python -m agent_economics.refactor_focus_cli \
 
 | Authority | Current evidence | May establish corresponding-test authority? |
 | --- | --- | --- |
-| `confirmed` | exact static import; explicit helper/loader source relationship | yes |
+| `confirmed` | exact static import; literal dynamic import; bounded helper chain; active pytest fixture; loaded pytest plugin module-scope dependency; explicit repository ownership declaration | yes |
 | `supporting` | mirrored path; same-name convention; bounded transitive owner | no |
 | `candidate` | path-feature overlap | no |
 
@@ -73,14 +73,34 @@ The corpus materializes a temporary repository and exercises:
 - heuristic feature matching;
 - same-name false-authority pressure;
 - unrelated negative cases;
-- an intentionally unsupported `importlib.import_module()` relationship;
+- a literal `importlib.import_module()` relationship;
 - non-default source and test package names.
 
 Qualification records `TRUE_RELEVANT`, `FALSE_RELEVANT`, `MISSED_RELEVANT`, `UNKNOWN`, and true-negative counts plus precision, recall, bounded-candidate reduction, evidence reduction, runtime, and exact probe economics.
 
 The gate fails if a non-authoritative signal becomes confirmed authority, if a relationship that the probe claims to support is missed, or if a discovered Python file is read or AST-parsed more than once in a probe run. P2 independently instruments `Path.read_bytes` and `ast.parse`; it does not trust the probe's own counters as proof.
 
-Each probe artifact now includes an `economics` object with exact `files_read`, `bytes_read`, `ast_parses`, `read_failures`, `parse_failures`, `cache_hits`, `unique_files_cached`, `elapsed_ms`, `candidate_reduction`, `evidence_files_selected`, `evidence_lines_selected`, and the active `transitive_max_depth`.
+Each probe artifact now includes an `economics` object with exact Python-analysis `files_read`, `bytes_read`, `ast_parses`, `read_failures`, `parse_failures`, `cache_hits`, `unique_files_cached`, `elapsed_ms`, `candidate_reduction`, `evidence_files_selected`, `evidence_lines_selected`, and active depth bounds. Auxiliary ownership-hint reads are reported separately and folded into `total_files_read` / `total_bytes_read`.
+
+## P3 Python/pytest ownership
+
+P3 adds bounded structural ownership recovery without promoting conventions into facts:
+
+- exact static imports and literal `importlib.import_module(...)` / `__import__(...)`;
+- test-helper to helper traversal bounded by `--helper-max-depth`;
+- ancestor `conftest.py` fixtures, autouse fixtures, fixture dependencies, `usefixtures`, and literal `request.getfixturevalue(...)`;
+- repository-local `pytest_plugins` traversal bounded by `--pytest-max-depth`;
+- plugin fixtures are authoritative only when active; imports inside unused plugin fixtures do not become plugin-wide ownership;
+- optional versioned JSON ownership hints using repository-relative paths; stale, absolute, or escaping declarations fail closed;
+- provenance is attached to every match so another agent can inspect why evidence was admitted.
+
+Run the P3 qualification with:
+
+```bash
+python -m scripts.agent_economics.refactor_focus_p3_qualification
+```
+
+Runtime-built dynamic module names remain unknown rather than guessed. Supporting filename/path conventions and candidate token overlap remain non-authoritative.
 
 ## Roadmap
 
