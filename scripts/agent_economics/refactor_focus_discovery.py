@@ -14,6 +14,8 @@ IgnoredPolicy = Literal["exclude", "include"]
 SymlinkPolicy = Literal["exclude", "reject", "within-repo"]
 
 DEFAULT_EXCLUDE_PATTERNS: tuple[str, ...] = (
+    "**/.git/**",
+    "**/.agent-artifacts/**",
     "**/.venv/**",
     "**/venv/**",
     "**/__pycache__/**",
@@ -93,6 +95,11 @@ class DiscoveryResult:
         return {
             "backend": self.backend,
             "git_available": self.git_available,
+            "tracked_candidates": self.tracked_python_candidates,
+            "untracked_candidates": self.untracked_python_candidates,
+            "ignored_candidates": self.ignored_python_candidates,
+            # Backward-compatible P5 field names. In generic discovery these
+            # counters refer to the configured suffix set, not only Python.
             "tracked_python_candidates": self.tracked_python_candidates,
             "untracked_python_candidates": self.untracked_python_candidates,
             "ignored_python_candidates": self.ignored_python_candidates,
@@ -221,9 +228,10 @@ def _admit_path(
     repository_root: Path,
     relative: Path,
     config: DiscoveryConfig,
+    suffixes: frozenset[str],
 ) -> tuple[Path | None, str | None]:
     relative_posix = relative.as_posix()
-    if relative.suffix != ".py":
+    if relative.suffix.lower() not in suffixes:
         return None, None
     if is_excluded_repo_path(relative_posix, config.exclude_patterns):
         return None, "excluded"
@@ -255,6 +263,7 @@ def _partition_candidates(
     paths: list[str],
     config: DiscoveryConfig,
     outputs: dict[str, set[Path]],
+    suffixes: frozenset[str],
 ) -> tuple[int, int, int, int]:
     python_candidates = 0
     excluded = 0
@@ -262,7 +271,7 @@ def _partition_candidates(
     missing = 0
     for raw in paths:
         relative = _safe_repo_relative(raw)
-        if relative.suffix != ".py":
+        if relative.suffix.lower() not in suffixes:
             continue
         labels = [
             label
@@ -276,6 +285,7 @@ def _partition_candidates(
             repository_root=repository_root,
             relative=relative,
             config=config,
+            suffixes=suffixes,
         )
         if admitted is not None:
             for label in labels:
@@ -295,6 +305,7 @@ def _git_discover(
     repository_root: Path,
     config: DiscoveryConfig,
     probe_commands: int,
+    suffixes: frozenset[str],
 ) -> DiscoveryResult:
     outputs = {label: set() for label in roots_relative}
     tracked = _decode_nul_paths(
@@ -332,6 +343,7 @@ def _git_discover(
         paths=tracked,
         config=config,
         outputs=outputs,
+        suffixes=suffixes,
     )
     untracked_count, untracked_excluded, untracked_symlinks, untracked_missing = _partition_candidates(
         repository_root=repository_root,
@@ -339,6 +351,7 @@ def _git_discover(
         paths=untracked,
         config=config,
         outputs=outputs,
+        suffixes=suffixes,
     )
     ignored_count, ignored_excluded, ignored_symlinks, ignored_missing = _partition_candidates(
         repository_root=repository_root,
@@ -346,6 +359,7 @@ def _git_discover(
         paths=ignored,
         config=config,
         outputs=outputs,
+        suffixes=suffixes,
     )
 
     return DiscoveryResult(
@@ -371,6 +385,7 @@ def _filesystem_discover(
     git_available: bool,
     probe_commands: int,
     fallback_warning: bool,
+    suffixes: frozenset[str],
 ) -> DiscoveryResult:
     outputs: dict[str, set[Path]] = {label: set() for label in roots}
     excluded = 0
@@ -400,7 +415,7 @@ def _filesystem_discover(
             dirs[:] = kept_dirs
 
             for name in names:
-                if not name.endswith(".py"):
+                if Path(name).suffix.lower() not in suffixes:
                     continue
                 path = current_path / name
                 relative = path.absolute().relative_to(repository_root)
@@ -408,6 +423,7 @@ def _filesystem_discover(
                     repository_root=repository_root,
                     relative=relative,
                     config=config,
+                    suffixes=suffixes,
                 )
                 if admitted is not None:
                     outputs[label].add(admitted)
@@ -436,14 +452,34 @@ def _filesystem_discover(
     )
 
 
-def discover_python_roots(
+def normalize_suffixes(suffixes: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    normalized: set[str] = set()
+    for raw in suffixes:
+        suffix = str(raw).strip().lower()
+        if not suffix:
+            raise DiscoveryError("file suffix must not be empty")
+        if "/" in suffix or "\\" in suffix:
+            raise DiscoveryError(f"file suffix must not contain path separators: {raw!r}")
+        if not suffix.startswith("."):
+            suffix = f".{suffix}"
+        if suffix == ".":
+            raise DiscoveryError(f"invalid file suffix: {raw!r}")
+        normalized.add(suffix)
+    if not normalized:
+        raise DiscoveryError("at least one file suffix is required")
+    return tuple(sorted(normalized))
+
+
+def discover_repository_roots(
     *,
     roots: dict[str, Path],
     repository_root: Path,
     config: DiscoveryConfig,
+    suffixes: tuple[str, ...] | list[str],
 ) -> DiscoveryResult:
     if not roots:
         raise DiscoveryError("at least one discovery root is required")
+    normalized_suffixes = frozenset(normalize_suffixes(suffixes))
     repository_root = repository_root.resolve()
     roots_resolved = {label: path.resolve() for label, path in roots.items()}
     roots_relative = {
@@ -471,6 +507,7 @@ def discover_python_roots(
             repository_root=repository_root,
             config=config,
             probe_commands=probe_commands,
+            suffixes=normalized_suffixes,
         )
 
     if config.mode == "auto" and git_available:
@@ -479,6 +516,7 @@ def discover_python_roots(
             repository_root=repository_root,
             config=config,
             probe_commands=probe_commands,
+            suffixes=normalized_suffixes,
         )
 
     return _filesystem_discover(
@@ -488,6 +526,21 @@ def discover_python_roots(
         git_available=git_available,
         probe_commands=probe_commands,
         fallback_warning=(config.mode == "auto" and not git_available),
+        suffixes=normalized_suffixes,
+    )
+
+
+def discover_python_roots(
+    *,
+    roots: dict[str, Path],
+    repository_root: Path,
+    config: DiscoveryConfig,
+) -> DiscoveryResult:
+    return discover_repository_roots(
+        roots=roots,
+        repository_root=repository_root,
+        config=config,
+        suffixes=(".py",),
     )
 
 

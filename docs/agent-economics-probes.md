@@ -144,3 +144,10 @@ See [Agent Economics Probe phases](agent-economics-probe-phases.md) for the hard
 ## Repository discovery semantics (P5)
 
 Repository discovery is part of probe evidence, not an invisible filesystem assumption. `refactor-focus` accepts `auto`, `git`, or `filesystem` discovery; tracked/untracked and ignored-file policy; explicit Python-file symlink policy; repeatable repository-relative exclusion globs; optional default exclusions; and a bounded Git command timeout. `auto` prefers Git repository truth and reports when it must fall back to filesystem discovery. The effective discovery policy is included in configuration identity and discovery observations are included in the evidence envelope.
+
+
+## Context focus (P6)
+
+`context-focus` answers a narrower question than a repo map: **what should the agent inspect next for this task within this explicit budget?** It discovers configurable source/text suffixes through the P5 repository policy, then performs a bounded lexical fallback scan and emits transparent ranking evidence plus explicit uncertainty. The selection budget has independent file, line, byte, and estimated-token ceilings; the repository scan has separate file/byte/per-file ceilings so a large repository cannot silently consume the entire agent budget.
+
+Optional `--repository-intelligence-path` accepts a versioned provider-neutral JSON shortlist. That is the integration seam for Hashmarks or another repository-intelligence producer. External scores are supporting ranking evidence only: they cannot bypass discovery policy, stale paths are ignored with warnings, and the auxiliary JSON itself is excluded from context candidates. The output uses the common Agent Economics Probe contract from P4.

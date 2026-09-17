@@ -85,7 +85,13 @@ P5 qualification covers Git tracked/untracked/ignored semantics, one-listing eco
 
 ## Phase 6 — `context-focus`
 
-Given a task/query and an evidence budget, return the smallest ranked set of files/symbols the agent should inspect first. Bound by files, lines, bytes, or tokens. Use Hashmarks repository intelligence when available, with a lightweight standalone fallback.
+Status: **complete** on the Agent Economics Probes branch.
+
+Given a task/query, P6 returns a bounded ranked evidence set without editing repository files. The stdlib-only fallback is language-neutral across configurable code/text suffixes and reuses P5 Git/filesystem discovery. Ranking components remain visible: path-token overlap, basename overlap, content-token evidence, bounded occurrence evidence, and optional provider-neutral repository-intelligence support. Selection is independently bounded by files, lines, bytes, and an explicitly labeled token estimate; repository scanning is separately bounded by files, bytes, per-file bytes, and evidence anchors.
+
+Provider-neutral intelligence JSON can carry stronger repository facts from systems such as Hashmarks without creating a runtime dependency or granting execution authority. Stale intelligence paths are warnings; auxiliary intelligence and output artifacts cannot become context candidates themselves. Scan truncation, filesystem fallback, no-match results, read/stat failures, and oversized files remain explicit uncertainty/warnings rather than silently widening the scan. P6 also generalizes P5 discovery to configurable suffix sets while preserving the Python-specific wrapper used by refactor-focus.
+
+P6 qualification requires multi-language ranking, strict context and scan budgets, external-intelligence vocabulary-mismatch rescue, stale-hint handling, checkout-independent repository path-set identity, task/config invalidation, auxiliary-input self-exclusion, bounded intelligence input, common P4 contract validity, and continued P1–P5 qualification.
 
 ## Phase 7 — `test-focus`
 
