@@ -95,7 +95,13 @@ P6 qualification requires multi-language ranking, strict context and scan budget
 
 ## Phase 7 — `test-focus`
 
-Given proposed/changed files or symbols, produce a staged verification ladder: direct owning tests, affected dependents, package/component gates, then broader validation when evidence requires it. The probe suggests order and evidence; it does not declare broader verification unnecessary.
+Status: **complete** on the Agent Economics Probes branch.
+
+Given changed repository paths, P7 builds a bounded staged verification ladder without executing tests. Stage 1 contains changed tests plus tests with confirmed direct ownership of changed Python source. Stage 2 contains confirmed tests of bounded reverse source dependents. Stage 3 contains explicit repository/component gates supplied by the caller. Mirrored paths and same-name conventions remain supporting evidence only and can never become direct-test authority. Non-Python, deleted, undiscovered, or otherwise unmapped changes publish uncertainty and required next evidence instead of fabricated test ownership.
+
+Focused verification suggestions never assert that broader verification is unnecessary. If no broader gates are supplied, the contract records that missing escalation boundary explicitly. Test selection and reverse-impact traversal have independent bounds; omitted tests/sources are preserved as deferred evidence. P7 reuses the P1–P5 ownership, pytest, hints, discovery, parse-once, and common-contract infrastructure rather than maintaining a second authority model.
+
+P7 qualification requires direct-vs-affected separation, naming-only false-authority prevention, changed-test handling, non-Python and deleted-path uncertainty, bounded omission accounting, broader-gate escalation, repository identity stability/invalidation, fail-closed escaping paths, common P4 contract validity, and continued P1–P6 qualification.
 
 ## Phase 8 — `change-impact` and `coupling-focus`
 

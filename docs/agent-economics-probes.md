@@ -151,3 +151,10 @@ Repository discovery is part of probe evidence, not an invisible filesystem assu
 `context-focus` answers a narrower question than a repo map: **what should the agent inspect next for this task within this explicit budget?** It discovers configurable source/text suffixes through the P5 repository policy, then performs a bounded lexical fallback scan and emits transparent ranking evidence plus explicit uncertainty. The selection budget has independent file, line, byte, and estimated-token ceilings; the repository scan has separate file/byte/per-file ceilings so a large repository cannot silently consume the entire agent budget.
 
 Optional `--repository-intelligence-path` accepts a versioned provider-neutral JSON shortlist. That is the integration seam for Hashmarks or another repository-intelligence producer. External scores are supporting ranking evidence only: they cannot bypass discovery policy, stale paths are ignored with warnings, and the auxiliary JSON itself is excluded from context candidates. The output uses the common Agent Economics Probe contract from P4.
+
+
+## Test focus (P7)
+
+`test-focus` answers **what is the cheapest defensible verification ladder for these changed paths?** It reuses confirmed source/test ownership from the refactor-focus analyzers and separates direct owning tests from tests belonging to bounded reverse dependents. Naming/path conventions remain supporting investigation evidence only. Changed test files are directly suggested; non-Python or unresolved changes require repository gates or stronger provider evidence rather than guessed focused tests.
+
+Use repeatable `--changed-path`, optional `--changed-paths-file`, explicit traversal/test-selection bounds, and repeatable `--gate NAME=COMMAND`. Gates are suggestions for the external agent or repository authority to execute; this probe never executes them and never treats a focused green set as proof that broader validation is unnecessary.

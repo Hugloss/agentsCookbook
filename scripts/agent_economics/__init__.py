@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["context_focus_audit", "refactor_focus_audit"]
+__all__ = ["context_focus_audit", "refactor_focus_audit", "test_focus_audit"]
 
 
 def __getattr__(name: str) -> Any:
@@ -20,4 +20,8 @@ def __getattr__(name: str) -> Any:
         from .refactor_focus_workflow import refactor_focus_audit
 
         return refactor_focus_audit
+    if name == "test_focus_audit":
+        from .test_focus import test_focus_audit
+
+        return test_focus_audit
     raise AttributeError(name)
