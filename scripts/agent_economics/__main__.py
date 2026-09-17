@@ -15,6 +15,16 @@ def main(argv: list[str] | None = None) -> None:
 
         test_focus_main(args[1:])
         return
+    if args and args[0] == "change-impact":
+        from .change_impact_cli import main as change_impact_main
+
+        change_impact_main(args[1:])
+        return
+    if args and args[0] == "coupling-focus":
+        from .coupling_focus_cli import main as coupling_focus_main
+
+        coupling_focus_main(args[1:])
+        return
 
     # Preserve the pre-P6 package behavior: arguments without a subcommand are
     # routed to refactor-focus. Imports stay lazy so standalone probes can be

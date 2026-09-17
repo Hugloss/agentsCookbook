@@ -105,7 +105,13 @@ P7 qualification requires direct-vs-affected separation, naming-only false-autho
 
 ## Phase 8 — `change-impact` and `coupling-focus`
 
-Add static impact and historical co-change probes. Keep structural dependency evidence separate from Git-history correlation. Report unexpected coupling and uncertainty rather than treating co-change as dependency authority.
+Status: **complete** on the Agent Economics Probes branch.
+
+P8 adds two deliberately separate probes. `change-impact` computes bounded reverse reachability over the current Python import graph for changed paths under a parameterized source root. Direct and transitive source dependents retain their explicit depth and module chain. Deleted/renamed Python paths may seed impact lexically while publishing that the current source bytes are unavailable; unsupported-only changes short-circuit without scanning/parsing the Python tree. Source-depth and source-count bounds preserve omitted dependents as deferred evidence.
+
+`coupling-focus` mines bounded Git history for repeated co-change correlation. It exposes raw shared/target/candidate commit counts separately from derived target coverage, candidate coverage, and Jaccard. First-parent history is the default and is parameterized; mega-commits are suppressed by an explicit file-count ceiling; total history output has a hard byte bound; candidate suffixes, exclusions, history length, shared-commit threshold, top-N, commit samples, and Git timeout are all parameters. Co-change always carries `dependency_authority=false` and requires structural/domain inspection before use.
+
+P8 qualification requires reverse-impact depth/budget correctness, deleted-module recovery, zero Python scans for unsupported-only changes, repository identity stability/invalidation, history correlation counts, mega-commit suppression, bounded-history uncertainty, hard history-byte failure, suffix/exclusion policy, fail-closed paths/Git absence, common P4 contract validity, and continued P1–P7 qualification.
 
 ## Phase 9 — `hotspot-focus`
 

@@ -158,3 +158,13 @@ Optional `--repository-intelligence-path` accepts a versioned provider-neutral J
 `test-focus` answers **what is the cheapest defensible verification ladder for these changed paths?** It reuses confirmed source/test ownership from the refactor-focus analyzers and separates direct owning tests from tests belonging to bounded reverse dependents. Naming/path conventions remain supporting investigation evidence only. Changed test files are directly suggested; non-Python or unresolved changes require repository gates or stronger provider evidence rather than guessed focused tests.
 
 Use repeatable `--changed-path`, optional `--changed-paths-file`, explicit traversal/test-selection bounds, and repeatable `--gate NAME=COMMAND`. Gates are suggestions for the external agent or repository authority to execute; this probe never executes them and never treats a focused green set as proof that broader validation is unnecessary.
+
+
+## Change impact (P8)
+
+`change-impact` answers **what source files are structurally reachable upstream of these changed Python modules?** The fallback authority is intentionally narrow: current Python import relationships under the configured source/package root. It reports direct and transitive depth, the module chain that produced the relationship, bounded omissions, and uncertainty for non-Python or absent changed source. Static reachability is evidence for investigation scope, not proof of runtime behavior or permission to edit dependent files.
+
+
+## Coupling focus (P8)
+
+`coupling-focus` answers **what files repeatedly changed with these target paths in bounded Git history?** It is historical correlation only. The artifact keeps shared commit count, target/candidate commit counts, coverage ratios, and Jaccard separate and always marks dependency authority false. First-parent history is the default; merge behavior, history length/output bytes, mega-commit ceiling, suffix filtering, exclusions, support threshold, sample count, top-N, and Git timeout are explicit parameters.

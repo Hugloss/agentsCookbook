@@ -36,3 +36,13 @@ Run `python -m scripts.agent_economics context-focus --task "..." --repository-r
 ### P7 test-focus
 
 Run `python -m scripts.agent_economics test-focus --source-root src/pkg --changed-path src/pkg/foo.py --gate 'package=pytest -q'`. Changed paths, source/test roots, package names, ownership hints, discovery policy, reverse-impact depth/source limits, per-stage test limits, changed-input identity byte bounds, and broader gates are all parameters. `test-focus` only suggests verification order; it does not execute tests or waive broader repository validation.
+
+
+### P8 change-impact
+
+Run `python -m scripts.agent_economics change-impact --source-root src/pkg --changed-path src/pkg/foo.py`. Source/package roots, changed paths, reverse-depth/source bounds, P5 discovery policy, exclusions, symlink policy, and Git timeout are parameters. Unsupported-only changes deliberately avoid a repository-wide Python scan.
+
+
+### P8 coupling-focus
+
+Run `python -m scripts.agent_economics coupling-focus --target-path src/pkg/foo.py`. Git history length and output bytes are hard-bounded; mega-commit size, shared-commit threshold, candidate suffixes, exclusions, sample count, top-N, first-parent/all-parent mode, and timeout are parameters. Historical co-change is never dependency authority.
