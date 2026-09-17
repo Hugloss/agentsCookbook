@@ -2,6 +2,7 @@ import ast
 from collections import defaultdict
 from pathlib import Path
 
+from .refactor_focus_analysis import AnalysisCache
 from .refactor_focus_paths import module_path_for_file, source_module_path
 
 
@@ -17,11 +18,11 @@ def parse_internal_imported_modules(
     root: Path,
     current_package_name: str,
     package_names: set[str],
+    analysis_cache: AnalysisCache,
 ) -> set[str]:
-    try:
-        source = path.read_text(encoding="utf-8", errors="replace")
-        tree = ast.parse(source)
-    except (SyntaxError, ValueError, OSError):
+    analysis = analysis_cache.get(path)
+    tree = analysis.tree
+    if tree is None:
         return set()
 
     try:
@@ -89,6 +90,7 @@ def build_import_index(
     root: Path,
     current_package_name: str,
     package_names: set[str],
+    analysis_cache: AnalysisCache,
 ) -> dict[str, set[Path]]:
     index: dict[str, set[Path]] = defaultdict(set)
     for file_path in files:
@@ -97,6 +99,7 @@ def build_import_index(
             root=root,
             current_package_name=current_package_name,
             package_names=package_names,
+            analysis_cache=analysis_cache,
         ):
             index[module].add(file_path)
     return dict(index)
@@ -108,12 +111,14 @@ def internal_imports_for_file(
     root: Path,
     current_package_name: str,
     package_names: set[str],
+    analysis_cache: AnalysisCache,
 ) -> set[str]:
     return parse_internal_imported_modules(
         path=path,
         root=root,
         current_package_name=current_package_name,
         package_names=package_names,
+        analysis_cache=analysis_cache,
     )
 
 
@@ -122,11 +127,11 @@ def parse_dynamic_loaded_source_modules(
     path: Path,
     source_root: Path,
     package_name: str,
+    analysis_cache: AnalysisCache,
 ) -> set[str]:
-    try:
-        source = path.read_text(encoding="utf-8", errors="replace")
-        tree = ast.parse(source)
-    except (SyntaxError, ValueError, OSError):
+    analysis = analysis_cache.get(path)
+    tree = analysis.tree
+    if tree is None:
         return set()
 
     env: dict[str, Path] = {}

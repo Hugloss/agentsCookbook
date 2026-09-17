@@ -1,6 +1,7 @@
 import ast
 from pathlib import Path
 
+from .refactor_focus_analysis import AnalysisCache
 from .refactor_focus_models import MatchRecord
 
 
@@ -8,11 +9,10 @@ def function_size_summary(
     path: Path,
     *,
     max_function_lines: int,
+    analysis_cache: AnalysisCache,
 ) -> tuple[int, int]:
-    try:
-        source = path.read_text(encoding="utf-8", errors="replace")
-        tree = ast.parse(source)
-    except (SyntaxError, ValueError, OSError):
+    tree = analysis_cache.get(path).tree
+    if tree is None:
         return 0, 0
 
     over_limit_count = 0

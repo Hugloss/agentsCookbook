@@ -54,12 +54,12 @@ When the same test is found by more than one mechanism, stronger evidence wins. 
 
 Only confirmed evidence can set `has_corresponding_tests`, `test_sync_required_if_split`, confirmed test-size metrics, or actions such as updating/splitting an existing corresponding test. Supporting and candidate evidence instead tell the agent what it should inspect next.
 
-## P1 qualification
+## P2 qualification
 
 Run the built-in stdlib-only adversarial corpus with:
 
 ```bash
-python -m scripts.agent_economics.refactor_focus_qualification
+python -m scripts.agent_economics.refactor_focus_p2_qualification
 ```
 
 The corpus materializes a temporary repository and exercises:
@@ -76,11 +76,11 @@ The corpus materializes a temporary repository and exercises:
 - an intentionally unsupported `importlib.import_module()` relationship;
 - non-default source and test package names.
 
-Qualification records `TRUE_RELEVANT`, `FALSE_RELEVANT`, `MISSED_RELEVANT`, `UNKNOWN`, and true-negative counts plus precision, recall, bounded-candidate reduction, evidence reduction, runtime, and lower-bound scan economics.
+Qualification records `TRUE_RELEVANT`, `FALSE_RELEVANT`, `MISSED_RELEVANT`, `UNKNOWN`, and true-negative counts plus precision, recall, bounded-candidate reduction, evidence reduction, runtime, and exact probe economics.
 
-The gate fails if a non-authoritative signal becomes confirmed authority or if a relationship that the probe claims to support is missed.
+The gate fails if a non-authoritative signal becomes confirmed authority, if a relationship that the probe claims to support is missed, or if a discovered Python file is read or AST-parsed more than once in a probe run. P2 independently instruments `Path.read_bytes` and `ast.parse`; it does not trust the probe's own counters as proof.
 
-Exact read and AST-parse invocation accounting is intentionally deferred to Phase 2, which will make the analysis parse-once and publish exact economics instead of lower bounds.
+Each probe artifact now includes an `economics` object with exact `files_read`, `bytes_read`, `ast_parses`, `read_failures`, `parse_failures`, `cache_hits`, `unique_files_cached`, `elapsed_ms`, `candidate_reduction`, `evidence_files_selected`, `evidence_lines_selected`, and the active `transitive_max_depth`.
 
 ## Roadmap
 

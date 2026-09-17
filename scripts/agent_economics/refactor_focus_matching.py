@@ -1,6 +1,7 @@
 from collections import defaultdict, deque
 from pathlib import Path
 
+from .refactor_focus_analysis import AnalysisCache
 from .refactor_focus_imports import (
     internal_imports_for_file,
     parse_dynamic_loaded_source_modules,
@@ -27,6 +28,7 @@ def build_direct_test_owners(
     tests_root: Path,
     package_name: str,
     tests_package_name: str,
+    analysis_cache: AnalysisCache,
 ) -> dict[Path, set[Path]]:
     owners: dict[Path, set[Path]] = defaultdict(set)
     test_modules_to_path = {
@@ -41,11 +43,13 @@ def build_direct_test_owners(
             root=tests_root,
             current_package_name=tests_package_name,
             package_names={package_name},
+            analysis_cache=analysis_cache,
         )
         dynamic_imports = parse_dynamic_loaded_source_modules(
             path=path,
             source_root=source_root,
             package_name=package_name,
+            analysis_cache=analysis_cache,
         )
         helper_source_modules[path] = direct_imports | dynamic_imports
 
@@ -55,6 +59,7 @@ def build_direct_test_owners(
             root=tests_root,
             current_package_name=tests_package_name,
             package_names={package_name},
+            analysis_cache=analysis_cache,
         ):
             owner_path = module_to_path.get(module)
             if owner_path is not None:
@@ -65,6 +70,7 @@ def build_direct_test_owners(
             root=tests_root,
             current_package_name=tests_package_name,
             package_names={tests_package_name},
+            analysis_cache=analysis_cache,
         )
         for helper_module in helper_modules:
             helper_path = test_modules_to_path.get(helper_module)

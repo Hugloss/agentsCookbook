@@ -11,9 +11,11 @@ python -m scripts.agent_economics.refactor_focus_cli --source-root src/pkg --tes
 Run its adversarial qualification corpus:
 
 ```bash
-python -m scripts.agent_economics.refactor_focus_qualification
+python -m scripts.agent_economics.refactor_focus_p2_qualification
 ```
 
 The directory can also be copied by itself into another environment. From the copied package's parent directory, use `python -m agent_economics.refactor_focus_cli ...`.
 
 See `docs/agent-economics-probes.md` in the repository for the evidence-authority contract and portability rules.
+
+The JSON artifact includes exact per-run economics (files/bytes read, AST parses, cache reuse, elapsed time, candidate reduction, and selected evidence lines). The built-in qualification independently verifies parse-once behavior.

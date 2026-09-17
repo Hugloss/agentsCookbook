@@ -1,6 +1,8 @@
 import json
+import time
 from pathlib import Path
 
+from .refactor_focus_analysis import AnalysisCache
 from .refactor_focus_imports import (
     build_import_index,
     internal_imports_for_file,
@@ -16,9 +18,7 @@ from .refactor_focus_matching import (
 from .refactor_focus_models import Emit, ExitCode, FocusRow, MatchRecord
 from .refactor_focus_paths import (
     collect_python_files,
-    collect_test_files,
     common_path_anchor,
-    count_lines,
     iso_utc_now,
     module_path_for_file,
     report_path,
@@ -50,6 +50,7 @@ def refactor_focus_audit(
     top_n: int = 3,
     transitive_max_depth: int = 2,
 ) -> None:
+    started = time.perf_counter()
     source_root = source_root.resolve()
     tests_root = tests_root.resolve()
     effective_repository_root = (
@@ -104,9 +105,16 @@ def refactor_focus_audit(
         return
 
     source_files = collect_python_files(source_root)
-    test_files = collect_test_files(tests_root)
     all_test_python_files = collect_python_files(tests_root)
+    test_files = [
+        path
+        for path in all_test_python_files
+        if path.name.startswith("test_") or path.name.endswith("_test.py")
+    ]
     test_files_set = set(test_files)
+    analysis_cache = AnalysisCache()
+    unique_python_files = sorted(set(source_files) | set(all_test_python_files))
+    analysis_cache.prewarm(unique_python_files)
 
     emit(
         "INFO",
@@ -115,7 +123,7 @@ def refactor_focus_audit(
         test_files_scanned=len(test_files),
     )
 
-    test_lines_by_path = {path: count_lines(path) for path in test_files}
+    test_lines_by_path = {path: analysis_cache.get(path).line_count for path in test_files}
     source_module_by_path = {
         path: module_path_for_file(
             path=path,
@@ -142,12 +150,14 @@ def refactor_focus_audit(
         root=tests_root,
         current_package_name=effective_tests_package_name,
         package_names={effective_package_name},
+        analysis_cache=analysis_cache,
     )
     source_import_index = build_import_index(
         files=source_files,
         root=source_root,
         current_package_name=effective_package_name,
         package_names={effective_package_name},
+        analysis_cache=analysis_cache,
     )
     direct_test_owners = build_direct_test_owners(
         test_files=test_files,
@@ -157,13 +167,14 @@ def refactor_focus_audit(
         tests_root=tests_root,
         package_name=effective_package_name,
         tests_package_name=effective_tests_package_name,
+        analysis_cache=analysis_cache,
     )
 
     rows: list[FocusRow] = []
     oversized_source_count = 0
 
     for source_file in source_files:
-        source_lines = count_lines(source_file)
+        source_lines = analysis_cache.get(source_file).line_count
         if source_lines <= file_line_threshold:
             continue
 
@@ -263,6 +274,7 @@ def refactor_focus_audit(
         function_over_limit_count, largest_function_lines = function_size_summary(
             source_file,
             max_function_lines=function_line_threshold,
+            analysis_cache=analysis_cache,
         )
 
         dependent_sources = {
@@ -276,6 +288,7 @@ def refactor_focus_audit(
                 root=source_root,
                 current_package_name=effective_package_name,
                 package_names={effective_package_name},
+                analysis_cache=analysis_cache,
             ),
         )
 
@@ -363,6 +376,28 @@ def refactor_focus_audit(
     )
 
     selected_rows = rows[:top_n]
+    selected_test_lines: dict[str, int] = {}
+    for row in selected_rows:
+        for match in row["matches"]:
+            selected_test_lines.setdefault(match["test_path"], match["test_lines"])
+    evidence_files_selected = len(selected_rows) + len(selected_test_lines)
+    evidence_lines_selected = sum(row["source_lines"] for row in selected_rows) + sum(
+        selected_test_lines.values()
+    )
+    candidate_reduction = (
+        1.0 - (len(selected_rows) / oversized_source_count)
+        if oversized_source_count
+        else 0.0
+    )
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 3)
+    economics = {
+        **analysis_cache.metrics(),
+        "elapsed_ms": elapsed_ms,
+        "candidate_reduction": candidate_reduction,
+        "evidence_files_selected": evidence_files_selected,
+        "evidence_lines_selected": evidence_lines_selected,
+        "transitive_max_depth": transitive_max_depth,
+    }
     payload = {
         "generated_at": iso_utc_now(),
         "repository_root": effective_repository_root.as_posix(),
@@ -386,6 +421,7 @@ def refactor_focus_audit(
         "test_python_files_scanned": len(all_test_python_files),
         "oversized_source_count": oversized_source_count,
         "selected_count": len(selected_rows),
+        "economics": economics,
         "rows": selected_rows,
     }
 
@@ -408,5 +444,10 @@ def refactor_focus_audit(
         test_files_scanned=len(test_files),
         oversized_source_count=oversized_source_count,
         selected_count=len(selected_rows),
+        files_read=economics["files_read"],
+        bytes_read=economics["bytes_read"],
+        ast_parses=economics["ast_parses"],
+        elapsed_ms=economics["elapsed_ms"],
+        evidence_lines_selected=economics["evidence_lines_selected"],
     )
     exit_code(0)

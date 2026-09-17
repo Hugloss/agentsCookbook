@@ -49,11 +49,15 @@ P1 also establishes three evidence-authority classes:
 - `supporting`: mirrored/name convention or bounded transitive ownership;
 - `candidate`: heuristic path-feature overlap.
 
-Only `confirmed` evidence may set corresponding-test authority or prescribe confirmed-test actions. Exact read/AST invocation accounting remains Phase 2 work.
+Only `confirmed` evidence may set corresponding-test authority or prescribe confirmed-test actions. P1 intentionally deferred exact read/AST invocation accounting to Phase 2.
 
 ## Phase 2 — Probe economics and parse-once analysis
 
-Parse/read each Python file once per probe run and reuse cached syntax/import/line metadata. Record scan cost in the artifact: files read, bytes read, AST parses, elapsed time, candidate reduction, and evidence lines selected. Bound expensive transitive analysis explicitly.
+Status: **complete** on the Agent Economics Probes branch.
+
+Read and AST-parse each discovered Python file at most once per probe run, then reuse one analysis cache for line counts, import extraction, dynamic-loader inspection, and function-size analysis. Publish exact economics in every probe artifact: files read, bytes read, AST parses, read/parse failures, cache hits, unique cached files, elapsed time, candidate reduction, selected evidence files/lines, and the explicit transitive-depth bound.
+
+Qualification independently instruments `Path.read_bytes` and `ast.parse` so repeated reads/parses fail the gate even if the probe's own counters are wrong. The P2 corpus requires one read and one AST parse per discovered Python file, exact byte accounting, zero read/parse failures on the valid corpus, and exact bounded evidence-line accounting.
 
 ## Phase 3 — Python/pytest ownership closure
 

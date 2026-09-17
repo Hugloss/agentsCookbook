@@ -26,4 +26,4 @@ Important closures found by P1:
 5. Custom source and test import package names are exercised by the corpus.
 6. Non-confirmed evidence cannot set corresponding-test ownership, confirmed test sizes, or confirmed-test actions.
 
-Runtime and byte figures are intentionally not frozen in this document because they vary by environment. The qualification JSON emitted by `refactor_focus_qualification` records them per run. P1 reports lower-bound read/parse economics; exact invocation accounting is Phase 2.
+Runtime and byte figures are intentionally not frozen in this document because they vary by environment. The qualification JSON emitted by `refactor_focus_qualification` records them per run. P1 reports lower-bound read/parse economics; exact invocation accounting was subsequently closed in Phase 2.
