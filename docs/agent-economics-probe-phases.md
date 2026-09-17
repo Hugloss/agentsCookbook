@@ -77,7 +77,11 @@ Repository identity is a checkout-location-independent SHA-256 over analyzed rep
 
 ## Phase 5 — Repository discovery semantics
 
-Add configurable discovery policy. Prefer repository truth when available: Git tracked/untracked policy and ignore semantics. Handle symlinks and out-of-repository paths explicitly. Replace path-fragment exclusions with normalized relative-path rules. Keep a pure-filesystem fallback for environments without Git.
+Status: **complete** on the Agent Economics Probes branch.
+
+P5 replaces recursive path-fragment scanning with a parameterized repository discovery authority. `auto` prefers the Git worktree when available; explicit `git` and `filesystem` modes are also supported. Git discovery has separate tracked/untracked and ignored-file policy, lists the repository once for all requested roots, and records the backend and bounded command count in the artifact. Exclusions are normalized repository-relative segment globs, so patterns cannot silently cross directory boundaries and `docs/_build/**` now behaves as written. Python file symlinks have explicit `exclude`, `reject`, or `within-repo` policy; escaping symlinks and discovery roots outside the repository fail closed. Auto mode uses a deterministic filesystem fallback when Git is unavailable and publishes that loss of Git authority as a warning.
+
+P5 qualification covers Git tracked/untracked/ignored semantics, one-listing economics, normalized and anchored exclusions, the historical `docs/_build` case, symlink policy, out-of-repository and nested-root failures, explicit Git failure outside a worktree, filesystem fallback, and discovery-policy/repository-identity invalidation in the common P4 contract. P1–P4 qualification must remain green.
 
 ## Phase 6 — `context-focus`
 

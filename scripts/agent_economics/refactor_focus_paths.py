@@ -3,20 +3,12 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .refactor_focus_models import DEFAULT_EXCLUDE_DIRS
+from .refactor_focus_discovery import collect_python_files_filesystem
 
 
 def collect_python_files(root: Path) -> list[Path]:
-    files: list[Path] = []
-    if not root.exists():
-        return files
-    for path in root.rglob("*.py"):
-        if not path.is_file():
-            continue
-        if any(part in DEFAULT_EXCLUDE_DIRS for part in path.parts):
-            continue
-        files.append(path)
-    return sorted(files)
+    """Compatibility filesystem-only collector with P5 path semantics."""
+    return collect_python_files_filesystem(root)
 
 
 def collect_test_files(tests_root: Path) -> list[Path]:
@@ -32,10 +24,11 @@ def count_lines(path: Path) -> int:
 
 
 def report_path(*, path: Path, anchor: Path) -> str:
+    absolute = path.absolute()
     try:
-        return path.resolve().relative_to(anchor.resolve()).as_posix()
+        return absolute.relative_to(anchor.resolve()).as_posix()
     except ValueError:
-        return path.resolve().as_posix()
+        return absolute.as_posix()
 
 
 def common_path_anchor(paths: list[Path]) -> Path:

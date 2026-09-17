@@ -139,3 +139,8 @@ P4 qualification also reruns the earlier probe behavior indirectly and checks co
 ## Roadmap
 
 See [Agent Economics Probe phases](agent-economics-probe-phases.md) for the hardening sequence and planned `context-focus`, `test-focus`, `change-impact`, `coupling-focus`, `hotspot-focus`, and `tool-budget` probes.
+
+
+## Repository discovery semantics (P5)
+
+Repository discovery is part of probe evidence, not an invisible filesystem assumption. `refactor-focus` accepts `auto`, `git`, or `filesystem` discovery; tracked/untracked and ignored-file policy; explicit Python-file symlink policy; repeatable repository-relative exclusion globs; optional default exclusions; and a bounded Git command timeout. `auto` prefers Git repository truth and reports when it must fall back to filesystem discovery. The effective discovery policy is included in configuration identity and discovery observations are included in the evidence envelope.

@@ -3,6 +3,13 @@ import time
 from pathlib import Path
 
 from .refactor_focus_analysis import AnalysisCache
+from .refactor_focus_discovery import (
+    DEFAULT_EXCLUDE_PATTERNS,
+    DiscoveryConfig,
+    DiscoveryError,
+    discover_python_roots,
+    normalize_exclude_patterns,
+)
 from .refactor_focus_contract import build_refactor_focus_contract
 from .refactor_focus_hints import (
     OwnershipHintsError,
@@ -24,7 +31,6 @@ from .refactor_focus_matching import (
 from .refactor_focus_models import Emit, ExitCode, FocusRow, MatchRecord
 from .refactor_focus_pytest import build_pytest_ownership_evidence
 from .refactor_focus_paths import (
-    collect_python_files,
     common_path_anchor,
     iso_utc_now,
     module_path_for_file,
@@ -59,6 +65,13 @@ def refactor_focus_audit(
     helper_max_depth: int = 2,
     pytest_max_depth: int = 2,
     ownership_hints_path: Path | None = None,
+    discovery_mode: str = "auto",
+    untracked_policy: str = "include",
+    ignored_policy: str = "exclude",
+    symlink_policy: str = "exclude",
+    exclude_patterns: tuple[str, ...] | None = None,
+    use_default_excludes: bool = True,
+    git_timeout_seconds: float = 5.0,
 ) -> None:
     started = time.perf_counter()
     source_root = source_root.resolve()
@@ -70,6 +83,22 @@ def refactor_focus_audit(
     )
     effective_package_name = package_name or source_root.name
     effective_tests_package_name = tests_package_name or tests_root.name
+    requested_excludes = list(DEFAULT_EXCLUDE_PATTERNS if use_default_excludes else ())
+    requested_excludes.extend(exclude_patterns or ())
+    try:
+        effective_excludes = normalize_exclude_patterns(requested_excludes)
+        discovery_config = DiscoveryConfig(
+            mode=discovery_mode,
+            untracked_policy=untracked_policy,
+            ignored_policy=ignored_policy,
+            symlink_policy=symlink_policy,
+            exclude_patterns=effective_excludes,
+            git_timeout_seconds=git_timeout_seconds,
+        )
+    except DiscoveryError as exc:
+        emit("ERROR", "refactor_focus_audit_invalid_discovery_config", error=str(exc))
+        exit_code(2)
+        return
 
     emit(
         "INFO",
@@ -85,6 +114,12 @@ def refactor_focus_audit(
         transitive_max_depth=transitive_max_depth,
         helper_max_depth=helper_max_depth,
         pytest_max_depth=pytest_max_depth,
+        discovery_mode=discovery_config.mode,
+        untracked_policy=discovery_config.untracked_policy,
+        ignored_policy=discovery_config.ignored_policy,
+        symlink_policy=discovery_config.symlink_policy,
+        exclude_patterns=list(discovery_config.exclude_patterns),
+        git_timeout_seconds=discovery_config.git_timeout_seconds,
         ownership_hints_path=(
             ownership_hints_path.as_posix() if ownership_hints_path is not None else None
         ),
@@ -121,8 +156,18 @@ def refactor_focus_audit(
         exit_code(2)
         return
 
-    source_files = collect_python_files(source_root)
-    all_test_python_files = collect_python_files(tests_root)
+    try:
+        discovery = discover_python_roots(
+            roots={"source": source_root, "tests": tests_root},
+            repository_root=effective_repository_root,
+            config=discovery_config,
+        )
+    except DiscoveryError as exc:
+        emit("ERROR", "refactor_focus_audit_discovery_failed", error=str(exc))
+        exit_code(2)
+        return
+    source_files = list(discovery.files_for("source"))
+    all_test_python_files = list(discovery.files_for("tests"))
     test_files = [
         path
         for path in all_test_python_files
@@ -138,6 +183,8 @@ def refactor_focus_audit(
         "refactor_focus_audit_discovery_complete",
         source_files_scanned=len(source_files),
         test_files_scanned=len(test_files),
+        discovery_backend=discovery.backend,
+        discovery_warnings=list(discovery.warnings),
     )
 
     test_lines_by_path = {path: analysis_cache.get(path).line_count for path in test_files}
@@ -477,6 +524,7 @@ def refactor_focus_audit(
     elapsed_ms = round((time.perf_counter() - started) * 1000, 3)
     economics = {
         **analysis_cache.metrics(),
+        "discovery": discovery.metrics(),
         "elapsed_ms": elapsed_ms,
         "candidate_reduction": candidate_reduction,
         "evidence_files_selected": evidence_files_selected,
@@ -505,6 +553,8 @@ def refactor_focus_audit(
         pytest_max_depth=pytest_max_depth,
         ownership_hints_path=ownership_hints_path,
         ownership_hints_sha256=ownership_hints_sha256,
+        discovery_config=discovery_config,
+        discovery_result=discovery,
         analysis_cache=analysis_cache,
         analyzed_python_files=unique_python_files,
         source_files_scanned=len(source_files),

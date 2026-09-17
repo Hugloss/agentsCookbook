@@ -99,6 +99,47 @@ def build_parser() -> argparse.ArgumentParser:
             "ownership relationships. Invalid or stale hints fail closed."
         ),
     )
+    parser.add_argument(
+        "--discovery-mode",
+        choices=("auto", "git", "filesystem"),
+        default="auto",
+        help="Discovery backend. auto prefers Git and falls back to filesystem.",
+    )
+    parser.add_argument(
+        "--untracked-policy",
+        choices=("include", "exclude"),
+        default="include",
+        help="Whether Git discovery includes untracked, non-ignored files.",
+    )
+    parser.add_argument(
+        "--ignored-policy",
+        choices=("exclude", "include"),
+        default="exclude",
+        help="Whether Git discovery includes ignored untracked files.",
+    )
+    parser.add_argument(
+        "--symlink-policy",
+        choices=("exclude", "reject", "within-repo"),
+        default="exclude",
+        help="How discovered Python file symlinks are handled.",
+    )
+    parser.add_argument(
+        "--exclude-path",
+        action="append",
+        default=[],
+        help="Additional repository-relative exclusion glob. Repeat as needed.",
+    )
+    parser.add_argument(
+        "--no-default-excludes",
+        action="store_true",
+        help="Disable the portable default exclusion patterns.",
+    )
+    parser.add_argument(
+        "--git-timeout-seconds",
+        type=float,
+        default=5.0,
+        help="Timeout for each bounded Git discovery command. Default: 5 seconds.",
+    )
     return parser
 
 
@@ -120,6 +161,13 @@ def main(argv: list[str] | None = None) -> None:
         helper_max_depth=args.helper_max_depth,
         pytest_max_depth=args.pytest_max_depth,
         ownership_hints_path=args.ownership_hints_path,
+        discovery_mode=args.discovery_mode,
+        untracked_policy=args.untracked_policy,
+        ignored_policy=args.ignored_policy,
+        symlink_policy=args.symlink_policy,
+        exclude_patterns=tuple(args.exclude_path),
+        use_default_excludes=not args.no_default_excludes,
+        git_timeout_seconds=args.git_timeout_seconds,
     )
 
 

@@ -4,12 +4,13 @@ from pathlib import Path
 from typing import Any
 
 from .probe_contract import analyzed_input_identity, build_probe_contract
+from .refactor_focus_discovery import DiscoveryConfig, DiscoveryResult
 from .refactor_focus_analysis import AnalysisCache
 from .refactor_focus_models import MATCH_AUTHORITY, FocusRow, MatchRecord
 from .refactor_focus_paths import report_path
 
 TOOL_NAME = "refactor-focus"
-TOOL_VERSION = "0.4.0"
+TOOL_VERSION = "0.5.0"
 
 
 def _portable_optional_path(path: Path | None, *, repository_root: Path) -> str | None:
@@ -143,6 +144,8 @@ def build_refactor_focus_contract(
     pytest_max_depth: int,
     ownership_hints_path: Path | None,
     ownership_hints_sha256: str | None,
+    discovery_config: DiscoveryConfig,
+    discovery_result: DiscoveryResult,
     analysis_cache: AnalysisCache,
     analyzed_python_files: list[Path],
     source_files_scanned: int,
@@ -188,6 +191,12 @@ def build_refactor_focus_contract(
             ownership_hints_path, repository_root=repository_root
         ),
         "ownership_hints_sha256": ownership_hints_sha256,
+        "discovery_mode": discovery_config.mode,
+        "untracked_policy": discovery_config.untracked_policy,
+        "ignored_policy": discovery_config.ignored_policy,
+        "symlink_policy": discovery_config.symlink_policy,
+        "exclude_patterns": list(discovery_config.exclude_patterns),
+        "git_timeout_seconds": discovery_config.git_timeout_seconds,
     }
 
     candidates = [_candidate_from_row(row) for row in selected_rows]
@@ -241,6 +250,17 @@ def build_refactor_focus_contract(
             }
         )
 
+    for message in discovery_result.warnings:
+        warnings.append({"code": "discovery_warning", "message": message})
+    if discovery_result.symlinks_excluded:
+        warnings.append(
+            {"code": "discovery_symlinks_excluded", "count": discovery_result.symlinks_excluded}
+        )
+    if discovery_result.missing_files:
+        warnings.append(
+            {"code": "discovery_missing_files", "count": discovery_result.missing_files}
+        )
+
     return build_probe_contract(
         tool_name=TOOL_NAME,
         tool_version=TOOL_VERSION,
@@ -249,6 +269,7 @@ def build_refactor_focus_contract(
         configuration_values=configuration_values,
         evidence={
             "authority_model": dict(MATCH_AUTHORITY),
+            "discovery": discovery_result.metrics(),
             "records": evidence_records,
         },
         derived={

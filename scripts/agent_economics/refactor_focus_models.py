@@ -75,24 +75,3 @@ MATCH_PRIORITY = {
 }
 
 MIN_FEATURE_TOKEN_OVERLAP = 2
-DEFAULT_EXCLUDE_DIRS = {
-    ".venv",
-    "venv",
-    "__pycache__",
-    "node_modules",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".mypy_cache",
-    ".hypothesis",
-    ".tox",
-    ".nox",
-    ".eggs",
-    "build",
-    "dist",
-    "htmlcov",
-    "coverage",
-    ".ipynb_checkpoints",
-    "docs/_build",
-    ".idea",
-    ".vscode",
-}
