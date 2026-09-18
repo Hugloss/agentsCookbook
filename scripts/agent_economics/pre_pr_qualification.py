@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from unittest import mock
 from pathlib import Path
 
 from .bounded_process import ProcessLimits, process_tree_capability, run_bounded
@@ -194,6 +195,13 @@ def main() -> None:
         _write(bad, 'version=1\n[commands.x]\nargv=["x"]\nappend_selected_tests="yes"\n')
         _expect(CommandManifestError, lambda: load_command_manifest(bad))
 
+        # Semantic identities exclude timestamps and checkout paths.
+        pass_one = run_named_command(repository_root=root, manifest_path=manifest, name="pass")
+        time.sleep(0.01)
+        pass_two = run_named_command(repository_root=root, manifest_path=manifest, name="pass")
+        assert pass_one["failure_identity"] == pass_two["failure_identity"]
+        assert pass_one["command"]["identity"] == pass_two["command"]["identity"]
+
         # Failure-class corpus.
         expected = {
             "importfail": "collection_import_failure", "syntaxfail": "syntax_compile_failure",
@@ -232,6 +240,9 @@ def main() -> None:
         assert {"code": "repository_bytes_unavailable"} in caps["warnings"]
         caps = capabilities(repository_root=root, manifest_path=manifest)
         assert caps["capabilities"]["git"]["worktree"] is True
+        with mock.patch("scripts.agent_economics.capabilities.shutil.which", return_value=None):
+            no_git = capabilities(repository_root=root)
+        assert no_git["capabilities"]["git"]["available"] is False
         assert caps["capabilities"]["network_isolation"]["available"] is False
 
         # P5 must fail while streaming, not after unbounded buffering.
@@ -247,6 +258,15 @@ def main() -> None:
         )
 
         _loop_budget_cases(root)
+
+        # Bounded A -> B -> A oscillation is distinct from immediate repetition.
+        osc_path = root / ".agent-artifacts/oscillation.json"
+        with LoopSession(osc_path, repository_root=root) as session:
+            session.record(source_identity="A", command_identity="c", failure_identity="fa", evidence_identity="ea", stdout_bytes=0, stderr_bytes=0)
+            session.record(source_identity="B", command_identity="c", failure_identity="fb", evidence_identity="eb", stdout_bytes=0, stderr_bytes=0)
+            oscillated = session.record(source_identity="A", command_identity="c", failure_identity="fa", evidence_identity="ec", stdout_bytes=0, stderr_bytes=0)
+            assert oscillated["stop_reason"] == "OSCILLATION"
+
         _process_tree_case(root)
 
     # Identity case needs a clean repository so history changes are controlled.
@@ -259,7 +279,7 @@ def main() -> None:
 
     print(json.dumps({
         "status": "PASS",
-        "cases": 25,
+        "cases": 29,
         "authority": "pre-pr-adversarial-regression-only",
     }, sort_keys=True))
 
