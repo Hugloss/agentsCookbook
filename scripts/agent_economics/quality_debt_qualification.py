@@ -141,7 +141,32 @@ def main() -> None:
             assert changed_limit["derived"]["baseline_comparison"]["changed_fields"] == ["limits"]
             assert baseline_document(base)["comparable_values"] == base["evidence"]["comparable_values"]
             assert "timeout_seconds" not in baseline_document(base)["comparable_values"]
-            assert baseline_document(base)["comparable_values"]["analyzer_executable"] == str(fake)
+            assert "analyzer_executable" not in baseline_document(base)["comparable_values"]
+            assert base["evidence"]["analyzer"]["resolved_executable"] == str(fake)
+
+            portable_baseline = baseline_document(base)
+            relocated_values = dict(portable_baseline["comparable_values"])
+            relocated_values["analyzer_executable"] = "/different/checkout/bin/ruff"
+            portable_baseline["comparable_values"] = relocated_values
+            portable_baseline["comparable_identity"] = base["evidence"]["comparable_identity"]
+            relocated = root/"relocated-baseline.json"
+            relocated.write_text(json.dumps(portable_baseline), encoding="utf-8")
+            relocated_result = quality_debt_audit(
+                repository_root=root, roots=("src",), limits={"C901":5}, baseline_path=relocated
+            )
+            assert relocated_result["derived"]["baseline_comparison"]["state"] == "UNCHANGED"
+
+            legacy = baseline_document(base)
+            legacy["comparable_identity"] = "sha256:legacy-incompatible"
+            legacy.pop("comparable_values", None)
+            legacy_path = root/"legacy-baseline.json"
+            legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
+            legacy_result = quality_debt_audit(
+                repository_root=root, roots=("src",), limits={"C901":5}, baseline_path=legacy_path
+            )
+            assert legacy_result["derived"]["baseline_comparison"]["state"] == "INCOMPARABLE_BASELINE"
+            assert legacy_result["derived"]["baseline_comparison"]["reason"] == "comparable_values_unavailable"
+            assert legacy_result["derived"]["baseline_comparison"]["changed_fields"] is None
             os.environ["AE_RUFF_MODE"]="badjson"
             try: quality_debt_audit(repository_root=root, roots=("src",), limits={"C901":5})
             except QualityDebtError: pass
@@ -152,7 +177,7 @@ def main() -> None:
             else: raise AssertionError("analyzer timeout must fail closed")
         finally:
             os.environ.pop("AE_RUFF_MODE", None); os.environ["PATH"]=old_path
-    print(json.dumps({"status":"PASS","cases":23,"tool":"quality-debt"},sort_keys=True))
+    print(json.dumps({"status":"PASS","cases":25,"tool":"quality-debt"},sort_keys=True))
 
 
 if __name__=="__main__":
