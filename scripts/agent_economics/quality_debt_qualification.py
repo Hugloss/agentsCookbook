@@ -156,6 +156,7 @@ def main() -> None:
             assert "analyzer_executable" not in baseline_document(base)["comparable_values"]
             assert base["evidence"]["analyzer"]["resolved_executable"] == str(fake)
 
+            os.environ.pop("AE_RUFF_MODE", None)
             pre_isolation = baseline_document(base)
             pre_isolation_values = dict(pre_isolation["comparable_values"])
             pre_isolation_values.pop("analyzer_configuration_mode")
