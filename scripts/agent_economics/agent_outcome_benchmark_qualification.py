@@ -24,7 +24,7 @@ def main() -> None:
         Outcome(task_id="broad-after-focused", treatment_id="p10", mode="bridge", correct=True, ci_activations=1, files_opened=6, evidence_bytes=9000, context_tokens_estimate=4000, tool_calls=10, local_commands=5, repair_iterations=2, local_ci_agree=True, **common),
     ]
     result = compare(outcomes)
-    assert result["schema"]["version"] == 2
+    assert result["schema"]["version"] == 3
     assert result["correctness"]["paired_tasks"] == 2
     assert result["metrics"]["ci_activations"]["delta"] == -3.0
     assert result["timing"]["paired_measurements"] == 1
@@ -95,7 +95,7 @@ def main() -> None:
     wrong_treatment = Outcome(task_id="localized-python", treatment_id="other", mode="bridge", correct=True, **common)
     _expect_error(lambda: compare([outcomes[0], wrong_treatment]))
 
-    print(json.dumps({"status": "PASS", "paired_tasks": 2, "schema": 2, "automatic_promotion": False, "strict_dogfood": True}, sort_keys=True))
+    print(json.dumps({"status": "PASS", "paired_tasks": 2, "schema": 3, "automatic_promotion": False, "strict_dogfood": True}, sort_keys=True))
 
 
 if __name__ == "__main__":
