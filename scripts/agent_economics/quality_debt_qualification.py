@@ -105,8 +105,28 @@ def main() -> None:
                 "excludes": ["src/excluded"],
                 "excluded_python_files_by_rule": {"src/excluded": 1},
                 "analyzed_python_files": 3,
+                "diagnostics": [],
             }
             assert scoped["evidence"]["analyzer"]["resolved_executable"] == str(fake)
+            for bad_roots in (("src", "src"), ("src", "src/excluded")):
+                try:
+                    quality_debt_audit(
+                        repository_root=root, roots=bad_roots, limits={"C901":5}
+                    )
+                except QualityDebtError:
+                    pass
+                else:
+                    raise AssertionError(f"ambiguous roots must fail closed: {bad_roots}")
+            swallowed=quality_debt_audit(
+                repository_root=root, roots=("src/excluded",), limits={"C901":5},
+                excludes=("src/excluded",),
+            )
+            assert swallowed["evidence"]["source_universe"]["diagnostics"] == [{
+                "code":"configured_root_fully_excluded",
+                "root":"src/excluded",
+                "message":"configured root is fully excluded: src/excluded",
+            }]
+            assert swallowed["economics"]["files_read"] == 0
             os.environ["AE_RUFF_MODE"]="limit6"
             changed_limit=quality_debt_audit(repository_root=root, roots=("src",), limits={"C901":6}, baseline_path=baseline)
             assert changed_limit["derived"]["baseline_comparison"]["state"]=="INCOMPARABLE_BASELINE"
@@ -120,7 +140,7 @@ def main() -> None:
             else: raise AssertionError("analyzer timeout must fail closed")
         finally:
             os.environ.pop("AE_RUFF_MODE", None); os.environ["PATH"]=old_path
-    print(json.dumps({"status":"PASS","cases":13,"tool":"quality-debt"},sort_keys=True))
+    print(json.dumps({"status":"PASS","cases":16,"tool":"quality-debt"},sort_keys=True))
 
 
 if __name__=="__main__":
