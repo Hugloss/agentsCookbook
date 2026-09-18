@@ -166,3 +166,32 @@ def qualify() -> None:
 
 if __name__ == "__main__":
     qualify()
+
+
+
+def test_next_evidence_stops_when_declared_boundaries_are_satisfied() -> None:
+    payload = {
+        "schema": {"name": "agent-economics-probe", "version": 1},
+        "tool": {"name": "context-focus"},
+        "candidates": [
+            {
+                "target": "src/a.py",
+                "required_next_evidence": [
+                    {"kind": "test_focus", "reason": "need behavior evidence"}
+                ],
+            }
+        ],
+    }
+
+    result = next_evidence(
+        payload,
+        target="src/a.py",
+        sufficiency={
+            "risk_boundaries": [{"identity": "behavior"}],
+            "proofs": [{"boundary": "behavior", "fresh": True, "direct": True}],
+        },
+    )
+
+    assert result["next_evidence"] is None
+    assert result["command"] is None
+    assert result["stop"]["stop_acquiring_evidence"] is True
