@@ -20,6 +20,33 @@ python -m scripts.agent_economics.probe_contract_qualification
 
 The directory can also be copied by itself into another environment. From the copied package's parent directory, use `python -m agent_economics.refactor_focus_cli ...`.
 
+### First-class import and exact bootstrap
+
+Agent Economics is a standalone Python package rooted at `scripts/agent_economics`. Consumers do not need repository-specific Python wrappers. Put the parent directory `scripts` on `PYTHONPATH`, then use either the package CLI or normal imports:
+
+```bash
+PYTHONPATH=/path/to/agentsCookbook/scripts python -m agent_economics test-focus ...
+```
+
+```python
+from agent_economics.test_focus import GateSpec, test_focus_audit
+from agent_economics.quality_debt import quality_debt_audit
+```
+
+For CI or another repository, materialize an exact agentsCookbook commit with the fail-closed bootstrap:
+
+```bash
+sh /path/to/bootstrap-agent-economics.sh \
+  --revision <FULL_COMMIT_SHA> \
+  --destination .agent-economics
+export PYTHONPATH="$PWD/.agent-economics/scripts"
+python -m agent_economics test-focus ...
+```
+
+The bootstrap never follows a branch tip or silently replaces an existing destination. It fetches the requested commit into a detached checkout, verifies the resolved commit, verifies the package exists, removes a partial destination on failure, and prints `AGENT_ECONOMICS_REVISION`, `AGENT_ECONOMICS_ROOT`, and `AGENT_ECONOMICS_PYTHONPATH` for receipts. `AGENT_ECONOMICS_ROOT` and `AGENT_ECONOMICS_REPOSITORY` can provide default destination/repository values.
+
+A consumer-specific adapter is only needed when the repository must prove parity with an existing repository-owned authority or translate a repository-specific evidence schema. It is not required to run or import Agent Economics.
+
 See `docs/agent-economics-probes.md` in the repository for the evidence-authority contract and portability rules.
 
 The JSON artifact uses the versioned `agent-economics-probe` v1 contract. Facts, derived state, interpretation, recommendations, uncertainty, required/deferred evidence, verification suggestions, and economics are separate sections. Repository and semantic configuration identities are deterministic and portable across checkout locations. Exact per-run Python analysis economics include files/bytes read, AST parses, cache reuse, elapsed time, candidate reduction, and selected evidence lines, plus separately accounted auxiliary ownership-hint reads when configured.
