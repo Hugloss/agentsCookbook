@@ -48,12 +48,19 @@ def next_evidence(
     if sufficiency is not None:
         boundaries = sufficiency.get("risk_boundaries", [])
         proofs = sufficiency.get("proofs", [])
-        if not isinstance(boundaries, list) or not isinstance(proofs, list):
-            raise EvidenceNextError("sufficiency risk_boundaries/proofs must be lists")
+        expansion = sufficiency.get("scope_expansion_evidence", [])
+        if (
+            not isinstance(boundaries, list)
+            or not isinstance(proofs, list)
+            or not isinstance(expansion, list)
+        ):
+            raise EvidenceNextError(
+                "sufficiency risk_boundaries/proofs/scope_expansion_evidence must be lists"
+            )
         stop = evidence_stop_facts(
             risk_boundaries=boundaries,
             proofs=proofs,
-            scope_expanded=bool(sufficiency.get("scope_expanded", False)),
+            scope_expansion_evidence=sufficiency.get("scope_expansion_evidence", []),
         )
         if stop["stop_acquiring_evidence"]:
             return {
