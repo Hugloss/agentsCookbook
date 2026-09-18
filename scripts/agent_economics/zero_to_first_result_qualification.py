@@ -38,7 +38,8 @@ def qualify() -> None:
             "C901": 8, "PLR0912": 9, "PLR0913": 6, "PLR0914": 15,
         }
         assert payload["suggestions"]["ruff"]["extend_exclude"] == ["benchmarks/retained"]
-        assert payload["readiness"]["quality_debt"] == "READY"
+        expected_quality_readiness = "READY" if payload["environment"]["ruff"]["available"] else "NEEDS_RUFF"
+        assert payload["readiness"]["quality_debt"] == expected_quality_readiness
         assert payload["interpretation"]["suggestions_are_not_repository_authority"] is True
         assert payload["readiness"]["test_focus"] == "READY"
 
