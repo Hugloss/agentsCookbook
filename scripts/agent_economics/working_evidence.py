@@ -238,12 +238,29 @@ def evidence_stop_facts(
     proofs: Sequence[Mapping[str, object]],
     scope_expansion_evidence: Sequence[Mapping[str, object]] = (),
 ) -> dict[str, object]:
-    """Decide sufficiency; scope expansion must have concrete evidence provenance."""
+    """Decide sufficiency from provider-bound proof relationships."""
     proof_by_boundary: dict[str, list[Mapping[str, object]]] = {}
+    invalid_proofs: list[str] = []
     for proof in proofs:
         boundary = proof.get("boundary")
-        if isinstance(boundary, str) and boundary:
-            proof_by_boundary.setdefault(boundary, []).append(proof)
+        reference = proof.get("provider_reference")
+        freshness = proof.get("freshness")
+        relationship = proof.get("relationship")
+        if (
+            not isinstance(boundary, str)
+            or not boundary
+            or not isinstance(reference, Mapping)
+            or validate_provider_reference(reference)
+            or not isinstance(freshness, Mapping)
+            or freshness.get("state") not in {"fresh", "stale"}
+            or not isinstance(relationship, Mapping)
+            or not isinstance(relationship.get("classification"), str)
+            or not isinstance(relationship.get("evidence_identity"), str)
+            or not str(relationship.get("evidence_identity") or "").strip()
+        ):
+            invalid_proofs.append(str(boundary or "<invalid-proof>"))
+            continue
+        proof_by_boundary.setdefault(boundary, []).append(proof)
 
     uncovered: list[str] = []
     indirect_only: list[str] = []
@@ -258,11 +275,19 @@ def evidence_stop_facts(
         if not candidates:
             uncovered.append(identity)
             continue
-        fresh = [row for row in candidates if row.get("fresh") is True]
+        fresh = [
+            row for row in candidates
+            if isinstance(row.get("freshness"), Mapping)
+            and row["freshness"].get("state") == "fresh"
+        ]
         if not fresh:
             stale_only.append(identity)
             continue
-        direct = [row for row in fresh if row.get("direct") is True]
+        direct = [
+            row for row in fresh
+            if isinstance(row.get("relationship"), Mapping)
+            and row["relationship"].get("classification") == "direct"
+        ]
         if not direct:
             indirect_only.append(identity)
 
@@ -286,7 +311,12 @@ def evidence_stop_facts(
 
     scope_expanded = bool(expansion_ids or invalid_expansion)
     sufficient = not (
-        uncovered or indirect_only or stale_only or unknown or scope_expanded
+        uncovered
+        or indirect_only
+        or stale_only
+        or unknown
+        or invalid_proofs
+        or scope_expanded
     )
     return {
         "sufficient": sufficient,
@@ -294,12 +324,13 @@ def evidence_stop_facts(
         "scope_expanded": scope_expanded,
         "scope_expansion_evidence": sorted(expansion_ids),
         "invalid_scope_expansion_evidence": sorted(invalid_expansion),
+        "invalid_proofs": sorted(invalid_proofs),
         "uncovered_boundaries": sorted(uncovered),
         "indirect_only_boundaries": sorted(indirect_only),
         "stale_only_boundaries": sorted(stale_only),
         "unknown_boundaries": sorted(unknown),
         "reason": (
-            "all-declared-risk-boundaries-have-fresh-direct-proof"
+            "all-declared-risk-boundaries-have-fresh-direct-provider-proof"
             if sufficient
             else "more-evidence-required"
         ),
