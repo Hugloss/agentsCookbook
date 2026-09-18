@@ -17,10 +17,12 @@ if '--version' in sys.argv:
     print('ruff 9.9.9'); raise SystemExit(0)
 mode=os.environ.get('AE_RUFF_MODE','base')
 if mode == 'timeout': time.sleep(2)
+if os.path.exists(os.path.join(os.getcwd(),'pyproject.toml')) and '--isolated' not in sys.argv:
+    mode='ambient_config'
 if mode == 'badjson': print('{'); raise SystemExit(1)
 root=os.getcwd()
 limit=6 if mode == 'limit6' else 5
-value=9 if mode != 'reduced' else 7
+value=12 if mode == 'ambient_config' else (9 if mode != 'reduced' else 7)
 rows=[{'code':'C901','filename':os.path.join(root,'src','a.py'),'location':{'row':1},'message':f'complexity ({value} > {limit})'}]
 if mode == 'detailed':
     rows.append({'code':'PLR0912','filename':os.path.join(root,'src','a.py'),'location':{'row':1},'message':'branches (11 > 8)'})
@@ -49,6 +51,16 @@ def main() -> None:
             base=quality_debt_audit(repository_root=root, roots=("src",), limits={"C901":5})
             assert validate_probe_contract(base)==[]
             assert base["derived"]["summary"]["excess"]==4
+            (root/"pyproject.toml").write_text(
+                "[tool.ruff.lint.mccabe]\nmax-complexity=99\n", encoding="utf-8"
+            )
+            ambient_changed=quality_debt_audit(
+                repository_root=root, roots=("src",), limits={"C901":5}
+            )
+            assert ambient_changed["derived"]["summary"]["excess"] == 4
+            assert "--isolated" in ambient_changed["evidence"]["analyzer"]["analysis_argv"]
+            assert ambient_changed["evidence"]["comparable_values"]["analyzer_configuration_mode"] == "isolated_explicit"
+
             assert base["evidence"]["detailed_findings"] == [
                 {"path":"src/a.py","line":1,"rule":"C901","observed":9,"limit":5,"excess":4}
             ]
@@ -112,7 +124,7 @@ def main() -> None:
             assert analyzer_evidence["version_argv"] == [str(fake), "--version"]
             assert analyzer_evidence["analysis_argv"] == [
                 str(fake), "check", "src", "tools", "--preview", "--select", "C901",
-                "--config", "lint.per-file-ignores = {}", "--exclude", "src/excluded",
+                "--isolated", "--config", "lint.per-file-ignores = {}", "--exclude", "src/excluded",
                 "--output-format", "json",
             ]
             assert analyzer_evidence["working_directory"] == "."
@@ -144,11 +156,26 @@ def main() -> None:
             assert "analyzer_executable" not in baseline_document(base)["comparable_values"]
             assert base["evidence"]["analyzer"]["resolved_executable"] == str(fake)
 
+            os.environ.pop("AE_RUFF_MODE", None)
+            pre_isolation = baseline_document(base)
+            pre_isolation_values = dict(pre_isolation["comparable_values"])
+            pre_isolation_values.pop("analyzer_configuration_mode")
+            from .quality_debt import configuration_identity
+            pre_isolation["comparable_values"] = pre_isolation_values
+            pre_isolation["comparable_identity"] = configuration_identity(pre_isolation_values)
+            pre_isolation_path = root/"pre-isolation-baseline.json"
+            pre_isolation_path.write_text(json.dumps(pre_isolation), encoding="utf-8")
+            pre_isolation_result = quality_debt_audit(
+                repository_root=root, roots=("src",), limits={"C901":5},
+                baseline_path=pre_isolation_path,
+            )
+            assert pre_isolation_result["derived"]["baseline_comparison"]["state"] == "INCOMPARABLE_BASELINE"
+            assert pre_isolation_result["derived"]["baseline_comparison"]["reason"] == "analyzer_configuration_mode_unavailable"
+
             portable_baseline = baseline_document(base)
             relocated_values = dict(portable_baseline["comparable_values"])
             relocated_values["analyzer_executable"] = "/different/checkout/bin/ruff"
             portable_baseline["comparable_values"] = relocated_values
-            from .quality_debt import configuration_identity
             portable_baseline["comparable_identity"] = configuration_identity(relocated_values)
             relocated = root/"relocated-baseline.json"
             relocated.write_text(json.dumps(portable_baseline), encoding="utf-8")
@@ -179,7 +206,7 @@ def main() -> None:
             else: raise AssertionError("analyzer timeout must fail closed")
         finally:
             os.environ.pop("AE_RUFF_MODE", None); os.environ["PATH"]=old_path
-    print(json.dumps({"status":"PASS","cases":25,"tool":"quality-debt"},sort_keys=True))
+    print(json.dumps({"status":"PASS","cases":27,"tool":"quality-debt"},sort_keys=True))
 
 
 if __name__=="__main__":

@@ -130,7 +130,8 @@ def _run_ruff(
     exclude_args = ("--exclude", ",".join(excludes)) if excludes else ()
     argv = (
         executable, "check", *roots, "--preview", "--select", ",".join(sorted(limits)),
-        "--config", "lint.per-file-ignores = {}", *exclude_args, "--output-format", "json",
+        "--isolated", "--config", "lint.per-file-ignores = {}", *exclude_args,
+        "--output-format", "json",
     )
     result = run_bounded(
         repository_root=root, argv=argv,
@@ -278,6 +279,17 @@ def _comparison(
         # baselines when every actual measurement input still agrees.
         normalized_previous = dict(previous_values)
         normalized_previous.pop("analyzer_executable", None)
+        # Pre-isolation v1 baselines were measured with ambient Ruff config
+        # discovery. They cannot be proven semantically comparable to the
+        # explicit isolated analyzer mode.
+        if "analyzer_configuration_mode" not in normalized_previous:
+            return {
+                "state": "INCOMPARABLE_BASELINE",
+                "reason": "analyzer_configuration_mode_unavailable",
+                "changed_fields": ["analyzer_configuration_mode"],
+                "files": {},
+                "delta_excess": None,
+            }
         if configuration_identity(normalized_previous) != comparable_identity:
             changed_fields = sorted(
                 key
@@ -352,6 +364,7 @@ def quality_debt_audit(
         "analyzer": analyzer, "analyzer_version": version, "roots": list(roots),
         "excludes": list(excludes), "file_line_roots": list(line_roots),
         "limits": dict(sorted(limits.items())), "max_file_lines": max_file_lines,
+        "analyzer_configuration_mode": "isolated_explicit",
     }
     comparable_identity = configuration_identity(comparable_values)
     baseline = None
