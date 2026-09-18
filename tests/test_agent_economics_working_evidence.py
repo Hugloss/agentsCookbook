@@ -1,6 +1,7 @@
 from scripts.agent_economics.working_evidence import (
     SCHEMA,
     provider_reference,
+    repeated_action_without_new_evidence,
     validate_provider_reference,
     new_working_evidence,
     validate_invalidation,\n    validate_working_evidence,
@@ -77,3 +78,42 @@ def test_provider_reference_rejects_embedded_repository_facts() -> None:
     assert errors == [
         "provider reference must not embed repository intelligence: ownership_graph"
     ]
+
+
+def test_identical_acquisition_without_new_evidence_is_detected() -> None:
+    reference = provider_reference(
+        provider="hashmarks",
+        evidence_identity="sha256:delta-a",
+        generation=42,
+    )
+    previous = {
+        "action": "discover-related-tests",
+        "inputs": ["src/b.py", "src/a.py"],
+        "evidence_references": [reference],
+    }
+    current = {
+        "action": "discover-related-tests",
+        "inputs": ["src/a.py", "src/b.py"],
+        "evidence_references": [reference],
+    }
+
+    assert repeated_action_without_new_evidence(previous, current) is True
+
+
+def test_new_provider_evidence_allows_same_acquisition_to_be_reconsidered() -> None:
+    previous = {
+        "action": "repository-typecheck",
+        "inputs": ["pyproject.toml"],
+        "evidence_references": [
+            {"provider": "hashmarks", "evidence_identity": "sha256:generation-41"}
+        ],
+    }
+    current = {
+        "action": "repository-typecheck",
+        "inputs": ["pyproject.toml"],
+        "evidence_references": [
+            {"provider": "hashmarks", "evidence_identity": "sha256:generation-42"}
+        ],
+    }
+
+    assert repeated_action_without_new_evidence(previous, current) is False
