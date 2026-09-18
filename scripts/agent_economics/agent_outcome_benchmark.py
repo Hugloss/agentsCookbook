@@ -32,7 +32,10 @@ class Outcome:
     treatment_id: str = "default"
     repository_id: str | None = None
     task_fixture_id: str | None = None
+    corpus_id: str | None = None
+    initial_source_id: str | None = None
     agent_profile: str | None = None
+    execution_environment_id: str | None = None
     run_id: str | None = None
     bridge_implementation_id: str | None = None
     manifest_id: str | None = None
@@ -84,14 +87,49 @@ def load_outcomes(path: Path, *, max_bytes: int = 5_000_000, max_records: int = 
 
 def _compatibility_errors(baseline: Outcome, bridge: Outcome) -> list[str]:
     errors: list[str] = []
-    for field in ("repository_id", "task_fixture_id", "agent_profile"):
+    for field in (
+        "repository_id", "task_fixture_id", "corpus_id", "initial_source_id",
+        "agent_profile", "execution_environment_id",
+    ):
         left, right = getattr(baseline, field), getattr(bridge, field)
         if left is not None and right is not None and left != right:
             errors.append(f"{field} mismatch")
     return errors
 
 
-def compare(outcomes: list[Outcome], *, require_complete_pairs: bool = True) -> dict[str, object]:
+def _strict_protocol_errors(baseline: Outcome, bridge: Outcome) -> list[str]:
+    errors: list[str] = []
+    shared_required = (
+        "repository_id", "task_fixture_id", "corpus_id", "initial_source_id",
+        "agent_profile", "execution_environment_id",
+    )
+    for field in shared_required:
+        if not getattr(baseline, field) or not getattr(bridge, field):
+            errors.append(f"{field} missing")
+    if not baseline.run_id or not bridge.run_id:
+        errors.append("run_id missing")
+    elif baseline.run_id == bridge.run_id:
+        errors.append("run_id must differ between baseline and bridge")
+    for mode, outcome in (("baseline", baseline), ("bridge", bridge)):
+        for field in ("final_source_id", "ci_evidence_id"):
+            if not getattr(outcome, field):
+                errors.append(f"{mode} {field} missing")
+        if outcome.oracle_opened_after_freeze is not True:
+            errors.append(f"{mode} oracle freeze evidence missing")
+    for field in ("bridge_implementation_id", "manifest_id", "local_qualification_id"):
+        if not getattr(bridge, field):
+            errors.append(f"bridge {field} missing")
+    if bridge.local_ci_agree is None:
+        errors.append("bridge local_ci_agree unknown")
+    return errors
+
+
+def compare(
+    outcomes: list[Outcome],
+    *,
+    require_complete_pairs: bool = True,
+    strict_dogfood: bool = False,
+) -> dict[str, object]:
     grouped: dict[tuple[str, str], dict[str, Outcome]] = {}
     for outcome in outcomes:
         modes = grouped.setdefault(outcome.pair_key, {})
@@ -114,6 +152,10 @@ def compare(outcomes: list[Outcome], *, require_complete_pairs: bool = True) -> 
         errors = _compatibility_errors(baseline, bridge)
         if errors:
             raise BenchmarkError(f"incomparable pair {key}: {', '.join(errors)}")
+        if strict_dogfood:
+            protocol_errors = _strict_protocol_errors(baseline, bridge)
+            if protocol_errors:
+                raise BenchmarkError(f"incomplete dogfood pair {key}: {', '.join(protocol_errors)}")
 
     metrics = [
         "ci_activations", "files_opened", "evidence_bytes", "context_tokens_estimate",
@@ -164,8 +206,9 @@ def compare(outcomes: list[Outcome], *, require_complete_pairs: bool = True) -> 
         "correctness_not_reduced": correctness["bridge_correct"] >= correctness["baseline_correct"],
         "ci_activations_not_increased": deltas["ci_activations"]["delta"] <= 0,
         "context_not_increased": deltas["context_tokens_estimate"]["delta"] <= 0,
-        "local_ci_disagreement_zero": correctness["local_ci_disagreements"] == 0,
+        "local_ci_disagreement_zero": correctness["local_ci_disagreements"] == 0 and correctness["local_ci_unknown"] == 0,
         "all_pairs_complete": correctness["incomplete_pairs"] == 0,
+        "strict_dogfood_protocol": strict_dogfood,
     }
     payload = {
         "schema": {"name": "agent-outcome-benchmark", "version": 2},
@@ -200,13 +243,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--artifact", type=Path)
     parser.add_argument("--template-task", help="emit a baseline/bridge JSONL template for this task id")
     parser.add_argument("--treatment-id", default="default")
+    parser.add_argument("--strict-dogfood", action="store_true", help="fail closed unless empirical closeout provenance is complete")
     args = parser.parse_args(argv)
     if args.template_task:
         print("\n".join(json.dumps(row, sort_keys=True) for row in outcome_template(task_id=args.template_task, treatment_id=args.treatment_id)))
         return
     if args.input is None:
         parser.error("--input is required unless --template-task is used")
-    payload = compare(load_outcomes(args.input))
+    payload = compare(load_outcomes(args.input), strict_dogfood=args.strict_dogfood)
     rendered = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     if args.artifact:
         args.artifact.parent.mkdir(parents=True, exist_ok=True)
