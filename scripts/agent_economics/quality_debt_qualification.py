@@ -55,6 +55,18 @@ def main() -> None:
             assert base["candidates"][0]["facts"] == {
                 "locations":1,"rule_findings":1,"excess":4
             }
+            assert base["candidates"][0]["required_next_evidence"] == [
+                {
+                    "kind":"test_focus",
+                    "target":"src/a.py",
+                    "reason":(
+                        "quality-debt magnitude does not establish edit safety; "
+                        "recover confirmed/supporting test ownership and affected "
+                        "verification before selecting this target for an edit"
+                    ),
+                }
+            ]
+            assert base["candidates"][0]["verification_suggestions"] == []
             os.environ["AE_RUFF_MODE"]="detailed"
             detailed=quality_debt_audit(
                 repository_root=root, roots=("src",),
@@ -100,7 +112,7 @@ def main() -> None:
             else: raise AssertionError("analyzer timeout must fail closed")
         finally:
             os.environ.pop("AE_RUFF_MODE", None); os.environ["PATH"]=old_path
-    print(json.dumps({"status":"PASS","cases":10,"tool":"quality-debt"},sort_keys=True))
+    print(json.dumps({"status":"PASS","cases":11,"tool":"quality-debt"},sort_keys=True))
 
 
 if __name__=="__main__":
