@@ -52,7 +52,16 @@ def qualify() -> None:
         raise AssertionError("multiple required-next-evidence items must fail closed")
 
     proposed_profile = {
-        "repository": {"package_roots": ["pkg"], "test_roots": ["tests"]},
+        "repository": {
+            "package_roots": ["pkg"],
+            "package_root_evidence": [
+                {"path": "pkg", "status": "PROPOSED", "basis": "convention"}
+            ],
+            "test_roots": ["tests"],
+            "test_root_evidence": [
+                {"path": "tests", "status": "DETECTED", "basis": "test_directory_layout"}
+            ],
+        },
         "quality_debt": {
             "analysis_roots": ["pkg", "scripts"],
             "analysis_root_evidence": [
@@ -63,8 +72,25 @@ def qualify() -> None:
     }
     proposed = next_evidence(payload, target="pkg/hot.py", profile=proposed_profile)
     assert proposed["command"] is None
-    assert proposed["unresolved"] == ["profile_has_unreviewed_proposed_roots"]
-    assert proposed["interpretation"]["proposed_profile_evidence_is_not_accepted_configuration"] is True
+    assert proposed["unresolved"] == ["package_root_not_detected"]
+    assert proposed["interpretation"]["profile_root_provenance_is_preserved"] is True
+
+    detected_profile = {
+        "repository": {
+            "package_roots": ["pkg"],
+            "package_root_evidence": [
+                {"path": "pkg", "status": "DETECTED", "basis": "python_package_layout"}
+            ],
+            "test_roots": ["tests"],
+            "test_root_evidence": [
+                {"path": "tests", "status": "DETECTED", "basis": "test_directory_layout"}
+            ],
+        },
+        "quality_debt": proposed_profile["quality_debt"],
+    }
+    detected = next_evidence(payload, target="pkg/hot.py", profile=detected_profile)
+    assert detected["command"] is not None
+    assert detected["unresolved"] == []
 
     result = next_evidence(payload, target="pkg/hot.py", profile=profile)
     assert result["next_evidence"]["kind"] == "test_focus"
@@ -106,7 +132,7 @@ def qualify() -> None:
     assert result["command"] is None
     assert result["unresolved"] == ["unsupported_next_evidence:invented"]
 
-    print('{"cases":8,"status":"PASS","tool":"evidence-next"}')
+    print('{"cases":9,"status":"PASS","tool":"evidence-next"}')
 
 
 if __name__ == "__main__":
