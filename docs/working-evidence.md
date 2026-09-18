@@ -43,3 +43,10 @@ This keeps the workflow simple: working evidence remembers *that* the agent alre
 Agent Economics treats an evidence-acquisition action as no progress when its canonical action, inputs, and provider evidence references are unchanged. Input order does not create novelty. A changed provider evidence identity permits reconsideration because the underlying evidence set may have changed.
 
 This is a policy primitive, not a runner: it does not execute, retry, or suppress commands by itself. The consuming skill or host uses the fact when deciding whether another tool call is worth its cost.
+
+
+## Dirty-gate differential
+
+Agent Economics consumes provider-produced diagnostic deltas rather than parsing raw lint/type output into a second repository model. Equal global counts are not treated as equal evidence: the policy surface retains added, removed, unchanged, and newly added diagnostics intersecting the changed scope.
+
+The helper exposes facts only. A skill may use them to decide whether another broad dirty gate is worth running, but the working-evidence layer does not declare a repository clean or execute a gate.
