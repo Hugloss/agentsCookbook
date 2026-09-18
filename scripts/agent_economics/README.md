@@ -20,6 +20,25 @@ python -m scripts.agent_economics.probe_contract_qualification
 
 The directory can also be copied by itself into another environment. From the copied package's parent directory, use `python -m agent_economics.refactor_focus_cli ...`.
 
+### Start in an unfamiliar repository
+
+After materialization, the first command should normally be:
+
+```bash
+PYTHONPATH="$PWD/.agent-economics/scripts" python -m agent_economics doctor --repository-root .
+```
+
+`doctor` is read-only. It reports Git/Python/Ruff availability, detects likely Python source/test/package roots, and marks probe readiness. Detected roots are suggestions only; ambiguous repository structure remains explicit instead of becoming hidden configuration.
+
+The package root is also a real CLI front door:
+
+```bash
+python -m agent_economics --help
+python -m agent_economics help quality-debt
+```
+
+The command catalog is canonical for top-level help and capability reporting, preventing those public surfaces from drifting apart.
+
 ### First-class import and exact bootstrap
 
 Agent Economics is a standalone Python package rooted at `scripts/agent_economics`. Consumers do not need repository-specific Python wrappers. Put the parent directory `scripts` on `PYTHONPATH`, then use either the package CLI or normal imports:
