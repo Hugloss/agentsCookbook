@@ -3,7 +3,7 @@ name: Validate cookbook
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, chatgpt/agent-economics-probes]
 
 permissions:
   contents: read
