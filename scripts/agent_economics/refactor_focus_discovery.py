@@ -174,6 +174,7 @@ def _git_command(
     args: list[str],
     *,
     timeout_seconds: float,
+    max_stdout_bytes: int = 8_000_000,
 ) -> bytes:
     try:
         completed = subprocess.run(
@@ -187,6 +188,10 @@ def _git_command(
         raise DiscoveryError(
             f"git discovery command failed: {' '.join(args)}: {type(exc).__name__}"
         ) from exc
+    if len(completed.stdout) > max_stdout_bytes:
+        raise DiscoveryError(
+            f"git discovery output exceeded configured byte bound: {max_stdout_bytes}"
+        )
     return completed.stdout
 
 
