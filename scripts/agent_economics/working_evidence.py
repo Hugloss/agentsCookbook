@@ -81,3 +81,47 @@ def validate_invalidation(item: object) -> list[str]:
             "working evidence must not own repository generation"
         ]
     return []
+
+
+def provider_reference(
+    *,
+    provider: str,
+    evidence_identity: str,
+    repository_identity: str | None = None,
+    generation: str | int | None = None,
+) -> dict[str, object]:
+    """Build a small reference to reusable repository evidence, never a copy."""
+    provider = provider.strip()
+    evidence_identity = evidence_identity.strip()
+    if not provider:
+        raise ValueError("provider must be non-empty")
+    if not evidence_identity:
+        raise ValueError("evidence_identity must be non-empty")
+    reference: dict[str, object] = {
+        "provider": provider,
+        "evidence_identity": evidence_identity,
+    }
+    if repository_identity is not None:
+        reference["repository_identity"] = repository_identity
+    if generation is not None:
+        reference["generation"] = generation
+    return reference
+
+
+def validate_provider_reference(value: object) -> list[str]:
+    """Validate a provider pointer without interpreting provider internals."""
+    if not isinstance(value, Mapping):
+        return ["provider reference must be an object"]
+    errors: list[str] = []
+    for field in ("provider", "evidence_identity"):
+        item = value.get(field)
+        if not isinstance(item, str) or not item.strip():
+            errors.append(f"provider reference {field} must be a non-empty string")
+    allowed = {"provider", "evidence_identity", "repository_identity", "generation"}
+    extra = sorted(set(value) - allowed)
+    if extra:
+        errors.append(
+            "provider reference must not embed repository intelligence: "
+            + ", ".join(extra)
+        )
+    return errors
