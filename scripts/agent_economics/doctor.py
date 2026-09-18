@@ -51,6 +51,45 @@ def _source_candidates(root: Path) -> list[str]:
     return [_relative(path, root) for path in candidates]
 
 
+def _ruff_configuration(pyproject: dict[str, object]) -> dict[str, object]:
+    tool = pyproject.get("tool")
+    if not isinstance(tool, dict):
+        return {}
+    ruff = tool.get("ruff")
+    if not isinstance(ruff, dict):
+        return {}
+    lint = ruff.get("lint")
+    if not isinstance(lint, dict):
+        return {}
+    limits: dict[str, int] = {}
+    mccabe = lint.get("mccabe")
+    if isinstance(mccabe, dict) and isinstance(mccabe.get("max-complexity"), int):
+        limits["C901"] = int(mccabe["max-complexity"])
+    pylint = lint.get("pylint")
+    if isinstance(pylint, dict):
+        mapping = {
+            "max-returns": "PLR0911",
+            "max-branches": "PLR0912",
+            "max-args": "PLR0913",
+            "max-locals": "PLR0914",
+            "max-statements": "PLR0915",
+            "max-bool-expr": "PLR0916",
+        }
+        for key, rule in mapping.items():
+            if isinstance(pylint.get(key), int):
+                limits[rule] = int(pylint[key])
+    excludes = ruff.get("extend-exclude")
+    return {
+        "limits": dict(sorted(limits.items())),
+        "extend_exclude": list(excludes) if isinstance(excludes, list) and all(isinstance(x, str) for x in excludes) else [],
+    }
+
+
+def _analysis_root_suggestions(root: Path) -> list[str]:
+    names = ("scripts", "benchmarks")
+    return [name for name in names if (root / name).is_dir()]
+
+
 def doctor(repository_root: Path) -> dict[str, object]:
     root = repository_root.resolve()
     if not root.is_dir():
@@ -67,6 +106,9 @@ def doctor(repository_root: Path) -> dict[str, object]:
     package_suggestions = [
         Path(item).name for item in sources if Path(item).name.isidentifier()
     ]
+    ruff_configuration = _ruff_configuration(pyproject)
+    analysis_roots = list(sources)
+    analysis_roots.extend(_analysis_root_suggestions(root))
     ambiguity = []
     if len(sources) != 1:
         ambiguity.append("source_root")
@@ -87,13 +129,18 @@ def doctor(repository_root: Path) -> dict[str, object]:
             "source_roots": sources,
             "tests_roots": tests,
             "package_names": package_suggestions,
+            "quality_analysis_roots": analysis_roots,
+            "ruff": ruff_configuration,
         },
         "ambiguity": ambiguity,
         "readiness": {
             "context_focus": "READY",
             "hotspot_focus": "READY" if len(sources) == 1 else "NEEDS_SOURCE_ROOT",
             "test_focus": "READY" if len(sources) == 1 and len(tests) == 1 else "NEEDS_CONFIG",
-            "quality_debt": "NEEDS_LIMITS" if ruff is not None else "NEEDS_RUFF",
+            "quality_debt": (
+                "READY" if ruff is not None and bool(ruff_configuration.get("limits")) and bool(analysis_roots)
+                else ("NEEDS_LIMITS" if ruff is not None else "NEEDS_RUFF")
+            ),
         },
         "interpretation": {
             "suggestions_are_not_repository_authority": True,
@@ -120,6 +167,7 @@ def _human(payload: dict[str, object]) -> str:
         f"Source suggestions ....... {', '.join(suggestions['source_roots']) or 'AMBIGUOUS / NOT FOUND'}",
         f"Test suggestions ......... {', '.join(suggestions['tests_roots']) or 'AMBIGUOUS / NOT FOUND'}",
         f"Package suggestions ...... {', '.join(suggestions['package_names']) or 'AMBIGUOUS / NOT FOUND'}",
+        f"Quality roots ............. {', '.join(suggestions['quality_analysis_roots']) or 'NOT FOUND'}",
         "",
         "READINESS",
     ]
