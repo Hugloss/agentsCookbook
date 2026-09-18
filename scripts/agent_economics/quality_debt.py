@@ -12,7 +12,7 @@ from .probe_contract import analyzed_input_identity, build_probe_contract, confi
 from .refactor_focus_paths import iso_utc_now
 
 TOOL_NAME = "quality-debt"
-TOOL_VERSION = "0.12.0"
+TOOL_VERSION = "0.13.0"
 _OBSERVED_LIMIT = re.compile(r"\((\d+)\s*(?:>|/)\s*(\d+)\)$")
 
 
@@ -30,7 +30,7 @@ def _inside(root: Path, raw: str) -> tuple[Path, str]:
     return resolved, relative.as_posix()
 
 
-def _source_identity(root: Path, roots: tuple[str, ...], suffixes: tuple[str, ...]) -> tuple[str, int, int]:
+def _excluded(relative: str, excludes: tuple[str, ...]) -> bool:\n    return any(relative == item.rstrip("/") or relative.startswith(item.rstrip("/") + "/") for item in excludes)\n\n\ndef _source_identity(\n    root: Path, roots: tuple[str, ...], suffixes: tuple[str, ...], excludes: tuple[str, ...]\n) -> tuple[str, int, int]:
     entries: list[dict[str, str]] = []
     total = 0
     for raw_root in roots:
@@ -44,7 +44,7 @@ def _source_identity(root: Path, roots: tuple[str, ...], suffixes: tuple[str, ..
             data = path.read_bytes()
             total += len(data)
             entries.append({
-                "path": path.relative_to(root).as_posix(),
+                "path": relative,
                 "sha256": hashlib.sha256(data).hexdigest(),
             })
     return analyzed_input_identity(entries), len(entries), total
@@ -93,7 +93,7 @@ def _run_ruff(
     return value, result.metrics()
 
 
-def _findings(root: Path, diagnostics: list[dict[str, object]], limits: dict[str, int]) -> list[dict[str, object]]:
+def _findings(\n    root: Path, diagnostics: list[dict[str, object]], limits: dict[str, int], excludes: tuple[str, ...]\n) -> list[dict[str, object]]:
     grouped: dict[tuple[str, int], dict[str, object]] = {}
     for diagnostic in diagnostics:
         if not isinstance(diagnostic, dict):
@@ -119,7 +119,7 @@ def _findings(root: Path, diagnostics: list[dict[str, object]], limits: dict[str
     return [grouped[key] for key in sorted(grouped)]
 
 
-def _file_lengths(root: Path, roots: tuple[str, ...], max_file_lines: int | None) -> dict[str, int]:
+def _file_lengths(\n    root: Path, roots: tuple[str, ...], max_file_lines: int | None, excludes: tuple[str, ...]\n) -> dict[str, int]:
     if max_file_lines is None:
         return {}
     oversized: dict[str, int] = {}
@@ -130,7 +130,7 @@ def _file_lengths(root: Path, roots: tuple[str, ...], max_file_lines: int | None
             if path.is_file():
                 lines = len(path.read_text(encoding="utf-8").splitlines())
                 if lines > max_file_lines:
-                    oversized[path.relative_to(root).as_posix()] = lines
+                    oversized[relative] = lines
     return oversized
 
 
@@ -204,7 +204,7 @@ def quality_debt_audit(
         raise QualityDebtError("only the ruff analyzer adapter is currently supported")
     executable = shutil.which(analyzer) or analyzer
     version = _analyzer_version(root, executable, timeout_seconds)
-    source_identity, files_read, source_bytes = _source_identity(root, roots, (".py",))
+    line_roots = roots if file_line_roots is None else file_line_roots\n    source_identity, files_read, source_bytes = _source_identity(root, roots, (".py",), excludes)
     diagnostics, execution = _run_ruff(
         root, executable=executable, roots=roots, limits=limits,
         timeout_seconds=timeout_seconds, max_stdout_bytes=max_stdout_bytes,
