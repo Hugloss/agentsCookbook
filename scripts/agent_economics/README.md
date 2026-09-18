@@ -78,13 +78,16 @@ A command manifest is executable-repository configuration. Passing `--manifest` 
 ```bash
 python -m scripts.agent_economics quality-debt \
   --repository-root . \
-  --root src --root tests \
+  --root src --root scripts \
+  --exclude scripts/retained \
   --limit C901=10 --limit PLR0912=12 \
-  --max-file-lines 1200 \
+  --max-file-lines 1200 --file-line-root src \
   --artifact .agent-artifacts/quality-debt.json
 ```
 
-A baseline comparison is valid only when analyzer/version, roots, limits, and file-line policy have the same comparable identity. Otherwise the result is `INCOMPARABLE_BASELINE`. Per-file increases remain visible even when repository-wide debt falls. Baselines are measurement evidence, not acceptance or certification authority.
+Repeat `--exclude` for repository-relative path prefixes that are outside the admitted analyzer evidence. Exclusions apply consistently to analyzer invocation, analyzed-source identity, findings, and file-length evidence. `--file-line-root` independently scopes the line ceiling when only production roots own that policy; without it, the ceiling applies to every `--root`.
+
+A baseline comparison is valid only when analyzer/version, roots, exclusions, limits, and file-line policy have the same comparable identity. Otherwise the result is `INCOMPARABLE_BASELINE`. Per-file increases remain visible even when repository-wide debt falls. Baselines are measurement evidence, not acceptance or certification authority.
 
 Hotspot evidence also reports the largest definitions (functions/classes with qualified names and line spans), while keeping those dimensions independent rather than creating a composite quality score.
 
