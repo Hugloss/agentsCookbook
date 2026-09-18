@@ -3,7 +3,7 @@ name: Validate cookbook
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, chatgpt/agent-economics-probes]
 
 permissions:
   contents: read
@@ -52,7 +52,7 @@ jobs:
 
   agent-economics:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -84,6 +84,7 @@ jobs:
             quality_debt_qualification
             dogfood_corpus_qualification
             pre_pr_qualification
+            agent_economics_stress_qualification
           )
           for module in "${modules[@]}"; do
             python -m "scripts.agent_economics.${module}"

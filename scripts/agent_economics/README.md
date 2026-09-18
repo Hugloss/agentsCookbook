@@ -101,3 +101,10 @@ python -m scripts.agent_economics dogfood-corpus \
 ```
 
 The corpus generator does not execute or repair tasks. Its identity makes it possible to bind P11 outcome records to an exact experimental task definition rather than a mutable task name.
+
+
+### Stress qualification
+
+The permanent Agent Economics qualification includes a bounded stress layer after the deterministic phase regressions. It repeatedly exercises semantic identity stability, independent stdout/stderr hard limits, non-UTF8 output, a 128-iteration loop-state boundary, and repeated process-tree timeout termination.
+
+The GitHub Agent Economics job has a 20-minute outer timeout. Individual commands retain much smaller local bounds; the outer timeout is safety headroom for the complete suite, not permission for a single probe or repair command to run unbounded.
