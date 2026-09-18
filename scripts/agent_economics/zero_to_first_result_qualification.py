@@ -35,6 +35,11 @@ def qualify() -> None:
         assert payload["suggestions"]["tests_roots"] == ["tests"]
         assert payload["suggestions"]["package_names"] == ["acme"]
         assert payload["suggestions"]["quality_analysis_roots"] == ["src/acme", "scripts", "benchmarks"]
+        assert payload["suggestions"]["quality_analysis_root_evidence"] == [
+            {"path": "src/acme", "status": "DETECTED", "basis": "python_package_layout"},
+            {"path": "scripts", "status": "PROPOSED", "basis": "conventional_directory_name"},
+            {"path": "benchmarks", "status": "PROPOSED", "basis": "conventional_directory_name"},
+        ]
         assert payload["suggestions"]["ruff"]["limits"] == {
             "C901": 8, "PLR0912": 9, "PLR0913": 6, "PLR0914": 15,
         }
@@ -48,6 +53,8 @@ def qualify() -> None:
             "test_roots": ["tests"],
         }
         assert profile["quality_debt"]["analysis_roots"] == ["src/acme", "scripts", "benchmarks"]
+        assert profile["quality_debt"]["analysis_root_evidence"] == payload["suggestions"]["quality_analysis_root_evidence"]
+        assert profile["interpretation"]["proposed_roots_require_review_before_persistent_use"] is True
         assert profile["quality_debt"]["limits"]["C901"] == 8
         assert profile["interpretation"]["writes_repository_configuration"] is False
         if payload["environment"]["ruff"]["available"]:
@@ -80,7 +87,7 @@ def qualify() -> None:
         assert command.name in help_text
     assert "Start in an unfamiliar repository" in help_text
 
-    print('{"cases":8,"status":"PASS","tool":"zero-to-first-result"}')
+    print('{"cases":9,"status":"PASS","tool":"zero-to-first-result"}')
 
 
 if __name__ == "__main__":
