@@ -7,7 +7,8 @@ from scripts.agent_economics.working_evidence import (
     repeated_action_without_new_evidence,
     validate_provider_reference,
     new_working_evidence,
-    validate_invalidation,\n    validate_working_evidence,
+    validate_invalidation,
+    validate_working_evidence,
 )
 
 
