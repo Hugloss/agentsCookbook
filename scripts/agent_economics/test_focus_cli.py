@@ -45,7 +45,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--changed-paths-file", type=Path, default=None)
     parser.add_argument("--package-name", default=None)
     parser.add_argument("--tests-package-name", default=None)
-    parser.add_argument("--artifact-path", type=Path, default=Path(".agent-artifacts/test-focus.json"))
+    parser.add_argument("--artifact", "--artifact-path", dest="artifact", type=Path, default=Path(".agent-artifacts/test-focus.json"))
+    parser.add_argument("--format", choices=("human", "json"), default="human")
+    parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--ownership-hints-path", type=Path, default=None)
     parser.add_argument("--helper-max-depth", type=int, default=2)
     parser.add_argument("--pytest-max-depth", type=int, default=2)
@@ -83,7 +85,7 @@ def main(argv: list[str] | None = None) -> None:
             changed_paths=changed,
             package_name=args.package_name,
             tests_package_name=args.tests_package_name,
-            artifact_path=args.artifact_path,
+            artifact_path=args.artifact,
             helper_max_depth=args.helper_max_depth,
             pytest_max_depth=args.pytest_max_depth,
             impact_max_depth=args.impact_max_depth,
@@ -102,7 +104,14 @@ def main(argv: list[str] | None = None) -> None:
         )
     except TestFocusError as exc:
         raise SystemExit(f"test-focus: {exc}") from exc
-    print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    if args.quiet:
+        return
+    if args.format == "json":
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        print(f"artifact={args.artifact.as_posix()} candidates={len(payload['candidates'])} "
+              f"verification={len(payload['verification_suggestions'])} "
+              f"uncertainty={len(payload['uncertainty'])}")
 
 
 if __name__ == "__main__":

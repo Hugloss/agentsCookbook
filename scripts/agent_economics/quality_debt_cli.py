@@ -27,7 +27,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--exclude", action="append", default=[])
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--write-baseline", type=Path)
-    parser.add_argument("--artifact", type=Path)
+    parser.add_argument("--artifact", "--artifact-path", dest="artifact", type=Path)
+    parser.add_argument("--format", choices=("human", "json"), default="human")
+    parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
     parser.add_argument("--max-stdout-bytes", type=int, default=2_000_000)
     parser.add_argument("--max-stderr-bytes", type=int, default=200_000)
@@ -49,7 +51,17 @@ def main(argv: list[str] | None = None) -> None:
         temp = resolved.with_suffix(resolved.suffix + ".tmp")
         temp.write_text(json.dumps(baseline_document(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
         temp.replace(resolved)
-    print(json.dumps(payload, indent=2, sort_keys=True))
+    if args.quiet:
+        return
+    if args.format == "json":
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        summary = payload["derived"]["summary"]
+        print(
+            f"artifact={args.artifact.as_posix() if args.artifact else '-'} "
+            f"files={len(summary['files'])} excess={summary['excess']} "
+            f"locations={summary['locations']} rule_findings={summary['rule_findings']}"
+        )
 
 
 if __name__ == "__main__":

@@ -42,10 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="File suffix to include, e.g. .py or ts. Repeatable. Defaults to common code/text suffixes.",
     )
     parser.add_argument(
-        "--artifact-path",
+        "--artifact", "--artifact-path", dest="artifact",
         type=Path,
         default=Path(".agent-artifacts/context-focus.json"),
     )
+    parser.add_argument("--format", choices=("human", "json"), default="human")
+    parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--max-files", type=int, default=8)
     parser.add_argument("--max-lines", type=int, default=3000)
     parser.add_argument("--max-bytes", type=int, default=250_000)
@@ -92,9 +94,9 @@ def main(argv: list[str] | None = None) -> None:
         roots = tuple(args.root) if args.root else (Path("."),)
         suffixes = tuple(args.include_suffix) if args.include_suffix else DEFAULT_CONTEXT_SUFFIXES
         artifact_path = (
-            args.artifact_path
-            if args.artifact_path.is_absolute()
-            else repository_root / args.artifact_path
+            args.artifact
+            if args.artifact.is_absolute()
+            else repository_root / args.artifact
         )
         intelligence_path = args.repository_intelligence_path
         if intelligence_path is not None and not intelligence_path.is_absolute():
@@ -135,19 +137,19 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         raise SystemExit(2) from exc
 
-    print(
-        json.dumps(
-            {
-                "artifact": artifact_path.as_posix(),
-                "selected": payload["interpretation"]["selected_targets"],
-                "selected_count": payload["derived"]["selected_count"],
-                "files_read": payload["economics"]["files_read"],
-                "bytes_read": payload["economics"]["bytes_read"],
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-    )
+    if args.quiet:
+        return
+    summary = {
+        "artifact": artifact_path.as_posix(),
+        "selected": payload["interpretation"]["selected_targets"],
+        "selected_count": payload["derived"]["selected_count"],
+        "files_read": payload["economics"]["files_read"],
+        "bytes_read": payload["economics"]["bytes_read"],
+    }
+    if args.format == "json":
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    else:
+        print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
 
 
 if __name__ == "__main__":
