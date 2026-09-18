@@ -37,6 +37,35 @@ def _excluded(relative: str, excludes: tuple[str, ...]) -> bool:
     )
 
 
+def _validate_scope(root: Path, roots: tuple[str, ...], excludes: tuple[str, ...]) -> list[dict[str, str]]:
+    resolved_roots: list[tuple[str, Path]] = []
+    seen: dict[Path, str] = {}
+    for raw in roots:
+        resolved, relative = _inside(root, raw)
+        if not resolved.exists():
+            raise QualityDebtError(f"configured root does not exist: {raw}")
+        if resolved in seen:
+            raise QualityDebtError(f"duplicate configured root: {raw} resolves to {seen[resolved]}")
+        for previous_raw, previous in resolved_roots:
+            if resolved in previous.parents or previous in resolved.parents:
+                raise QualityDebtError(
+                    f"overlapping configured roots: {previous_raw} and {raw}"
+                )
+        seen[resolved] = relative
+        resolved_roots.append((raw, resolved))
+
+    diagnostics: list[dict[str, str]] = []
+    for raw, resolved in resolved_roots:
+        relative = resolved.relative_to(root).as_posix()
+        if _excluded(relative, excludes):
+            diagnostics.append({
+                "code": "configured_root_fully_excluded",
+                "root": raw,
+                "message": f"configured root is fully excluded: {raw}",
+            })
+    return diagnostics
+
+
 def _source_identity(
     root: Path,
     roots: tuple[str, ...],
@@ -272,6 +301,7 @@ def quality_debt_audit(
         raise QualityDebtError("max_file_lines must be positive")
     if analyzer != "ruff":
         raise QualityDebtError("only the ruff analyzer adapter is currently supported")
+    scope_diagnostics = _validate_scope(root, roots, excludes)
     executable = shutil.which(analyzer) or analyzer
     version = _analyzer_version(root, executable, timeout_seconds)
     line_roots = roots if file_line_roots is None else file_line_roots
@@ -339,7 +369,7 @@ def quality_debt_audit(
         },
         evidence={
             "analyzer": {"name": analyzer, "version": version, "resolved_executable": executable},
-            "source_universe": source_universe,
+            "source_universe": {**source_universe, "diagnostics": scope_diagnostics},
             "findings": findings, "detailed_findings": detailed_findings,
             "oversized_files": oversized,
             "comparable_identity": comparable_identity,
@@ -355,7 +385,7 @@ def quality_debt_audit(
         warnings=[{
             "code": "quality_debt_not_edit_authority",
             "message": "Quality-debt measurements do not authorize source edits or certification.",
-        }],
+        }, *scope_diagnostics],
         candidates=sorted(candidates, key=lambda x: (-int(x["facts"]["excess"]), x["target"])),
         required_next_evidence=[], deferred_evidence=[], verification_suggestions=[],
         economics={
