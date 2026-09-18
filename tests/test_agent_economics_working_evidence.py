@@ -236,8 +236,45 @@ def test_scope_expansion_reopens_evidence_acquisition() -> None:
     result = evidence_stop_facts(
         risk_boundaries=[{"identity": "behavior"}],
         proofs=[{"boundary": "behavior", "fresh": True, "direct": True}],
-        scope_expanded=True,
+        scope_expansion_evidence=[
+            {
+                "provider": "hashmarks",
+                "evidence_identity": "sha256:impact-delta",
+                "boundary": "public-api-consumers",
+            }
+        ],
     )
 
     assert result["sufficient"] is False
     assert result["scope_expanded"] is True
+    assert result["scope_expansion_evidence"] == [
+        "hashmarks:sha256:impact-delta:public-api-consumers"
+    ]
+
+
+
+def test_scope_expansion_cannot_be_asserted_without_provider_evidence() -> None:
+    result = evidence_stop_facts(
+        risk_boundaries=[{"identity": "behavior"}],
+        proofs=[{"boundary": "behavior", "fresh": True, "direct": True}],
+        scope_expansion_evidence=[],
+    )
+
+    assert result["sufficient"] is True
+    assert result["scope_expanded"] is False
+
+
+def test_malformed_scope_expansion_fails_closed() -> None:
+    result = evidence_stop_facts(
+        risk_boundaries=[{"identity": "behavior"}],
+        proofs=[{"boundary": "behavior", "fresh": True, "direct": True}],
+        scope_expansion_evidence=[
+            {"provider": "hashmarks", "boundary": "new-consumer"}
+        ],
+    )
+
+    assert result["sufficient"] is False
+    assert result["scope_expanded"] is True
+    assert result["invalid_scope_expansion_evidence"] == [
+        "<invalid-scope-expansion>"
+    ]
