@@ -265,20 +265,32 @@ def _comparison(
         return {"state": "INCOMPARABLE_BASELINE", "reason": "schema_mismatch", "files": {}, "delta_excess": None}
     if baseline.get("comparable_identity") != comparable_identity:
         previous_values = baseline.get("comparable_values")
-        changed_fields: list[str] = []
-        if isinstance(previous_values, dict):
+        if not isinstance(previous_values, dict):
+            return {
+                "state": "INCOMPARABLE_BASELINE",
+                "reason": "comparable_values_unavailable",
+                "changed_fields": None,
+                "files": {},
+                "delta_excess": None,
+            }
+        # v1 baselines written before executable-path portability included the
+        # resolved analyzer location in semantic comparability. Preserve those
+        # baselines when every actual measurement input still agrees.
+        normalized_previous = dict(previous_values)
+        normalized_previous.pop("analyzer_executable", None)
+        if configuration_identity(normalized_previous) != comparable_identity:
             changed_fields = sorted(
                 key
-                for key in set(previous_values) | set(comparable_values)
-                if previous_values.get(key) != comparable_values.get(key)
+                for key in set(normalized_previous) | set(comparable_values)
+                if normalized_previous.get(key) != comparable_values.get(key)
             )
-        return {
-            "state": "INCOMPARABLE_BASELINE",
-            "reason": "configuration_or_analyzer_mismatch",
-            "changed_fields": changed_fields,
-            "files": {},
-            "delta_excess": None,
-        }
+            return {
+                "state": "INCOMPARABLE_BASELINE",
+                "reason": "configuration_or_analyzer_mismatch",
+                "changed_fields": changed_fields,
+                "files": {},
+                "delta_excess": None,
+            }
     previous = baseline.get("summary")
     if not isinstance(previous, dict) or not isinstance(previous.get("files"), dict):
         return {"state": "INCOMPARABLE_BASELINE", "reason": "invalid_summary", "files": {}, "delta_excess": None}
@@ -337,7 +349,7 @@ def quality_debt_audit(
     oversized = _file_lengths(root, line_roots, max_file_lines, excludes)
     summary = _summary(findings, limits, oversized)
     comparable_values = {
-        "analyzer": analyzer, "analyzer_executable": executable, "analyzer_version": version, "roots": list(roots),
+        "analyzer": analyzer, "analyzer_version": version, "roots": list(roots),
         "excludes": list(excludes), "file_line_roots": list(line_roots),
         "limits": dict(sorted(limits.items())), "max_file_lines": max_file_lines,
     }
