@@ -57,3 +57,12 @@ The helper exposes facts only. A skill may use them to decide whether another br
 Working evidence does not compare repository paths to decide freshness. It consumes the provider's freshness result. A provider may preserve focused evidence across a repository change when it has proved the edit is outside the observation/dependency scope; a relevant intersection makes that evidence stale.
 
 Unknown or unsupported freshness fails closed. This preserves useful evidence without moving dependency analysis into Agent Economics.
+
+
+## Evidence sufficiency and stopping
+
+Evidence acquisition stops when every declared risk boundary has at least one fresh, direct proof and no new evidence has expanded the affected scope. A merely related test is not automatically direct behavioral proof, and stale proof does not satisfy a boundary.
+
+Scope expansion reopens acquisition even if the previously declared boundaries were satisfied. The next-evidence path checks this sufficiency state before translating another evidence requirement into a command, so an already-proven task does not manufacture another verification step.
+
+Risk-boundary declaration and sufficiency are Agent Economics policy. Repository relationships, evidence identity, and freshness remain provider-owned facts.
