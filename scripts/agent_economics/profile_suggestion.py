@@ -19,6 +19,12 @@ def profile_suggestion(doctor_payload: dict[str, Any]) -> dict[str, Any]:
 
     package_roots = list(suggestions.get("source_roots") or [])
     test_roots = list(suggestions.get("tests_roots") or [])
+    package_root_evidence = suggestions.get("source_root_evidence")
+    if not isinstance(package_root_evidence, list):
+        package_root_evidence = []
+    test_root_evidence = suggestions.get("test_root_evidence")
+    if not isinstance(test_root_evidence, list):
+        test_root_evidence = []
     quality_roots = list(suggestions.get("quality_analysis_roots") or [])
     quality_root_evidence = suggestions.get("quality_analysis_root_evidence")
     if not isinstance(quality_root_evidence, list):
@@ -44,7 +50,9 @@ def profile_suggestion(doctor_payload: dict[str, Any]) -> dict[str, Any]:
         "status": "REVIEW_REQUIRED",
         "repository": {
             "package_roots": package_roots,
+            "package_root_evidence": package_root_evidence,
             "test_roots": test_roots,
+            "test_root_evidence": test_root_evidence,
         },
         "quality_debt": {
             "analysis_roots": quality_roots,
