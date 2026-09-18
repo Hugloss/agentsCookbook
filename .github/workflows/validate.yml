@@ -85,6 +85,7 @@ jobs:
             bootstrap_qualification
             zero_to_first_result_qualification
             evidence_next_qualification
+            explain_qualification
             dogfood_corpus_qualification
             pre_pr_qualification
             agent_economics_stress_qualification
