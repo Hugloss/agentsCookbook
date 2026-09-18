@@ -152,6 +152,7 @@ def main() -> None:
             portable_baseline["comparable_identity"] = configuration_identity(relocated_values)
             relocated = root/"relocated-baseline.json"
             relocated.write_text(json.dumps(portable_baseline), encoding="utf-8")
+            os.environ.pop("AE_RUFF_MODE", None)
             relocated_result = quality_debt_audit(
                 repository_root=root, roots=("src",), limits={"C901":5}, baseline_path=relocated
             )
