@@ -63,6 +63,18 @@ def qualify() -> None:
     assert result["interpretation"]["does_not_execute_command"] is True
     assert result["interpretation"]["does_not_authorize_edit"] is True
 
+    review_only_profile = {
+        "status": "REVIEW_REQUIRED",
+        "repository": {"package_roots": ["pkg"], "test_roots": ["tests"]},
+        "interpretation": {"suggestion_is_not_repository_authority": True},
+    }
+    review_only = next_evidence(payload, target="pkg/hot.py", profile=review_only_profile)
+    assert review_only["command"] is None
+    assert review_only["unresolved"] == [
+        "profile_review_required",
+        "profile_not_repository_authority",
+    ]
+
     missing_profile = next_evidence(payload, target="pkg/hot.py")
     assert missing_profile["command"] is None
     assert missing_profile["unresolved"] == ["profile"]
@@ -91,7 +103,7 @@ def qualify() -> None:
     assert result["command"] is None
     assert result["unresolved"] == ["unsupported_next_evidence:invented"]
 
-    print('{"cases":7,"status":"PASS","tool":"evidence-next"}')
+    print('{"cases":8,"status":"PASS","tool":"evidence-next"}')
 
 
 if __name__ == "__main__":
