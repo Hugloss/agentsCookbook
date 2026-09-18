@@ -8,6 +8,12 @@ The library works with **OpenCode, Pi, or another compatible agent runtime**. Th
 
 > The goal is not to make the agent sound more confident. The goal is to make it inspect the repository, find the right thing to investigate, prove what is actually wrong, and prefer the smallest correction that removes the problem.
 
+## Agent Economics: import or pin it
+
+Agent Economics is a first-class standalone Python package inside this repository. Other repositories can import it directly by placing `scripts` on `PYTHONPATH`, or pin an exact agentsCookbook commit with `scripts/bootstrap-agent-economics.sh`. Repository-specific wrappers are not required for normal probes; keep adapters only for repository-owned parity or schema translation.
+
+See [scripts/agent_economics/README.md](scripts/agent_economics/README.md) for the import API, exact bootstrap contract, CLI examples, evidence boundaries, and probe catalog.
+
 ## 30-second setup
 
 The Markdown prompts are platform-independent. The repository helper installer is currently **tested on Ubuntu/Linux and WSL**; native macOS and native Windows installer support is not claimed yet.
