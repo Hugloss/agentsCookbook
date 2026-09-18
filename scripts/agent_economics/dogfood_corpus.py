@@ -79,7 +79,7 @@ def write_corpus(path: Path) -> dict[str, object]:
 
 def main(argv: list[str] | None=None) -> None:
     import argparse
-    parser=argparse.ArgumentParser(description="Emit the immutable P12/P13 agent-economics dogfood corpus specification.")
+    parser=argparse.ArgumentParser(description="Emit the immutable P10/P11 Agent Economics empirical dogfood corpus specification.")
     parser.add_argument("--artifact",type=Path)
     args=parser.parse_args(argv)
     payload=write_corpus(args.artifact) if args.artifact else default_corpus()

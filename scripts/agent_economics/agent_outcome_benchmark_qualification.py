@@ -24,17 +24,68 @@ def main() -> None:
         Outcome(task_id="broad-after-focused", treatment_id="p10", mode="bridge", correct=True, ci_activations=1, files_opened=6, evidence_bytes=9000, context_tokens_estimate=4000, tool_calls=10, local_commands=5, repair_iterations=2, local_ci_agree=True, **common),
     ]
     result = compare(outcomes)
-    assert result["schema"]["version"] == 2
+    assert result["schema"]["version"] == 3
     assert result["correctness"]["paired_tasks"] == 2
     assert result["metrics"]["ci_activations"]["delta"] == -3.0
     assert result["timing"]["paired_measurements"] == 1
     assert result["authority"]["automatic_promotion"] is False
     assert result["authority"]["promotion_evidence_is_not_a_verdict"] is True
+    assert result["promotion_evidence"]["local_ci_disagreement_zero"] is True
     assert result["experiment_protocol"]["bridge_receipts_bound"] == 0
     assert result["experiment_protocol"]["oracle_protocol_unknown"] == 2
     assert len(outcome_template(task_id="new-task", treatment_id="p10")) == 2
 
+    unknown_ci = compare([
+        Outcome(task_id="unknown-ci", treatment_id="p10", mode="baseline", correct=True, **common),
+        Outcome(task_id="unknown-ci", treatment_id="p10", mode="bridge", correct=True, local_ci_agree=None, **common),
+    ])
+    assert unknown_ci["correctness"]["local_ci_unknown"] == 1
+    assert unknown_ci["promotion_evidence"]["local_ci_disagreement_zero"] is False
+
+
     bound_common = dict(common, bridge_implementation_id="bridge:v1", manifest_id="manifest:v1", local_qualification_id="local:v1", final_source_id="source:v1", ci_evidence_id="ci:v1", oracle_opened_after_freeze=True)
+    strict_shared = dict(
+        repository_id="repo:strict", task_fixture_id="fixture:strict", corpus_id="corpus:v1",
+        initial_source_id="source:initial", agent_profile="agent:v1",
+        execution_environment_id="env:v1",
+    )
+    strict_baseline = Outcome(
+        task_id="strict", treatment_id="p10", mode="baseline", correct=True,
+        run_id="run:baseline", final_source_id="source:baseline-final",
+        ci_evidence_id="ci:baseline", oracle_opened_after_freeze=True, **strict_shared,
+    )
+    strict_bridge = Outcome(
+        task_id="strict", treatment_id="p10", mode="bridge", correct=True,
+        run_id="run:bridge", bridge_implementation_id="bridge:v1",
+        manifest_id="manifest:v1", local_qualification_id="local:v1",
+        final_source_id="source:bridge-final", ci_evidence_id="ci:bridge",
+        local_ci_agree=True, oracle_opened_after_freeze=True, **strict_shared,
+    )
+    strict = compare([strict_baseline, strict_bridge], strict_dogfood=True)
+    assert strict["promotion_evidence"]["strict_dogfood_protocol"] is True
+    assert strict["promotion_evidence"]["local_ci_disagreement_zero"] is True
+
+    _expect_error(lambda: compare([
+        Outcome(**{**strict_baseline.__dict__, "initial_source_id": None}),
+        strict_bridge,
+    ], strict_dogfood=True))
+    _expect_error(lambda: compare([
+        strict_baseline,
+        Outcome(**{**strict_bridge.__dict__, "run_id": "run:baseline"}),
+    ], strict_dogfood=True))
+    _expect_error(lambda: compare([
+        strict_baseline,
+        Outcome(**{**strict_bridge.__dict__, "local_ci_agree": None}),
+    ], strict_dogfood=True))
+    _expect_error(lambda: compare([
+        strict_baseline,
+        Outcome(**{**strict_bridge.__dict__, "ci_evidence_id": None}),
+    ], strict_dogfood=True))
+    _expect_error(lambda: compare([
+        Outcome(**{**strict_baseline.__dict__, "oracle_opened_after_freeze": None}),
+        strict_bridge,
+    ], strict_dogfood=True))
+
     bound = compare([Outcome(task_id="bound", treatment_id="p10", mode="baseline", correct=True, **common), Outcome(task_id="bound", treatment_id="p10", mode="bridge", correct=True, **bound_common)])
     assert bound["experiment_protocol"]["bridge_receipts_bound"] == 1
     assert bound["experiment_protocol"]["ci_evidence_bound"] == 1
@@ -52,7 +103,7 @@ def main() -> None:
     wrong_treatment = Outcome(task_id="localized-python", treatment_id="other", mode="bridge", correct=True, **common)
     _expect_error(lambda: compare([outcomes[0], wrong_treatment]))
 
-    print(json.dumps({"status": "PASS", "paired_tasks": 2, "schema": 2, "automatic_promotion": False}, sort_keys=True))
+    print(json.dumps({"status": "PASS", "paired_tasks": 2, "schema": 3, "automatic_promotion": False, "strict_dogfood": True}, sort_keys=True))
 
 
 if __name__ == "__main__":
