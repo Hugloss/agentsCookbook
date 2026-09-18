@@ -156,11 +156,25 @@ def main() -> None:
             assert "analyzer_executable" not in baseline_document(base)["comparable_values"]
             assert base["evidence"]["analyzer"]["resolved_executable"] == str(fake)
 
+            pre_isolation = baseline_document(base)
+            pre_isolation_values = dict(pre_isolation["comparable_values"])
+            pre_isolation_values.pop("analyzer_configuration_mode")
+            from .quality_debt import configuration_identity
+            pre_isolation["comparable_values"] = pre_isolation_values
+            pre_isolation["comparable_identity"] = configuration_identity(pre_isolation_values)
+            pre_isolation_path = root/"pre-isolation-baseline.json"
+            pre_isolation_path.write_text(json.dumps(pre_isolation), encoding="utf-8")
+            pre_isolation_result = quality_debt_audit(
+                repository_root=root, roots=("src",), limits={"C901":5},
+                baseline_path=pre_isolation_path,
+            )
+            assert pre_isolation_result["derived"]["baseline_comparison"]["state"] == "INCOMPARABLE_BASELINE"
+            assert pre_isolation_result["derived"]["baseline_comparison"]["reason"] == "analyzer_configuration_mode_unavailable"
+
             portable_baseline = baseline_document(base)
             relocated_values = dict(portable_baseline["comparable_values"])
             relocated_values["analyzer_executable"] = "/different/checkout/bin/ruff"
             portable_baseline["comparable_values"] = relocated_values
-            from .quality_debt import configuration_identity
             portable_baseline["comparable_identity"] = configuration_identity(relocated_values)
             relocated = root/"relocated-baseline.json"
             relocated.write_text(json.dumps(portable_baseline), encoding="utf-8")
@@ -191,7 +205,7 @@ def main() -> None:
             else: raise AssertionError("analyzer timeout must fail closed")
         finally:
             os.environ.pop("AE_RUFF_MODE", None); os.environ["PATH"]=old_path
-    print(json.dumps({"status":"PASS","cases":26,"tool":"quality-debt"},sort_keys=True))
+    print(json.dumps({"status":"PASS","cases":27,"tool":"quality-debt"},sort_keys=True))
 
 
 if __name__=="__main__":
