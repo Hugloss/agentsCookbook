@@ -31,6 +31,27 @@ def main(argv: list[str] | None = None) -> None:
         hotspot_focus_main(args[1:])
         return
 
+    if args and args[0] == "capabilities":
+        from .capabilities import main as capabilities_main
+
+        capabilities_main(args[1:])
+        return
+    if args and args[0] == "run-command":
+        from .command_runner import main as command_runner_main
+
+        command_runner_main(args[1:])
+        return
+    if args and args[0] == "qualify-local":
+        from .local_qualify import main as local_qualify_main
+
+        local_qualify_main(args[1:])
+        return
+    if args and args[0] == "benchmark-outcomes":
+        from .agent_outcome_benchmark import main as benchmark_main
+
+        benchmark_main(args[1:])
+        return
+
     from .refactor_focus_cli import main as refactor_focus_main
 
     if args and args[0] == "refactor-focus":
