@@ -1,6 +1,7 @@
 from scripts.agent_economics.working_evidence import (
     SCHEMA,
     dirty_gate_delta_facts,
+    evidence_stop_facts,
     provider_evidence_reuse_facts,
     provider_reference,
     repeated_action_without_new_evidence,
@@ -189,3 +190,53 @@ def test_unknown_provider_freshness_fails_closed() -> None:
         "usable": False,
         "reason": "unsupported-provider-freshness",
     }
+
+
+def test_stop_rule_closes_when_every_boundary_has_fresh_direct_proof() -> None:
+    result = evidence_stop_facts(
+        risk_boundaries=[
+            {"identity": "behavior"},
+            {"identity": "typing"},
+            {"identity": "format"},
+        ],
+        proofs=[
+            {"boundary": "behavior", "fresh": True, "direct": True},
+            {"boundary": "typing", "fresh": True, "direct": True},
+            {"boundary": "format", "fresh": True, "direct": True},
+        ],
+    )
+
+    assert result["sufficient"] is True
+    assert result["stop_acquiring_evidence"] is True
+    assert result["reason"] == "all-declared-risk-boundaries-have-fresh-direct-proof"
+
+
+def test_stop_rule_rejects_related_but_indirect_test_evidence() -> None:
+    result = evidence_stop_facts(
+        risk_boundaries=[{"identity": "behavior"}],
+        proofs=[{"boundary": "behavior", "fresh": True, "direct": False}],
+    )
+
+    assert result["sufficient"] is False
+    assert result["indirect_only_boundaries"] == ["behavior"]
+
+
+def test_stop_rule_rejects_stale_direct_proof() -> None:
+    result = evidence_stop_facts(
+        risk_boundaries=[{"identity": "behavior"}],
+        proofs=[{"boundary": "behavior", "fresh": False, "direct": True}],
+    )
+
+    assert result["sufficient"] is False
+    assert result["stale_only_boundaries"] == ["behavior"]
+
+
+def test_scope_expansion_reopens_evidence_acquisition() -> None:
+    result = evidence_stop_facts(
+        risk_boundaries=[{"identity": "behavior"}],
+        proofs=[{"boundary": "behavior", "fresh": True, "direct": True}],
+        scope_expanded=True,
+    )
+
+    assert result["sufficient"] is False
+    assert result["scope_expanded"] is True
