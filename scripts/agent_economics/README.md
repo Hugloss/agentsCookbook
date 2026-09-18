@@ -28,7 +28,15 @@ After materialization, the first command should normally be:
 PYTHONPATH="$PWD/.agent-economics/scripts" python -m agent_economics doctor --repository-root .
 ```
 
-`doctor` is read-only. It reports Git/Python/Ruff availability, detects likely Python source/test/package roots, and marks probe readiness. Detected roots are suggestions only; ambiguous repository structure remains explicit instead of becoming hidden configuration.
+\`doctor\` is read-only. It reports Git/Python/Ruff availability, detects likely Python source/test/package roots, and marks probe readiness. Detected roots are suggestions only; ambiguous repository structure remains explicit instead of becoming hidden configuration.
+
+To see those observations projected into one reviewable campaign shape without writing anything:
+
+\`\`\`bash
+python -m agent_economics doctor --repository-root . --suggest-profile
+\`\`\`
+
+The result is always \`REVIEW_REQUIRED\`. It separates package/test roots from quality-analysis roots, preserves unresolved ambiguity and missing tool supply, and is not repository authority. Agent Economics does not automatically write or adopt the suggestion.
 
 The package root is also a real CLI front door:
 
