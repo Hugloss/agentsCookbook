@@ -30,10 +30,18 @@ def main() -> None:
     assert result["timing"]["paired_measurements"] == 1
     assert result["authority"]["automatic_promotion"] is False
     assert result["authority"]["promotion_evidence_is_not_a_verdict"] is True
-    assert result["promotion_evidence"]["local_ci_disagreement_zero"] is False
+    assert result["promotion_evidence"]["local_ci_disagreement_zero"] is True
     assert result["experiment_protocol"]["bridge_receipts_bound"] == 0
     assert result["experiment_protocol"]["oracle_protocol_unknown"] == 2
     assert len(outcome_template(task_id="new-task", treatment_id="p10")) == 2
+
+    unknown_ci = compare([
+        Outcome(task_id="unknown-ci", treatment_id="p10", mode="baseline", correct=True, **common),
+        Outcome(task_id="unknown-ci", treatment_id="p10", mode="bridge", correct=True, local_ci_agree=None, **common),
+    ])
+    assert unknown_ci["correctness"]["local_ci_unknown"] == 1
+    assert unknown_ci["promotion_evidence"]["local_ci_disagreement_zero"] is False
+
 
     bound_common = dict(common, bridge_implementation_id="bridge:v1", manifest_id="manifest:v1", local_qualification_id="local:v1", final_source_id="source:v1", ci_evidence_id="ci:v1", oracle_opened_after_freeze=True)
     strict_shared = dict(
