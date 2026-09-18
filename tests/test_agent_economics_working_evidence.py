@@ -1,6 +1,7 @@
 from scripts.agent_economics.working_evidence import (
     SCHEMA,
     dirty_gate_delta_facts,
+    provider_evidence_reuse_facts,
     provider_reference,
     repeated_action_without_new_evidence,
     validate_provider_reference,
@@ -149,4 +150,42 @@ def test_dirty_gate_facts_require_provider_delta_shape() -> None:
     assert dirty_gate_delta_facts({"diagnostics": {"before_count": 10}}) == {
         "usable": False,
         "reason": "invalid-added-diagnostics",
+    }
+
+
+def test_provider_freshness_allows_reuse_after_proven_unrelated_edit() -> None:
+    facts = provider_evidence_reuse_facts(
+        {
+            "state": "fresh",
+            "reason": "changed-paths-proven-outside-observation-scope",
+            "intersection": [],
+        }
+    )
+
+    assert facts == {
+        "usable": True,
+        "fresh": True,
+        "provider_reason": "changed-paths-proven-outside-observation-scope",
+        "relevant_changes": [],
+    }
+
+
+def test_provider_relevant_change_blocks_evidence_reuse() -> None:
+    facts = provider_evidence_reuse_facts(
+        {
+            "state": "stale",
+            "reason": "relevant-repository-evidence-changed",
+            "intersection": ["src/owner.py"],
+        }
+    )
+
+    assert facts["usable"] is True
+    assert facts["fresh"] is False
+    assert facts["relevant_changes"] == ["src/owner.py"]
+
+
+def test_unknown_provider_freshness_fails_closed() -> None:
+    assert provider_evidence_reuse_facts({"state": "unknown"}) == {
+        "usable": False,
+        "reason": "unsupported-provider-freshness",
     }
