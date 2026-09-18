@@ -125,3 +125,68 @@ def validate_provider_reference(value: object) -> list[str]:
             + ", ".join(extra)
         )
     return errors
+
+
+def action_fingerprint(
+    *,
+    action: str,
+    inputs: Sequence[str],
+    evidence_references: Sequence[Mapping[str, object]] = (),
+) -> tuple[str, tuple[str, ...], tuple[tuple[str, str], ...]]:
+    """Canonicalize an acquisition attempt for anti-repeat comparison."""
+    action = action.strip()
+    if not action:
+        raise ValueError("action must be non-empty")
+    normalized_inputs = tuple(sorted({str(item) for item in inputs if str(item)}))
+    references = tuple(
+        sorted(
+            (
+                str(reference.get("provider") or ""),
+                str(reference.get("evidence_identity") or ""),
+            )
+            for reference in evidence_references
+        )
+    )
+    return action, normalized_inputs, references
+
+
+def repeated_action_without_new_evidence(
+    previous: Mapping[str, object],
+    current: Mapping[str, object],
+) -> bool:
+    """Return a policy fact: same acquisition inputs and evidence means no progress."""
+    previous_action = previous.get("action")
+    current_action = current.get("action")
+    previous_inputs = previous.get("inputs")
+    current_inputs = current.get("inputs")
+    previous_refs = previous.get("evidence_references", ())
+    current_refs = current.get("evidence_references", ())
+    if not isinstance(previous_action, str) or not isinstance(current_action, str):
+        return False
+    if not isinstance(previous_inputs, Sequence) or isinstance(
+        previous_inputs, (str, bytes, bytearray)
+    ):
+        return False
+    if not isinstance(current_inputs, Sequence) or isinstance(
+        current_inputs, (str, bytes, bytearray)
+    ):
+        return False
+    if not isinstance(previous_refs, Sequence) or isinstance(
+        previous_refs, (str, bytes, bytearray)
+    ):
+        return False
+    if not isinstance(current_refs, Sequence) or isinstance(
+        current_refs, (str, bytes, bytearray)
+    ):
+        return False
+    if not all(isinstance(item, Mapping) for item in (*previous_refs, *current_refs)):
+        return False
+    return action_fingerprint(
+        action=previous_action,
+        inputs=[str(item) for item in previous_inputs],
+        evidence_references=previous_refs,
+    ) == action_fingerprint(
+        action=current_action,
+        inputs=[str(item) for item in current_inputs],
+        evidence_references=current_refs,
+    )
