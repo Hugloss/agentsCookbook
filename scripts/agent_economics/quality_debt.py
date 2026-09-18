@@ -392,6 +392,7 @@ def quality_debt_audit(
             "findings": findings, "detailed_findings": detailed_findings,
             "oversized_files": oversized,
             "comparable_identity": comparable_identity,
+            "comparable_values": comparable_values,
         },
         derived={"summary": summary, "baseline_comparison": comparison},
         interpretation={
@@ -429,6 +430,6 @@ def baseline_document(payload: dict[str, object]) -> dict[str, object]:
     return {
         "schema": "agent-economics-quality-debt-baseline.v1",
         "comparable_identity": evidence["comparable_identity"],
-        "comparable_values": payload["configuration"]["values"],
+        "comparable_values": evidence["comparable_values"],
         "summary": derived["summary"],
     }
