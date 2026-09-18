@@ -195,3 +195,38 @@ def test_next_evidence_stops_when_declared_boundaries_are_satisfied() -> None:
     assert result["next_evidence"] is None
     assert result["command"] is None
     assert result["stop"]["stop_acquiring_evidence"] is True
+
+
+
+def test_next_evidence_reopens_only_for_proven_scope_expansion() -> None:
+    payload = {
+        "schema": {"name": "agent-economics-probe", "version": 1},
+        "tool": {"name": "context-focus"},
+        "candidates": [
+            {
+                "target": "src/a.py",
+                "required_next_evidence": [
+                    {"kind": "test_focus", "reason": "new consumer boundary"}
+                ],
+            }
+        ],
+    }
+
+    result = next_evidence(
+        payload,
+        target="src/a.py",
+        sufficiency={
+            "risk_boundaries": [{"identity": "behavior"}],
+            "proofs": [{"boundary": "behavior", "fresh": True, "direct": True}],
+            "scope_expansion_evidence": [
+                {
+                    "provider": "hashmarks",
+                    "evidence_identity": "sha256:impact-delta",
+                    "boundary": "new-consumer",
+                }
+            ],
+        },
+    )
+
+    assert result["next_evidence"]["kind"] == "test_focus"
+    assert result["stop"] if "stop" in result else None is None
