@@ -6,6 +6,8 @@ import shlex
 from pathlib import Path
 from typing import Any
 
+from .working_evidence import evidence_stop_facts
+
 
 class EvidenceNextError(ValueError):
     pass
@@ -41,7 +43,35 @@ def _candidate(payload: dict[str, Any], target: str | None) -> dict[str, Any]:
 def next_evidence(
     payload: dict[str, Any], *, target: str | None = None, profile: dict[str, Any] | None = None,
     python_argv: list[str] | None = None,
+    sufficiency: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if sufficiency is not None:
+        boundaries = sufficiency.get("risk_boundaries", [])
+        proofs = sufficiency.get("proofs", [])
+        if not isinstance(boundaries, list) or not isinstance(proofs, list):
+            raise EvidenceNextError("sufficiency risk_boundaries/proofs must be lists")
+        stop = evidence_stop_facts(
+            risk_boundaries=boundaries,
+            proofs=proofs,
+            scope_expanded=bool(sufficiency.get("scope_expanded", False)),
+        )
+        if stop["stop_acquiring_evidence"]:
+            return {
+                "schema": {"name": "agent-economics-next-evidence", "version": 1},
+                "target": target,
+                "current_probe": None,
+                "next_evidence": None,
+                "command": None,
+                "command_display": None,
+                "unresolved": [],
+                "stop": stop,
+                "interpretation": {
+                    "evidence_sufficient": True,
+                    "does_not_execute_command": True,
+                    "does_not_authorize_edit": True,
+                },
+            }
+
     schema = payload.get("schema")
     if not isinstance(schema, dict) or schema.get("name") != "agent-economics-probe":
         raise EvidenceNextError("unsupported artifact schema")
