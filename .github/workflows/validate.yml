@@ -82,6 +82,7 @@ jobs:
             capability_bridge_qualification
             agent_outcome_benchmark_qualification
             quality_debt_qualification
+            bootstrap_qualification
             dogfood_corpus_qualification
             pre_pr_qualification
             agent_economics_stress_qualification
@@ -89,6 +90,10 @@ jobs:
           for module in "${modules[@]}"; do
             python -m "scripts.agent_economics.${module}"
           done
+
+      - name: Standalone package import smoke
+        run: |
+          PYTHONPATH="$PWD/scripts" python -c "import agent_economics; from agent_economics.test_focus import test_focus_audit; from agent_economics.quality_debt import quality_debt_audit"
 
       - name: CLI routing smoke
         run: |
