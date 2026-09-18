@@ -7,12 +7,14 @@ usage() {
 }
 
 revision=
+allow_short_revision=false
 destination="${AGENT_ECONOMICS_ROOT:-.agent-economics}"
 repository="${AGENT_ECONOMICS_REPOSITORY:-https://github.com/Hugloss/agentsCookbook.git}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --revision) [ "$#" -ge 2 ] || usage; revision=$2; shift 2 ;;
+    --allow-short-revision) allow_short_revision=true; shift ;;
     --destination) [ "$#" -ge 2 ] || usage; destination=$2; shift 2 ;;
     --repository) [ "$#" -ge 2 ] || usage; repository=$2; shift 2 ;;
     *) usage ;;
@@ -23,7 +25,14 @@ done
 case "$revision" in
   *[!0-9a-fA-F]*|"") echo "agent-economics-bootstrap: revision must be a hexadecimal commit id" >&2; exit 2 ;;
 esac
-[ "${#revision}" -ge 7 ] || { echo "agent-economics-bootstrap: revision is too short" >&2; exit 2; }
+if [ "$allow_short_revision" = false ]; then
+  [ "${#revision}" -eq 40 ] || {
+    echo "agent-economics-bootstrap: exact mode requires a full 40-character commit id; use --allow-short-revision only for explicit relaxed use" >&2
+    exit 2
+  }
+else
+  [ "${#revision}" -ge 7 ] || { echo "agent-economics-bootstrap: revision is too short" >&2; exit 2; }
+fi
 
 [ ! -e "$destination" ] || { echo "agent-economics-bootstrap: destination already exists: $destination" >&2; exit 1; }
 
