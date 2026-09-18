@@ -49,3 +49,46 @@ jobs:
           for script in scripts/*.sh; do
             bash -n "$script"
           done
+
+  agent-economics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile Agent Economics
+        run: python -m compileall -q scripts/agent_economics
+
+      - name: P1-P11 qualification
+        run: |
+          set -euo pipefail
+          modules=(
+            refactor_focus_qualification
+            refactor_focus_p2_qualification
+            refactor_focus_p3_qualification
+            probe_contract_qualification
+            refactor_focus_p5_qualification
+            context_focus_qualification
+            test_focus_qualification
+            change_impact_qualification
+            coupling_focus_qualification
+            hotspot_focus_qualification
+            capability_bridge_qualification
+            agent_outcome_benchmark_qualification
+            pre_pr_qualification
+          )
+          for module in "${modules[@]}"; do
+            python -m "scripts.agent_economics.${module}"
+          done
+
+      - name: CLI routing smoke
+        run: |
+          python -m scripts.agent_economics --help >/dev/null
+          python -m scripts.agent_economics capabilities --repository-root . --json >/dev/null
+          python -m scripts.agent_economics benchmark-outcomes --template-task ci-smoke >/dev/null
