@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from .hotspot_focus import DEFAULT_RANKING, hotspot_focus_audit
@@ -13,7 +14,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--tests-root", type=Path)
     parser.add_argument("--package-name", default=None, help="Import package name. Default: source-root basename.")
     parser.add_argument("--tests-package-name", default="tests")
-    parser.add_argument("--artifact", type=Path)
+    parser.add_argument("--artifact", "--artifact-path", dest="artifact", type=Path)
+    parser.add_argument("--format", choices=("human", "json"), default="human")
+    parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--top", type=int, default=20)
     parser.add_argument("--rank-by", default=",".join(DEFAULT_RANKING))
     parser.add_argument("--history-max-commits", type=int, default=500)
@@ -37,6 +40,11 @@ def main(argv: list[str] | None = None) -> None:
         history_policy=args.history_policy,
         discovery_mode=args.discovery_mode,
     )
+    if args.quiet:
+        return
+    if args.format == "json":
+        print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        return
     for index, candidate in enumerate(payload["candidates"], 1):
         facts = candidate["facts"]
         print(
