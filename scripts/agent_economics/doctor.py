@@ -8,6 +8,8 @@ import sys
 import tomllib
 from pathlib import Path
 
+from .profile_suggestion import profile_suggestion
+
 
 def _relative(path: Path, root: Path) -> str:
     return path.relative_to(root).as_posix()
@@ -180,12 +182,16 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Inspect Agent Economics readiness without modifying the repository.")
     parser.add_argument("--repository-root", type=Path, default=Path("."))
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--suggest-profile", action="store_true", help="Project detected facts into a review-only profile suggestion.")
     args = parser.parse_args(argv)
     try:
         payload = doctor(args.repository_root)
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         raise SystemExit(f"doctor: {exc}") from exc
-    print(json.dumps(payload, indent=2, sort_keys=True) if args.json else _human(payload))
+    if args.suggest_profile:
+        print(json.dumps(profile_suggestion(payload), indent=2, sort_keys=True))
+    else:
+        print(json.dumps(payload, indent=2, sort_keys=True) if args.json else _human(payload))
 
 
 if __name__ == "__main__":
