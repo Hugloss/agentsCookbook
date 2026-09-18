@@ -12,7 +12,7 @@ from .probe_contract import analyzed_input_identity, build_probe_contract, confi
 from .refactor_focus_paths import iso_utc_now
 
 TOOL_NAME = "quality-debt"
-TOOL_VERSION = "0.14.0"
+TOOL_VERSION = "0.15.0"
 _OBSERVED_LIMIT = re.compile(r"\((\d+)\s*(?:>|/)\s*(\d+)\)$")
 
 
@@ -299,7 +299,17 @@ def quality_debt_audit(
             },
             "recommendations": {},
             "uncertainty": [],
-            "required_next_evidence": [],
+            "required_next_evidence": [
+                {
+                    "kind": "test_focus",
+                    "target": path,
+                    "reason": (
+                        "quality-debt magnitude does not establish edit safety; "
+                        "recover confirmed/supporting test ownership and affected "
+                        "verification before selecting this target for an edit"
+                    ),
+                }
+            ],
             "verification_suggestions": [],
         })
     payload = build_probe_contract(
