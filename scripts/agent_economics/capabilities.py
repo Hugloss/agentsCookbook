@@ -8,11 +8,6 @@ from pathlib import Path
 from .bounded_process import ProcessLimits, process_tree_capability, run_bounded
 from .command_catalog import PROBE_COMMANDS\nfrom .command_manifest import CommandManifestError, load_command_manifest
 
-PROBES = (
-    "refactor-focus", "context-focus", "test-focus", "change-impact",
-    "coupling-focus", "hotspot-focus",
-)
-
 
 def _git_details(root: Path) -> dict[str, object]:
     git = shutil.which("git")
