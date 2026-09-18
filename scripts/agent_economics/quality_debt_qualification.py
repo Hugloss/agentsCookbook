@@ -108,6 +108,14 @@ def main() -> None:
                 "diagnostics": [],
             }
             assert scoped["evidence"]["analyzer"]["resolved_executable"] == str(fake)
+            analyzer_evidence = scoped["evidence"]["analyzer"]
+            assert analyzer_evidence["version_argv"] == [str(fake), "--version"]
+            assert analyzer_evidence["analysis_argv"] == [
+                str(fake), "check", "src", "tools", "--preview", "--select", "C901",
+                "--config", "lint.per-file-ignores = {}", "--exclude", "src/excluded",
+                "--output-format", "json",
+            ]
+            assert analyzer_evidence["working_directory"] == "."
             for bad_roots in (("src", "src"), ("src", "src/excluded")):
                 try:
                     quality_debt_audit(
@@ -144,7 +152,7 @@ def main() -> None:
             else: raise AssertionError("analyzer timeout must fail closed")
         finally:
             os.environ.pop("AE_RUFF_MODE", None); os.environ["PATH"]=old_path
-    print(json.dumps({"status":"PASS","cases":20,"tool":"quality-debt"},sort_keys=True))
+    print(json.dumps({"status":"PASS","cases":23,"tool":"quality-debt"},sort_keys=True))
 
 
 if __name__=="__main__":

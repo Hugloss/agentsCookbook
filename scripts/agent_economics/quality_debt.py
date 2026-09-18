@@ -126,7 +126,7 @@ def _run_ruff(
     root: Path, *, executable: str, roots: tuple[str, ...], limits: dict[str, int],
     timeout_seconds: float, max_stdout_bytes: int, max_stderr_bytes: int,
     excludes: tuple[str, ...],
-) -> tuple[list[dict[str, object]], dict[str, object]]:
+) -> tuple[list[dict[str, object]], dict[str, object], tuple[str, ...]]:
     exclude_args = ("--exclude", ",".join(excludes)) if excludes else ()
     argv = (
         executable, "check", *roots, "--preview", "--select", ",".join(sorted(limits)),
@@ -152,7 +152,7 @@ def _run_ruff(
         raise QualityDebtError("analyzer did not return valid UTF-8 JSON") from exc
     if not isinstance(value, list):
         raise QualityDebtError("analyzer JSON root must be a list")
-    return value, result.metrics()
+    return value, result.metrics(), argv
 
 
 def _findings(
@@ -327,7 +327,7 @@ def quality_debt_audit(
     source_identity, files_read, source_bytes, source_universe = _source_identity(
         root, roots, (".py",), excludes
     )
-    diagnostics, execution = _run_ruff(
+    diagnostics, execution, analyzer_argv = _run_ruff(
         root, executable=executable, roots=roots, limits=limits,
         timeout_seconds=timeout_seconds, max_stdout_bytes=max_stdout_bytes,
         max_stderr_bytes=max_stderr_bytes, excludes=excludes,
@@ -387,7 +387,14 @@ def quality_debt_audit(
             "max_stdout_bytes": max_stdout_bytes, "max_stderr_bytes": max_stderr_bytes,
         },
         evidence={
-            "analyzer": {"name": analyzer, "version": version, "resolved_executable": executable},
+            "analyzer": {
+                "name": analyzer,
+                "version": version,
+                "resolved_executable": executable,
+                "version_argv": [executable, "--version"],
+                "analysis_argv": list(analyzer_argv),
+                "working_directory": ".",
+            },
             "source_universe": {**source_universe, "diagnostics": scope_diagnostics},
             "findings": findings, "detailed_findings": detailed_findings,
             "oversized_files": oversized,
