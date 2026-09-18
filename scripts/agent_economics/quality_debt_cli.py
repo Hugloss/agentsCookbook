@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     payload = quality_debt_audit(
         repository_root=args.repository_root, roots=tuple(args.root), limits=_limits(args.limit),
-        max_file_lines=args.max_file_lines, baseline_path=args.baseline, artifact_path=args.artifact,
+        max_file_lines=args.max_file_lines,\n        file_line_roots=tuple(args.file_line_root) if args.file_line_root else None,\n        excludes=tuple(args.exclude), baseline_path=args.baseline, artifact_path=args.artifact,
         timeout_seconds=args.timeout_seconds, max_stdout_bytes=args.max_stdout_bytes,
         max_stderr_bytes=args.max_stderr_bytes,
     )
