@@ -84,6 +84,7 @@ jobs:
             quality_debt_qualification
             bootstrap_qualification
             zero_to_first_result_qualification
+            evidence_next_qualification
             dogfood_corpus_qualification
             pre_pr_qualification
             agent_economics_stress_qualification
