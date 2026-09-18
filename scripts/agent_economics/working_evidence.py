@@ -236,9 +236,9 @@ def evidence_stop_facts(
     *,
     risk_boundaries: Sequence[Mapping[str, object]],
     proofs: Sequence[Mapping[str, object]],
-    scope_expanded: bool = False,
+    scope_expansion_evidence: Sequence[Mapping[str, object]] = (),
 ) -> dict[str, object]:
-    """Decide whether evidence acquisition has reached declared sufficiency."""
+    """Decide sufficiency; scope expansion must have concrete evidence provenance."""
     proof_by_boundary: dict[str, list[Mapping[str, object]]] = {}
     for proof in proofs:
         boundary = proof.get("boundary")
@@ -266,13 +266,34 @@ def evidence_stop_facts(
         if not direct:
             indirect_only.append(identity)
 
+    expansion_ids: list[str] = []
+    invalid_expansion: list[str] = []
+    for row in scope_expansion_evidence:
+        identity = row.get("evidence_identity")
+        provider = row.get("provider")
+        boundary = row.get("boundary")
+        if (
+            not isinstance(identity, str)
+            or not identity.strip()
+            or not isinstance(provider, str)
+            or not provider.strip()
+            or not isinstance(boundary, str)
+            or not boundary.strip()
+        ):
+            invalid_expansion.append("<invalid-scope-expansion>")
+            continue
+        expansion_ids.append(f"{provider}:{identity}:{boundary}")
+
+    scope_expanded = bool(expansion_ids or invalid_expansion)
     sufficient = not (
         uncovered or indirect_only or stale_only or unknown or scope_expanded
     )
     return {
         "sufficient": sufficient,
         "stop_acquiring_evidence": sufficient,
-        "scope_expanded": bool(scope_expanded),
+        "scope_expanded": scope_expanded,
+        "scope_expansion_evidence": sorted(expansion_ids),
+        "invalid_scope_expansion_evidence": sorted(invalid_expansion),
         "uncovered_boundaries": sorted(uncovered),
         "indirect_only_boundaries": sorted(indirect_only),
         "stale_only_boundaries": sorted(stale_only),
