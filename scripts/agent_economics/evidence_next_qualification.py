@@ -29,6 +29,28 @@ def qualify() -> None:
     profile = {
         "repository": {"package_roots": ["pkg"], "test_roots": ["tests"]},
     }
+    try:
+        next_evidence(payload, profile=profile)
+    except EvidenceNextError:
+        pass
+    else:
+        raise AssertionError("multiple candidates without --target must fail closed")
+
+    multiple_required = dict(payload)
+    multiple_required["candidates"] = [{
+        "target": "pkg/hot.py",
+        "required_next_evidence": [
+            {"kind": "test_focus", "reason": "first"},
+            {"kind": "test_focus", "reason": "second"},
+        ],
+    }]
+    try:
+        next_evidence(multiple_required, target="pkg/hot.py", profile=profile)
+    except EvidenceNextError:
+        pass
+    else:
+        raise AssertionError("multiple required-next-evidence items must fail closed")
+
     result = next_evidence(payload, target="pkg/hot.py", profile=profile)
     assert result["next_evidence"]["kind"] == "test_focus"
     assert result["command"] == [
@@ -69,7 +91,7 @@ def qualify() -> None:
     assert result["command"] is None
     assert result["unresolved"] == ["unsupported_next_evidence:invented"]
 
-    print('{"cases":5,"status":"PASS","tool":"evidence-next"}')
+    print('{"cases":7,"status":"PASS","tool":"evidence-next"}')
 
 
 if __name__ == "__main__":
