@@ -11,7 +11,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--repository-root", type=Path, default=Path("."))
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--tests-root", type=Path)
-    parser.add_argument("--package-name", default="app")
+    parser.add_argument("--package-name", default=None, help="Import package name. Default: source-root basename.")
     parser.add_argument("--tests-package-name", default="tests")
     parser.add_argument("--artifact", type=Path)
     parser.add_argument("--top", type=int, default=20)

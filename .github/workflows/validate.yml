@@ -83,6 +83,7 @@ jobs:
             agent_outcome_benchmark_qualification
             quality_debt_qualification
             bootstrap_qualification
+            zero_to_first_result_qualification
             dogfood_corpus_qualification
             pre_pr_qualification
             agent_economics_stress_qualification
@@ -98,5 +99,7 @@ jobs:
       - name: CLI routing smoke
         run: |
           python -m scripts.agent_economics --help >/dev/null
+          python -m scripts.agent_economics doctor --repository-root . --json >/dev/null
+          python -m scripts.agent_economics help quality-debt >/dev/null
           python -m scripts.agent_economics capabilities --repository-root . --json >/dev/null
           python -m scripts.agent_economics benchmark-outcomes --template-task ci-smoke >/dev/null
