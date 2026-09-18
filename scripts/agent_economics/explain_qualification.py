@@ -28,7 +28,12 @@ def _payload(tool: str) -> dict[str, object]:
             "recommendations": {},
             "uncertainty": [],
             "required_next_evidence": [{"kind": "test_focus", "reason": "recover test evidence"}],
-            "verification_suggestions": [],
+            "verification_suggestions": [{
+                "kind": "test_file",
+                "stage": "affected",
+                "path": "tests/test_hot.py",
+                "reason": "confirmed owner of a dependent source",
+            }],
         }],
         required_next_evidence=[],
         deferred_evidence=[],
@@ -70,8 +75,13 @@ def qualify() -> None:
     test_result = explain(_payload("test-focus"))
     assert "verification_suggestions" in test_result
     assert test_result["tool"] == "test-focus"
+    from .explain import _human
+    human = _human(explain(_payload("test-focus"), target="pkg/hot.py"))
+    assert "Verification suggestions:" in human
+    assert "tests/test_hot.py" in human
+    assert "confirmed owner of a dependent source" in human
 
-    print('{"cases":5,"status":"PASS","tool":"explain"}')
+    print('{"cases":6,"status":"PASS","tool":"explain"}')
 
 
 if __name__ == "__main__":
