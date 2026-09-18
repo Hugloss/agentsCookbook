@@ -75,12 +75,12 @@ argv = ["{py}", "-c", "import sys; sys.stdout.buffer.write(bytes([255,254,253]))
 stage = "component"
 
 [commands.mutate]
-argv = ["{py}", "-c", "open('tracked.txt','w').write('changed\\n')"]
+argv = ["{py}", "-c", "open('tracked.txt','w').write('changed')"]
 stage = "component"
 must_not_modify_tracked_files = true
 
 [commands.allowed]
-argv = ["{py}", "-c", "open('tracked.txt','w').write('allowed\\n')"]
+argv = ["{py}", "-c", "open('tracked.txt','w').write('allowed')"]
 stage = "component"
 must_not_modify_tracked_files = true
 allowed_mutation_paths = ["tracked.txt"]
@@ -210,7 +210,7 @@ def main() -> None:
         assert "\ufffd" in nonutf8["stdout"]
 
         mutated = run_named_command(repository_root=root, manifest_path=manifest, name="mutate")
-        assert mutated["classification"] == "policy_mutation_violation", mutated
+        assert mutated["classification"] == "policy_mutation_violation"
         _write(root / "tracked.txt", "before\n")
         allowed = run_named_command(repository_root=root, manifest_path=manifest, name="allowed")
         assert allowed["classification"] == "pass"
