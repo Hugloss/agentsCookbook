@@ -60,6 +60,30 @@ def qualify() -> None:
         assert duplicate.returncode != 0
         assert "destination already exists" in duplicate.stderr
 
+
+        short_exact = _run(
+            "sh", str(bootstrap),
+            "--repository", str(remote),
+            "--revision", revision[:12],
+            "--destination", str(root / "short-exact"),
+        )
+        assert short_exact.returncode == 2
+        assert "full 40-character commit id" in short_exact.stderr
+        assert not (root / "short-exact").exists()
+
+        short_relaxed = _run(
+            "sh", str(bootstrap),
+            "--repository", str(remote),
+            "--revision", revision[:12],
+            "--allow-short-revision",
+            "--destination", str(root / "short-relaxed"),
+        )
+        assert short_relaxed.returncode == 0, short_relaxed.stderr
+        relaxed_resolved = _run(
+            "git", "-C", str(root / "short-relaxed"), "rev-parse", "HEAD"
+        ).stdout.strip()
+        assert relaxed_resolved == revision
+
         missing = root / "missing"
         bad = _run(
             "sh", str(bootstrap),
@@ -70,7 +94,7 @@ def qualify() -> None:
         assert bad.returncode != 0
         assert not missing.exists()
 
-    print('{"cases":4,"status":"PASS","tool":"agent-economics-bootstrap"}')
+    print('{"cases":6,"status":"PASS","tool":"agent-economics-bootstrap"}')
 
 
 if __name__ == "__main__":
