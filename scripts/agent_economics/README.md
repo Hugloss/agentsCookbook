@@ -69,3 +69,23 @@ Use `python -m scripts.agent_economics benchmark-outcomes --input outcomes.jsonl
 A command manifest is executable-repository configuration. Passing `--manifest` and selecting a command is explicit authorization to execute that argv array. Commands are never parsed as shell strings, cwd is confined to the repository, time/output are bounded, and tracked-byte mutation is observed. The child still inherits whatever filesystem, environment, credentials, and network authority the host gives it. Agent Economics is not a sandbox and never reports network/sandbox isolation unless the host actually provides it.
 
 `qualify-local` distinguishes focused, affected, component, and repository stages. Focused/affected passes remain incomplete; only an executed repository-stage pass can yield `LOCAL_QUALIFIED`, and every local result reports `ci_status=NOT_RUN`.
+
+
+### quality-debt
+
+`quality-debt` measures configured analyzer debt without making policy decisions. The first adapter consumes Ruff JSON diagnostics through the shared bounded-process primitive; it does not reimplement Ruff's complexity semantics.
+
+```bash
+python -m scripts.agent_economics quality-debt \
+  --repository-root . \
+  --root src --root tests \
+  --limit C901=10 --limit PLR0912=12 \
+  --max-file-lines 1200 \
+  --artifact .agent-artifacts/quality-debt.json
+```
+
+A baseline comparison is valid only when analyzer/version, roots, limits, and file-line policy have the same comparable identity. Otherwise the result is `INCOMPARABLE_BASELINE`. Per-file increases remain visible even when repository-wide debt falls. Baselines are measurement evidence, not acceptance or certification authority.
+
+Hotspot evidence also reports the largest definitions (functions/classes with qualified names and line spans), while keeping those dimensions independent rather than creating a composite quality score.
+
+`qualify-local` receipts expose cumulative and per-stage execution economics so P11 dogfood can consume actual local command cost rather than reconstructing it manually.

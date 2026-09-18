@@ -184,3 +184,12 @@ P10 adds a constrained local capability helper for environments such as ChatGPT 
 The bridge is not a sandbox: child commands inherit host filesystem/environment/network authority unless the host isolates them. It reports process-tree, mutation-guard, sandbox, and network capabilities truthfully. It never edits source, installs dependencies, promotes focused verification into repository authority, or replaces CI/CD.
 
 Local staged statuses are `FOCUSED_PASS`, `AFFECTED_PASS`, `LOCAL_QUALIFIED`, `LOCAL_INCOMPLETE`, and `LOCAL_FAILED`. Every local receipt keeps CI status separate.
+
+
+## P12 — Quality Debt Evidence
+
+P12 adds a small analyzer-derived debt probe. Ruff is the first adapter. It consumes the analyzer's JSON rather than reproducing analyzer rules, runs through the shared bounded subprocess primitive, binds source/configuration/analyzer identities, and reports raw observed limits/excess separately from baseline interpretation.
+
+Baseline states are `NO_BASELINE`, `INCOMPARABLE_BASELINE`, `NEW`, `INCREASED`, `UNCHANGED`, `REDUCED`, and `RESOLVED`. A global reduction never hides a per-file increase. Measurement remains separate from repository policy.
+
+P12 also extends hotspot evidence with largest-definition facts, local qualification with explicit execution economics, repair packets with quality-debt evidence, and P11 records with optional bridge/manifest/local-qualification/final-source/CI receipt identities plus freeze-before-oracle protocol evidence.

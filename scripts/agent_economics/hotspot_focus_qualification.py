@@ -66,6 +66,8 @@ def main() -> None:
         assert facts["distinct_authors"] == 2, facts
         assert 0 < facts["top_author_share"] < 1, facts
         assert facts["confirmed_tests"] == 1, facts
+        assert facts["largest_definitions"][0]["qualified_name"] == "a"
+        assert facts["largest_definitions"][0]["lines"] >= 4
         assert "risk_score" not in facts
         assert "score" not in facts
 

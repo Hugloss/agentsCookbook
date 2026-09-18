@@ -30,6 +30,8 @@ def main() -> None:
     assert result["timing"]["paired_measurements"] == 1
     assert result["authority"]["automatic_promotion"] is False
     assert result["authority"]["promotion_evidence_is_not_a_verdict"] is True
+    assert result["experiment_protocol"]["bridge_receipts_bound"] == 0
+    assert result["experiment_protocol"]["oracle_protocol_unknown"] == 2
     assert len(outcome_template(task_id="new-task", treatment_id="p10")) == 2
 
     with tempfile.TemporaryDirectory() as temp:

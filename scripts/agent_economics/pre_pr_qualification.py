@@ -233,6 +233,9 @@ def main() -> None:
         assert local["status"] == "LOCAL_FAILED"
         assert local["stages"][0]["status"] == "PASS" and local["stages"][1]["status"] == "FAIL"
         assert local["ci_status"] == "NOT_RUN"
+        assert local["economics"]["commands"] == 2
+        assert local["economics"]["by_stage"]["focused"]["commands"] == 1
+        assert local["economics"]["by_stage"]["repository"]["commands"] == 1
 
         # Workspace absence and Git capability honesty.
         missing_root = root / "does-not-exist"
