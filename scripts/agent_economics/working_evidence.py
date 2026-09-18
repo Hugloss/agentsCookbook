@@ -215,3 +215,18 @@ def dirty_gate_delta_facts(observation_delta: Mapping[str, object]) -> dict[str,
         "new_diagnostics_in_changed_scope": len(scoped),
         "unchanged_diagnostics": diagnostics.get("unchanged_count"),
     }
+
+
+def provider_evidence_reuse_facts(
+    freshness: Mapping[str, object],
+) -> dict[str, object]:
+    """Translate provider freshness into reusable policy facts without re-deriving it."""
+    state = freshness.get("state")
+    if state not in {"fresh", "stale"}:
+        return {"usable": False, "reason": "unsupported-provider-freshness"}
+    return {
+        "usable": True,
+        "fresh": state == "fresh",
+        "provider_reason": freshness.get("reason"),
+        "relevant_changes": list(freshness.get("intersection") or []),
+    }
