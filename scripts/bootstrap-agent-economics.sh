@@ -45,7 +45,11 @@ trap cleanup EXIT HUP INT TERM
 
 git init -q "$destination"
 git -C "$destination" remote add origin "$repository"
-git -C "$destination" fetch --quiet --depth 1 origin "$revision"
+if [ "$allow_short_revision" = true ] && [ "${#revision}" -lt 40 ]; then
+  git -C "$destination" fetch --quiet --depth 1 origin
+else
+  git -C "$destination" fetch --quiet --depth 1 origin "$revision"
+fi
 git -C "$destination" checkout --quiet --detach FETCH_HEAD
 resolved=$(git -C "$destination" rev-parse HEAD)
 requested=$(git -C "$destination" rev-parse "$revision^{commit}")
