@@ -1,5 +1,6 @@
 from scripts.agent_economics.working_evidence import (
     SCHEMA,
+    dirty_gate_delta_facts,
     provider_reference,
     repeated_action_without_new_evidence,
     validate_provider_reference,
@@ -117,3 +118,35 @@ def test_new_provider_evidence_allows_same_acquisition_to_be_reconsidered() -> N
     }
 
     assert repeated_action_without_new_evidence(previous, current) is False
+
+
+def test_dirty_gate_facts_do_not_treat_same_count_as_same_diagnostics() -> None:
+    facts = dirty_gate_delta_facts(
+        {
+            "diagnostics": {
+                "before_count": 1841,
+                "after_count": 1841,
+                "added": [{"identity": "new-a"}, {"identity": "new-b"}],
+                "removed": [{"identity": "old-a"}, {"identity": "old-b"}],
+                "unchanged_count": 1839,
+                "added_in_changed_scope": [],
+            }
+        }
+    )
+
+    assert facts == {
+        "usable": True,
+        "global_before_count": 1841,
+        "global_after_count": 1841,
+        "new_diagnostics": 2,
+        "removed_diagnostics": 2,
+        "new_diagnostics_in_changed_scope": 0,
+        "unchanged_diagnostics": 1839,
+    }
+
+
+def test_dirty_gate_facts_require_provider_delta_shape() -> None:
+    assert dirty_gate_delta_facts({"diagnostics": {"before_count": 10}}) == {
+        "usable": False,
+        "reason": "invalid-added-diagnostics",
+    }
