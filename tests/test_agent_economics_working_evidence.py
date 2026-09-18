@@ -1,7 +1,7 @@
 from scripts.agent_economics.working_evidence import (
     SCHEMA,
     new_working_evidence,
-    validate_working_evidence,
+    validate_invalidation,\n    validate_working_evidence,
 )
 
 
@@ -25,3 +25,22 @@ def test_working_evidence_rejects_repository_intelligence_copies() -> None:
     errors = validate_working_evidence(payload)
 
     assert any("must not duplicate repository intelligence" in error for error in errors)
+
+
+def test_repository_generation_invalidation_requires_provider_reference() -> None:
+    errors = validate_invalidation({"kind": "repository-generation"})
+
+    assert errors == [
+        "repository-generation invalidation requires provider_reference; "
+        "working evidence must not own repository generation"
+    ]
+    assert validate_invalidation(
+        {
+            "kind": "repository-generation",
+            "provider_reference": "hashmarks:repository-generation",
+        }
+    ) == []
+
+
+def test_environment_lifetime_is_task_local_and_does_not_need_repository_owner() -> None:
+    assert validate_invalidation({"kind": "environment-change"}) == []
