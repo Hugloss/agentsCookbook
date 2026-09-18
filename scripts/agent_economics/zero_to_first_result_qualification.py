@@ -33,6 +33,12 @@ def qualify() -> None:
         assert before == after
         assert payload["suggestions"]["source_roots"] == ["src/acme"]
         assert payload["suggestions"]["tests_roots"] == ["tests"]
+        assert payload["suggestions"]["source_root_evidence"] == [
+            {"path": "src/acme", "status": "DETECTED", "basis": "python_package_layout"}
+        ]
+        assert payload["suggestions"]["test_root_evidence"] == [
+            {"path": "tests", "status": "DETECTED", "basis": "test_directory_layout"}
+        ]
         assert payload["suggestions"]["package_names"] == ["acme"]
         assert payload["suggestions"]["quality_analysis_roots"] == ["src/acme", "scripts", "benchmarks"]
         assert payload["suggestions"]["quality_analysis_root_evidence"] == [
@@ -50,7 +56,9 @@ def qualify() -> None:
         assert profile["status"] == "REVIEW_REQUIRED"
         assert profile["repository"] == {
             "package_roots": ["src/acme"],
+            "package_root_evidence": payload["suggestions"]["source_root_evidence"],
             "test_roots": ["tests"],
+            "test_root_evidence": payload["suggestions"]["test_root_evidence"],
         }
         assert profile["quality_debt"]["analysis_roots"] == ["src/acme", "scripts", "benchmarks"]
         assert profile["quality_debt"]["analysis_root_evidence"] == payload["suggestions"]["quality_analysis_root_evidence"]
@@ -87,7 +95,7 @@ def qualify() -> None:
         assert command.name in help_text
     assert "Start in an unfamiliar repository" in help_text
 
-    print('{"cases":9,"status":"PASS","tool":"zero-to-first-result"}')
+    print('{"cases":10,"status":"PASS","tool":"zero-to-first-result"}')
 
 
 if __name__ == "__main__":

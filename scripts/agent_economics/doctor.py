@@ -134,7 +134,13 @@ def doctor(repository_root: Path) -> dict[str, object]:
         },
         "suggestions": {
             "source_roots": sources,
+            "source_root_evidence": [
+                {"path": item, "status": "DETECTED", "basis": "python_package_layout"} for item in sources
+            ],
             "tests_roots": tests,
+            "test_root_evidence": [
+                {"path": item, "status": "DETECTED", "basis": "test_directory_layout"} for item in tests
+            ],
             "package_names": package_suggestions,
             "quality_analysis_roots": analysis_roots,
             "quality_analysis_root_evidence": quality_root_evidence,

@@ -73,6 +73,18 @@ def next_evidence(
                 unresolved.append("single_package_root")
             if not isinstance(tests, list) or len(tests) != 1:
                 unresolved.append("single_test_root")
+            for field, selected, unresolved_code in (
+                ("package_root_evidence", packages, "package_root_not_detected"),
+                ("test_root_evidence", tests, "test_root_not_detected"),
+            ):
+                evidence = repository.get(field)
+                if isinstance(evidence, list) and isinstance(selected, list) and len(selected) == 1:
+                    matches = [
+                        row for row in evidence
+                        if isinstance(row, dict) and row.get("path") == selected[0]
+                    ]
+                    if len(matches) != 1 or matches[0].get("status") != "DETECTED":
+                        unresolved.append(unresolved_code)
             if not unresolved:
                 command = [
                     "python", "-m", "agent_economics", "test-focus",
@@ -98,6 +110,7 @@ def next_evidence(
             "does_not_authorize_edit": True,
             "does_not_execute_command": True,
             "profile_is_configuration_input_not_policy_authority": True,
+            "profile_root_provenance_is_preserved": True,
         },
     }
 
