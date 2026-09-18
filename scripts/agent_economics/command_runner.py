@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
+import platform
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
 from .bounded_process import ProcessLimits, run_bounded
-from .command_manifest import CommandManifestError, CommandSpec, load_command_manifest
+from .command_manifest import CommandManifestError, load_command_manifest
 from .workspace_state import WorkspaceStateError, changed_tracked_paths, tracked_workspace_state
 
 
@@ -15,38 +16,23 @@ class CommandRunnerError(ValueError):
     pass
 
 
-def _tracked_state(root: Path) -> tuple[str | None, set[str]]:
-    result = run_bounded(
-        repository_root=root,
-        argv=("git", "status", "--porcelain=v1", "-z", "--untracked-files=no"),
-        limits=ProcessLimits(timeout_seconds=5.0, max_stdout_bytes=2_000_000, max_stderr_bytes=100_000),
-    )
-    if result.executable_missing or result.return_code != 0 or result.stdout_truncated:
-        return None, set()
-    raw = result.stdout
-    identity = "sha256:" + hashlib.sha256(raw).hexdigest()
-    paths: set[str] = set()
-    for token in raw.split(b"\0"):
-        if not token:
-            continue
-        text = token.decode("utf-8", errors="replace")
-        if len(text) >= 4:
-            paths.add(text[3:].replace("\\", "/"))
-    return identity, paths
-
-
 def _allowed(path: str, patterns: tuple[str, ...]) -> bool:
     from .refactor_focus_discovery import is_excluded_repo_path
     return any(is_excluded_repo_path(path, (pattern,)) for pattern in patterns)
 
 
-def classify_result(*, return_code: int | None, timed_out: bool, executable_missing: bool, stdout: str, stderr: str, policy_violation: bool) -> str:
+def classify_result(
+    *, return_code: int | None, timed_out: bool, executable_missing: bool,
+    stdout: str, stderr: str, policy_violation: bool, output_limited: bool = False,
+) -> str:
     if policy_violation:
         return "policy_mutation_violation"
     if executable_missing:
         return "executable_missing"
     if timed_out:
         return "timeout"
+    if output_limited:
+        return "output_limit_exceeded"
     if return_code == 0:
         return "pass"
     text = (stdout + "\n" + stderr).lower()
@@ -54,26 +40,27 @@ def classify_result(*, return_code: int | None, timed_out: bool, executable_miss
         return "syntax_compile_failure"
     if "importerror" in text or "modulenotfounderror" in text or "error collecting" in text:
         return "collection_import_failure"
-    if "assertionerror" in text or " failed" in text or "failure" in text:
-        return "assertion_test_failure"
-    if "mypy" in text or "type error" in text:
+    dependency_tokens = (
+        "command not found", "no such file or directory", "cannot find module",
+        "could not find a version", "dependency", "environment variable", "not installed",
+    )
+    if any(token in text for token in dependency_tokens):
+        return "dependency_environment_missing"
+    if "mypy" in text or "type error" in text or "incompatible type" in text:
         return "type_check_failure"
     if "ruff" in text or "lint" in text:
         return "lint_static_failure"
-    if "network" in text or "connection" in text or "tls" in text:
+    if "assertionerror" in text or " failed" in text or "failure" in text:
+        return "assertion_test_failure"
+    if "network" in text or "connection" in text or "tls" in text or "dns" in text:
         return "infrastructure_network_failure"
     return "unknown_failure"
 
 
 def run_named_command(
-    *,
-    repository_root: Path,
-    manifest_path: Path,
-    name: str,
-    selected_paths: Iterable[str] = (),
-    timeout_seconds: float = 60.0,
-    max_stdout_bytes: int = 1_000_000,
-    max_stderr_bytes: int = 1_000_000,
+    *, repository_root: Path, manifest_path: Path, name: str,
+    selected_paths: Iterable[str] = (), timeout_seconds: float = 60.0,
+    max_stdout_bytes: int = 1_000_000, max_stderr_bytes: int = 1_000_000,
 ) -> dict[str, object]:
     root = repository_root.resolve()
     target = manifest_path if manifest_path.is_absolute() else root / manifest_path
@@ -85,7 +72,7 @@ def run_named_command(
         raise CommandRunnerError(f"unknown command: {name}")
     spec = manifest.commands[name]
     argv = list(spec.argv)
-    selected = []
+    selected: list[str] = []
     for raw in selected_paths:
         p = Path(raw.replace("\\", "/"))
         if p.is_absolute() or ".." in p.parts:
@@ -99,16 +86,12 @@ def run_named_command(
         before_state = tracked_workspace_state(root)
     except WorkspaceStateError as exc:
         raise CommandRunnerError(f"cannot establish pre-command tracked-byte identity: {exc}") from exc
+    started_at = datetime.now(timezone.utc).isoformat()
     result = run_bounded(
-        repository_root=root,
-        argv=argv,
-        cwd=spec.cwd,
-        limits=ProcessLimits(
-            timeout_seconds=timeout_seconds,
-            max_stdout_bytes=max_stdout_bytes,
-            max_stderr_bytes=max_stderr_bytes,
-        ),
+        repository_root=root, argv=argv, cwd=spec.cwd,
+        limits=ProcessLimits(timeout_seconds, max_stdout_bytes, max_stderr_bytes),
     )
+    ended_at = datetime.now(timezone.utc).isoformat()
     try:
         after_state = tracked_workspace_state(root)
     except WorkspaceStateError as exc:
@@ -119,21 +102,15 @@ def run_named_command(
     stdout_text = result.stdout.decode("utf-8", errors="replace")
     stderr_text = result.stderr.decode("utf-8", errors="replace")
     classification = classify_result(
-        return_code=result.return_code,
-        timed_out=result.timed_out,
-        executable_missing=result.executable_missing,
-        stdout=stdout_text,
-        stderr=stderr_text,
+        return_code=result.return_code, timed_out=result.timed_out,
+        executable_missing=result.executable_missing, stdout=stdout_text, stderr=stderr_text,
         policy_violation=policy_violation,
+        output_limited=result.stdout_truncated or result.stderr_truncated,
     )
     semantic = {
-        "manifest_identity": manifest.identity,
-        "command_identity": result.command_identity,
-        "stage": spec.stage,
-        "classification": classification,
-        "return_code": result.return_code,
-        "signal": result.signal,
-        "timed_out": result.timed_out,
+        "manifest_identity": manifest.identity, "command_identity": result.command_identity,
+        "stage": spec.stage, "classification": classification, "return_code": result.return_code,
+        "signal": result.signal, "timed_out": result.timed_out,
         "executable_missing": result.executable_missing,
         "stdout_sha256": hashlib.sha256(result.stdout).hexdigest(),
         "stderr_sha256": hashlib.sha256(result.stderr).hexdigest(),
@@ -143,27 +120,25 @@ def run_named_command(
         json.dumps(semantic, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     return {
-        "schema": {"name": "agent-economics-command-result", "version": 1},
+        "schema": {"name": "agent-economics-command-result", "version": 2},
         "command": {"name": name, "argv": argv, "cwd": spec.cwd, "stage": spec.stage, "identity": result.command_identity},
         "manifest_identity": manifest.identity,
         "status": "PASS" if classification == "pass" else "FAIL",
-        "classification": classification,
-        "failure_identity": failure_identity,
-        "execution": result.metrics(),
-        "stdout": stdout_text,
-        "stderr": stderr_text,
+        "classification": classification, "failure_identity": failure_identity,
+        "execution": {**result.metrics(), "started_at": started_at, "ended_at": ended_at},
+        "provenance": {
+            "platform": platform.system(), "python": platform.python_version(),
+            "shell_used": False, "network_isolation_enforced": False, "sandbox_isolation_enforced": False,
+        },
+        "stdout": stdout_text, "stderr": stderr_text,
         "workspace": {
-            "before_identity": before_state["identity"],
-            "after_identity": after_state["identity"],
-            "tracked_files": after_state["tracked_files"],
-            "tracked_bytes": after_state["tracked_bytes"],
+            "before_identity": before_state["identity"], "after_identity": after_state["identity"],
+            "tracked_files": after_state["tracked_files"], "tracked_bytes": after_state["tracked_bytes"],
             "unexpected_tracked_mutations": unexpected,
         },
         "authority": {
-            "repair_performed": False,
-            "ci_status": "NOT_RUN",
-            "network_isolation_enforced": False,
-            "sandbox_isolation_enforced": False,
+            "repair_performed": False, "ci_status": "NOT_RUN",
+            "network_isolation_enforced": False, "sandbox_isolation_enforced": False,
         },
     }
 
@@ -181,13 +156,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--artifact", type=Path)
     args = parser.parse_args(argv)
     payload = run_named_command(
-        repository_root=args.repository_root,
-        manifest_path=args.manifest,
-        name=args.name,
-        selected_paths=args.selected_path,
-        timeout_seconds=args.timeout_seconds,
-        max_stdout_bytes=args.max_stdout_bytes,
-        max_stderr_bytes=args.max_stderr_bytes,
+        repository_root=args.repository_root, manifest_path=args.manifest, name=args.name,
+        selected_paths=args.selected_path, timeout_seconds=args.timeout_seconds,
+        max_stdout_bytes=args.max_stdout_bytes, max_stderr_bytes=args.max_stderr_bytes,
     )
     rendered = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
     if args.artifact:

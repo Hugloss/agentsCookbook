@@ -1,94 +1,106 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
+from .command_manifest import load_command_manifest
 from .command_runner import run_named_command
 from .loop_state import LoopBudget, LoopSession, semantic_identity
 from .repair_packet import build_repair_packet
+from .workspace_state import tracked_workspace_state
 
-
-def _source_identity(root: Path, changed: list[str]) -> str:
-    entries: list[dict[str, object]] = []
-    for raw in sorted(changed):
-        path = root / raw
-        entries.append({
-            "path": raw,
-            "sha256": hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None,
-        })
-    return semantic_identity(entries)
+_STAGE_ORDER = {"focused": 0, "affected": 1, "component": 2, "repository": 3}
 
 
 def qualify_local(
-    *,
-    repository_root: Path,
-    manifest_path: Path,
-    command_names: list[str],
-    changed_paths: list[str] | None = None,
-    selected_paths: list[str] | None = None,
+    *, repository_root: Path, manifest_path: Path, command_names: list[str],
+    changed_paths: list[str] | None = None, selected_paths: list[str] | None = None,
+    probe_artifacts: list[Path] | None = None,
     state_path: Path = Path(".agent-artifacts/local-loop.json"),
+    budget: LoopBudget = LoopBudget(),
 ) -> dict[str, object]:
     root = repository_root.resolve()
-    changed = changed_paths or []
+    manifest_target = manifest_path if manifest_path.is_absolute() else root / manifest_path
+    manifest = load_command_manifest(manifest_target)
+    if not command_names:
+        raise ValueError("at least one command is required")
+    unknown = [name for name in command_names if name not in manifest.commands]
+    if unknown:
+        raise ValueError(f"unknown commands: {unknown}")
+    selected_stages = [manifest.commands[name].stage for name in command_names]
+    if [_STAGE_ORDER[s] for s in selected_stages] != sorted(_STAGE_ORDER[s] for s in selected_stages):
+        raise ValueError("qualification stages must be monotonic")
+    source_identity = str(tracked_workspace_state(root)["identity"])
+    configured = [
+        {"command": name, "stage": spec.stage, "selected": name in command_names}
+        for name, spec in manifest.commands.items()
+    ]
     stages: list[dict[str, object]] = []
-    authority = "LOCAL_INCOMPLETE"
     state_target = state_path if state_path.is_absolute() else root / state_path
-    with LoopSession(state_target, budget=LoopBudget()) as session:
+    with LoopSession(state_target, budget=budget, repository_root=root) as session:
         for name in command_names:
             result = run_named_command(
-                repository_root=root,
-                manifest_path=manifest_path,
-                name=name,
+                repository_root=root, manifest_path=manifest_target, name=name,
                 selected_paths=selected_paths or (),
             )
             packet = build_repair_packet(
-                repository_root=root,
-                command_result=result,
-                changed_paths=changed,
+                repository_root=root, command_result=result, changed_paths=changed_paths or [],
+                probe_artifacts=probe_artifacts or (),
             )
+            economics = packet.get("economics", {})
+            execution = result.get("execution", {})
             state = session.record(
-                source_identity=_source_identity(root, changed),
+                source_identity=source_identity,
                 command_identity=str(result["command"]["identity"]),
                 failure_identity=str(result["failure_identity"]),
                 evidence_identity=str(packet["evidence_identity"]),
-                stdout_bytes=int(result["execution"]["stdout_bytes"]),
-                stderr_bytes=int(result["execution"]["stderr_bytes"]),
+                stdout_bytes=int(execution.get("stdout_bytes", 0)),
+                stderr_bytes=int(execution.get("stderr_bytes", 0)),
+                elapsed_ms=float(execution.get("elapsed_ms", 0.0)),
+                stage=str(result["command"]["stage"]),
+                evidence_files=int(economics.get("probe_files", 0)),
+                evidence_lines=len(str(packet.get("diagnostic_excerpt", "")).splitlines()),
+                context_tokens=int(economics.get("estimated_context_tokens", 0)),
             )
             stages.append({
-                "command": name,
-                "stage": result["command"]["stage"],
-                "status": result["status"],
-                "classification": result["classification"],
-                "failure_identity": result["failure_identity"],
+                "command": name, "stage": result["command"]["stage"], "status": result["status"],
+                "classification": result["classification"], "failure_identity": result["failure_identity"],
                 "repair_packet": packet if result["status"] != "PASS" else None,
             })
-            if result["status"] != "PASS":
-                authority = "LOCAL_FAILED"
-                return {
-                    "schema": {"name": "agent-economics-local-qualification", "version": 1},
-                    "status": authority,
-                    "ci_status": "NOT_RUN",
-                    "stages": stages,
-                    "loop": {"stop_reason": state.get("stop_reason"), "state_identity": state.get("state_identity")},
-                }
-            if state.get("stop_reason"):
-                return {
-                    "schema": {"name": "agent-economics-local-qualification", "version": 1},
-                    "status": "LOCAL_INCOMPLETE",
-                    "ci_status": "NOT_RUN",
-                    "stages": stages,
-                    "loop": {"stop_reason": state.get("stop_reason"), "state_identity": state.get("state_identity")},
-                }
-        if stages and stages[-1]["stage"] == "repository":
-            authority = "LOCAL_QUALIFIED"
-        return {
-            "schema": {"name": "agent-economics-local-qualification", "version": 1},
-            "status": authority,
-            "ci_status": "NOT_RUN",
-            "stages": stages,
-            "loop": {"stop_reason": None},
-        }
+            if result["status"] != "PASS" or state.get("stop_reason"):
+                status = "LOCAL_FAILED" if result["status"] != "PASS" else "LOCAL_INCOMPLETE"
+                return _result(status, manifest.identity, source_identity, configured, stages, state.get("stop_reason"))
+    highest = max((_STAGE_ORDER[str(x["stage"])] for x in stages), default=-1)
+    status = "LOCAL_QUALIFIED" if highest == _STAGE_ORDER["repository"] else (
+        "AFFECTED_PASS" if highest >= _STAGE_ORDER["affected"] else "FOCUSED_PASS"
+    )
+    return _result(status, manifest.identity, source_identity, configured, stages, None)
+
+
+def _result(
+    status: str, manifest_identity: str, source_identity: str,
+    configured: list[dict[str, object]], stages: list[dict[str, object]], stop_reason: object,
+) -> dict[str, object]:
+    executed = {str(s["command"]) for s in stages}
+    stage_inventory = [
+        {**item, "state": "executed" if item["command"] in executed else ("skipped" if item["selected"] else "not_selected")}
+        for item in configured
+    ]
+    semantic = {
+        "manifest_identity": manifest_identity, "source_identity": source_identity, "status": status,
+        "stages": [
+            {k: s[k] for k in ("command", "stage", "status", "classification", "failure_identity")}
+            for s in stages
+        ],
+        "stop_reason": stop_reason,
+    }
+    return {
+        "schema": {"name": "agent-economics-local-qualification", "version": 2},
+        "status": status, "ci_status": "NOT_RUN", "source_identity": source_identity,
+        "manifest_identity": manifest_identity, "stages": stages, "stage_inventory": stage_inventory,
+        "loop": {"stop_reason": stop_reason},
+        "local_verification_identity": semantic_identity(semantic),
+    }
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -99,14 +111,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--command", action="append", required=True)
     parser.add_argument("--changed-path", action="append", default=[])
     parser.add_argument("--selected-path", action="append", default=[])
+    parser.add_argument("--probe-artifact", action="append", type=Path, default=[])
     parser.add_argument("--state-path", type=Path, default=Path(".agent-artifacts/local-loop.json"))
     args = parser.parse_args(argv)
     payload = qualify_local(
-        repository_root=args.repository_root,
-        manifest_path=args.manifest,
-        command_names=args.command,
-        changed_paths=args.changed_path,
-        selected_paths=args.selected_path,
-        state_path=args.state_path,
+        repository_root=args.repository_root, manifest_path=args.manifest,
+        command_names=args.command, changed_paths=args.changed_path,
+        selected_paths=args.selected_path, probe_artifacts=args.probe_artifact, state_path=args.state_path,
     )
     print(json.dumps(payload, indent=2, ensure_ascii=False))
