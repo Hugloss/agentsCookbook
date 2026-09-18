@@ -9,6 +9,7 @@ from .__main__ import main as package_main
 from .capabilities import capabilities
 from .command_catalog import COMMANDS, PROBE_COMMANDS
 from .doctor import doctor
+from .profile_suggestion import profile_suggestion
 
 
 def qualify() -> None:
@@ -40,6 +41,19 @@ def qualify() -> None:
         assert payload["suggestions"]["ruff"]["extend_exclude"] == ["benchmarks/retained"]
         expected_quality_readiness = "READY" if payload["environment"]["ruff"]["available"] else "NEEDS_RUFF"
         assert payload["readiness"]["quality_debt"] == expected_quality_readiness
+        profile = profile_suggestion(payload)
+        assert profile["status"] == "REVIEW_REQUIRED"
+        assert profile["repository"] == {
+            "package_roots": ["src/acme"],
+            "test_roots": ["tests"],
+        }
+        assert profile["quality_debt"]["analysis_roots"] == ["src/acme", "scripts", "benchmarks"]
+        assert profile["quality_debt"]["limits"]["C901"] == 8
+        assert profile["interpretation"]["writes_repository_configuration"] is False
+        if payload["environment"]["ruff"]["available"]:
+            assert "ruff_supply" not in profile["unresolved"]
+        else:
+            assert "ruff_supply" in profile["unresolved"]
         assert payload["interpretation"]["suggestions_are_not_repository_authority"] is True
         assert payload["readiness"]["test_focus"] == "READY"
 
@@ -50,6 +64,9 @@ def qualify() -> None:
         assert "source_root" in ambiguous["ambiguity"]
         assert ambiguous["readiness"]["hotspot_focus"] == "NEEDS_SOURCE_ROOT"
         assert ambiguous["readiness"]["test_focus"] == "NEEDS_CONFIG"
+        ambiguous_profile = profile_suggestion(ambiguous)
+        assert "package_roots" in ambiguous_profile["unresolved"]
+        assert ambiguous_profile["status"] == "REVIEW_REQUIRED"
 
         capability = capabilities(repository_root=root)
         assert capability["capabilities"]["probes"]["available"] == list(PROBE_COMMANDS)
@@ -63,7 +80,7 @@ def qualify() -> None:
         assert command.name in help_text
     assert "Start in an unfamiliar repository" in help_text
 
-    print('{"cases":6,"status":"PASS","tool":"zero-to-first-result"}')
+    print('{"cases":8,"status":"PASS","tool":"zero-to-first-result"}')
 
 
 if __name__ == "__main__":
