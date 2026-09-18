@@ -28,6 +28,14 @@ def qualify() -> None:
         assert payload["interpretation"]["suggestions_are_not_repository_authority"] is True
         assert payload["readiness"]["test_focus"] == "READY"
 
+        (root / "src/second").mkdir()
+        (root / "src/second/__init__.py").write_text("", encoding="utf-8")
+        ambiguous = doctor(root)
+        assert ambiguous["suggestions"]["source_roots"] == ["src/acme", "src/second"]
+        assert "source_root" in ambiguous["ambiguity"]
+        assert ambiguous["readiness"]["hotspot_focus"] == "NEEDS_SOURCE_ROOT"
+        assert ambiguous["readiness"]["test_focus"] == "NEEDS_CONFIG"
+
         capability = capabilities(repository_root=root)
         assert capability["capabilities"]["probes"]["available"] == list(PROBE_COMMANDS)
         assert "quality-debt" in PROBE_COMMANDS
@@ -40,7 +48,7 @@ def qualify() -> None:
         assert command.name in help_text
     assert "Start in an unfamiliar repository" in help_text
 
-    print('{"cases":4,"status":"PASS","tool":"zero-to-first-result"}')
+    print('{"cases":5,"status":"PASS","tool":"zero-to-first-result"}')
 
 
 if __name__ == "__main__":
