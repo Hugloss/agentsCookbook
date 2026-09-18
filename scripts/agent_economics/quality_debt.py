@@ -12,7 +12,7 @@ from .probe_contract import analyzed_input_identity, build_probe_contract, confi
 from .refactor_focus_paths import iso_utc_now
 
 TOOL_NAME = "quality-debt"
-TOOL_VERSION = "0.13.0"
+TOOL_VERSION = "0.14.0"
 _OBSERVED_LIMIT = re.compile(r"\((\d+)\s*(?:>|/)\s*(\d+)\)$")
 
 
@@ -141,6 +141,29 @@ def _findings(
     return [grouped[key] for key in sorted(grouped)]
 
 
+def _detailed_findings(
+    findings: list[dict[str, object]], limits: dict[str, int]
+) -> list[dict[str, object]]:
+    detailed: list[dict[str, object]] = []
+    for finding in findings:
+        path = str(finding["path"])
+        line = int(finding["line"])
+        for rule, raw_observed in sorted(dict(finding["violations"]).items()):
+            observed = int(raw_observed)
+            limit = limits[rule]
+            detailed.append(
+                {
+                    "path": path,
+                    "line": line,
+                    "rule": rule,
+                    "observed": observed,
+                    "limit": limit,
+                    "excess": observed - limit,
+                }
+            )
+    return detailed
+
+
 def _file_lengths(
     root: Path,
     roots: tuple[str, ...],
@@ -243,6 +266,7 @@ def quality_debt_audit(
         max_stderr_bytes=max_stderr_bytes, excludes=excludes,
     )
     findings = _findings(root, diagnostics, limits, excludes)
+    detailed_findings = _detailed_findings(findings, limits)
     oversized = _file_lengths(root, line_roots, max_file_lines, excludes)
     summary = _summary(findings, limits, oversized)
     comparable_values = {
@@ -287,7 +311,8 @@ def quality_debt_audit(
         },
         evidence={
             "analyzer": {"name": analyzer, "version": version},
-            "findings": findings, "oversized_files": oversized,
+            "findings": findings, "detailed_findings": detailed_findings,
+            "oversized_files": oversized,
             "comparable_identity": comparable_identity,
         },
         derived={"summary": summary, "baseline_comparison": comparison},

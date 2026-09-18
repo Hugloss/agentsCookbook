@@ -89,6 +89,8 @@ Repeat `--exclude` for repository-relative path prefixes that are outside the ad
 
 A baseline comparison is valid only when analyzer/version, roots, exclusions, limits, and file-line policy have the same comparable identity. Otherwise the result is `INCOMPARABLE_BASELINE`. Per-file increases remain visible even when repository-wide debt falls. Baselines are measurement evidence, not acceptance or certification authority.
 
+The artifact also exposes `evidence.detailed_findings` as deterministic machine-readable rows with `path`, `line`, `rule`, `observed`, `limit`, and `excess`. `derived.summary.files` remains the per-file aggregation, so a low-context consumer can rank current hotspots without reparsing analyzer messages or opening candidate files first. These measurements prioritize investigation; they do not authorize edits or change repository policy.
+
 Hotspot evidence also reports the largest definitions (functions/classes with qualified names and line spans), while keeping those dimensions independent rather than creating a composite quality score.
 
 `qualify-local` receipts expose cumulative and per-stage execution economics so P11 dogfood can consume actual local command cost rather than reconstructing it manually.

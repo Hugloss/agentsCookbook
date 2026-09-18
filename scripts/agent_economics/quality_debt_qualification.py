@@ -22,6 +22,8 @@ root=os.getcwd()
 limit=6 if mode == 'limit6' else 5
 value=9 if mode != 'reduced' else 7
 rows=[{'code':'C901','filename':os.path.join(root,'src','a.py'),'location':{'row':1},'message':f'complexity ({value} > {limit})'}]
+if mode == 'detailed':
+    rows.append({'code':'PLR0912','filename':os.path.join(root,'src','a.py'),'location':{'row':1},'message':'branches (11 > 8)'})
 if mode == 'new':
     rows.append({'code':'C901','filename':os.path.join(root,'src','b.py'),'location':{'row':1},'message':f'complexity (8 > {limit})'})
 if mode == 'excluded':
@@ -47,6 +49,25 @@ def main() -> None:
             base=quality_debt_audit(repository_root=root, roots=("src",), limits={"C901":5})
             assert validate_probe_contract(base)==[]
             assert base["derived"]["summary"]["excess"]==4
+            assert base["evidence"]["detailed_findings"] == [
+                {"path":"src/a.py","line":1,"rule":"C901","observed":9,"limit":5,"excess":4}
+            ]
+            assert base["candidates"][0]["facts"] == {
+                "locations":1,"rule_findings":1,"excess":4
+            }
+            os.environ["AE_RUFF_MODE"]="detailed"
+            detailed=quality_debt_audit(
+                repository_root=root, roots=("src",),
+                limits={"PLR0912":8,"C901":5},
+            )
+            assert detailed["evidence"]["detailed_findings"] == [
+                {"path":"src/a.py","line":1,"rule":"C901","observed":9,"limit":5,"excess":4},
+                {"path":"src/a.py","line":1,"rule":"PLR0912","observed":11,"limit":8,"excess":3},
+            ]
+            assert detailed["derived"]["summary"]["files"]["src/a.py"] == {
+                "locations":1,"rule_findings":2,"excess":7
+            }
+            os.environ.pop("AE_RUFF_MODE", None)
             baseline=root/"baseline.json"
             baseline.write_text(json.dumps(baseline_document(base)), encoding="utf-8")
             same=quality_debt_audit(repository_root=root, roots=("src",), limits={"C901":5}, baseline_path=baseline)
@@ -79,7 +100,7 @@ def main() -> None:
             else: raise AssertionError("analyzer timeout must fail closed")
         finally:
             os.environ.pop("AE_RUFF_MODE", None); os.environ["PATH"]=old_path
-    print(json.dumps({"status":"PASS","cases":9,"tool":"quality-debt"},sort_keys=True))
+    print(json.dumps({"status":"PASS","cases":10,"tool":"quality-debt"},sort_keys=True))
 
 
 if __name__=="__main__":
