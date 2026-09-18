@@ -4,6 +4,18 @@ from collections.abc import Mapping, Sequence
 
 SCHEMA = "agentscookbook-working-evidence/v1"
 SECTIONS = ("task", "known", "decisions", "remaining")
+INVALIDATION_KINDS = frozenset(
+    {
+        "file-edit",
+        "worktree-change",
+        "repository-generation",
+        "dependency-change",
+        "environment-change",
+        "process-restart",
+        "session-end",
+        "never-within-session",
+    }
+)
 
 
 def new_working_evidence(*, goal: str) -> dict[str, object]:
@@ -52,3 +64,20 @@ def validate_working_evidence(payload: object) -> list[str]:
             + ", ".join(leaked)
         )
     return errors
+
+
+def validate_invalidation(item: object) -> list[str]:
+    """Validate explicit evidence lifetime without owning repository freshness."""
+    if not isinstance(item, Mapping):
+        return ["invalidation must be an object"]
+    kind = item.get("kind")
+    if not isinstance(kind, str) or kind not in INVALIDATION_KINDS:
+        return ["invalidation.kind must be a supported explicit lifetime"]
+    if kind == "repository-generation" and not isinstance(
+        item.get("provider_reference"), str
+    ):
+        return [
+            "repository-generation invalidation requires provider_reference; "
+            "working evidence must not own repository generation"
+        ]
+    return []
