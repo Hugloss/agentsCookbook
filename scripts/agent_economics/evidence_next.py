@@ -39,7 +39,8 @@ def _candidate(payload: dict[str, Any], target: str | None) -> dict[str, Any]:
 
 
 def next_evidence(
-    payload: dict[str, Any], *, target: str | None = None, profile: dict[str, Any] | None = None
+    payload: dict[str, Any], *, target: str | None = None, profile: dict[str, Any] | None = None,
+    python_argv: list[str] | None = None,
 ) -> dict[str, Any]:
     schema = payload.get("schema")
     if not isinstance(schema, dict) or schema.get("name") != "agent-economics-probe":
@@ -60,6 +61,9 @@ def next_evidence(
 
     command: list[str] | None = None
     unresolved: list[str] = []
+    runtime_argv = list(python_argv) if python_argv is not None else None
+    if runtime_argv is not None and (not runtime_argv or not all(isinstance(item, str) and item for item in runtime_argv)):
+        raise EvidenceNextError("python runtime argv must contain non-empty strings")
     if kind == "test_focus":
         if profile is None:
             unresolved.append("profile")
@@ -85,9 +89,11 @@ def next_evidence(
                     ]
                     if len(matches) != 1 or matches[0].get("status") != "DETECTED":
                         unresolved.append(unresolved_code)
+            if runtime_argv is None:
+                unresolved.append("python_runtime_argv")
             if not unresolved:
                 command = [
-                    "python", "-m", "agent_economics", "test-focus",
+                    *runtime_argv, "-m", "agent_economics", "test-focus",
                     "--repository-root", ".",
                     "--source-root", str(packages[0]),
                     "--tests-root", str(tests[0]),
@@ -111,6 +117,7 @@ def next_evidence(
             "does_not_execute_command": True,
             "profile_is_configuration_input_not_policy_authority": True,
             "profile_root_provenance_is_preserved": True,
+            "runtime_authority_must_be_explicit": True,
         },
     }
 
@@ -120,11 +127,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("artifact", type=Path)
     parser.add_argument("--target", default=None)
     parser.add_argument("--profile", type=Path, default=None)
+    parser.add_argument("--python-argv", nargs="+", default=None, help="Explicit Python launcher argv prefix, for example: uv run python")
     args = parser.parse_args(argv)
     try:
         payload = _load(args.artifact)
         profile = _load(args.profile) if args.profile is not None else None
-        print(json.dumps(next_evidence(payload, target=args.target, profile=profile), indent=2, sort_keys=True))
+        print(json.dumps(next_evidence(payload, target=args.target, profile=profile, python_argv=args.python_argv), indent=2, sort_keys=True))
     except EvidenceNextError as exc:
         raise SystemExit(f"next: {exc}") from exc
 
