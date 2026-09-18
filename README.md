@@ -95,7 +95,7 @@ This repository intentionally does not own your execution environment.
 
 Agents Cookbook remains a **prompt library at its core**, not a model server, sandbox, repository indexer, workflow engine, or autonomous orchestration framework. OpenCode, Pi, or another host owns model execution, source edits, permissions, and isolation.
 
-The optional `scripts/agent_economics/` package is a deliberately narrower exception: a stdlib-only **capability helper** for hosts such as ChatGPT that need deterministic repository evidence or bounded execution of repository-declared verification commands. It is not an autonomous agent. It never chooses or performs source repairs, installs dependencies, interprets arbitrary shell strings, claims CI/certification authority, or claims sandbox/network isolation that the host did not enforce.
+The optional `scripts/agent_economics/` package is a deliberately narrower exception: a stdlib-only **capability helper** for hosts such as ChatGPT that need deterministic repository evidence or bounded execution of repository-declared verification commands. Task continuity uses a plain, disposable working-evidence file rather than a database or hidden state service; reusable repository intelligence should remain with Hashmarks (or another repository-intelligence provider) rather than being copied into that file. It is not an autonomous agent. It never chooses or performs source repairs, installs dependencies, interprets arbitrary shell strings, claims CI/certification authority, or claims sandbox/network isolation that the host did not enforce.
 
 ## The repository-improvement chain
 
@@ -267,7 +267,7 @@ The host owns:
 - delegation and session lifecycle;
 - persistence and runtime state.
 
-That boundary is intentional. The useful thing in this repository should remain the **prompts**.
+That boundary is intentional. The useful thing in this repository should remain the **prompts**. Agent Economics may define a small file-oriented task-state contract (`task`, `known`, `decisions`, `remaining`), but it must not grow a repository graph, ownership graph, verification cache, or persistent evidence database.
 
 ## Contributing and security
 
