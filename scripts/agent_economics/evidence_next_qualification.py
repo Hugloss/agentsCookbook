@@ -70,7 +70,7 @@ def qualify() -> None:
             ],
         },
     }
-    proposed = next_evidence(payload, target="pkg/hot.py", profile=proposed_profile)
+    proposed = next_evidence(payload, target="pkg/hot.py", profile=proposed_profile, python_argv=["uv", "run", "python"])
     assert proposed["command"] is None
     assert proposed["unresolved"] == ["package_root_not_detected"]
     assert proposed["interpretation"]["profile_root_provenance_is_preserved"] is True
@@ -88,14 +88,20 @@ def qualify() -> None:
         },
         "quality_debt": proposed_profile["quality_debt"],
     }
-    detected = next_evidence(payload, target="pkg/hot.py", profile=detected_profile)
+    detected = next_evidence(payload, target="pkg/hot.py", profile=detected_profile, python_argv=["uv", "run", "python"])
     assert detected["command"] is not None
     assert detected["unresolved"] == []
 
-    result = next_evidence(payload, target="pkg/hot.py", profile=profile)
+    no_runtime = next_evidence(payload, target="pkg/hot.py", profile=profile)
+    assert no_runtime["command"] is None
+    assert no_runtime["unresolved"] == ["python_runtime_argv"]
+
+    result = next_evidence(
+        payload, target="pkg/hot.py", profile=profile, python_argv=["uv", "run", "python"]
+    )
     assert result["next_evidence"]["kind"] == "test_focus"
     assert result["command"] == [
-        "python", "-m", "agent_economics", "test-focus",
+        "uv", "run", "python", "-m", "agent_economics", "test-focus",
         "--repository-root", ".", "--source-root", "pkg",
         "--tests-root", "tests", "--changed-path", "pkg/hot.py",
         "--artifact-path", ".agent-artifacts/test-focus.json",
@@ -104,7 +110,7 @@ def qualify() -> None:
     assert result["interpretation"]["does_not_execute_command"] is True
     assert result["interpretation"]["does_not_authorize_edit"] is True
 
-    missing_profile = next_evidence(payload, target="pkg/hot.py")
+    missing_profile = next_evidence(payload, target="pkg/hot.py", python_argv=["python"])
     assert missing_profile["command"] is None
     assert missing_profile["unresolved"] == ["profile"]
 
@@ -112,12 +118,13 @@ def qualify() -> None:
         payload,
         target="pkg/hot.py",
         profile={"repository": {"package_roots": ["pkg", "other"], "test_roots": ["tests"]}},
+        python_argv=["python"],
     )
     assert ambiguous["command"] is None
     assert ambiguous["unresolved"] == ["single_package_root"]
 
     try:
-        next_evidence(payload, target="missing.py", profile=profile)
+        next_evidence(payload, target="missing.py", profile=profile, python_argv=["python"])
     except EvidenceNextError:
         pass
     else:
@@ -128,11 +135,11 @@ def qualify() -> None:
         "target": "pkg/hot.py",
         "required_next_evidence": [{"kind": "invented", "reason": "fixture"}],
     }]
-    result = next_evidence(unsupported, profile=profile)
+    result = next_evidence(unsupported, profile=profile, python_argv=["python"])
     assert result["command"] is None
     assert result["unresolved"] == ["unsupported_next_evidence:invented"]
 
-    print('{"cases":9,"status":"PASS","tool":"evidence-next"}')
+    print('{"cases":10,"status":"PASS","tool":"evidence-next"}')
 
 
 if __name__ == "__main__":
