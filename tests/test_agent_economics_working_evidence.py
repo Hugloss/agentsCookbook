@@ -1,5 +1,7 @@
 from scripts.agent_economics.working_evidence import (
     SCHEMA,
+    provider_reference,
+    validate_provider_reference,
     new_working_evidence,
     validate_invalidation,\n    validate_working_evidence,
 )
@@ -44,3 +46,34 @@ def test_repository_generation_invalidation_requires_provider_reference() -> Non
 
 def test_environment_lifetime_is_task_local_and_does_not_need_repository_owner() -> None:
     assert validate_invalidation({"kind": "environment-change"}) == []
+
+
+def test_provider_reference_points_to_repository_evidence_without_copying_it() -> None:
+    reference = provider_reference(
+        provider="hashmarks",
+        evidence_identity="sha256:evidence",
+        repository_identity="sha256:repository",
+        generation=42,
+    )
+
+    assert reference == {
+        "provider": "hashmarks",
+        "evidence_identity": "sha256:evidence",
+        "repository_identity": "sha256:repository",
+        "generation": 42,
+    }
+    assert validate_provider_reference(reference) == []
+
+
+def test_provider_reference_rejects_embedded_repository_facts() -> None:
+    errors = validate_provider_reference(
+        {
+            "provider": "hashmarks",
+            "evidence_identity": "sha256:evidence",
+            "ownership_graph": {"copied": True},
+        }
+    )
+
+    assert errors == [
+        "provider reference must not embed repository intelligence: ownership_graph"
+    ]
