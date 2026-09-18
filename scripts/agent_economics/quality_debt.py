@@ -30,9 +30,18 @@ def _inside(root: Path, raw: str) -> tuple[Path, str]:
     return resolved, relative.as_posix()
 
 
+def _normalize_scope_path(root: Path, raw: str, *, kind: str) -> str:
+    if not raw:
+        raise QualityDebtError(f"{kind} must not be empty")
+    resolved, relative = _inside(root, raw)
+    if relative in ("", "."):
+        raise QualityDebtError(f"{kind} must not resolve to repository root: {raw}")
+    return relative.rstrip("/")
+
+
 def _excluded(relative: str, excludes: tuple[str, ...]) -> bool:
     return any(
-        relative == item.rstrip("/") or relative.startswith(item.rstrip("/") + "/")
+        relative == item or relative.startswith(item + "/")
         for item in excludes
     )
 
@@ -344,10 +353,18 @@ def quality_debt_audit(
         raise QualityDebtError("max_file_lines must be positive")
     if analyzer != "ruff":
         raise QualityDebtError("only the ruff analyzer adapter is currently supported")
+    roots = tuple(_normalize_scope_path(root, item, kind="configured root") for item in roots)
+    excludes = tuple(_normalize_scope_path(root, item, kind="exclude") for item in excludes)
+    if len(set(excludes)) != len(excludes):
+        raise QualityDebtError("duplicate excludes after repository-relative normalization")
+    line_roots_raw = roots if file_line_roots is None else file_line_roots
+    line_roots = tuple(
+        _normalize_scope_path(root, item, kind="file-line root") for item in line_roots_raw
+    )
     scope_diagnostics = _validate_scope(root, roots, excludes)
+    _validate_scope(root, line_roots, excludes)
     executable = shutil.which(analyzer) or analyzer
     version = _analyzer_version(root, executable, timeout_seconds)
-    line_roots = roots if file_line_roots is None else file_line_roots
     source_identity, files_read, source_bytes, source_universe = _source_identity(
         root, roots, (".py",), excludes
     )

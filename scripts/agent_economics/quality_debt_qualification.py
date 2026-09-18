@@ -128,7 +128,13 @@ def main() -> None:
                 "--output-format", "json",
             ]
             assert analyzer_evidence["working_directory"] == "."
-            for bad_roots in (("src", "src"), ("src", "src/excluded")):
+            absolute_alias = str((root/"src").resolve())
+            for bad_roots in (
+                ("src", "src"),
+                ("src", "./src"),
+                ("src", absolute_alias),
+                ("src", "src/excluded"),
+            ):
                 try:
                     quality_debt_audit(
                         repository_root=root, roots=bad_roots, limits={"C901":5}
@@ -137,6 +143,36 @@ def main() -> None:
                     pass
                 else:
                     raise AssertionError(f"ambiguous roots must fail closed: {bad_roots}")
+            for bad_excludes in (("src/excluded", "./src/excluded"),):
+                try:
+                    quality_debt_audit(
+                        repository_root=root, roots=("src",), limits={"C901":5},
+                        excludes=bad_excludes,
+                    )
+                except QualityDebtError:
+                    pass
+                else:
+                    raise AssertionError(
+                        f"duplicate normalized excludes must fail closed: {bad_excludes}"
+                    )
+            try:
+                quality_debt_audit(
+                    repository_root=root, roots=("src",), limits={"C901":5},
+                    excludes=("../outside",),
+                )
+            except QualityDebtError:
+                pass
+            else:
+                raise AssertionError("escaping exclude must fail closed")
+            try:
+                quality_debt_audit(
+                    repository_root=root, roots=("src",), limits={"C901":5},
+                    file_line_roots=("../outside",), max_file_lines=10,
+                )
+            except QualityDebtError:
+                pass
+            else:
+                raise AssertionError("escaping file-line root must fail closed")
             swallowed=quality_debt_audit(
                 repository_root=root, roots=("src/excluded",), limits={"C901":5},
                 excludes=("src/excluded",),
@@ -206,7 +242,7 @@ def main() -> None:
             else: raise AssertionError("analyzer timeout must fail closed")
         finally:
             os.environ.pop("AE_RUFF_MODE", None); os.environ["PATH"]=old_path
-    print(json.dumps({"status":"PASS","cases":27,"tool":"quality-debt"},sort_keys=True))
+    print(json.dumps({"status":"PASS","cases":31,"tool":"quality-debt"},sort_keys=True))
 
 
 if __name__=="__main__":
