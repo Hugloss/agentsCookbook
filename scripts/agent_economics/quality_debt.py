@@ -12,7 +12,7 @@ from .probe_contract import analyzed_input_identity, build_probe_contract, confi
 from .refactor_focus_paths import iso_utc_now
 
 TOOL_NAME = "quality-debt"
-TOOL_VERSION = "0.12.0"
+TOOL_VERSION = "0.13.0"
 _OBSERVED_LIMIT = re.compile(r"\((\d+)\s*(?:>|/)\s*(\d+)\)$")
 
 
@@ -30,7 +30,19 @@ def _inside(root: Path, raw: str) -> tuple[Path, str]:
     return resolved, relative.as_posix()
 
 
-def _source_identity(root: Path, roots: tuple[str, ...], suffixes: tuple[str, ...]) -> tuple[str, int, int]:
+def _excluded(relative: str, excludes: tuple[str, ...]) -> bool:
+    return any(
+        relative == item.rstrip("/") or relative.startswith(item.rstrip("/") + "/")
+        for item in excludes
+    )
+
+
+def _source_identity(
+    root: Path,
+    roots: tuple[str, ...],
+    suffixes: tuple[str, ...],
+    excludes: tuple[str, ...],
+) -> tuple[str, int, int]:
     entries: list[dict[str, str]] = []
     total = 0
     for raw_root in roots:
@@ -39,12 +51,13 @@ def _source_identity(root: Path, roots: tuple[str, ...], suffixes: tuple[str, ..
             raise QualityDebtError(f"configured root does not exist: {raw_root}")
         paths = [base] if base.is_file() else sorted(p for p in base.rglob("*") if p.is_file())
         for path in paths:
-            if path.suffix not in suffixes:
+            relative = path.relative_to(root).as_posix()
+            if path.suffix not in suffixes or _excluded(relative, excludes):
                 continue
             data = path.read_bytes()
             total += len(data)
             entries.append({
-                "path": path.relative_to(root).as_posix(),
+                "path": relative,
                 "sha256": hashlib.sha256(data).hexdigest(),
             })
     return analyzed_input_identity(entries), len(entries), total
@@ -65,10 +78,12 @@ def _analyzer_version(root: Path, executable: str, timeout_seconds: float) -> st
 def _run_ruff(
     root: Path, *, executable: str, roots: tuple[str, ...], limits: dict[str, int],
     timeout_seconds: float, max_stdout_bytes: int, max_stderr_bytes: int,
+    excludes: tuple[str, ...],
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
+    exclude_args = ("--exclude", ",".join(excludes)) if excludes else ()
     argv = (
         executable, "check", *roots, "--preview", "--select", ",".join(sorted(limits)),
-        "--config", "lint.per-file-ignores = {}", "--output-format", "json",
+        "--config", "lint.per-file-ignores = {}", *exclude_args, "--output-format", "json",
     )
     result = run_bounded(
         repository_root=root, argv=argv,
@@ -93,7 +108,12 @@ def _run_ruff(
     return value, result.metrics()
 
 
-def _findings(root: Path, diagnostics: list[dict[str, object]], limits: dict[str, int]) -> list[dict[str, object]]:
+def _findings(
+    root: Path,
+    diagnostics: list[dict[str, object]],
+    limits: dict[str, int],
+    excludes: tuple[str, ...],
+) -> list[dict[str, object]]:
     grouped: dict[tuple[str, int], dict[str, object]] = {}
     for diagnostic in diagnostics:
         if not isinstance(diagnostic, dict):
@@ -108,6 +128,8 @@ def _findings(root: Path, diagnostics: list[dict[str, object]], limits: dict[str
         if not isinstance(line, int) or line < 1:
             raise QualityDebtError("analyzer diagnostic line must be positive")
         _, relative = _inside(root, filename)
+        if _excluded(relative, excludes):
+            continue
         match = _OBSERVED_LIMIT.search(message)
         if match is None or int(match.group(2)) != limits[str(rule)]:
             raise QualityDebtError(f"unrecognized analyzer {rule} diagnostic: {message}")
@@ -119,7 +141,12 @@ def _findings(root: Path, diagnostics: list[dict[str, object]], limits: dict[str
     return [grouped[key] for key in sorted(grouped)]
 
 
-def _file_lengths(root: Path, roots: tuple[str, ...], max_file_lines: int | None) -> dict[str, int]:
+def _file_lengths(
+    root: Path,
+    roots: tuple[str, ...],
+    max_file_lines: int | None,
+    excludes: tuple[str, ...],
+) -> dict[str, int]:
     if max_file_lines is None:
         return {}
     oversized: dict[str, int] = {}
@@ -127,10 +154,11 @@ def _file_lengths(root: Path, roots: tuple[str, ...], max_file_lines: int | None
         base, _ = _inside(root, raw_root)
         paths = [base] if base.is_file() else sorted(base.rglob("*.py"))
         for path in paths:
-            if path.is_file():
+            relative = path.relative_to(root).as_posix()
+            if path.is_file() and not _excluded(relative, excludes):
                 lines = len(path.read_text(encoding="utf-8").splitlines())
                 if lines > max_file_lines:
-                    oversized[path.relative_to(root).as_posix()] = lines
+                    oversized[relative] = lines
     return oversized
 
 
@@ -190,6 +218,7 @@ def _comparison(current: dict[str, object], baseline: dict[str, object] | None, 
 def quality_debt_audit(
     *, repository_root: Path, roots: tuple[str, ...], limits: dict[str, int],
     analyzer: str = "ruff", max_file_lines: int | None = None,
+    file_line_roots: tuple[str, ...] | None = None, excludes: tuple[str, ...] = (),
     baseline_path: Path | None = None, artifact_path: Path | None = None,
     timeout_seconds: float = 30.0, max_stdout_bytes: int = 2_000_000,
     max_stderr_bytes: int = 200_000,
@@ -204,17 +233,21 @@ def quality_debt_audit(
         raise QualityDebtError("only the ruff analyzer adapter is currently supported")
     executable = shutil.which(analyzer) or analyzer
     version = _analyzer_version(root, executable, timeout_seconds)
-    source_identity, files_read, source_bytes = _source_identity(root, roots, (".py",))
+    line_roots = roots if file_line_roots is None else file_line_roots
+    source_identity, files_read, source_bytes = _source_identity(
+        root, roots, (".py",), excludes
+    )
     diagnostics, execution = _run_ruff(
         root, executable=executable, roots=roots, limits=limits,
         timeout_seconds=timeout_seconds, max_stdout_bytes=max_stdout_bytes,
-        max_stderr_bytes=max_stderr_bytes,
+        max_stderr_bytes=max_stderr_bytes, excludes=excludes,
     )
-    findings = _findings(root, diagnostics, limits)
-    oversized = _file_lengths(root, roots, max_file_lines)
+    findings = _findings(root, diagnostics, limits, excludes)
+    oversized = _file_lengths(root, line_roots, max_file_lines, excludes)
     summary = _summary(findings, limits, oversized)
     comparable_values = {
         "analyzer": analyzer, "analyzer_version": version, "roots": list(roots),
+        "excludes": list(excludes), "file_line_roots": list(line_roots),
         "limits": dict(sorted(limits.items())), "max_file_lines": max_file_lines,
     }
     comparable_identity = configuration_identity(comparable_values)
