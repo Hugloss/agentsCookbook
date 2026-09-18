@@ -135,8 +135,27 @@ P10 qualification requires manifest/cwd fail-closed behavior, literal argv handl
 
 ## Phase 11 — Agent outcome benchmark
 
-Status: **measurement infrastructure complete; empirical dogfood corpus pending**.
+Status: **measurement infrastructure and immutable dogfood corpus complete; empirical paired agent runs remain pending**.
 
 P11 adds a bounded paired baseline-vs-bridge outcome format and comparator. It records correctness, CI activations, files opened, evidence bytes, estimated context tokens, tool calls, local commands, repair iterations, focused/broad verification attempts, failed edits, no-progress stops, bridge overhead, and local-vs-CI agreement. Inputs are bounded JSONL records and duplicate/unpaired records fail closed.
 
 The comparator exposes metric totals/deltas and explicit promotion evidence, but `automatic_promotion=false`: benchmark output is measurement rather than release authority. The implementation and top-level `benchmark-outcomes` CLI are qualified. The remaining closure is empirical rather than architectural: collect representative real repair tasks, run both baseline and capability-bridge treatments, and use those observations to decide whether any further capability deserves implementation.
+
+
+## Phase 12 — Analyzer-derived quality debt
+
+Status: **complete** on the Agent Economics Probes branch.
+
+P12 adds bounded analyzer-derived debt evidence without reimplementing analyzer semantics. The Ruff adapter consumes JSON through the shared bounded subprocess primitive, records analyzer/config/source identities, separates observed values from policy interpretation, and supports comparable no-growth baselines. Changed analyzer versions, roots, limits, or line-ceiling policy make the baseline explicitly incomparable rather than silently comparing unlike measurements. Per-file growth cannot be hidden by a repository-wide reduction.
+
+P12 also exposes largest-definition hotspot facts, local verification economics, and quality-debt evidence in repair packets while keeping all of those dimensions separate from edit or release authority.
+
+## Phase 13 — Dogfood protocol and pre-PR stress closure
+
+Status: **deterministic infrastructure complete; empirical agent pairs remain pending**.
+
+P13 freezes a 12-task adversarial dogfood corpus covering assertion, syntax/import, lint/type, focused-pass→broad-fail, missing executable, output flood, timeout/child tree, non-UTF8, forbidden/allowed mutation, no-progress/oscillation, and unavailable repository-byte identity. Each task has a semantic fixture identity. The protocol requires local repair iterations, freezes outcomes before the oracle is opened, forbids CI as a repair executor, and permits one independent final CI comparison after local evidence is frozen.
+
+The permanent qualification also runs a bounded stress layer: repeated stable commands, independent stdout/stderr flood bounds, non-UTF8 decoding, a 128-iteration loop-state ceiling, and repeated process-tree timeout termination. The GitHub job has a 20-minute outer safety timeout while individual subprocess limits remain smaller.
+
+This phase does not claim empirical economics improvement. Closure of that claim requires real baseline-vs-bridge agent runs on identical fixture bytes.

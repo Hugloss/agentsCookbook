@@ -65,7 +65,7 @@ jobs:
       - name: Compile Agent Economics
         run: python -m compileall -q scripts/agent_economics
 
-      - name: P1-P11 qualification
+      - name: Agent Economics full qualification
         run: |
           set -euo pipefail
           modules=(

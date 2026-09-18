@@ -271,6 +271,29 @@ Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before proposing a new skill. Security
 
 The repository is licensed under the [`MIT License`](LICENSE).
 
+## Agent Economics: repository evidence before another agent turn
+
+The optional Agent Economics package is for coding-agent environments where repository context and verification are expensive. It gives the host a small set of deterministic, bounded helpers instead of asking the model to repeatedly rediscover the same repository facts.
+
+Current capabilities include:
+
+| Need | Command | What it provides |
+| --- | --- | --- |
+| find likely refactor/test ownership | `refactor-focus` | confirmed/supporting/candidate evidence with explicit authority |
+| choose a bounded context set | `context-focus` | ranked repository evidence under file/line/byte/token budgets |
+| choose verification scope | `test-focus` | direct → affected → repository verification suggestions |
+| inspect reverse impact | `change-impact` | bounded static dependents and explicit uncertainty |
+| inspect historical coupling | `coupling-focus` | bounded Git co-change correlation, never dependency authority |
+| find investigation hotspots | `hotspot-focus` | visible size/branch/fan/churn/ownership dimensions, no opaque score |
+| measure analyzer debt | `quality-debt` | bounded Ruff-derived debt and comparable baseline evidence |
+| inspect local execution capability | `capabilities` | honest host/Git/process/isolation capability facts |
+| execute an authorized check | `run-command` | argv-only repository command with cwd/time/output/mutation bounds |
+| escalate local verification | `qualify-local` | focused → affected → component → repository receipts |
+| compare agent economics | `benchmark-outcomes` | paired baseline/bridge measurements without automatic promotion |
+| freeze dogfood tasks | `dogfood-corpus` | stable adversarial task identities and experiment protocol |
+
+A useful host loop is: **inspect → select evidence → edit in the host → run the smallest authorized verification → escalate only when justified**. Agent Economics owns the evidence and bounded command receipt; the coding agent still owns reasoning and edits.
+
 ## Optional Agent Economics capability bridge
 
 The capability bridge requires **Python 3.11+** and only runs commands selected from an explicit repository TOML manifest. Selecting a manifest is an authorization decision: those commands execute with the host process's filesystem, environment, and network authority unless the host separately isolates them. The bridge adds cwd containment, hard time/output bounds, tracked-byte mutation checks, structured failure evidence, no-progress budgets, and staged local qualification; it is **not a security sandbox**. See [`scripts/agent_economics/README.md`](scripts/agent_economics/README.md) and [`docs/agent-economics-probes.md`](docs/agent-economics-probes.md).
@@ -289,3 +312,6 @@ The capability bridge requires **Python 3.11+** and only runs commands selected 
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 - [Non-technical walkthrough](docs/non-technical-walkthrough.md)
+- [Agent Economics guide](docs/agent-economics-probes.md)
+- [Agent Economics real-agent dogfood gate](docs/agent-economics-dogfood.md)
+- [Agent Economics hardening phases](docs/agent-economics-probe-phases.md)

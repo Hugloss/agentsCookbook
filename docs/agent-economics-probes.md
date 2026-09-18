@@ -136,9 +136,18 @@ python -m scripts.agent_economics.probe_contract_qualification
 
 P4 qualification also reruns the earlier probe behavior indirectly and checks contract validation, identity invalidation/stability, facts-versus-recommendations separation, deferred-evidence accounting, uncertainty requirements, and verification suggestions.
 
-## Roadmap
+## Current capability map
 
-See [Agent Economics Probe phases](agent-economics-probe-phases.md) for the hardening sequence and planned `context-focus`, `test-focus`, `change-impact`, `coupling-focus`, `hotspot-focus`, and `tool-budget` probes.
+The probe family is no longer only a refactor experiment. The current public surfaces are:
+
+- evidence selection: `refactor-focus`, `context-focus`, `test-focus`, `change-impact`, `coupling-focus`, and `hotspot-focus`;
+- analyzer evidence: `quality-debt`;
+- local capability/execution: `capabilities`, `run-command`, and `qualify-local`;
+- measurement: `benchmark-outcomes` and `dogfood-corpus`.
+
+All source-analysis probes preserve evidence authority and bounded economics. Execution commands are separately authorized through the manifest and never gain source-edit authority.
+
+See [Agent Economics Probe phases](agent-economics-probe-phases.md) for the completed hardening sequence and [the dogfood gate](agent-economics-dogfood.md) for the remaining empirical validation boundary.
 
 
 ## Repository discovery semantics (P5)
@@ -193,3 +202,10 @@ P12 adds a small analyzer-derived debt probe. Ruff is the first adapter. It cons
 Baseline states are `NO_BASELINE`, `INCOMPARABLE_BASELINE`, `NEW`, `INCREASED`, `UNCHANGED`, `REDUCED`, and `RESOLVED`. A global reduction never hides a per-file increase. Measurement remains separate from repository policy.
 
 P12 also extends hotspot evidence with largest-definition facts, local qualification with explicit execution economics, repair packets with quality-debt evidence, and P11 records with optional bridge/manifest/local-qualification/final-source/CI receipt identities plus freeze-before-oracle protocol evidence.
+
+
+## Qualification before contribution
+
+The permanent repository workflow compiles the package and runs the complete deterministic/adversarial qualification chain plus a bounded stress layer. The stress layer repeats stable semantic identities, exercises independent stdout/stderr hard ceilings, non-UTF8 diagnostics, the 128-iteration loop-state boundary, and repeated timeout/process-tree termination. The job has a 20-minute outer safety window; that does not widen individual subprocess limits.
+
+This qualification proves implementation contracts. It does **not** prove that an agent saves time or context in real repair work. That claim requires the paired real-agent dogfood protocol, frozen outcomes, and independent CI comparison described in `agent-economics-dogfood.md`.

@@ -99,7 +99,7 @@ scripts/smoke-opencode-scripts.sh
 scripts/smoke-run-artifacts.sh
 ```
 
-The GitHub workflow validates the prompt/adapters and the complete Agent Economics P1–P11 regression suite on Ubuntu with Python 3.11. Real model-backed OpenCode/Pi qualification remains a host-environment check.
+The GitHub workflow validates the prompt/adapters and the complete Agent Economics deterministic, adversarial, dogfood-corpus, and bounded stress qualification suite on Ubuntu with Python 3.11. The Agent Economics job has a 20-minute outer safety window; individual subprocesses keep their own smaller hard bounds. Real model-backed OpenCode/Pi qualification and empirical baseline-vs-bridge dogfood remain host-environment checks.
 
 ## Pull requests
 
