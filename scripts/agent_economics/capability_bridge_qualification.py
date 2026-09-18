@@ -12,6 +12,7 @@ from .command_manifest import CommandManifestError, load_command_manifest
 from .command_runner import run_named_command
 from .loop_state import LoopBudget, LoopSession
 from .repair_packet import build_repair_packet
+from .workspace_state import changed_tracked_paths, tracked_workspace_state
 
 
 def _write(path: Path, text: str) -> None:
@@ -46,6 +47,14 @@ stage = "repository"
 argv = ["definitely-not-an-agent-economics-executable"]
 stage = "repository"
 ''')
+        import subprocess
+        subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.email", "p10@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.name", "P10 Qualification"], check=True)
+        _write(root / "tracked.txt", "before\\n")
+        subprocess.run(["git", "-C", str(root), "add", "tracked.txt"], check=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-qm", "fixture"], check=True)
+
         loaded = load_command_manifest(manifest)
         assert loaded.version == 1 and len(loaded.commands) == 5
         try:
@@ -80,6 +89,13 @@ stage = "repository"
             limits=ProcessLimits(timeout_seconds=0.05, max_stdout_bytes=32, max_stderr_bytes=32),
         )
         assert timeout.timed_out
+        before_bytes = tracked_workspace_state(root)
+        _write(root / "tracked.txt", "after\\n")
+        after_bytes = tracked_workspace_state(root)
+        assert before_bytes["identity"] != after_bytes["identity"]
+        assert changed_tracked_paths(before_bytes, after_bytes) == ["tracked.txt"]
+        _write(root / "tracked.txt", "before\\n")
+
         packet = build_repair_packet(repository_root=root, command_result=failed)
         assert packet["authority"]["repair_performed"] is False
 
@@ -114,7 +130,7 @@ stage = "repository"
                 "versioned-manifest", "cwd-containment", "argv-literal",
                 "pass-classification", "assertion-classification", "missing-executable",
                 "stdout-hard-bound", "timeout", "repair-packet-no-edit-authority",
-                "no-progress", "state-lock", "capability-honesty",
+                "no-progress", "state-lock", "tracked-byte-identity", "capability-honesty",
             ],
         }, sort_keys=True))
 

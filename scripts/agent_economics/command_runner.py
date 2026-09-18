@@ -8,6 +8,7 @@ from typing import Iterable
 
 from .bounded_process import ProcessLimits, run_bounded
 from .command_manifest import CommandManifestError, CommandSpec, load_command_manifest
+from .workspace_state import WorkspaceStateError, changed_tracked_paths, tracked_workspace_state
 
 
 class CommandRunnerError(ValueError):
@@ -94,7 +95,10 @@ def run_named_command(
         raise CommandRunnerError(f"command {name!r} does not admit selected path arguments")
     argv.extend(selected)
 
-    before_identity, before_dirty = _tracked_state(root)
+    try:
+        before_state = tracked_workspace_state(root)
+    except WorkspaceStateError as exc:
+        raise CommandRunnerError(f"cannot establish pre-command tracked-byte identity: {exc}") from exc
     result = run_bounded(
         repository_root=root,
         argv=argv,
@@ -105,8 +109,11 @@ def run_named_command(
             max_stderr_bytes=max_stderr_bytes,
         ),
     )
-    after_identity, after_dirty = _tracked_state(root)
-    changed = sorted((before_dirty ^ after_dirty) | (after_dirty - before_dirty))
+    try:
+        after_state = tracked_workspace_state(root)
+    except WorkspaceStateError as exc:
+        raise CommandRunnerError(f"cannot establish post-command tracked-byte identity: {exc}") from exc
+    changed = changed_tracked_paths(before_state, after_state)
     unexpected = [p for p in changed if not _allowed(p, spec.allowed_mutation_paths)]
     policy_violation = bool(spec.must_not_modify_tracked_files and unexpected)
     stdout_text = result.stdout.decode("utf-8", errors="replace")
@@ -146,8 +153,10 @@ def run_named_command(
         "stdout": stdout_text,
         "stderr": stderr_text,
         "workspace": {
-            "before_identity": before_identity,
-            "after_identity": after_identity,
+            "before_identity": before_state["identity"],
+            "after_identity": after_state["identity"],
+            "tracked_files": after_state["tracked_files"],
+            "tracked_bytes": after_state["tracked_bytes"],
             "unexpected_tracked_mutations": unexpected,
         },
         "authority": {
