@@ -210,7 +210,7 @@ def main() -> None:
         assert "\ufffd" in nonutf8["stdout"]
 
         mutated = run_named_command(repository_root=root, manifest_path=manifest, name="mutate")
-        assert mutated["classification"] == "policy_mutation_violation"
+        assert mutated["classification"] == "policy_mutation_violation", mutated
         _write(root / "tracked.txt", "before\n")
         allowed = run_named_command(repository_root=root, manifest_path=manifest, name="allowed")
         assert allowed["classification"] == "pass"
