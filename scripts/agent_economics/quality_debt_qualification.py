@@ -17,10 +17,12 @@ if '--version' in sys.argv:
     print('ruff 9.9.9'); raise SystemExit(0)
 mode=os.environ.get('AE_RUFF_MODE','base')
 if mode == 'timeout': time.sleep(2)
+if os.path.exists(os.path.join(os.getcwd(),'pyproject.toml')) and '--isolated' not in sys.argv:
+    mode='ambient_config'
 if mode == 'badjson': print('{'); raise SystemExit(1)
 root=os.getcwd()
 limit=6 if mode == 'limit6' else 5
-value=9 if mode != 'reduced' else 7
+value=12 if mode == 'ambient_config' else (9 if mode != 'reduced' else 7)
 rows=[{'code':'C901','filename':os.path.join(root,'src','a.py'),'location':{'row':1},'message':f'complexity ({value} > {limit})'}]
 if mode == 'detailed':
     rows.append({'code':'PLR0912','filename':os.path.join(root,'src','a.py'),'location':{'row':1},'message':'branches (11 > 8)'})
@@ -49,6 +51,16 @@ def main() -> None:
             base=quality_debt_audit(repository_root=root, roots=("src",), limits={"C901":5})
             assert validate_probe_contract(base)==[]
             assert base["derived"]["summary"]["excess"]==4
+            (root/"pyproject.toml").write_text(
+                "[tool.ruff.lint.mccabe]\nmax-complexity=99\n", encoding="utf-8"
+            )
+            ambient_changed=quality_debt_audit(
+                repository_root=root, roots=("src",), limits={"C901":5}
+            )
+            assert ambient_changed["derived"]["summary"]["excess"] == 4
+            assert "--isolated" in ambient_changed["evidence"]["analyzer"]["analysis_argv"]
+            assert ambient_changed["evidence"]["comparable_values"]["analyzer_configuration_mode"] == "isolated_explicit"
+
             assert base["evidence"]["detailed_findings"] == [
                 {"path":"src/a.py","line":1,"rule":"C901","observed":9,"limit":5,"excess":4}
             ]
@@ -112,7 +124,7 @@ def main() -> None:
             assert analyzer_evidence["version_argv"] == [str(fake), "--version"]
             assert analyzer_evidence["analysis_argv"] == [
                 str(fake), "check", "src", "tools", "--preview", "--select", "C901",
-                "--config", "lint.per-file-ignores = {}", "--exclude", "src/excluded",
+                "--isolated", "--config", "lint.per-file-ignores = {}", "--exclude", "src/excluded",
                 "--output-format", "json",
             ]
             assert analyzer_evidence["working_directory"] == "."
@@ -179,7 +191,7 @@ def main() -> None:
             else: raise AssertionError("analyzer timeout must fail closed")
         finally:
             os.environ.pop("AE_RUFF_MODE", None); os.environ["PATH"]=old_path
-    print(json.dumps({"status":"PASS","cases":25,"tool":"quality-debt"},sort_keys=True))
+    print(json.dumps({"status":"PASS","cases":26,"tool":"quality-debt"},sort_keys=True))
 
 
 if __name__=="__main__":
