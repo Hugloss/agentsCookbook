@@ -20,6 +20,9 @@ def profile_suggestion(doctor_payload: dict[str, Any]) -> dict[str, Any]:
     package_roots = list(suggestions.get("source_roots") or [])
     test_roots = list(suggestions.get("tests_roots") or [])
     quality_roots = list(suggestions.get("quality_analysis_roots") or [])
+    quality_root_evidence = suggestions.get("quality_analysis_root_evidence")
+    if not isinstance(quality_root_evidence, list):
+        quality_root_evidence = []
     ruff = suggestions.get("ruff")
     if not isinstance(ruff, dict):
         ruff = {}
@@ -45,6 +48,7 @@ def profile_suggestion(doctor_payload: dict[str, Any]) -> dict[str, Any]:
         },
         "quality_debt": {
             "analysis_roots": quality_roots,
+            "analysis_root_evidence": quality_root_evidence,
             "limits": dict(ruff.get("limits") or {}),
             "exclude": list(ruff.get("extend_exclude") or []),
         },
@@ -60,6 +64,7 @@ def profile_suggestion(doctor_payload: dict[str, Any]) -> dict[str, Any]:
             "review_required": True,
             "writes_repository_configuration": False,
             "suggestion_is_not_repository_authority": True,
+            "proposed_roots_require_review_before_persistent_use": True,
             "environment_availability_is_not_persisted_authority": True,
         },
     }

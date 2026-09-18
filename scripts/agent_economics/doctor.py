@@ -109,8 +109,13 @@ def doctor(repository_root: Path) -> dict[str, object]:
         Path(item).name for item in sources if Path(item).name.isidentifier()
     ]
     ruff_configuration = _ruff_configuration(pyproject)
+    conventional_quality_roots = _analysis_root_suggestions(root)
     analysis_roots = list(sources)
-    analysis_roots.extend(_analysis_root_suggestions(root))
+    analysis_roots.extend(conventional_quality_roots)
+    quality_root_evidence = [
+        *({"path": item, "status": "DETECTED", "basis": "python_package_layout"} for item in sources),
+        *({"path": item, "status": "PROPOSED", "basis": "conventional_directory_name"} for item in conventional_quality_roots),
+    ]
     ambiguity = []
     if len(sources) != 1:
         ambiguity.append("source_root")
@@ -132,6 +137,7 @@ def doctor(repository_root: Path) -> dict[str, object]:
             "tests_roots": tests,
             "package_names": package_suggestions,
             "quality_analysis_roots": analysis_roots,
+            "quality_analysis_root_evidence": quality_root_evidence,
             "ruff": ruff_configuration,
         },
         "ambiguity": ambiguity,
@@ -146,6 +152,7 @@ def doctor(repository_root: Path) -> dict[str, object]:
         },
         "interpretation": {
             "suggestions_are_not_repository_authority": True,
+            "conventional_quality_roots_are_proposed_not_detected_authority": True,
             "doctor_modifies_repository": False,
         },
     }
