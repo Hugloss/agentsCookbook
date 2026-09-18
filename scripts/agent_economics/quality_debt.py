@@ -265,13 +265,19 @@ def _comparison(
         return {"state": "INCOMPARABLE_BASELINE", "reason": "schema_mismatch", "files": {}, "delta_excess": None}
     if baseline.get("comparable_identity") != comparable_identity:
         previous_values = baseline.get("comparable_values")
-        changed_fields: list[str] = []
-        if isinstance(previous_values, dict):
-            changed_fields = sorted(
-                key
-                for key in set(previous_values) | set(comparable_values)
-                if previous_values.get(key) != comparable_values.get(key)
-            )
+        if not isinstance(previous_values, dict):
+            return {
+                "state": "INCOMPARABLE_BASELINE",
+                "reason": "comparable_values_unavailable",
+                "changed_fields": None,
+                "files": {},
+                "delta_excess": None,
+            }
+        changed_fields = sorted(
+            key
+            for key in set(previous_values) | set(comparable_values)
+            if previous_values.get(key) != comparable_values.get(key)
+        )
         return {
             "state": "INCOMPARABLE_BASELINE",
             "reason": "configuration_or_analyzer_mismatch",
@@ -337,7 +343,7 @@ def quality_debt_audit(
     oversized = _file_lengths(root, line_roots, max_file_lines, excludes)
     summary = _summary(findings, limits, oversized)
     comparable_values = {
-        "analyzer": analyzer, "analyzer_executable": executable, "analyzer_version": version, "roots": list(roots),
+        "analyzer": analyzer, "analyzer_version": version, "roots": list(roots),
         "excludes": list(excludes), "file_line_roots": list(line_roots),
         "limits": dict(sorted(limits.items())), "max_file_lines": max_file_lines,
     }
