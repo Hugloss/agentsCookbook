@@ -51,6 +51,11 @@ def main(argv: list[str] | None = None) -> None:
 
         local_qualify_main(args[1:])
         return
+    if args and args[0] == "dogfood-corpus":
+        from .dogfood_corpus import main as dogfood_corpus_main
+
+        dogfood_corpus_main(args[1:])
+        return
     if args and args[0] == "benchmark-outcomes":
         from .agent_outcome_benchmark import main as benchmark_main
 

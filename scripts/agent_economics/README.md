@@ -89,3 +89,15 @@ A baseline comparison is valid only when analyzer/version, roots, limits, and fi
 Hotspot evidence also reports the largest definitions (functions/classes with qualified names and line spans), while keeping those dimensions independent rather than creating a composite quality score.
 
 `qualify-local` receipts expose cumulative and per-stage execution economics so P11 dogfood can consume actual local command cost rather than reconstructing it manually.
+
+
+### dogfood-corpus
+
+`dogfood-corpus` emits the immutable adversarial task specification used for empirical baseline-vs-bridge runs. It contains the 12 planned failure/authority/bounds cases and a protocol that requires local repair iterations, no CI during the repair loop, outcome freeze before opening the oracle, and one independent CI qualification only after local evidence is frozen.
+
+```bash
+python -m scripts.agent_economics dogfood-corpus \
+  --artifact .agent-artifacts/dogfood-corpus.json
+```
+
+The corpus generator does not execute or repair tasks. Its identity makes it possible to bind P11 outcome records to an exact experimental task definition rather than a mutable task name.

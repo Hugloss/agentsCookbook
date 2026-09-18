@@ -34,6 +34,12 @@ def main() -> None:
     assert result["experiment_protocol"]["oracle_protocol_unknown"] == 2
     assert len(outcome_template(task_id="new-task", treatment_id="p10")) == 2
 
+    bound_common = dict(common, bridge_implementation_id="bridge:v1", manifest_id="manifest:v1", local_qualification_id="local:v1", final_source_id="source:v1", ci_evidence_id="ci:v1", oracle_opened_after_freeze=True)
+    bound = compare([Outcome(task_id="bound", treatment_id="p10", mode="baseline", correct=True, **common), Outcome(task_id="bound", treatment_id="p10", mode="bridge", correct=True, **bound_common)])
+    assert bound["experiment_protocol"]["bridge_receipts_bound"] == 1
+    assert bound["experiment_protocol"]["ci_evidence_bound"] == 1
+    assert bound["experiment_protocol"]["oracle_opened_after_freeze"] == 1
+
     with tempfile.TemporaryDirectory() as temp:
         path = Path(temp) / "outcomes.jsonl"
         path.write_text("\n".join(json.dumps(o.__dict__) for o in outcomes) + "\n", encoding="utf-8")

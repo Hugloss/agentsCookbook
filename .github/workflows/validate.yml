@@ -82,6 +82,7 @@ jobs:
             capability_bridge_qualification
             agent_outcome_benchmark_qualification
             quality_debt_qualification
+            dogfood_corpus_qualification
             pre_pr_qualification
           )
           for module in "${modules[@]}"; do
