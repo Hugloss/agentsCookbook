@@ -230,3 +230,56 @@ def provider_evidence_reuse_facts(
         "provider_reason": freshness.get("reason"),
         "relevant_changes": list(freshness.get("intersection") or []),
     }
+
+
+def evidence_stop_facts(
+    *,
+    risk_boundaries: Sequence[Mapping[str, object]],
+    proofs: Sequence[Mapping[str, object]],
+    scope_expanded: bool = False,
+) -> dict[str, object]:
+    """Decide whether evidence acquisition has reached declared sufficiency."""
+    proof_by_boundary: dict[str, list[Mapping[str, object]]] = {}
+    for proof in proofs:
+        boundary = proof.get("boundary")
+        if isinstance(boundary, str) and boundary:
+            proof_by_boundary.setdefault(boundary, []).append(proof)
+
+    uncovered: list[str] = []
+    indirect_only: list[str] = []
+    stale_only: list[str] = []
+    unknown: list[str] = []
+    for boundary in risk_boundaries:
+        identity = boundary.get("identity")
+        if not isinstance(identity, str) or not identity:
+            unknown.append("<invalid-boundary>")
+            continue
+        candidates = proof_by_boundary.get(identity, [])
+        if not candidates:
+            uncovered.append(identity)
+            continue
+        fresh = [row for row in candidates if row.get("fresh") is True]
+        if not fresh:
+            stale_only.append(identity)
+            continue
+        direct = [row for row in fresh if row.get("direct") is True]
+        if not direct:
+            indirect_only.append(identity)
+
+    sufficient = not (
+        uncovered or indirect_only or stale_only or unknown or scope_expanded
+    )
+    return {
+        "sufficient": sufficient,
+        "stop_acquiring_evidence": sufficient,
+        "scope_expanded": bool(scope_expanded),
+        "uncovered_boundaries": sorted(uncovered),
+        "indirect_only_boundaries": sorted(indirect_only),
+        "stale_only_boundaries": sorted(stale_only),
+        "unknown_boundaries": sorted(unknown),
+        "reason": (
+            "all-declared-risk-boundaries-have-fresh-direct-proof"
+            if sufficient
+            else "more-evidence-required"
+        ),
+    }
