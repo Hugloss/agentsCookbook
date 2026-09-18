@@ -21,6 +21,7 @@ COMMANDS = (
     CommandSpec("quality-debt", "Measure configured analyzer debt without policy authority.", "repository evidence", "quality_debt_cli"),
     CommandSpec("doctor", "Inspect repository readiness and suggest configuration.", "environment", "doctor"),
     CommandSpec("next", "Translate required next evidence into a bounded command without executing it.", "environment", "evidence_next"),
+    CommandSpec("explain", "Project a probe artifact into concise human-readable evidence.", "environment", "explain"),
     CommandSpec("capabilities", "Report available local capabilities.", "environment", "capabilities"),
     CommandSpec("run-command", "Run one explicitly authorized repository command.", "local verification", "command_runner"),
     CommandSpec("qualify-local", "Escalate repository-declared local verification.", "local verification", "local_qualify"),
