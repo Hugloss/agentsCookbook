@@ -3,7 +3,8 @@ from __future__ import annotations
 import fnmatch
 import os
 import shutil
-import subprocess
+
+from .bounded_process import ProcessLimits, run_bounded
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -50,6 +51,7 @@ class DiscoveryConfig:
     symlink_policy: SymlinkPolicy = "exclude"
     exclude_patterns: tuple[str, ...] = DEFAULT_EXCLUDE_PATTERNS
     git_timeout_seconds: float = 5.0
+    git_max_stdout_bytes: int = 8_000_000
 
     def __post_init__(self) -> None:
         if self.mode not in {"auto", "git", "filesystem"}:
@@ -64,6 +66,8 @@ class DiscoveryConfig:
             raise DiscoveryError("ignored_policy=include requires untracked_policy=include")
         if self.git_timeout_seconds <= 0:
             raise DiscoveryError("git timeout must be greater than zero")
+        if self.git_max_stdout_bytes < 1:
+            raise DiscoveryError("git_max_stdout_bytes must be >= 1")
         object.__setattr__(
             self,
             "exclude_patterns",
@@ -83,6 +87,7 @@ class DiscoveryResult:
     symlinks_excluded: int
     missing_files: int
     git_commands: int
+    git_stdout_bytes: int
     warnings: tuple[str, ...]
 
     def files_for(self, label: str) -> tuple[Path, ...]:
@@ -107,6 +112,7 @@ class DiscoveryResult:
             "symlinks_excluded": self.symlinks_excluded,
             "missing_files": self.missing_files,
             "git_commands": self.git_commands,
+            "git_stdout_bytes": self.git_stdout_bytes,
             "warnings": list(self.warnings),
             "root_file_counts": {
                 label: len(paths) for label, paths in sorted(self.files_by_root.items())
@@ -176,38 +182,40 @@ def _git_command(
     timeout_seconds: float,
     max_stdout_bytes: int = 8_000_000,
 ) -> bytes:
-    try:
-        completed = subprocess.run(
-            ["git", "-C", str(repository_root), *args],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=timeout_seconds,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise DiscoveryError(
-            f"git discovery command failed: {' '.join(args)}: {type(exc).__name__}"
-        ) from exc
-    if len(completed.stdout) > max_stdout_bytes:
-        raise DiscoveryError(
-            f"git discovery output exceeded configured byte bound: {max_stdout_bytes}"
-        )
-    return completed.stdout
+    result = run_bounded(
+        repository_root=repository_root,
+        argv=("git", "-C", str(repository_root), *args),
+        limits=ProcessLimits(
+            timeout_seconds=timeout_seconds,
+            max_stdout_bytes=max_stdout_bytes,
+            max_stderr_bytes=100_000,
+        ),
+    )
+    if result.executable_missing:
+        raise DiscoveryError("git discovery executable is unavailable")
+    if result.timed_out:
+        raise DiscoveryError(f"git discovery command timed out after {timeout_seconds} seconds")
+    if result.stdout_truncated:
+        raise DiscoveryError(f"git discovery output exceeded configured byte bound: {max_stdout_bytes}")
+    if result.return_code != 0:
+        raise DiscoveryError(f"git discovery command failed: {' '.join(args)}")
+    return result.stdout
 
 
-def _git_toplevel(repository_root: Path, *, timeout_seconds: float) -> tuple[Path | None, int]:
+def _git_toplevel(repository_root: Path, *, timeout_seconds: float, max_stdout_bytes: int = 8_000_000) -> tuple[Path | None, int, int]:
     if shutil.which("git") is None:
-        return None, 0
+        return None, 0, 0
     try:
         raw = _git_command(
             repository_root,
             ["rev-parse", "--show-toplevel"],
             timeout_seconds=timeout_seconds,
+            max_stdout_bytes=max_stdout_bytes,
         )
     except DiscoveryError:
-        return None, 1
+        return None, 1, 0
     top = raw.decode("utf-8", errors="replace").strip()
-    return (Path(top).resolve() if top else None), 1
+    return (Path(top).resolve() if top else None), 1, len(raw)
 
 
 def _decode_nul_paths(raw: bytes) -> list[str]:
@@ -313,33 +321,32 @@ def _git_discover(
     suffixes: frozenset[str],
 ) -> DiscoveryResult:
     outputs = {label: set() for label in roots_relative}
-    tracked = _decode_nul_paths(
-        _git_command(
+    tracked_raw = _git_command(
             repository_root,
             ["ls-files", "-z", "--cached"],
             timeout_seconds=config.git_timeout_seconds,
+            max_stdout_bytes=config.git_max_stdout_bytes,
         )
-    )
+    tracked = _decode_nul_paths(tracked_raw)
+    git_stdout_bytes = len(tracked_raw)
     git_commands = probe_commands + 1
     untracked: list[str] = []
     ignored: list[str] = []
     if config.untracked_policy == "include":
-        untracked = _decode_nul_paths(
-            _git_command(
-                repository_root,
-                ["ls-files", "-z", "--others", "--exclude-standard"],
-                timeout_seconds=config.git_timeout_seconds,
-            )
+        untracked_raw = _git_command(
+            repository_root, ["ls-files", "-z", "--others", "--exclude-standard"],
+            timeout_seconds=config.git_timeout_seconds, max_stdout_bytes=config.git_max_stdout_bytes,
         )
+        git_stdout_bytes += len(untracked_raw)
+        untracked = _decode_nul_paths(untracked_raw)
         git_commands += 1
         if config.ignored_policy == "include":
-            ignored = _decode_nul_paths(
-                _git_command(
-                    repository_root,
-                    ["ls-files", "-z", "--others", "--ignored", "--exclude-standard"],
-                    timeout_seconds=config.git_timeout_seconds,
-                )
+            ignored_raw = _git_command(
+                repository_root, ["ls-files", "-z", "--others", "--ignored", "--exclude-standard"],
+                timeout_seconds=config.git_timeout_seconds, max_stdout_bytes=config.git_max_stdout_bytes,
             )
+            git_stdout_bytes += len(ignored_raw)
+            ignored = _decode_nul_paths(ignored_raw)
             git_commands += 1
 
     tracked_count, tracked_excluded, tracked_symlinks, tracked_missing = _partition_candidates(
@@ -378,6 +385,7 @@ def _git_discover(
         symlinks_excluded=tracked_symlinks + untracked_symlinks + ignored_symlinks,
         missing_files=tracked_missing + untracked_missing + ignored_missing,
         git_commands=git_commands,
+        git_stdout_bytes=git_stdout_bytes,
         warnings=(),
     )
 
@@ -453,6 +461,7 @@ def _filesystem_discover(
         symlinks_excluded=symlinks,
         missing_files=missing,
         git_commands=probe_commands,
+        git_stdout_bytes=0,
         warnings=tuple(warnings),
     )
 
@@ -492,9 +501,10 @@ def discover_repository_roots(
         for label, path in roots_resolved.items()
     }
 
-    git_top, probe_commands = _git_toplevel(
+    git_top, probe_commands, probe_bytes = _git_toplevel(
         repository_root,
         timeout_seconds=config.git_timeout_seconds,
+        max_stdout_bytes=config.git_max_stdout_bytes,
     )
     if git_top is not None and git_top != repository_root:
         raise DiscoveryError(

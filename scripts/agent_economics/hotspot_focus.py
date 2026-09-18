@@ -4,12 +4,11 @@ import ast
 import hashlib
 import json
 import shutil
-import subprocess
-import threading
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from .bounded_process import ProcessLimits, run_bounded
 from .probe_contract import analyzed_input_identity, build_probe_contract
 from .refactor_focus_analysis import AnalysisCache
 from .refactor_focus_discovery import (
@@ -40,42 +39,18 @@ def _bounded_git(
 ) -> bytes:
     if shutil.which("git") is None:
         raise HotspotFocusError("Git is unavailable")
-    if timeout_seconds <= 0 or max_stdout_bytes < 1:
-        raise HotspotFocusError("invalid Git execution bound")
-    try:
-        process = subprocess.Popen(
-            ["git", "-C", str(repository_root), *args],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-    except OSError as exc:
-        raise HotspotFocusError(f"Git command failed to start: {type(exc).__name__}") from exc
-    timed_out = threading.Event()
-
-    def kill() -> None:
-        timed_out.set()
-        process.kill()
-
-    timer = threading.Timer(timeout_seconds, kill)
-    timer.daemon = True
-    timer.start()
-    try:
-        assert process.stdout is not None
-        raw = process.stdout.read(max_stdout_bytes + 1)
-        if len(raw) > max_stdout_bytes:
-            process.kill()
-            process.wait()
-            raise HotspotFocusError(
-                f"Git history output exceeded configured byte bound: {max_stdout_bytes}"
-            )
-        code = process.wait()
-    finally:
-        timer.cancel()
-    if timed_out.is_set():
+    result = run_bounded(
+        repository_root=repository_root,
+        argv=("git", "-C", str(repository_root), *args),
+        limits=ProcessLimits(timeout_seconds, max_stdout_bytes, 100_000),
+    )
+    if result.timed_out:
         raise HotspotFocusError(f"Git command timed out after {timeout_seconds} seconds")
-    if code != 0:
+    if result.stdout_truncated:
+        raise HotspotFocusError(f"Git history output exceeded configured byte bound: {max_stdout_bytes}")
+    if result.executable_missing or result.return_code != 0:
         raise HotspotFocusError("Git command failed")
-    return raw
+    return result.stdout
 
 
 def _git_history(
@@ -135,6 +110,7 @@ def _git_history(
         "available": True,
         "bytes_read": len(raw),
         "commits_returned": commits_seen,
+        "history_identity": "sha256:" + hashlib.sha256(raw).hexdigest(),
     }
 
 
@@ -362,6 +338,35 @@ def hotspot_focus_audit(
             "verification_suggestions": [],
         })
 
+    # Bind every evidence class that can affect the result, not only source bytes.
+    if tests_root is not None:
+        for test_path in all_test_files:
+            test_record = cache.get(test_path)
+            if test_record.content_sha256 is not None:
+                identity_entries.append({
+                    "path": "@tests/" + report_path(path=test_path, anchor=repository_root),
+                    "sha256": test_record.content_sha256,
+                })
+        if not all_test_files:
+            identity_entries.append({
+                "path": "@tests-state",
+                "sha256": hashlib.sha256(b"enabled-empty").hexdigest(),
+            })
+    else:
+        identity_entries.append({
+            "path": "@tests-state",
+            "sha256": hashlib.sha256(b"disabled").hexdigest(),
+        })
+    history_marker = (
+        str(history_meta.get("history_identity"))
+        if history_meta.get("available")
+        else "unavailable:" + str(history_meta.get("reason"))
+    )
+    identity_entries.append({
+        "path": "@history-state",
+        "sha256": hashlib.sha256(history_marker.encode("utf-8")).hexdigest(),
+    })
+
     candidates.sort(key=lambda c: _rank_key(c, ranking_dimensions))
     selected = candidates[:top_n]
     deferred = [
@@ -384,7 +389,7 @@ def hotspot_focus_audit(
     repository = {
         "root": ".",
         "identity": analyzed_input_identity(identity_entries),
-        "identity_kind": "analyzed-source-content-sha256",
+        "identity_kind": "analyzed-source-test-history-content-sha256",
         "input_count": len(identity_entries),
     }
     config = {

@@ -4,13 +4,12 @@ import hashlib
 import json
 import re
 import shutil
-import subprocess
-import threading
 import time
 from collections import Counter
 from pathlib import Path
 from typing import Iterable
 
+from .bounded_process import ProcessLimits, run_bounded
 from .probe_contract import analyzed_input_identity, build_probe_contract
 from .refactor_focus_discovery import (
     DEFAULT_EXCLUDE_PATTERNS,
@@ -51,47 +50,18 @@ def _run_git(
 ) -> bytes:
     if shutil.which("git") is None:
         raise CouplingFocusError("Git is required for coupling-focus")
-    if max_stdout_bytes < 1:
-        raise CouplingFocusError("Git stdout byte bound must be >= 1")
-    try:
-        process = subprocess.Popen(
-            ["git", "-C", str(repository_root), *args],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-    except OSError as exc:
-        raise CouplingFocusError(
-            f"git history command failed to start: {' '.join(args)}: {type(exc).__name__}"
-        ) from exc
-
-    timed_out = threading.Event()
-
-    def kill_for_timeout() -> None:
-        timed_out.set()
-        process.kill()
-
-    timer = threading.Timer(timeout_seconds, kill_for_timeout)
-    timer.daemon = True
-    timer.start()
-    try:
-        assert process.stdout is not None
-        raw = process.stdout.read(max_stdout_bytes + 1)
-        if len(raw) > max_stdout_bytes:
-            process.kill()
-            process.wait()
-            raise CouplingFocusError(
-                f"git history output exceeded configured byte bound: {max_stdout_bytes}"
-            )
-        return_code = process.wait()
-    finally:
-        timer.cancel()
-    if timed_out.is_set():
-        raise CouplingFocusError(
-            f"git history command timed out after {timeout_seconds} seconds: {' '.join(args)}"
-        )
-    if return_code != 0:
+    result = run_bounded(
+        repository_root=repository_root,
+        argv=("git", "-C", str(repository_root), *args),
+        limits=ProcessLimits(timeout_seconds, max_stdout_bytes, 100_000),
+    )
+    if result.timed_out:
+        raise CouplingFocusError(f"git history command timed out after {timeout_seconds} seconds")
+    if result.stdout_truncated:
+        raise CouplingFocusError(f"git history output exceeded configured byte bound: {max_stdout_bytes}")
+    if result.executable_missing or result.return_code != 0:
         raise CouplingFocusError(f"git history command failed: {' '.join(args)}")
-    return raw
+    return result.stdout
 
 
 def _require_git_root(repository_root: Path, *, timeout_seconds: float) -> None:
