@@ -69,6 +69,12 @@ def next_evidence(
                 raise EvidenceNextError("profile has no repository section")
             packages = repository.get("package_roots")
             tests = repository.get("test_roots")
+            status = profile.get("status")
+            interpretation = profile.get("interpretation")
+            if status == "REVIEW_REQUIRED":
+                unresolved.append("profile_review_required")
+            if isinstance(interpretation, dict) and interpretation.get("suggestion_is_not_repository_authority") is True:
+                unresolved.append("profile_not_repository_authority")
             if not isinstance(packages, list) or len(packages) != 1:
                 unresolved.append("single_package_root")
             if not isinstance(tests, list) or len(tests) != 1:
