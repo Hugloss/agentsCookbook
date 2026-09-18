@@ -51,3 +51,12 @@ Run `python -m scripts.agent_economics coupling-focus --target-path src/pkg/foo.
 ### P9 hotspot-focus
 
 Run `python -m scripts.agent_economics hotspot-focus --source-root src/pkg --tests-root tests --package-name pkg`. Visible dimensions include source size, branch points, largest function, static fan-in/fan-out, bounded Git churn, anonymized author concentration, and confirmed test ownership. Ranking is configurable lexicographic investigation priority only; unavailable history/test evidence remains unknown rather than zero.
+
+
+### P10 capability bridge
+
+Use `python -m scripts.agent_economics capabilities --repository-root . --manifest agent-economics.toml` to inspect what the local environment can actually execute. Repository commands are declared as argv arrays in a version-1 TOML manifest and run with `run-command`; arbitrary shell strings are not the command authority. The runner hard-bounds time/stdout/stderr, keeps cwd inside the repository, records stable command/failure identities, and compares bounded SHA-256 identities of tracked workspace bytes before and after commands. Unexpected tracked mutation fails policy. `qualify-local` supports staged local verification with exclusive loop state, cumulative budgets, and no-progress/oscillation stops. Local qualification never claims CI or certification authority.
+
+### P11 outcome benchmark
+
+Use `python -m scripts.agent_economics benchmark-outcomes --input outcomes.jsonl` with paired `baseline` and `bridge` JSONL records. The comparator measures correctness plus CI activations, evidence/context consumption, tool calls, commands, iterations, verification attempts, failed edits, no-progress stops, bridge overhead, and local-vs-CI agreement. Benchmark results are evidence only and never automatically promote a workflow.

@@ -123,10 +123,20 @@ History has hard commit, byte, and timeout bounds. In `auto` mode unavailable Gi
 
 P9 qualification requires visible independent dimensions, no opaque score, deterministic lexicographic ranking, static fan-in, bounded churn, anonymized author concentration, confirmed test evidence, static-only unknown-not-zero semantics, hard history-byte failure, common P4 contract validity, and continued P1–P8 qualification.
 
-## Phase 10 — `tool-budget`
+## Phase 10 — Capability bridge and local repair loop
 
-Measure agent-environment overhead: available tool/schema footprint, duplicated capabilities, injected repository context, instruction/skill footprint, and likely unused context. Use this to identify avoidable context/tool-call cost before repository work begins.
+Status: **complete and hardened** on the Agent Economics Probes branch.
+
+P10 compensates for repository-local execution capabilities an agent host may not expose directly. It adds explicit capability discovery, a versioned TOML argv-only command manifest, repository-contained working directories, a bounded subprocess primitive, named-command execution, structured failure classification, repair evidence packets, exclusive persistent loop state, no-progress/oscillation detection, cumulative iteration/command/output/time budgets, and staged local qualification. Missing executables and unenforced network/sandbox isolation are reported as capability facts rather than hidden assumptions. The bridge never installs dependencies, edits production source, or claims CI/certification authority.
+
+Command mutation protection is bound to a bounded SHA-256 identity over the actual tracked workspace bytes, including symlink payloads and missing tracked paths. Pre/post identities and changed tracked paths make unexpected command mutation a policy failure. The earlier P9 identity was also hardened to bind the test/history evidence used by hotspot ranking, and Git discovery now has a hard stdout ceiling in addition to timeout.
+
+P10 qualification requires manifest/cwd fail-closed behavior, literal argv handling, missing-executable and failure classification, stdout and timeout bounds, no repair authority, no-progress and state-lock behavior, capability honesty, tracked-byte identity invalidation, and continued P1–P9 qualification. Local outcomes are explicitly `LOCAL_QUALIFIED`, `LOCAL_FAILED`, or `LOCAL_INCOMPLETE`; they never become `CI_PASS` or `CERTIFIED`.
 
 ## Phase 11 — Agent outcome benchmark
 
-Compare representative repository tasks with and without probes. Measure files opened, lines/bytes/tokens read, tool calls, verification attempts, elapsed execution cost where available, and final correctness. Promotion requires demonstrated economics improvement without loss of correctness.
+Status: **measurement infrastructure complete; empirical dogfood corpus pending**.
+
+P11 adds a bounded paired baseline-vs-bridge outcome format and comparator. It records correctness, CI activations, files opened, evidence bytes, estimated context tokens, tool calls, local commands, repair iterations, focused/broad verification attempts, failed edits, no-progress stops, bridge overhead, and local-vs-CI agreement. Inputs are bounded JSONL records and duplicate/unpaired records fail closed.
+
+The comparator exposes metric totals/deltas and explicit promotion evidence, but `automatic_promotion=false`: benchmark output is measurement rather than release authority. The implementation and top-level `benchmark-outcomes` CLI are qualified. The remaining closure is empirical rather than architectural: collect representative real repair tasks, run both baseline and capability-bridge treatments, and use those observations to decide whether any further capability deserves implementation.
