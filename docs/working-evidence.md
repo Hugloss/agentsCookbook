@@ -14,7 +14,7 @@ The canonical shape has schema agentscookbook-working-evidence/v1 and exactly fo
 
 ## Do not copy repository intelligence
 
-Do not place repository graphs, ownership graphs, test graphs, repository snapshots, or verification caches in working evidence. Prefer stable provider references and query the repository-intelligence owner for current facts.
+Do not place repository graphs, ownership graphs, test graphs, repository snapshots, or verification caches in working evidence. Prefer a provider-neutral reference containing only `provider`, `evidence_identity`, and optional `repository_identity` / `generation`, then query the repository-intelligence owner for current facts. Provider references deliberately reject extra embedded repository-intelligence fields.
 
 Hashmarks may own repository identity/generation, structural impact, imports/references/ownership, test relationships, provenance, completeness, freshness, observation deltas, diagnostic identities, and generation-bound external observations. Agent Economics owns the policy decision made from those facts.
 
@@ -29,3 +29,10 @@ The contract works without Hashmarks. A host may discover evidence locally when 
 ## Current implementation slice
 
 scripts.agent_economics.working_evidence provides a stdlib-only constructor and validator for this minimal contract. The validator rejects obvious top-level repository-intelligence copies that would create parallel ownership.
+
+
+## Reuse boundary
+
+A provider reference is not proof that evidence is still fresh. The provider owns repository freshness and generation semantics. Agent Economics may decide to reuse evidence only after the provider says the referenced evidence remains applicable, or when the evidence is explicitly task/environment-local and its own invalidation condition has not occurred.
+
+This keeps the workflow simple: working evidence remembers *that* the agent already obtained useful evidence and *why* it made a decision; Hashmarks or another provider remains responsible for what the repository currently says.
