@@ -26,6 +26,8 @@ def _candidate(payload: dict[str, Any], target: str | None) -> dict[str, Any]:
     if not isinstance(candidates, list) or not candidates:
         raise EvidenceNextError("artifact has no candidates")
     if target is None:
+        if len(candidates) != 1:
+            raise EvidenceNextError("artifact has multiple candidates; --target is required")
         candidate = candidates[0]
         if not isinstance(candidate, dict):
             raise EvidenceNextError("candidate must be an object")
@@ -46,6 +48,8 @@ def next_evidence(
     required = candidate.get("required_next_evidence")
     if not isinstance(required, list) or not required:
         raise EvidenceNextError("candidate has no required next evidence")
+    if len(required) != 1:
+        raise EvidenceNextError("candidate has multiple required next evidence items; explicit selection is required")
     item = required[0]
     if not isinstance(item, dict):
         raise EvidenceNextError("required next evidence must be an object")
