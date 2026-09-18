@@ -66,3 +66,8 @@ Evidence acquisition stops when every declared risk boundary has at least one fr
 Scope expansion reopens acquisition even if the previously declared boundaries were satisfied. The next-evidence path checks this sufficiency state before translating another evidence requirement into a command, so an already-proven task does not manufacture another verification step.
 
 Risk-boundary declaration and sufficiency are Agent Economics policy. Repository relationships, evidence identity, and freshness remain provider-owned facts.
+
+
+## Scope expansion provenance
+
+Scope expansion is not a free boolean owned by the agent. Reopening evidence acquisition requires a concrete provider evidence identity and the newly exposed risk boundary. Malformed expansion evidence fails closed. This keeps repository impact authority with Hashmarks or another repository-intelligence provider while Agent Economics retains the policy decision to acquire more proof.
