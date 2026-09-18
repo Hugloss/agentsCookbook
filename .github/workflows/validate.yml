@@ -81,6 +81,7 @@ jobs:
             hotspot_focus_qualification
             capability_bridge_qualification
             agent_outcome_benchmark_qualification
+            quality_debt_qualification
             pre_pr_qualification
           )
           for module in "${modules[@]}"; do

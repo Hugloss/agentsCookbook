@@ -34,6 +34,12 @@ class Outcome:
     task_fixture_id: str | None = None
     agent_profile: str | None = None
     run_id: str | None = None
+    bridge_implementation_id: str | None = None
+    manifest_id: str | None = None
+    local_qualification_id: str | None = None
+    final_source_id: str | None = None
+    ci_evidence_id: str | None = None
+    oracle_opened_after_freeze: bool | None = None
 
     def __post_init__(self) -> None:
         if self.mode not in {"baseline", "bridge"}:
@@ -137,6 +143,15 @@ def compare(outcomes: list[Outcome], *, require_complete_pairs: bool = True) -> 
         "delta_seconds": sum(y - x for x, y in paired_times),
         "bridge_overhead_ms_total": sum(g.bridge_elapsed_ms for _, _, g in pairs),
     }
+    protocol = {
+        "bridge_receipts_bound": sum(
+            1 for _, _, g in pairs
+            if all((g.bridge_implementation_id, g.manifest_id, g.local_qualification_id, g.final_source_id))
+        ),
+        "ci_evidence_bound": sum(1 for _, _, g in pairs if g.ci_evidence_id is not None),
+        "oracle_opened_after_freeze": sum(1 for _, _, g in pairs if g.oracle_opened_after_freeze is True),
+        "oracle_protocol_unknown": sum(1 for _, _, g in pairs if g.oracle_opened_after_freeze is None),
+    }
     correctness = {
         "baseline_correct": sum(1 for _, b, _ in pairs if b.correct),
         "bridge_correct": sum(1 for _, _, g in pairs if g.correct),
@@ -157,6 +172,7 @@ def compare(outcomes: list[Outcome], *, require_complete_pairs: bool = True) -> 
         "correctness": correctness,
         "metrics": deltas,
         "timing": timing,
+        "experiment_protocol": protocol,
         "promotion_evidence": promotion,
         "authority": {
             "benchmark_is_measurement_not_release_authority": True,

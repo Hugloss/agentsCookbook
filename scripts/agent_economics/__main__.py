@@ -31,6 +31,11 @@ def main(argv: list[str] | None = None) -> None:
         hotspot_focus_main(args[1:])
         return
 
+    if args and args[0] == "quality-debt":
+        from .quality_debt_cli import main as quality_debt_main
+
+        quality_debt_main(args[1:])
+        return
     if args and args[0] == "capabilities":
         from .capabilities import main as capabilities_main
 

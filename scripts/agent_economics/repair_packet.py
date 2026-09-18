@@ -10,7 +10,7 @@ from typing import Iterable
 _LOCATION = re.compile(r"(?P<path>(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+):(?P<line>[1-9][0-9]*)")
 _ALLOWED_PROBE_SCHEMAS = {
     "agent-economics-context-focus", "agent-economics-test-focus",
-    "agent-economics-change-impact", "context-focus", "test-focus", "change-impact",
+    "agent-economics-change-impact", "agent-economics-quality-debt", "context-focus", "test-focus", "change-impact", "quality-debt",
 }
 
 

@@ -22,7 +22,7 @@ from .refactor_focus_matching import build_test_ownership_evidence, ownership_ma
 from .refactor_focus_paths import iso_utc_now, module_path_for_file, report_path
 
 TOOL_NAME = "hotspot-focus"
-TOOL_VERSION = "0.9.0"
+TOOL_VERSION = "0.12.0"
 DEFAULT_RANKING = ("churn_commits", "fan_in", "branch_points", "source_lines")
 
 
@@ -130,14 +130,33 @@ def _branch_points(tree: ast.AST | None) -> int | None:
     return sum(isinstance(node, kinds) for node in ast.walk(tree))
 
 
+def _largest_definitions(tree: ast.AST | None, limit: int = 5) -> list[dict[str, object]]:
+    if tree is None:
+        return []
+    rows: list[dict[str, object]] = []
+    def walk(body: list[ast.stmt], prefix: tuple[str, ...] = ()) -> None:
+        for node in body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                lines = max(1, getattr(node, "end_lineno", node.lineno) - node.lineno + 1)
+                qualified = ".".join((*prefix, node.name))
+                rows.append({
+                    "kind": type(node).__name__, "qualified_name": qualified,
+                    "start_line": node.lineno, "end_line": getattr(node, "end_lineno", node.lineno),
+                    "lines": lines,
+                })
+                walk(node.body, (*prefix, node.name))
+    walk(getattr(tree, "body", []))
+    return sorted(rows, key=lambda row: (-int(row["lines"]), str(row["qualified_name"])))[:limit]
+
+
 def _largest_function(tree: ast.AST | None) -> int | None:
     if tree is None:
         return None
-    largest = 0
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            largest = max(largest, max(1, getattr(node, "end_lineno", node.lineno) - node.lineno + 1))
-    return largest
+    rows = [
+        row for row in _largest_definitions(tree, limit=1_000_000)
+        if row["kind"] in {"FunctionDef", "AsyncFunctionDef"}
+    ]
+    return max((int(row["lines"]) for row in rows), default=0)
 
 
 def _rank_key(candidate: dict[str, object], dimensions: tuple[str, ...]) -> tuple[object, ...]:
@@ -288,6 +307,7 @@ def hotspot_focus_audit(
             "source_lines": record.line_count,
             "branch_points": branch_points,
             "largest_function_lines": _largest_function(record.tree),
+            "largest_definitions": _largest_definitions(record.tree),
             "fan_in": len(import_index.get(module, set())),
             "fan_out": fan_out,
             "churn_commits": churn_commits,

@@ -65,6 +65,15 @@ def qualify_local(
             stages.append({
                 "command": name, "stage": result["command"]["stage"], "status": result["status"],
                 "classification": result["classification"], "failure_identity": result["failure_identity"],
+                "execution_economics": {
+                    "elapsed_ms": float(execution.get("elapsed_ms", 0.0)),
+                    "stdout_bytes": int(execution.get("stdout_bytes", 0)),
+                    "stderr_bytes": int(execution.get("stderr_bytes", 0)),
+                    "probe_files": int(economics.get("probe_files", 0)),
+                    "probe_bytes": int(economics.get("probe_bytes", 0)),
+                    "diagnostic_lines": len(str(packet.get("diagnostic_excerpt", "")).splitlines()),
+                    "estimated_context_tokens": int(economics.get("estimated_context_tokens", 0)),
+                },
                 "repair_packet": packet if result["status"] != "PASS" else None,
             })
             if result["status"] != "PASS" or state.get("stop_reason"):
@@ -86,6 +95,25 @@ def _result(
         {**item, "state": "executed" if item["command"] in executed else ("skipped" if item["selected"] else "not_selected")}
         for item in configured
     ]
+    totals = {
+        "commands": len(stages),
+        "elapsed_ms": round(sum(float(s.get("execution_economics", {}).get("elapsed_ms", 0.0)) for s in stages), 3),
+        "stdout_bytes": sum(int(s.get("execution_economics", {}).get("stdout_bytes", 0)) for s in stages),
+        "stderr_bytes": sum(int(s.get("execution_economics", {}).get("stderr_bytes", 0)) for s in stages),
+        "probe_files": sum(int(s.get("execution_economics", {}).get("probe_files", 0)) for s in stages),
+        "probe_bytes": sum(int(s.get("execution_economics", {}).get("probe_bytes", 0)) for s in stages),
+        "diagnostic_lines": sum(int(s.get("execution_economics", {}).get("diagnostic_lines", 0)) for s in stages),
+        "estimated_context_tokens": sum(int(s.get("execution_economics", {}).get("estimated_context_tokens", 0)) for s in stages),
+    }
+    by_stage = {}
+    for stage_name in _STAGE_ORDER:
+        selected = [s for s in stages if s["stage"] == stage_name]
+        by_stage[stage_name] = {
+            "commands": len(selected),
+            "elapsed_ms": round(sum(float(s.get("execution_economics", {}).get("elapsed_ms", 0.0)) for s in selected), 3),
+            "stdout_bytes": sum(int(s.get("execution_economics", {}).get("stdout_bytes", 0)) for s in selected),
+            "stderr_bytes": sum(int(s.get("execution_economics", {}).get("stderr_bytes", 0)) for s in selected),
+        }
     semantic = {
         "manifest_identity": manifest_identity, "source_identity": source_identity, "status": status,
         "stages": [
@@ -99,6 +127,7 @@ def _result(
         "status": status, "ci_status": "NOT_RUN", "source_identity": source_identity,
         "manifest_identity": manifest_identity, "stages": stages, "stage_inventory": stage_inventory,
         "loop": {"stop_reason": stop_reason},
+        "economics": {**totals, "by_stage": by_stage},
         "local_verification_identity": semantic_identity(semantic),
     }
 
