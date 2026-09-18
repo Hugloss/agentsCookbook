@@ -52,6 +52,15 @@ def qualify() -> None:
     assert result["economics"] == {"files_read": 7, "elapsed_ms": 2.5}
     assert result["interpretation"]["does_not_add_recommendations"] is True
 
+    multi = _payload("quality-debt")
+    multi["candidates"] = [*multi["candidates"], {**multi["candidates"][0], "target": "pkg/other.py"}]
+    try:
+        explain(multi)
+    except ExplainError:
+        pass
+    else:
+        raise AssertionError("multiple candidates without --target must fail closed")
+
     original = __import__("json").dumps(payload, sort_keys=True)
     explain(payload)
     assert __import__("json").dumps(payload, sort_keys=True) == original
@@ -81,7 +90,7 @@ def qualify() -> None:
     assert "tests/test_hot.py" in human
     assert "confirmed owner of a dependent source" in human
 
-    print('{"cases":6,"status":"PASS","tool":"explain"}')
+    print('{"cases":7,"status":"PASS","tool":"explain"}')
 
 
 if __name__ == "__main__":
