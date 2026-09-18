@@ -190,3 +190,28 @@ def repeated_action_without_new_evidence(
         inputs=[str(item) for item in current_inputs],
         evidence_references=current_refs,
     )
+
+
+def dirty_gate_delta_facts(observation_delta: Mapping[str, object]) -> dict[str, object]:
+    """Extract objective dirty-gate facts without parsing provider diagnostics."""
+    diagnostics = observation_delta.get("diagnostics")
+    if not isinstance(diagnostics, Mapping):
+        return {"usable": False, "reason": "missing-diagnostic-delta"}
+    added = diagnostics.get("added")
+    removed = diagnostics.get("removed")
+    scoped = diagnostics.get("added_in_changed_scope")
+    if not isinstance(added, Sequence) or isinstance(added, (str, bytes, bytearray)):
+        return {"usable": False, "reason": "invalid-added-diagnostics"}
+    if not isinstance(removed, Sequence) or isinstance(removed, (str, bytes, bytearray)):
+        return {"usable": False, "reason": "invalid-removed-diagnostics"}
+    if not isinstance(scoped, Sequence) or isinstance(scoped, (str, bytes, bytearray)):
+        return {"usable": False, "reason": "invalid-scoped-diagnostics"}
+    return {
+        "usable": True,
+        "global_before_count": diagnostics.get("before_count"),
+        "global_after_count": diagnostics.get("after_count"),
+        "new_diagnostics": len(added),
+        "removed_diagnostics": len(removed),
+        "new_diagnostics_in_changed_scope": len(scoped),
+        "unchanged_diagnostics": diagnostics.get("unchanged_count"),
+    }
