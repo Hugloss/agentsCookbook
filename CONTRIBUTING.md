@@ -84,7 +84,9 @@ The eight-review Ping-Pong/Ping-Ping gate must not grow accidentally when a stan
 
 OpenCode, Pi, or another host owns execution, tools, sandboxing, model/session lifecycle, delegation mechanics, and persistence.
 
-Runtime-specific code belongs only where it bridges the prompt library into a supported host. Do not add a second execution engine, sandbox, repository database, scheduler, or agent framework to this repository.
+Runtime-specific code belongs only where it bridges the prompt library into a supported host. Do not add a second agent execution engine, sandbox, repository database, scheduler, or autonomous framework.
+
+The optional `scripts/agent_economics/` package may execute **explicitly named argv-array verification commands** from its versioned manifest. That narrow capability exists to compensate for missing host tools; it must remain bounded, non-autonomous, source-edit-free, and honest about host isolation. General shell execution, dependency installation, source repair, and replacement CI/certification authority remain out of scope.
 
 ## Validation
 
@@ -97,7 +99,7 @@ scripts/smoke-opencode-scripts.sh
 scripts/smoke-run-artifacts.sh
 ```
 
-The GitHub workflow currently validates on Ubuntu. Real model-backed OpenCode/Pi qualification remains a host-environment check.
+The GitHub workflow validates the prompt/adapters and the complete Agent Economics deterministic, adversarial, dogfood-corpus, and bounded stress qualification suite on Ubuntu with Python 3.11. The Agent Economics job has a 20-minute outer safety window; individual subprocesses keep their own smaller hard bounds. Real model-backed OpenCode/Pi qualification and empirical baseline-vs-bridge dogfood remain host-environment checks.
 
 ## Pull requests
 

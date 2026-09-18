@@ -87,7 +87,9 @@ The specialist skills each own a narrow question: stale work, retry idempotency,
 
 This repository intentionally does not own your execution environment.
 
-Agents Cookbook is a **prompt library**, not a model server, sandbox, repository indexer, workflow engine, durable state system, or orchestration framework. OpenCode, Pi, or another host provides those capabilities.
+Agents Cookbook remains a **prompt library at its core**, not a model server, sandbox, repository indexer, workflow engine, or autonomous orchestration framework. OpenCode, Pi, or another host owns model execution, source edits, permissions, and isolation.
+
+The optional `scripts/agent_economics/` package is a deliberately narrower exception: a stdlib-only **capability helper** for hosts such as ChatGPT that need deterministic repository evidence or bounded execution of repository-declared verification commands. It is not an autonomous agent. It never chooses or performs source repairs, installs dependencies, interprets arbitrary shell strings, claims CI/certification authority, or claims sandbox/network isolation that the host did not enforce.
 
 ## The repository-improvement chain
 
@@ -234,7 +236,7 @@ agents/       thin role and coordinator prompts
 flows/        optional composition recipes
 protocols/    portable evidence/context/output conventions
 adapters/     OpenCode/Pi integration
-scripts/      install and validation helpers
+scripts/      install/validation helpers + optional agent_economics capability bridge
 evals/        prompt-quality and discrimination cases
 docs/         architecture and usage documentation
 ```
@@ -254,8 +256,8 @@ Agents Cookbook owns:
 The host owns:
 
 - model execution and context management;
-- tool execution and permissions;
-- filesystem/process/network isolation;
+- model/tool execution and permissions outside the explicit named-command capability bridge;
+- filesystem/process/network isolation; the capability bridge reports these boundaries but does not invent them;
 - delegation and session lifecycle;
 - persistence and runtime state.
 
@@ -268,6 +270,33 @@ Contributions are welcome when they sharpen a distinct prompt boundary, add a mi
 Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before proposing a new skill. Security-sensitive issues in installer/adapter code should follow [`SECURITY.md`](SECURITY.md) rather than posting exploit details publicly.
 
 The repository is licensed under the [`MIT License`](LICENSE).
+
+## Agent Economics: repository evidence before another agent turn
+
+The optional Agent Economics package is for coding-agent environments where repository context and verification are expensive. It gives the host a small set of deterministic, bounded helpers instead of asking the model to repeatedly rediscover the same repository facts.
+
+Current capabilities include:
+
+| Need | Command | What it provides |
+| --- | --- | --- |
+| find likely refactor/test ownership | `refactor-focus` | confirmed/supporting/candidate evidence with explicit authority |
+| choose a bounded context set | `context-focus` | ranked repository evidence under file/line/byte/token budgets |
+| choose verification scope | `test-focus` | direct → affected → repository verification suggestions |
+| inspect reverse impact | `change-impact` | bounded static dependents and explicit uncertainty |
+| inspect historical coupling | `coupling-focus` | bounded Git co-change correlation, never dependency authority |
+| find investigation hotspots | `hotspot-focus` | visible size/branch/fan/churn/ownership dimensions, no opaque score |
+| measure analyzer debt | `quality-debt` | bounded Ruff-derived debt and comparable baseline evidence |
+| inspect local execution capability | `capabilities` | honest host/Git/process/isolation capability facts |
+| execute an authorized check | `run-command` | argv-only repository command with cwd/time/output/mutation bounds |
+| escalate local verification | `qualify-local` | focused → affected → component → repository receipts |
+| compare agent economics | `benchmark-outcomes` | paired baseline/bridge measurements without automatic promotion |
+| freeze dogfood tasks | `dogfood-corpus` | stable adversarial task identities and experiment protocol |
+
+A useful host loop is: **inspect → select evidence → edit in the host → run the smallest authorized verification → escalate only when justified**. Agent Economics owns the evidence and bounded command receipt; the coding agent still owns reasoning and edits.
+
+## Optional Agent Economics capability bridge
+
+The capability bridge requires **Python 3.11+** and only runs commands selected from an explicit repository TOML manifest. Selecting a manifest is an authorization decision: those commands execute with the host process's filesystem, environment, and network authority unless the host separately isolates them. The bridge adds cwd containment, hard time/output bounds, tracked-byte mutation checks, structured failure evidence, no-progress budgets, and staged local qualification; it is **not a security sandbox**. See [`scripts/agent_economics/README.md`](scripts/agent_economics/README.md) and [`docs/agent-economics-probes.md`](docs/agent-economics-probes.md).
 
 ## Documentation
 
@@ -283,3 +312,6 @@ The repository is licensed under the [`MIT License`](LICENSE).
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 - [Non-technical walkthrough](docs/non-technical-walkthrough.md)
+- [Agent Economics guide](docs/agent-economics-probes.md)
+- [Agent Economics real-agent dogfood gate](docs/agent-economics-dogfood.md)
+- [Agent Economics hardening phases](docs/agent-economics-probe-phases.md)
