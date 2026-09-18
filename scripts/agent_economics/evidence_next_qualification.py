@@ -229,4 +229,4 @@ def test_next_evidence_reopens_only_for_proven_scope_expansion() -> None:
     )
 
     assert result["next_evidence"]["kind"] == "test_focus"
-    assert result["stop"] if "stop" in result else None is None
+    assert "stop" not in result
