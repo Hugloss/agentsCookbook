@@ -36,3 +36,10 @@ scripts.agent_economics.working_evidence provides a stdlib-only constructor and 
 A provider reference is not proof that evidence is still fresh. The provider owns repository freshness and generation semantics. Agent Economics may decide to reuse evidence only after the provider says the referenced evidence remains applicable, or when the evidence is explicitly task/environment-local and its own invalidation condition has not occurred.
 
 This keeps the workflow simple: working evidence remembers *that* the agent already obtained useful evidence and *why* it made a decision; Hashmarks or another provider remains responsible for what the repository currently says.
+
+
+## Anti-repeat rule
+
+Agent Economics treats an evidence-acquisition action as no progress when its canonical action, inputs, and provider evidence references are unchanged. Input order does not create novelty. A changed provider evidence identity permits reconsideration because the underlying evidence set may have changed.
+
+This is a policy primitive, not a runner: it does not execute, retry, or suppress commands by itself. The consuming skill or host uses the fact when deciding whether another tool call is worth its cost.
