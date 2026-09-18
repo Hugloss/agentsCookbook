@@ -95,3 +95,25 @@ The run-store checker validates exact reviewer sets, receipt identity, hashes, o
 The repository currently installs 12 agents and 35 skills. Only eight reviewer agents are mandatory in the Ping-Pong/Ping-Ping full-review gate. Additional standalone agents and skills do not automatically enlarge that gate.
 
 This distinction prevents new capabilities from silently changing established workflow cost or semantics.
+
+
+## Optional Agent Economics capability helper
+
+`scripts/agent_economics/` is an optional host capability bridge, not another agent layer. It exists for coding-agent environments that have repository bytes but lack convenient local analysis or verification tooling.
+
+```text
+coding agent -> reasoning + source edits
+             -> Agent Economics -> bounded evidence / named verification commands
+             -> repository tools
+CI/CD        -> independent final qualification
+```
+
+Ownership is deliberately split:
+
+- the coding agent owns reasoning and edits;
+- Agent Economics owns deterministic evidence, declared-command execution bounds, mutation observation, failure classification, and local-verification receipts;
+- the repository manifest names the commands a user/host is willing to execute;
+- the host owns filesystem/process/network isolation and credentials;
+- CI/CD retains independent qualification authority.
+
+The bridge never converts a focused pass into repository-wide authority, never auto-installs dependencies, and never treats optional Hashmarks-style intelligence as mandatory. It requires Python 3.11+.

@@ -1,6 +1,8 @@
 # Agent Economics package
 
-Portable, standard-library-only probes that help coding agents decide what evidence to inspect before editing.
+Portable, standard-library-only probes and a constrained capability bridge that help coding agents decide what evidence to inspect and run repository-declared local verification before editing again.
+
+**Runtime:** Python 3.11+ (the command-manifest reader uses stdlib `tomllib`).
 
 Run the refactor probe from an Agents Cookbook checkout:
 
@@ -60,3 +62,10 @@ Use `python -m scripts.agent_economics capabilities --repository-root . --manife
 ### P11 outcome benchmark
 
 Use `python -m scripts.agent_economics benchmark-outcomes --input outcomes.jsonl` with paired `baseline` and `bridge` JSONL records. The comparator measures correctness plus CI activations, evidence/context consumption, tool calls, commands, iterations, verification attempts, failed edits, no-progress stops, bridge overhead, and local-vs-CI agreement. Benchmark results are evidence only and never automatically promote a workflow.
+
+
+### Trust and isolation
+
+A command manifest is executable-repository configuration. Passing `--manifest` and selecting a command is explicit authorization to execute that argv array. Commands are never parsed as shell strings, cwd is confined to the repository, time/output are bounded, and tracked-byte mutation is observed. The child still inherits whatever filesystem, environment, credentials, and network authority the host gives it. Agent Economics is not a sandbox and never reports network/sandbox isolation unless the host actually provides it.
+
+`qualify-local` distinguishes focused, affected, component, and repository stages. Focused/affected passes remain incomplete; only an executed repository-stage pass can yield `LOCAL_QUALIFIED`, and every local result reports `ci_status=NOT_RUN`.

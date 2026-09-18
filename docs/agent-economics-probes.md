@@ -175,3 +175,12 @@ Use repeatable `--changed-path`, optional `--changed-paths-file`, explicit trave
 `hotspot-focus` answers **which source files deserve the next investigation budget, and why?** It keeps source size/control-flow, static fan-in/fan-out, bounded Git churn, anonymized author concentration, and confirmed test ownership as independent facts. Ranking is configurable and lexicographic; there is no hidden composite score and the ordering never authorizes an edit.
 
 Git history can be `auto`, `required`, or `disabled`. Missing history and missing test-tree evidence are represented as unknown, not as reassuring zeros. Use `python -m scripts.agent_economics hotspot-focus --source-root src/pkg --tests-root tests --package-name pkg`.
+
+
+## Capability bridge boundary
+
+P10 adds a constrained local capability helper for environments such as ChatGPT that have repository bytes but lack convenient command execution/evidence tooling. It requires Python 3.11+. The bridge accepts versioned TOML manifests containing argv arrays, never implicit shell strings. Selecting a manifest/command is explicit execution authorization.
+
+The bridge is not a sandbox: child commands inherit host filesystem/environment/network authority unless the host isolates them. It reports process-tree, mutation-guard, sandbox, and network capabilities truthfully. It never edits source, installs dependencies, promotes focused verification into repository authority, or replaces CI/CD.
+
+Local staged statuses are `FOCUSED_PASS`, `AFFECTED_PASS`, `LOCAL_QUALIFIED`, `LOCAL_INCOMPLETE`, and `LOCAL_FAILED`. Every local receipt keeps CI status separate.

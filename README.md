@@ -87,7 +87,9 @@ The specialist skills each own a narrow question: stale work, retry idempotency,
 
 This repository intentionally does not own your execution environment.
 
-Agents Cookbook is a **prompt library**, not a model server, sandbox, repository indexer, workflow engine, durable state system, or orchestration framework. OpenCode, Pi, or another host provides those capabilities.
+Agents Cookbook remains a **prompt library at its core**, not a model server, sandbox, repository indexer, workflow engine, or autonomous orchestration framework. OpenCode, Pi, or another host owns model execution, source edits, permissions, and isolation.
+
+The optional `scripts/agent_economics/` package is a deliberately narrower exception: a stdlib-only **capability helper** for hosts such as ChatGPT that need deterministic repository evidence or bounded execution of repository-declared verification commands. It is not an autonomous agent. It never chooses or performs source repairs, installs dependencies, interprets arbitrary shell strings, claims CI/certification authority, or claims sandbox/network isolation that the host did not enforce.
 
 ## The repository-improvement chain
 
@@ -234,7 +236,7 @@ agents/       thin role and coordinator prompts
 flows/        optional composition recipes
 protocols/    portable evidence/context/output conventions
 adapters/     OpenCode/Pi integration
-scripts/      install and validation helpers
+scripts/      install/validation helpers + optional agent_economics capability bridge
 evals/        prompt-quality and discrimination cases
 docs/         architecture and usage documentation
 ```
@@ -254,8 +256,8 @@ Agents Cookbook owns:
 The host owns:
 
 - model execution and context management;
-- tool execution and permissions;
-- filesystem/process/network isolation;
+- model/tool execution and permissions outside the explicit named-command capability bridge;
+- filesystem/process/network isolation; the capability bridge reports these boundaries but does not invent them;
 - delegation and session lifecycle;
 - persistence and runtime state.
 
@@ -268,6 +270,10 @@ Contributions are welcome when they sharpen a distinct prompt boundary, add a mi
 Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before proposing a new skill. Security-sensitive issues in installer/adapter code should follow [`SECURITY.md`](SECURITY.md) rather than posting exploit details publicly.
 
 The repository is licensed under the [`MIT License`](LICENSE).
+
+## Optional Agent Economics capability bridge
+
+The capability bridge requires **Python 3.11+** and only runs commands selected from an explicit repository TOML manifest. Selecting a manifest is an authorization decision: those commands execute with the host process's filesystem, environment, and network authority unless the host separately isolates them. The bridge adds cwd containment, hard time/output bounds, tracked-byte mutation checks, structured failure evidence, no-progress budgets, and staged local qualification; it is **not a security sandbox**. See [`scripts/agent_economics/README.md`](scripts/agent_economics/README.md) and [`docs/agent-economics-probes.md`](docs/agent-economics-probes.md).
 
 ## Documentation
 
