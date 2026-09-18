@@ -71,3 +71,10 @@ Risk-boundary declaration and sufficiency are Agent Economics policy. Repository
 ## Scope expansion provenance
 
 Scope expansion is not a free boolean owned by the agent. Reopening evidence acquisition requires a concrete provider evidence identity and the newly exposed risk boundary. Malformed expansion evidence fails closed. This keeps repository impact authority with Hashmarks or another repository-intelligence provider while Agent Economics retains the policy decision to acquire more proof.
+
+
+## Provider-bound proof
+
+A risk boundary cannot be satisfied by agent-authored `fresh=true` or `direct=true` booleans. A proof must reference provider evidence, carry provider-owned freshness, and cite a relationship evidence identity whose classification is direct. Missing or malformed proof provenance fails closed.
+
+This keeps the stop decision in Agent Economics while preventing Agent Economics from manufacturing the repository facts that justify the decision.
