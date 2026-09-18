@@ -42,25 +42,43 @@ def _source_identity(
     roots: tuple[str, ...],
     suffixes: tuple[str, ...],
     excludes: tuple[str, ...],
-) -> tuple[str, int, int]:
+) -> tuple[str, int, int, dict[str, object]]:
     entries: list[dict[str, str]] = []
     total = 0
+    root_counts: dict[str, int] = {}
+    excluded_counts: dict[str, int] = {item: 0 for item in excludes}
     for raw_root in roots:
         base, _ = _inside(root, raw_root)
         if not base.exists():
             raise QualityDebtError(f"configured root does not exist: {raw_root}")
+        root_counts[raw_root] = 0
         paths = [base] if base.is_file() else sorted(p for p in base.rglob("*") if p.is_file())
         for path in paths:
             relative = path.relative_to(root).as_posix()
-            if path.suffix not in suffixes or _excluded(relative, excludes):
+            if path.suffix not in suffixes:
                 continue
+            matching_excludes = [
+                item for item in excludes
+                if relative == item.rstrip("/") or relative.startswith(item.rstrip("/") + "/")
+            ]
+            if matching_excludes:
+                for item in matching_excludes:
+                    excluded_counts[item] += 1
+                continue
+            root_counts[raw_root] += 1
             data = path.read_bytes()
             total += len(data)
             entries.append({
                 "path": relative,
                 "sha256": hashlib.sha256(data).hexdigest(),
             })
-    return analyzed_input_identity(entries), len(entries), total
+    return analyzed_input_identity(entries), len(entries), total, {
+        "configured_roots": list(roots),
+        "root_file_counts": root_counts,
+        "excludes": list(excludes),
+        "excluded_python_files_by_rule": excluded_counts,
+        "analyzed_python_files": len(entries),
+    }
 
 
 def _analyzer_version(root: Path, executable: str, timeout_seconds: float) -> str:
@@ -257,7 +275,7 @@ def quality_debt_audit(
     executable = shutil.which(analyzer) or analyzer
     version = _analyzer_version(root, executable, timeout_seconds)
     line_roots = roots if file_line_roots is None else file_line_roots
-    source_identity, files_read, source_bytes = _source_identity(
+    source_identity, files_read, source_bytes, source_universe = _source_identity(
         root, roots, (".py",), excludes
     )
     diagnostics, execution = _run_ruff(
@@ -320,7 +338,8 @@ def quality_debt_audit(
             "max_stdout_bytes": max_stdout_bytes, "max_stderr_bytes": max_stderr_bytes,
         },
         evidence={
-            "analyzer": {"name": analyzer, "version": version},
+            "analyzer": {"name": analyzer, "version": version, "resolved_executable": executable},
+            "source_universe": source_universe,
             "findings": findings, "detailed_findings": detailed_findings,
             "oversized_files": oversized,
             "comparable_identity": comparable_identity,
