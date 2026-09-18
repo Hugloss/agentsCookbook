@@ -99,6 +99,14 @@ def main() -> None:
             assert "src/excluded/legacy.py" not in scoped["derived"]["summary"]["files"]
             assert scoped["derived"]["summary"]["oversized_files"] == {}
             assert scoped["economics"]["files_read"] == 3
+            assert scoped["evidence"]["source_universe"] == {
+                "configured_roots": ["src", "tools"],
+                "root_file_counts": {"src": 2, "tools": 1},
+                "excludes": ["src/excluded"],
+                "excluded_python_files_by_rule": {"src/excluded": 1},
+                "analyzed_python_files": 3,
+            }
+            assert scoped["evidence"]["analyzer"]["resolved_executable"] == str(fake)
             os.environ["AE_RUFF_MODE"]="limit6"
             changed_limit=quality_debt_audit(repository_root=root, roots=("src",), limits={"C901":6}, baseline_path=baseline)
             assert changed_limit["derived"]["baseline_comparison"]["state"]=="INCOMPARABLE_BASELINE"
@@ -112,7 +120,7 @@ def main() -> None:
             else: raise AssertionError("analyzer timeout must fail closed")
         finally:
             os.environ.pop("AE_RUFF_MODE", None); os.environ["PATH"]=old_path
-    print(json.dumps({"status":"PASS","cases":11,"tool":"quality-debt"},sort_keys=True))
+    print(json.dumps({"status":"PASS","cases":13,"tool":"quality-debt"},sort_keys=True))
 
 
 if __name__=="__main__":
