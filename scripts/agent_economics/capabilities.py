@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 
 from .bounded_process import ProcessLimits, process_tree_capability, run_bounded
-from .command_manifest import CommandManifestError, load_command_manifest
+from .command_catalog import PROBE_COMMANDS\nfrom .command_manifest import CommandManifestError, load_command_manifest
 
 PROBES = (
     "refactor-focus", "context-focus", "test-focus", "change-impact",
@@ -43,7 +43,7 @@ def capabilities(*, repository_root: Path, manifest_path: Path | None = None) ->
             "mutation_guard": {"available": False, "reason": "requires Git worktree"},
             "network_isolation": {"available": False, "reason": "not enforced by AgentCookbook"},
             "sandbox_isolation": {"available": False, "reason": "not enforced by AgentCookbook"},
-            "probes": {"available": list(PROBES)},
+            "probes": {"available": list(PROBE_COMMANDS)},
         },
         "commands": {},
         "warnings": [],
