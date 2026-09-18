@@ -50,3 +50,10 @@ This is a policy primitive, not a runner: it does not execute, retry, or suppres
 Agent Economics consumes provider-produced diagnostic deltas rather than parsing raw lint/type output into a second repository model. Equal global counts are not treated as equal evidence: the policy surface retains added, removed, unchanged, and newly added diagnostics intersecting the changed scope.
 
 The helper exposes facts only. A skill may use them to decide whether another broad dirty gate is worth running, but the working-evidence layer does not declare a repository clean or execute a gate.
+
+
+## Scoped evidence reuse
+
+Working evidence does not compare repository paths to decide freshness. It consumes the provider's freshness result. A provider may preserve focused evidence across a repository change when it has proved the edit is outside the observation/dependency scope; a relevant intersection makes that evidence stale.
+
+Unknown or unsupported freshness fails closed. This preserves useful evidence without moving dependency analysis into Agent Economics.
