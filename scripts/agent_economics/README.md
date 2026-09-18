@@ -46,3 +46,8 @@ Run `python -m scripts.agent_economics change-impact --source-root src/pkg --cha
 ### P8 coupling-focus
 
 Run `python -m scripts.agent_economics coupling-focus --target-path src/pkg/foo.py`. Git history length and output bytes are hard-bounded; mega-commit size, shared-commit threshold, candidate suffixes, exclusions, sample count, top-N, first-parent/all-parent mode, and timeout are parameters. Historical co-change is never dependency authority.
+
+
+### P9 hotspot-focus
+
+Run `python -m scripts.agent_economics hotspot-focus --source-root src/pkg --tests-root tests --package-name pkg`. Visible dimensions include source size, branch points, largest function, static fan-in/fan-out, bounded Git churn, anonymized author concentration, and confirmed test ownership. Ranking is configurable lexicographic investigation priority only; unavailable history/test evidence remains unknown rather than zero.

@@ -115,7 +115,13 @@ P8 qualification requires reverse-impact depth/budget correctness, deleted-modul
 
 ## Phase 9 — `hotspot-focus`
 
-Combine separately visible dimensions such as complexity, churn, fan-in/fan-out, ownership weakness, and verification weakness. Do not hide them behind one opaque score. Ranking is for investigation priority, not autonomous refactoring authority.
+Status: **complete** on the Agent Economics Probes branch.
+
+P9 ranks source files for investigation using separately visible facts: source lines, AST branch points, largest function, static fan-in/fan-out, bounded first-parent Git churn, anonymized author concentration, and confirmed test ownership. It never emits an opaque composite risk score. Ranking is an explicit configurable lexicographic dimension order and is labeled investigation priority only.
+
+History has hard commit, byte, and timeout bounds. In `auto` mode unavailable Git history degrades to explicit unknown values rather than zero churn; `required` fails closed; `disabled` supports a static-only run. Missing test-tree evidence likewise remains unknown rather than becoming a false zero-coverage claim. P9 reuses the P1–P8 discovery, parse-once, import, ownership, and common-contract authorities.
+
+P9 qualification requires visible independent dimensions, no opaque score, deterministic lexicographic ranking, static fan-in, bounded churn, anonymized author concentration, confirmed test evidence, static-only unknown-not-zero semantics, hard history-byte failure, common P4 contract validity, and continued P1–P8 qualification.
 
 ## Phase 10 — `tool-budget`
 

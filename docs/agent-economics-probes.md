@@ -168,3 +168,10 @@ Use repeatable `--changed-path`, optional `--changed-paths-file`, explicit trave
 ## Coupling focus (P8)
 
 `coupling-focus` answers **what files repeatedly changed with these target paths in bounded Git history?** It is historical correlation only. The artifact keeps shared commit count, target/candidate commit counts, coverage ratios, and Jaccard separate and always marks dependency authority false. First-parent history is the default; merge behavior, history length/output bytes, mega-commit ceiling, suffix filtering, exclusions, support threshold, sample count, top-N, and Git timeout are explicit parameters.
+
+
+## Hotspot focus (P9)
+
+`hotspot-focus` answers **which source files deserve the next investigation budget, and why?** It keeps source size/control-flow, static fan-in/fan-out, bounded Git churn, anonymized author concentration, and confirmed test ownership as independent facts. Ranking is configurable and lexicographic; there is no hidden composite score and the ordering never authorizes an edit.
+
+Git history can be `auto`, `required`, or `disabled`. Missing history and missing test-tree evidence are represented as unknown, not as reassuring zeros. Use `python -m scripts.agent_economics hotspot-focus --source-root src/pkg --tests-root tests --package-name pkg`.

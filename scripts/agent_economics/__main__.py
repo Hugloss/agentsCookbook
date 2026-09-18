@@ -25,10 +25,12 @@ def main(argv: list[str] | None = None) -> None:
 
         coupling_focus_main(args[1:])
         return
+    if args and args[0] == "hotspot-focus":
+        from .hotspot_focus_cli import main as hotspot_focus_main
 
-    # Preserve the pre-P6 package behavior: arguments without a subcommand are
-    # routed to refactor-focus. Imports stay lazy so standalone probes can be
-    # copied with only their own portable dependencies.
+        hotspot_focus_main(args[1:])
+        return
+
     from .refactor_focus_cli import main as refactor_focus_main
 
     if args and args[0] == "refactor-focus":
