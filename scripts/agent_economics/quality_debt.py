@@ -14,6 +14,15 @@ from .refactor_focus_paths import iso_utc_now
 TOOL_NAME = "quality-debt"
 TOOL_VERSION = "0.15.0"
 _OBSERVED_LIMIT = re.compile(r"\((\d+)\s*(?:>|/)\s*(\d+)\)$")
+_RUFF_LIMIT_CONFIG = {
+    "C901": "lint.mccabe.max-complexity",
+    "PLR0911": "lint.pylint.max-returns",
+    "PLR0912": "lint.pylint.max-branches",
+    "PLR0913": "lint.pylint.max-args",
+    "PLR0914": "lint.pylint.max-locals",
+    "PLR0915": "lint.pylint.max-statements",
+    "PLR0916": "lint.pylint.max-bool-expr",
+}
 
 
 class QualityDebtError(ValueError):
@@ -136,11 +145,21 @@ def _run_ruff(
     timeout_seconds: float, max_stdout_bytes: int, max_stderr_bytes: int,
     excludes: tuple[str, ...],
 ) -> tuple[list[dict[str, object]], dict[str, object], tuple[str, ...]]:
+    unsupported = sorted(set(limits) - set(_RUFF_LIMIT_CONFIG))
+    if unsupported:
+        raise QualityDebtError(
+            "unsupported Ruff debt limit rules: " + ", ".join(unsupported)
+        )
     exclude_args = ("--exclude", ",".join(excludes)) if excludes else ()
+    limit_config_args = tuple(
+        item
+        for rule in sorted(limits)
+        for item in ("--config", f"{_RUFF_LIMIT_CONFIG[rule]} = {limits[rule]}")
+    )
     argv = (
         executable, "check", *roots, "--preview", "--select", ",".join(sorted(limits)),
-        "--isolated", "--config", "lint.per-file-ignores = {}", *exclude_args,
-        "--output-format", "json",
+        "--isolated", "--config", "lint.per-file-ignores = {}", *limit_config_args,
+        *exclude_args, "--output-format", "json",
     )
     result = run_bounded(
         repository_root=root, argv=argv,
