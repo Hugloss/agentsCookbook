@@ -211,7 +211,7 @@ def compare(
         "strict_dogfood_protocol": strict_dogfood,
     }
     payload = {
-        "schema": {"name": "agent-outcome-benchmark", "version": 2},
+        "schema": {"name": "agent-outcome-benchmark", "version": 3},
         "correctness": correctness,
         "metrics": deltas,
         "timing": timing,
