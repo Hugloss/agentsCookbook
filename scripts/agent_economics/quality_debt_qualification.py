@@ -24,6 +24,8 @@ value=9 if mode != 'reduced' else 7
 rows=[{'code':'C901','filename':os.path.join(root,'src','a.py'),'location':{'row':1},'message':f'complexity ({value} > {limit})'}]
 if mode == 'new':
     rows.append({'code':'C901','filename':os.path.join(root,'src','b.py'),'location':{'row':1},'message':f'complexity (8 > {limit})'})
+if mode == 'excluded':
+    rows.append({'code':'C901','filename':os.path.join(root,'src','excluded','legacy.py'),'location':{'row':1},'message':f'complexity (99 > {limit})'})
 print(json.dumps(rows)); raise SystemExit(1)
 """, encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
@@ -35,6 +37,10 @@ def main() -> None:
         (root/"src").mkdir()
         (root/"src/a.py").write_text("def a():\n    pass\n", encoding="utf-8")
         (root/"src/b.py").write_text("def b():\n    pass\n", encoding="utf-8")
+        (root/"src/excluded").mkdir()
+        (root/"src/excluded/legacy.py").write_text("x = 1\n" * 50, encoding="utf-8")
+        (root/"tools").mkdir()
+        (root/"tools/large.py").write_text("x = 1\n" * 50, encoding="utf-8")
         fake=root/"ruff"; _fake_ruff(fake)
         old_path=os.environ["PATH"]; os.environ["PATH"]=str(root)+os.pathsep+old_path
         try:
@@ -52,6 +58,14 @@ def main() -> None:
             os.environ["AE_RUFF_MODE"]="reduced"
             reduced=quality_debt_audit(repository_root=root, roots=("src",), limits={"C901":5}, baseline_path=baseline)
             assert reduced["derived"]["baseline_comparison"]["state"]=="REDUCED"
+            os.environ["AE_RUFF_MODE"]="excluded"
+            scoped=quality_debt_audit(
+                repository_root=root, roots=("src","tools"), limits={"C901":5},
+                excludes=("src/excluded",), max_file_lines=10, file_line_roots=("src",),
+            )
+            assert "src/excluded/legacy.py" not in scoped["derived"]["summary"]["files"]
+            assert scoped["derived"]["summary"]["oversized_files"] == {}
+            assert scoped["economics"]["files_read"] == 3
             os.environ["AE_RUFF_MODE"]="limit6"
             changed_limit=quality_debt_audit(repository_root=root, roots=("src",), limits={"C901":6}, baseline_path=baseline)
             assert changed_limit["derived"]["baseline_comparison"]["state"]=="INCOMPARABLE_BASELINE"
@@ -65,7 +79,7 @@ def main() -> None:
             else: raise AssertionError("analyzer timeout must fail closed")
         finally:
             os.environ.pop("AE_RUFF_MODE", None); os.environ["PATH"]=old_path
-    print(json.dumps({"status":"PASS","cases":7,"tool":"quality-debt"},sort_keys=True))
+    print(json.dumps({"status":"PASS","cases":9,"tool":"quality-debt"},sort_keys=True))
 
 
 if __name__=="__main__":
