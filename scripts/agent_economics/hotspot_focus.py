@@ -175,7 +175,7 @@ def hotspot_focus_audit(
     repository_root: Path,
     source_root: Path,
     tests_root: Path | None = None,
-    package_name: str = "app",
+    package_name: str | None = None,
     tests_package_name: str = "tests",
     artifact_path: Path | None = None,
     top_n: int = 20,
