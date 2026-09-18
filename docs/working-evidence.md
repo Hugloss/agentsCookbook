@@ -20,7 +20,7 @@ Hashmarks may own repository identity/generation, structural impact, imports/ref
 
 ## Lifecycle
 
-Keep only the current useful working set. Delete task-local facts when they are no longer useful. Environment-local facts need explicit invalidation conditions when reuse could be unsafe. Repository freshness should be asked of the repository-intelligence provider rather than reimplemented here.
+Keep only the current useful working set. Delete task-local facts when they are no longer useful. Environment-local facts need explicit invalidation conditions when reuse could be unsafe. Supported lifetimes are file-edit, worktree-change, repository-generation, dependency-change, environment-change, process-restart, session-end, and never-within-session. Repository-generation invalidation requires a provider reference: working evidence must not create its own repository generation counter.
 
 ## Graceful degradation
 
