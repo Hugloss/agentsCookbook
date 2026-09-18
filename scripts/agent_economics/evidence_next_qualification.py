@@ -1,6 +1,13 @@
 from __future__ import annotations
 
 from .evidence_next import EvidenceNextError, next_evidence
+from .evidence_next import main as next_main
+
+import contextlib
+import io
+import json
+import tempfile
+from pathlib import Path
 
 
 def qualify() -> None:
@@ -139,7 +146,22 @@ def qualify() -> None:
     assert result["command"] is None
     assert result["unresolved"] == ["unsupported_next_evidence:invented"]
 
-    print('{"cases":10,"status":"PASS","tool":"evidence-next"}')
+    with tempfile.TemporaryDirectory(prefix="agent-economics-next-cli-") as raw:
+        root = Path(raw)
+        artifact_path = root / "artifact.json"
+        profile_path = root / "profile.json"
+        artifact_path.write_text(json.dumps(payload), encoding="utf-8")
+        profile_path.write_text(json.dumps(profile), encoding="utf-8")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            next_main([
+                str(artifact_path), "--target", "pkg/hot.py", "--profile", str(profile_path),
+                "--python-command", "uv", "--python-command", "run", "--python-command", "python",
+            ])
+        cli_result = json.loads(output.getvalue())
+        assert cli_result["command"][:4] == ["uv", "run", "python", "-m"]
+
+    print('{"cases":11,"status":"PASS","tool":"evidence-next"}')
 
 
 if __name__ == "__main__":
