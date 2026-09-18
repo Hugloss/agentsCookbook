@@ -51,6 +51,21 @@ def qualify() -> None:
     else:
         raise AssertionError("multiple required-next-evidence items must fail closed")
 
+    proposed_profile = {
+        "repository": {"package_roots": ["pkg"], "test_roots": ["tests"]},
+        "quality_debt": {
+            "analysis_roots": ["pkg", "scripts"],
+            "analysis_root_evidence": [
+                {"path": "pkg", "status": "DETECTED", "basis": "python_package_layout"},
+                {"path": "scripts", "status": "PROPOSED", "basis": "conventional_directory_name"},
+            ],
+        },
+    }
+    proposed = next_evidence(payload, target="pkg/hot.py", profile=proposed_profile)
+    assert proposed["command"] is None
+    assert proposed["unresolved"] == ["profile_has_unreviewed_proposed_roots"]
+    assert proposed["interpretation"]["proposed_profile_evidence_is_not_accepted_configuration"] is True
+
     result = next_evidence(payload, target="pkg/hot.py", profile=profile)
     assert result["next_evidence"]["kind"] == "test_focus"
     assert result["command"] == [
@@ -91,7 +106,7 @@ def qualify() -> None:
     assert result["command"] is None
     assert result["unresolved"] == ["unsupported_next_evidence:invented"]
 
-    print('{"cases":7,"status":"PASS","tool":"evidence-next"}')
+    print('{"cases":8,"status":"PASS","tool":"evidence-next"}')
 
 
 if __name__ == "__main__":
