@@ -36,8 +36,10 @@ def explain(payload: dict[str, Any], *, target: str | None = None) -> dict[str, 
         if len(matches) != 1:
             raise ExplainError(f"target must identify exactly one candidate: {target}")
         selected = matches[0]
-    elif candidates:
+    elif len(candidates) == 1:
         selected = candidates[0]
+    elif len(candidates) > 1:
+        raise ExplainError("artifact has multiple candidates; --target is required")
 
     result: dict[str, Any] = {
         "tool": tool,
