@@ -319,5 +319,6 @@ The capability bridge requires **Python 3.11+** and only runs commands selected 
 - [Security policy](SECURITY.md)
 - [Non-technical walkthrough](docs/non-technical-walkthrough.md)
 - [Agent Economics guide](docs/agent-economics-probes.md)
+- [Working evidence](docs/working-evidence.md)
 - [Agent Economics real-agent dogfood gate](docs/agent-economics-dogfood.md)
 - [Agent Economics hardening phases](docs/agent-economics-probe-phases.md)
