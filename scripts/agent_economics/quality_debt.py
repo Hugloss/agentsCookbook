@@ -253,13 +253,32 @@ def _summary(findings: list[dict[str, object]], limits: dict[str, int], oversize
     }
 
 
-def _comparison(current: dict[str, object], baseline: dict[str, object] | None, comparable_identity: str) -> dict[str, object]:
+def _comparison(
+    current: dict[str, object],
+    baseline: dict[str, object] | None,
+    comparable_identity: str,
+    comparable_values: dict[str, object],
+) -> dict[str, object]:
     if baseline is None:
         return {"state": "NO_BASELINE", "files": {}, "delta_excess": None}
     if baseline.get("schema") != "agent-economics-quality-debt-baseline.v1":
         return {"state": "INCOMPARABLE_BASELINE", "reason": "schema_mismatch", "files": {}, "delta_excess": None}
     if baseline.get("comparable_identity") != comparable_identity:
-        return {"state": "INCOMPARABLE_BASELINE", "reason": "configuration_or_analyzer_mismatch", "files": {}, "delta_excess": None}
+        previous_values = baseline.get("comparable_values")
+        changed_fields: list[str] = []
+        if isinstance(previous_values, dict):
+            changed_fields = sorted(
+                key
+                for key in set(previous_values) | set(comparable_values)
+                if previous_values.get(key) != comparable_values.get(key)
+            )
+        return {
+            "state": "INCOMPARABLE_BASELINE",
+            "reason": "configuration_or_analyzer_mismatch",
+            "changed_fields": changed_fields,
+            "files": {},
+            "delta_excess": None,
+        }
     previous = baseline.get("summary")
     if not isinstance(previous, dict) or not isinstance(previous.get("files"), dict):
         return {"state": "INCOMPARABLE_BASELINE", "reason": "invalid_summary", "files": {}, "delta_excess": None}
@@ -318,7 +337,7 @@ def quality_debt_audit(
     oversized = _file_lengths(root, line_roots, max_file_lines, excludes)
     summary = _summary(findings, limits, oversized)
     comparable_values = {
-        "analyzer": analyzer, "analyzer_version": version, "roots": list(roots),
+        "analyzer": analyzer, "analyzer_executable": executable, "analyzer_version": version, "roots": list(roots),
         "excludes": list(excludes), "file_line_roots": list(line_roots),
         "limits": dict(sorted(limits.items())), "max_file_lines": max_file_lines,
     }
@@ -333,7 +352,7 @@ def quality_debt_audit(
         baseline = json.loads(target.read_text(encoding="utf-8"))
         if not isinstance(baseline, dict):
             raise QualityDebtError("baseline must be a JSON object")
-    comparison = _comparison(summary, baseline, comparable_identity)
+    comparison = _comparison(summary, baseline, comparable_identity, comparable_values)
     candidates = []
     for path, row in summary["files"].items():
         candidates.append({
@@ -373,6 +392,7 @@ def quality_debt_audit(
             "findings": findings, "detailed_findings": detailed_findings,
             "oversized_files": oversized,
             "comparable_identity": comparable_identity,
+            "comparable_values": comparable_values,
         },
         derived={"summary": summary, "baseline_comparison": comparison},
         interpretation={
@@ -410,5 +430,6 @@ def baseline_document(payload: dict[str, object]) -> dict[str, object]:
     return {
         "schema": "agent-economics-quality-debt-baseline.v1",
         "comparable_identity": evidence["comparable_identity"],
+        "comparable_values": evidence["comparable_values"],
         "summary": derived["summary"],
     }

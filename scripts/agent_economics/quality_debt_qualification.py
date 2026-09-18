@@ -130,6 +130,10 @@ def main() -> None:
             os.environ["AE_RUFF_MODE"]="limit6"
             changed_limit=quality_debt_audit(repository_root=root, roots=("src",), limits={"C901":6}, baseline_path=baseline)
             assert changed_limit["derived"]["baseline_comparison"]["state"]=="INCOMPARABLE_BASELINE"
+            assert changed_limit["derived"]["baseline_comparison"]["changed_fields"] == ["limits"]
+            assert baseline_document(base)["comparable_values"] == base["evidence"]["comparable_values"]
+            assert "timeout_seconds" not in baseline_document(base)["comparable_values"]
+            assert baseline_document(base)["comparable_values"]["analyzer_executable"] == str(fake)
             os.environ["AE_RUFF_MODE"]="badjson"
             try: quality_debt_audit(repository_root=root, roots=("src",), limits={"C901":5})
             except QualityDebtError: pass
@@ -140,7 +144,7 @@ def main() -> None:
             else: raise AssertionError("analyzer timeout must fail closed")
         finally:
             os.environ.pop("AE_RUFF_MODE", None); os.environ["PATH"]=old_path
-    print(json.dumps({"status":"PASS","cases":16,"tool":"quality-debt"},sort_keys=True))
+    print(json.dumps({"status":"PASS","cases":20,"tool":"quality-debt"},sort_keys=True))
 
 
 if __name__=="__main__":
