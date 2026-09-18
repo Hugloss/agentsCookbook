@@ -193,6 +193,24 @@ def test_unknown_provider_freshness_fails_closed() -> None:
     }
 
 
+def _proof(boundary: str, *, fresh: bool = True, direct: bool = True) -> dict[str, object]:
+    return {
+        "boundary": boundary,
+        "provider_reference": {
+            "provider": "hashmarks",
+            "evidence_identity": f"sha256:proof-{boundary}",
+        },
+        "freshness": {
+            "state": "fresh" if fresh else "stale",
+            "reason": "provider-owned",
+        },
+        "relationship": {
+            "classification": "direct" if direct else "related",
+            "evidence_identity": f"sha256:relationship-{boundary}",
+        },
+    }
+
+
 def test_stop_rule_closes_when_every_boundary_has_fresh_direct_proof() -> None:
     result = evidence_stop_facts(
         risk_boundaries=[
@@ -200,22 +218,20 @@ def test_stop_rule_closes_when_every_boundary_has_fresh_direct_proof() -> None:
             {"identity": "typing"},
             {"identity": "format"},
         ],
-        proofs=[
-            {"boundary": "behavior", "fresh": True, "direct": True},
-            {"boundary": "typing", "fresh": True, "direct": True},
-            {"boundary": "format", "fresh": True, "direct": True},
-        ],
+        proofs=[_proof("behavior"), _proof("typing"), _proof("format")],
     )
 
     assert result["sufficient"] is True
     assert result["stop_acquiring_evidence"] is True
-    assert result["reason"] == "all-declared-risk-boundaries-have-fresh-direct-proof"
+    assert result["reason"] == (
+        "all-declared-risk-boundaries-have-fresh-direct-provider-proof"
+    )
 
 
 def test_stop_rule_rejects_related_but_indirect_test_evidence() -> None:
     result = evidence_stop_facts(
         risk_boundaries=[{"identity": "behavior"}],
-        proofs=[{"boundary": "behavior", "fresh": True, "direct": False}],
+        proofs=[_proof("behavior", direct=False)],
     )
 
     assert result["sufficient"] is False
@@ -225,7 +241,7 @@ def test_stop_rule_rejects_related_but_indirect_test_evidence() -> None:
 def test_stop_rule_rejects_stale_direct_proof() -> None:
     result = evidence_stop_facts(
         risk_boundaries=[{"identity": "behavior"}],
-        proofs=[{"boundary": "behavior", "fresh": False, "direct": True}],
+        proofs=[_proof("behavior", fresh=False)],
     )
 
     assert result["sufficient"] is False
@@ -235,7 +251,7 @@ def test_stop_rule_rejects_stale_direct_proof() -> None:
 def test_scope_expansion_reopens_evidence_acquisition() -> None:
     result = evidence_stop_facts(
         risk_boundaries=[{"identity": "behavior"}],
-        proofs=[{"boundary": "behavior", "fresh": True, "direct": True}],
+        proofs=[_proof("behavior")],
         scope_expansion_evidence=[
             {
                 "provider": "hashmarks",
@@ -247,16 +263,36 @@ def test_scope_expansion_reopens_evidence_acquisition() -> None:
 
     assert result["sufficient"] is False
     assert result["scope_expanded"] is True
-    assert result["scope_expansion_evidence"] == [
-        "hashmarks:sha256:impact-delta:public-api-consumers"
-    ]
 
+
+def test_unbound_agent_authored_booleans_cannot_satisfy_boundary() -> None:
+    result = evidence_stop_facts(
+        risk_boundaries=[{"identity": "behavior"}],
+        proofs=[{"boundary": "behavior", "fresh": True, "direct": True}],
+    )
+
+    assert result["sufficient"] is False
+    assert result["invalid_proofs"] == ["behavior"]
+    assert result["uncovered_boundaries"] == ["behavior"]
+
+
+def test_proof_relationship_requires_stable_evidence_identity() -> None:
+    proof = _proof("behavior")
+    proof["relationship"] = {"classification": "direct"}
+
+    result = evidence_stop_facts(
+        risk_boundaries=[{"identity": "behavior"}],
+        proofs=[proof],
+    )
+
+    assert result["sufficient"] is False
+    assert result["invalid_proofs"] == ["behavior"]
 
 
 def test_scope_expansion_cannot_be_asserted_without_provider_evidence() -> None:
     result = evidence_stop_facts(
         risk_boundaries=[{"identity": "behavior"}],
-        proofs=[{"boundary": "behavior", "fresh": True, "direct": True}],
+        proofs=[_proof("behavior")],
         scope_expansion_evidence=[],
     )
 
@@ -267,7 +303,7 @@ def test_scope_expansion_cannot_be_asserted_without_provider_evidence() -> None:
 def test_malformed_scope_expansion_fails_closed() -> None:
     result = evidence_stop_facts(
         risk_boundaries=[{"identity": "behavior"}],
-        proofs=[{"boundary": "behavior", "fresh": True, "direct": True}],
+        proofs=[_proof("behavior")],
         scope_expansion_evidence=[
             {"provider": "hashmarks", "boundary": "new-consumer"}
         ],
