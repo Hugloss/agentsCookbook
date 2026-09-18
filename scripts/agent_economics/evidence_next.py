@@ -127,12 +127,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("artifact", type=Path)
     parser.add_argument("--target", default=None)
     parser.add_argument("--profile", type=Path, default=None)
-    parser.add_argument("--python-argv", nargs="+", default=None, help="Explicit Python launcher argv prefix, for example: uv run python")
+    parser.add_argument("--python-command", action="append", default=None, help="Explicit Python launcher argv token; repeat for multi-token launchers, for example: --python-command uv --python-command run --python-command python")
     args = parser.parse_args(argv)
     try:
         payload = _load(args.artifact)
         profile = _load(args.profile) if args.profile is not None else None
-        print(json.dumps(next_evidence(payload, target=args.target, profile=profile, python_argv=args.python_argv), indent=2, sort_keys=True))
+        print(json.dumps(next_evidence(payload, target=args.target, profile=profile, python_argv=args.python_command), indent=2, sort_keys=True))
     except EvidenceNextError as exc:
         raise SystemExit(f"next: {exc}") from exc
 
