@@ -99,6 +99,15 @@ def _human(result: dict[str, Any]) -> str:
             for item in required:
                 if isinstance(item, dict):
                     lines.append(f"  - {item.get('kind')}: {item.get('reason')}")
+        verification = selected.get("verification_suggestions")
+        if isinstance(verification, list) and verification:
+            lines.append("Verification suggestions:")
+            for item in verification:
+                if isinstance(item, dict):
+                    detail = item.get("path") or item.get("command") or item.get("name")
+                    lines.append(
+                        f"  - {item.get('stage') or item.get('kind')}: {detail} — {item.get('reason')}"
+                    )
         uncertainty = selected.get("uncertainty")
         if isinstance(uncertainty, list) and uncertainty:
             lines.append("Uncertainty:")
