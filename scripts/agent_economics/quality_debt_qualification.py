@@ -111,7 +111,7 @@ def main() -> None:
             analyzer_evidence = scoped["evidence"]["analyzer"]
             assert analyzer_evidence["version_argv"] == [str(fake), "--version"]
             assert analyzer_evidence["analysis_argv"] == [
-                str(fake), "check", "src", "tools", "--preview", "--select", "C901,PLR0912",
+                str(fake), "check", "src", "tools", "--preview", "--select", "C901",
                 "--config", "lint.per-file-ignores = {}", "--exclude", "src/excluded",
                 "--output-format", "json",
             ]
