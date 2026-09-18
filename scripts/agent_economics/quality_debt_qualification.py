@@ -60,6 +60,15 @@ def main() -> None:
             assert ambient_changed["derived"]["summary"]["excess"] == 4
             assert "--isolated" in ambient_changed["evidence"]["analyzer"]["analysis_argv"]
             assert ambient_changed["evidence"]["comparable_values"]["analyzer_configuration_mode"] == "isolated_explicit"
+            assert "lint.mccabe.max-complexity = 5" in ambient_changed["evidence"]["analyzer"]["analysis_argv"]
+            try:
+                quality_debt_audit(
+                    repository_root=root, roots=("src",), limits={"UNKNOWN": 5}
+                )
+            except QualityDebtError:
+                pass
+            else:
+                raise AssertionError("unsupported Ruff debt rules must fail closed")
 
             assert base["evidence"]["detailed_findings"] == [
                 {"path":"src/a.py","line":1,"rule":"C901","observed":9,"limit":5,"excess":4}
@@ -124,8 +133,9 @@ def main() -> None:
             assert analyzer_evidence["version_argv"] == [str(fake), "--version"]
             assert analyzer_evidence["analysis_argv"] == [
                 str(fake), "check", "src", "tools", "--preview", "--select", "C901",
-                "--isolated", "--config", "lint.per-file-ignores = {}", "--exclude", "src/excluded",
-                "--output-format", "json",
+                "--isolated", "--config", "lint.per-file-ignores = {}",
+                "--config", "lint.mccabe.max-complexity = 5",
+                "--exclude", "src/excluded", "--output-format", "json",
             ]
             assert analyzer_evidence["working_directory"] == "."
             absolute_alias = str((root/"src").resolve())
@@ -242,7 +252,7 @@ def main() -> None:
             else: raise AssertionError("analyzer timeout must fail closed")
         finally:
             os.environ.pop("AE_RUFF_MODE", None); os.environ["PATH"]=old_path
-    print(json.dumps({"status":"PASS","cases":31,"tool":"quality-debt"},sort_keys=True))
+    print(json.dumps({"status":"PASS","cases":32,"tool":"quality-debt"},sort_keys=True))
 
 
 if __name__=="__main__":
