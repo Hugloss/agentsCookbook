@@ -148,7 +148,8 @@ def main() -> None:
             relocated_values = dict(portable_baseline["comparable_values"])
             relocated_values["analyzer_executable"] = "/different/checkout/bin/ruff"
             portable_baseline["comparable_values"] = relocated_values
-            portable_baseline["comparable_identity"] = base["evidence"]["comparable_identity"]
+            from .quality_debt import configuration_identity
+            portable_baseline["comparable_identity"] = configuration_identity(relocated_values)
             relocated = root/"relocated-baseline.json"
             relocated.write_text(json.dumps(portable_baseline), encoding="utf-8")
             relocated_result = quality_debt_audit(
