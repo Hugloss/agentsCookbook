@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
-import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
@@ -31,6 +29,11 @@ class Outcome:
     no_progress_stops: int = 0
     bridge_elapsed_ms: float = 0.0
     local_ci_agree: bool | None = None
+    treatment_id: str = "default"
+    repository_id: str | None = None
+    task_fixture_id: str | None = None
+    agent_profile: str | None = None
+    run_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.mode not in {"baseline", "bridge"}:
@@ -45,12 +48,20 @@ class Outcome:
             raise BenchmarkError("benchmark counters must be non-negative")
         if self.seconds_to_first_correct_edit is not None and self.seconds_to_first_correct_edit < 0:
             raise BenchmarkError("time-to-edit must be non-negative")
+        for name in ("task_id", "treatment_id"):
+            if not getattr(self, name).strip():
+                raise BenchmarkError(f"{name} must be non-empty")
+
+    @property
+    def pair_key(self) -> tuple[str, str]:
+        return self.task_id, self.treatment_id
 
 
 def load_outcomes(path: Path, *, max_bytes: int = 5_000_000, max_records: int = 10_000) -> list[Outcome]:
-    raw = path.read_bytes()
-    if len(raw) > max_bytes:
+    size = path.stat().st_size
+    if size > max_bytes:
         raise BenchmarkError("benchmark input exceeds byte bound")
+    raw = path.read_bytes()
     records: list[Outcome] = []
     for line_no, line in enumerate(raw.decode("utf-8").splitlines(), 1):
         if not line.strip():
@@ -65,16 +76,39 @@ def load_outcomes(path: Path, *, max_bytes: int = 5_000_000, max_records: int = 
     return records
 
 
-def compare(outcomes: list[Outcome]) -> dict[str, object]:
-    grouped: dict[str, dict[str, Outcome]] = {}
+def _compatibility_errors(baseline: Outcome, bridge: Outcome) -> list[str]:
+    errors: list[str] = []
+    for field in ("repository_id", "task_fixture_id", "agent_profile"):
+        left, right = getattr(baseline, field), getattr(bridge, field)
+        if left is not None and right is not None and left != right:
+            errors.append(f"{field} mismatch")
+    return errors
+
+
+def compare(outcomes: list[Outcome], *, require_complete_pairs: bool = True) -> dict[str, object]:
+    grouped: dict[tuple[str, str], dict[str, Outcome]] = {}
     for outcome in outcomes:
-        modes = grouped.setdefault(outcome.task_id, {})
+        modes = grouped.setdefault(outcome.pair_key, {})
         if outcome.mode in modes:
-            raise BenchmarkError(f"duplicate {outcome.mode} record for task {outcome.task_id}")
+            raise BenchmarkError(
+                f"duplicate {outcome.mode} record for task {outcome.task_id} treatment {outcome.treatment_id}"
+            )
         modes[outcome.mode] = outcome
-    pairs = [(task, modes["baseline"], modes["bridge"]) for task, modes in sorted(grouped.items()) if {"baseline", "bridge"} <= modes.keys()]
+    incomplete = [key for key, modes in sorted(grouped.items()) if set(modes) != {"baseline", "bridge"}]
+    if incomplete and require_complete_pairs:
+        raise BenchmarkError(f"incomplete benchmark pairs: {incomplete[:10]}")
+    pairs = [
+        (key, modes["baseline"], modes["bridge"])
+        for key, modes in sorted(grouped.items())
+        if {"baseline", "bridge"} <= modes.keys()
+    ]
     if not pairs:
         raise BenchmarkError("at least one paired baseline/bridge task is required")
+    for key, baseline, bridge in pairs:
+        errors = _compatibility_errors(baseline, bridge)
+        if errors:
+            raise BenchmarkError(f"incomparable pair {key}: {', '.join(errors)}")
+
     metrics = [
         "ci_activations", "files_opened", "evidence_bytes", "context_tokens_estimate",
         "tool_calls", "local_commands", "repair_iterations", "focused_verifications",
@@ -82,34 +116,52 @@ def compare(outcomes: list[Outcome]) -> dict[str, object]:
     ]
     deltas: dict[str, dict[str, float]] = {}
     for metric in metrics:
-        baseline = sum(float(getattr(b, metric)) for _, b, _ in pairs)
-        bridge = sum(float(getattr(g, metric)) for _, _, g in pairs)
+        baseline_total = sum(float(getattr(b, metric)) for _, b, _ in pairs)
+        bridge_total = sum(float(getattr(g, metric)) for _, _, g in pairs)
         deltas[metric] = {
-            "baseline_total": baseline,
-            "bridge_total": bridge,
-            "delta": bridge - baseline,
-            "reduction_fraction": (baseline - bridge) / baseline if baseline else 0.0,
+            "baseline_total": baseline_total,
+            "bridge_total": bridge_total,
+            "delta": bridge_total - baseline_total,
+            "reduction_fraction": (baseline_total - bridge_total) / baseline_total if baseline_total else 0.0,
         }
+
+    paired_times = [
+        (b.seconds_to_first_correct_edit, g.seconds_to_first_correct_edit)
+        for _, b, g in pairs
+        if b.seconds_to_first_correct_edit is not None and g.seconds_to_first_correct_edit is not None
+    ]
+    timing = {
+        "paired_measurements": len(paired_times),
+        "baseline_total_seconds": sum(x for x, _ in paired_times),
+        "bridge_total_seconds": sum(y for _, y in paired_times),
+        "delta_seconds": sum(y - x for x, y in paired_times),
+        "bridge_overhead_ms_total": sum(g.bridge_elapsed_ms for _, _, g in pairs),
+    }
     correctness = {
         "baseline_correct": sum(1 for _, b, _ in pairs if b.correct),
         "bridge_correct": sum(1 for _, _, g in pairs if g.correct),
         "paired_tasks": len(pairs),
+        "incomplete_pairs": len(incomplete),
         "local_ci_disagreements": sum(1 for _, _, g in pairs if g.local_ci_agree is False),
+        "local_ci_unknown": sum(1 for _, _, g in pairs if g.local_ci_agree is None),
     }
     promotion = {
         "correctness_not_reduced": correctness["bridge_correct"] >= correctness["baseline_correct"],
         "ci_activations_not_increased": deltas["ci_activations"]["delta"] <= 0,
         "context_not_increased": deltas["context_tokens_estimate"]["delta"] <= 0,
         "local_ci_disagreement_zero": correctness["local_ci_disagreements"] == 0,
+        "all_pairs_complete": correctness["incomplete_pairs"] == 0,
     }
     payload = {
-        "schema": {"name": "agent-outcome-benchmark", "version": 1},
+        "schema": {"name": "agent-outcome-benchmark", "version": 2},
         "correctness": correctness,
         "metrics": deltas,
+        "timing": timing,
         "promotion_evidence": promotion,
         "authority": {
             "benchmark_is_measurement_not_release_authority": True,
             "automatic_promotion": False,
+            "promotion_evidence_is_not_a_verdict": True,
         },
     }
     payload["identity"] = "sha256:" + hashlib.sha256(
@@ -118,12 +170,26 @@ def compare(outcomes: list[Outcome]) -> dict[str, object]:
     return payload
 
 
+def outcome_template(*, task_id: str, treatment_id: str = "default") -> list[dict[str, object]]:
+    return [
+        asdict(Outcome(task_id=task_id, treatment_id=treatment_id, mode="baseline", correct=False)),
+        asdict(Outcome(task_id=task_id, treatment_id=treatment_id, mode="bridge", correct=False)),
+    ]
+
+
 def main(argv: list[str] | None = None) -> None:
     import argparse
     parser = argparse.ArgumentParser(description="Compare paired baseline and capability-bridge agent outcomes.")
-    parser.add_argument("--input", type=Path, required=True, help="JSONL Outcome records")
+    parser.add_argument("--input", type=Path, help="JSONL Outcome records")
     parser.add_argument("--artifact", type=Path)
+    parser.add_argument("--template-task", help="emit a baseline/bridge JSONL template for this task id")
+    parser.add_argument("--treatment-id", default="default")
     args = parser.parse_args(argv)
+    if args.template_task:
+        print("\n".join(json.dumps(row, sort_keys=True) for row in outcome_template(task_id=args.template_task, treatment_id=args.treatment_id)))
+        return
+    if args.input is None:
+        parser.error("--input is required unless --template-task is used")
     payload = compare(load_outcomes(args.input))
     rendered = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     if args.artifact:
