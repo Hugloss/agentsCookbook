@@ -13,6 +13,11 @@ from .behavior_preservation import (
     behavior_preservation_readiness,
     behavior_preservation_receipt,
     target_test_ownership_evidence,
+    behavior_preservation_debt_delta,
+    DEBT_VERIFIED,
+    DEBT_REDISTRIBUTED,
+    TARGET_DEBT_NOT_REDUCED,
+    MEASUREMENT_NOT_COMPARABLE,
 )
 
 
@@ -266,6 +271,46 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     if failed_gate["status"] != POST_EDIT_EVIDENCE_REQUIRED:
         failures.append("failed post-edit repository gate verified preservation")
 
+    delta_args = {
+        "target": "src/pkg/core.py",
+        "pre_measurement_identity": "sha256:debt-before",
+        "post_measurement_identity": "sha256:debt-after",
+        "measurement_configuration_identity": "sha256:config",
+        "post_measurement_configuration_identity": "sha256:config",
+        "pre_repository_excess": 1905,
+        "post_repository_excess": 1840,
+        "pre_target_excess": 118,
+        "post_target_excess": 53,
+        "preservation_receipt": post_receipt,
+    }
+    debt_verified = behavior_preservation_debt_delta(**delta_args)
+    if debt_verified["status"] != DEBT_VERIFIED:
+        failures.append("matching -65 target/repository debt delta did not verify")
+
+    redistributed = behavior_preservation_debt_delta(
+        **{**delta_args, "post_repository_excess": 1850}
+    )
+    if redistributed["status"] != DEBT_REDISTRIBUTED:
+        failures.append("outside-target debt increase was not rejected as redistribution")
+
+    not_reduced = behavior_preservation_debt_delta(
+        **{**delta_args, "post_target_excess": 118, "post_repository_excess": 1905}
+    )
+    if not_reduced["status"] != TARGET_DEBT_NOT_REDUCED:
+        failures.append("unchanged selected-target debt was not rejected")
+
+    incomparable = behavior_preservation_debt_delta(
+        **{**delta_args, "post_measurement_configuration_identity": "sha256:other-config"}
+    )
+    if incomparable["status"] != MEASUREMENT_NOT_COMPARABLE:
+        failures.append("mismatched measurement configuration was treated as comparable")
+
+    unverified_preservation = behavior_preservation_debt_delta(
+        **{**delta_args, "preservation_receipt": failed_post}
+    )
+    if unverified_preservation["status"] != POST_EDIT_EVIDENCE_REQUIRED:
+        failures.append("debt delta verified without BP2 preservation")
+
     observations = {
         "ready_status": ready["status"],
         "no_ownership_status": no_ownership["status"],
@@ -281,6 +326,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         "post_edit_requirements": ready.get("post_edit_requirements"),
         "post_edit_status": post_receipt["status"],
         "post_edit_authority": post_authority,
+        "debt_delta_status": debt_verified["status"],
+        "redistributed_status": redistributed["status"],
+        "incomparable_status": incomparable["status"],
     }
     result: dict[str, object] = {
         "probe": "behavior-preservation",
@@ -291,7 +339,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     }
     if artifact_path is not None:
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        artifact_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+        artifact_path.write_text(json.dumps(result, indent=2) + "\\n", encoding="utf-8")
     return result
 
 
