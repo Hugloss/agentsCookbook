@@ -150,6 +150,15 @@ Hotspot evidence also reports the largest definitions (functions/classes with qu
 `qualify-local` receipts expose cumulative and per-stage execution economics so P11 dogfood can consume actual local command cost rather than reconstructing it manually.
 
 
+### behavior-preservation
+
+Use `behavior_preservation_readiness(...)` before a structural split when the goal is to preserve existing behavior. It binds the exact source identity, declared behavior/risk boundaries, confirmed test references, a PASS execution receipt for those exact source/test identities, provider freshness, and repository-owned broader gates.
+
+The result is evidence readiness only: `READY_FOR_BEHAVIOR_PRESERVING_EDIT` never authorizes an edit and never claims that a future refactor is safe. Indirect-only protection yields `TEST_STRENGTHENING_REQUIRED`; stale, failed, mismatched, unexecuted, or incomplete evidence yields `EVIDENCE_REQUIRED`. Coverage percentages may be recorded but cannot independently promote readiness.
+
+After the external edit, rerun the bound focused tests, affected/component verification, repository gates, and then remeasure current debt. The next target must come from fresh repository evidence rather than a frozen hotspot list.
+
+
 ### dogfood-corpus
 
 `dogfood-corpus` emits the immutable adversarial task specification used for empirical baseline-vs-bridge runs. It contains the 12 planned failure/authority/bounds cases and a protocol that requires local repair iterations, no CI during the repair loop, outcome freeze before opening the oracle, and one independent CI qualification only after local evidence is frozen.

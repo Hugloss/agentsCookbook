@@ -82,6 +82,7 @@ jobs:
             capability_bridge_qualification
             agent_outcome_benchmark_qualification
             quality_debt_qualification
+            behavior_preservation_qualification
             bootstrap_qualification
             zero_to_first_result_qualification
             evidence_next_qualification
