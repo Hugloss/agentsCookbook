@@ -12,6 +12,7 @@ from .behavior_preservation import (
     PRESERVED,
     behavior_preservation_readiness,
     behavior_preservation_receipt,
+    target_test_ownership_evidence,
 )
 
 
@@ -36,6 +37,22 @@ def _tests() -> list[dict[str, object]]:
     return [{"path": "tests/test_core.py", "evidence_identity": "sha256:test-core"}]
 
 
+def _ownership(
+    *,
+    target: str = "src/pkg/core.py",
+    source_identity: str = "sha256:source-a",
+    tests: list[dict[str, object]] | None = None,
+    provider_evidence_identity: str = "sha256:test-focus-a",
+) -> dict[str, object]:
+    return target_test_ownership_evidence(
+        target=target,
+        source_identity=source_identity,
+        test_references=tests or _tests(),
+        provider="test-focus",
+        provider_evidence_identity=provider_evidence_identity,
+    )
+
+
 def _receipt(
     *,
     source_identity: str = "sha256:source-a",
@@ -58,6 +75,7 @@ def _run(**overrides: object) -> dict[str, object]:
         "test_references": _tests(),
         "execution_receipt": _receipt(),
         "repository_gates": [{"name": "full", "command": "uv run pytest"}],
+        "test_ownership_evidence": _ownership(),
     }
     args.update(overrides)
     return behavior_preservation_readiness(**args)  # type: ignore[arg-type]
@@ -74,6 +92,38 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         failures.append("READY incorrectly authorized an edit")
     if isinstance(authority, dict) and authority.get("refactor_safety_proven") is not False:
         failures.append("READY incorrectly claimed refactor safety")
+
+    no_ownership = _run(test_ownership_evidence=None)
+    if no_ownership["status"] != EVIDENCE_REQUIRED:
+        failures.append("missing target-bound test ownership became READY")
+
+    unrelated_tests = [
+        {"path": "tests/test_other.py", "evidence_identity": "sha256:test-other"}
+    ]
+    unrelated_passing = _run(
+        test_references=unrelated_tests,
+        execution_receipt=_receipt(test_ids=["sha256:test-other"]),
+        test_ownership_evidence=_ownership(
+            target="src/pkg/other.py", tests=unrelated_tests
+        ),
+    )
+    if unrelated_passing["status"] != EVIDENCE_REQUIRED:
+        failures.append("passing tests owned by a different target became READY")
+    if "target-bound-test-ownership" not in unrelated_passing.get(
+        "unresolved_evidence", []
+    ):
+        failures.append("wrong-target ownership mismatch was not explicit")
+
+    wrong_ownership_tests = _run(
+        test_ownership_evidence=_ownership(tests=unrelated_tests)
+    )
+    if wrong_ownership_tests["status"] != EVIDENCE_REQUIRED:
+        failures.append("ownership proof for different tests became READY")
+
+    tampered_ownership = _ownership()
+    tampered_ownership["provider_evidence_identity"] = "sha256:tampered"
+    if _run(test_ownership_evidence=tampered_ownership)["status"] != EVIDENCE_REQUIRED:
+        failures.append("tampered ownership proof became READY")
 
     no_receipt = _run(execution_receipt=None)
     if no_receipt["status"] != EVIDENCE_REQUIRED:
@@ -110,11 +160,24 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     if wrong_tests["status"] != EVIDENCE_REQUIRED:
         failures.append("execution receipt for different selected tests became READY")
 
-    changed_source = _run(source_identity="sha256:source-b", execution_receipt=_receipt(source_identity="sha256:source-b"))
+    changed_source = _run(
+        source_identity="sha256:source-b",
+        execution_receipt=_receipt(source_identity="sha256:source-b"),
+        test_ownership_evidence=_ownership(source_identity="sha256:source-b"),
+    )
     changed_boundary = _run(boundaries=[_boundary("error-contract")])
+    changed_test_references = [
+        {"path": "tests/test_other.py", "evidence_identity": "sha256:test-other"}
+    ]
     changed_tests = _run(
-        test_references=[{"path": "tests/test_other.py", "evidence_identity": "sha256:test-other"}],
+        test_references=changed_test_references,
         execution_receipt=_receipt(test_ids=["sha256:test-other"]),
+        test_ownership_evidence=_ownership(tests=changed_test_references),
+    )
+    changed_ownership = _run(
+        test_ownership_evidence=_ownership(
+            provider_evidence_identity="sha256:test-focus-b"
+        )
     )
     changed_execution = _run(
         execution_receipt={
@@ -126,6 +189,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         ("source", changed_source),
         ("boundary", changed_boundary),
         ("tests", changed_tests),
+        ("ownership", changed_ownership),
         ("execution", changed_execution),
     ):
         if payload["evidence_identity"] == ready["evidence_identity"]:
@@ -204,6 +268,8 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
     observations = {
         "ready_status": ready["status"],
+        "no_ownership_status": no_ownership["status"],
+        "unrelated_passing_status": unrelated_passing["status"],
         "no_receipt_status": no_receipt["status"],
         "wrong_source_status": wrong_source["status"],
         "stale_status": stale["status"],
