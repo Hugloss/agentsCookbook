@@ -339,8 +339,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     }
     if artifact_path is not None:
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        artifact_path.write_text(json.dumps(result, indent=2) + "
-", encoding="utf-8")
+        artifact_path.write_text(json.dumps(result, indent=2) + "\\n", encoding="utf-8")
     return result
 
 
