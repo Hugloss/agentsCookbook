@@ -166,3 +166,89 @@ def qualify() -> None:
 
 if __name__ == "__main__":
     qualify()
+
+
+
+def test_next_evidence_stops_when_declared_boundaries_are_satisfied() -> None:
+    payload = {
+        "schema": {"name": "agent-economics-probe", "version": 1},
+        "tool": {"name": "context-focus"},
+        "candidates": [
+            {
+                "target": "src/a.py",
+                "required_next_evidence": [
+                    {"kind": "test_focus", "reason": "need behavior evidence"}
+                ],
+            }
+        ],
+    }
+
+    result = next_evidence(
+        payload,
+        target="src/a.py",
+        sufficiency={
+            "risk_boundaries": [{"identity": "behavior"}],
+            "proofs": [{
+                "boundary": "behavior",
+                "provider_reference": {
+                    "provider": "hashmarks",
+                    "evidence_identity": "sha256:behavior-proof",
+                },
+                "freshness": {"state": "fresh"},
+                "relationship": {
+                    "classification": "direct",
+                    "evidence_identity": "sha256:behavior-relationship",
+                },
+            }],
+        },
+    )
+
+    assert result["next_evidence"] is None
+    assert result["command"] is None
+    assert result["stop"]["stop_acquiring_evidence"] is True
+
+
+
+def test_next_evidence_reopens_only_for_proven_scope_expansion() -> None:
+    payload = {
+        "schema": {"name": "agent-economics-probe", "version": 1},
+        "tool": {"name": "context-focus"},
+        "candidates": [
+            {
+                "target": "src/a.py",
+                "required_next_evidence": [
+                    {"kind": "test_focus", "reason": "new consumer boundary"}
+                ],
+            }
+        ],
+    }
+
+    result = next_evidence(
+        payload,
+        target="src/a.py",
+        sufficiency={
+            "risk_boundaries": [{"identity": "behavior"}],
+            "proofs": [{
+                "boundary": "behavior",
+                "provider_reference": {
+                    "provider": "hashmarks",
+                    "evidence_identity": "sha256:behavior-proof",
+                },
+                "freshness": {"state": "fresh"},
+                "relationship": {
+                    "classification": "direct",
+                    "evidence_identity": "sha256:behavior-relationship",
+                },
+            }],
+            "scope_expansion_evidence": [
+                {
+                    "provider": "hashmarks",
+                    "evidence_identity": "sha256:impact-delta",
+                    "boundary": "new-consumer",
+                }
+            ],
+        },
+    )
+
+    assert result["next_evidence"]["kind"] == "test_focus"
+    assert "stop" not in result
