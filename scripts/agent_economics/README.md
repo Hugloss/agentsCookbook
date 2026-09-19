@@ -156,7 +156,11 @@ Use `behavior_preservation_readiness(...)` before a structural split when the go
 
 The result is evidence readiness only: `READY_FOR_BEHAVIOR_PRESERVING_EDIT` never authorizes an edit and never claims that a future refactor is safe. Indirect-only protection yields `TEST_STRENGTHENING_REQUIRED`; stale, failed, mismatched, unexecuted, or incomplete evidence yields `EVIDENCE_REQUIRED`. Coverage percentages may be recorded but cannot independently promote readiness.
 
-After the external edit, rerun the bound focused tests, affected/component verification, repository gates, and then remeasure current debt. The next target must come from fresh repository evidence rather than a frozen hotspot list.
+After the external edit, rerun the bound focused tests and repository gates, then build `behavior_preservation_receipt(...)`. BP2 binds the exact BP1 evidence identity and pre-edit source identity to the post-edit source identity, requires the frozen test path/evidence identities to remain unchanged, requires a PASS execution receipt for those exact frozen tests against the post-edit source, and requires PASS receipts for the exact repository gates declared by BP1. Changed tests, source mismatches, missing/failed executions, or incomplete gate receipts fail closed as `POST_EDIT_EVIDENCE_REQUIRED`.
+
+A successful BP2 receipt reports `BEHAVIOR_PRESERVATION_VERIFIED`, but still does not authorize merge, prove architectural improvement, own repository policy, or treat reduced debt/complexity as proof of preserved behavior. A repository may run additional affected/component verification according to its own policy. Remeasure current debt separately; the next target must come from fresh repository evidence rather than a frozen hotspot list.
+
+Probe artifacts that do not publish their own top-level `evidence_identity` can be bound canonically with `agent_economics.probe_contract.sha256_identity(payload)`. Consumers should not invent repository-local JSON serialization or hashing rules.
 
 
 ### dogfood-corpus

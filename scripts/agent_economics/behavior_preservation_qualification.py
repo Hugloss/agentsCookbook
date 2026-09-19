@@ -8,7 +8,10 @@ from .behavior_preservation import (
     EVIDENCE_REQUIRED,
     READY,
     TEST_STRENGTHENING_REQUIRED,
+    POST_EDIT_EVIDENCE_REQUIRED,
+    PRESERVED,
     behavior_preservation_readiness,
+    behavior_preservation_receipt,
 )
 
 
@@ -128,6 +131,77 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         if payload["evidence_identity"] == ready["evidence_identity"]:
             failures.append(f"{label} change did not change evidence identity")
 
+    post_tests = _tests()
+    post_receipt = behavior_preservation_receipt(
+        pre_edit_evidence=ready,
+        post_edit_source_identity="sha256:source-b",
+        post_edit_test_references=post_tests,
+        post_edit_execution_receipt=_receipt(source_identity="sha256:source-b"),
+        repository_gate_receipts=[
+            {
+                "name": "full",
+                "command": "uv run pytest",
+                "status": "PASS",
+                "execution_identity": "sha256:gate-full-b",
+            }
+        ],
+    )
+    if post_receipt["status"] != PRESERVED:
+        failures.append("matching frozen post-edit evidence did not verify preservation")
+    post_authority = post_receipt.get("authority", {})
+    if not isinstance(post_authority, dict) or post_authority.get("merge_authorized") is not False:
+        failures.append("post-edit preservation receipt incorrectly authorized merge")
+
+    changed_post_tests = behavior_preservation_receipt(
+        pre_edit_evidence=ready,
+        post_edit_source_identity="sha256:source-b",
+        post_edit_test_references=[{"path": "tests/test_core.py", "evidence_identity": "sha256:test-changed"}],
+        post_edit_execution_receipt=_receipt(source_identity="sha256:source-b", test_ids=["sha256:test-changed"]),
+        repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "PASS", "execution_identity": "sha256:gate"}],
+    )
+    if changed_post_tests["status"] != POST_EDIT_EVIDENCE_REQUIRED:
+        failures.append("changed frozen test identity verified preservation")
+
+    wrong_post_source = behavior_preservation_receipt(
+        pre_edit_evidence=ready,
+        post_edit_source_identity="sha256:source-b",
+        post_edit_test_references=post_tests,
+        post_edit_execution_receipt=_receipt(source_identity="sha256:source-c"),
+        repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "PASS", "execution_identity": "sha256:gate"}],
+    )
+    if wrong_post_source["status"] != POST_EDIT_EVIDENCE_REQUIRED:
+        failures.append("post-edit receipt bound to wrong source verified preservation")
+
+    failed_post = behavior_preservation_receipt(
+        pre_edit_evidence=ready,
+        post_edit_source_identity="sha256:source-b",
+        post_edit_test_references=post_tests,
+        post_edit_execution_receipt=_receipt(source_identity="sha256:source-b", status="FAIL"),
+        repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "PASS", "execution_identity": "sha256:gate"}],
+    )
+    if failed_post["status"] != POST_EDIT_EVIDENCE_REQUIRED:
+        failures.append("failed post-edit focused execution verified preservation")
+
+    missing_gate = behavior_preservation_receipt(
+        pre_edit_evidence=ready,
+        post_edit_source_identity="sha256:source-b",
+        post_edit_test_references=post_tests,
+        post_edit_execution_receipt=_receipt(source_identity="sha256:source-b"),
+        repository_gate_receipts=[],
+    )
+    if missing_gate["status"] != POST_EDIT_EVIDENCE_REQUIRED:
+        failures.append("missing post-edit repository gate verified preservation")
+
+    failed_gate = behavior_preservation_receipt(
+        pre_edit_evidence=ready,
+        post_edit_source_identity="sha256:source-b",
+        post_edit_test_references=post_tests,
+        post_edit_execution_receipt=_receipt(source_identity="sha256:source-b"),
+        repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "FAIL", "execution_identity": "sha256:gate"}],
+    )
+    if failed_gate["status"] != POST_EDIT_EVIDENCE_REQUIRED:
+        failures.append("failed post-edit repository gate verified preservation")
+
     observations = {
         "ready_status": ready["status"],
         "no_receipt_status": no_receipt["status"],
@@ -139,10 +213,12 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         "coverage_only_status": coverage_only["status"],
         "authority": authority,
         "post_edit_requirements": ready.get("post_edit_requirements"),
+        "post_edit_status": post_receipt["status"],
+        "post_edit_authority": post_authority,
     }
     result: dict[str, object] = {
         "probe": "behavior-preservation",
-        "qualification_phase": "BP1",
+        "qualification_phase": "BP1-BP2",
         "passed": not failures,
         "observations": observations,
         "failures": failures,
@@ -154,7 +230,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Qualify BP1 behavior-preservation evidence.")
+    parser = argparse.ArgumentParser(description="Qualify BP1/BP2 behavior-preservation evidence.")
     parser.add_argument(
         "--artifact-path",
         type=Path,
