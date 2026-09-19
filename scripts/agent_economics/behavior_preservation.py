@@ -5,6 +5,7 @@ import json
 from collections.abc import Mapping, Sequence
 
 SCHEMA = "agentscookbook-behavior-preservation-evidence/v1"
+TARGET_TEST_OWNERSHIP_SCHEMA = "agentscookbook-target-test-ownership-evidence/v1"
 POST_EDIT_SCHEMA = "agentscookbook-behavior-preservation-receipt/v1"
 PRESERVED = "BEHAVIOR_PRESERVATION_VERIFIED"
 POST_EDIT_EVIDENCE_REQUIRED = "POST_EDIT_EVIDENCE_REQUIRED"
@@ -23,6 +24,113 @@ def _identity(payload: Mapping[str, object]) -> str:
     ).hexdigest()
 
 
+def _normalize_test_references(
+    test_references: Sequence[Mapping[str, object]],
+) -> list[dict[str, str]]:
+    return sorted(
+        [
+            {
+                "path": str(row.get("path") or ""),
+                "evidence_identity": str(row.get("evidence_identity") or ""),
+            }
+            for row in test_references
+        ],
+        key=lambda row: (row["path"], row["evidence_identity"]),
+    )
+
+
+def target_test_ownership_evidence(
+    *,
+    target: str,
+    source_identity: str,
+    test_references: Sequence[Mapping[str, object]],
+    provider: str,
+    provider_evidence_identity: str,
+) -> dict[str, object]:
+    """Bind confirmed tests to one exact target/source state.
+
+    This is evidence correlation only. It does not prove semantic test adequacy or
+    authorize an edit.
+    """
+    if not _nonempty(target) or not _nonempty(source_identity):
+        raise ValueError("target and source_identity must be non-empty")
+    if not _nonempty(provider) or not _nonempty(provider_evidence_identity):
+        raise ValueError("provider and provider_evidence_identity must be non-empty")
+    normalized_tests = _normalize_test_references(test_references)
+    if not normalized_tests or any(
+        not _nonempty(row["path"]) or not _nonempty(row["evidence_identity"])
+        for row in normalized_tests
+    ):
+        raise ValueError("test_references must contain identified tests")
+    semantic = {
+        "schema": TARGET_TEST_OWNERSHIP_SCHEMA,
+        "target": target,
+        "source_identity": source_identity,
+        "confirmed_test_references": normalized_tests,
+        "provider": provider,
+        "provider_evidence_identity": provider_evidence_identity,
+    }
+    return {**semantic, "evidence_identity": _identity(semantic)}
+
+
+def _normalize_target_test_ownership(
+    evidence: Mapping[str, object] | None,
+) -> dict[str, object] | None:
+    if not isinstance(evidence, Mapping):
+        return None
+    raw_tests = evidence.get("confirmed_test_references")
+    tests = (
+        _normalize_test_references(
+            [row for row in raw_tests if isinstance(row, Mapping)]
+        )
+        if isinstance(raw_tests, Sequence)
+        and not isinstance(raw_tests, (str, bytes, bytearray))
+        else []
+    )
+    return {
+        "schema": evidence.get("schema"),
+        "target": evidence.get("target"),
+        "source_identity": evidence.get("source_identity"),
+        "confirmed_test_references": tests,
+        "provider": evidence.get("provider"),
+        "provider_evidence_identity": evidence.get("provider_evidence_identity"),
+        "evidence_identity": evidence.get("evidence_identity"),
+    }
+
+
+def _target_test_ownership_matches(
+    evidence: Mapping[str, object] | None,
+    *,
+    target: str,
+    source_identity: str,
+    normalized_tests: Sequence[Mapping[str, str]],
+) -> tuple[bool, dict[str, object] | None]:
+    normalized = _normalize_target_test_ownership(evidence)
+    if normalized is None:
+        return False, None
+    semantic = {
+        key: normalized[key]
+        for key in (
+            "schema",
+            "target",
+            "source_identity",
+            "confirmed_test_references",
+            "provider",
+            "provider_evidence_identity",
+        )
+    }
+    valid = (
+        normalized["schema"] == TARGET_TEST_OWNERSHIP_SCHEMA
+        and normalized["target"] == target
+        and normalized["source_identity"] == source_identity
+        and normalized["confirmed_test_references"] == list(normalized_tests)
+        and _nonempty(normalized["provider"])
+        and _nonempty(normalized["provider_evidence_identity"])
+        and normalized["evidence_identity"] == _identity(semantic)
+    )
+    return valid, normalized
+
+
 def behavior_preservation_readiness(
     *,
     target: str,
@@ -31,6 +139,7 @@ def behavior_preservation_readiness(
     test_references: Sequence[Mapping[str, object]],
     execution_receipt: Mapping[str, object] | None,
     repository_gates: Sequence[Mapping[str, object]],
+    test_ownership_evidence: Mapping[str, object] | None = None,
     coverage_evidence: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Assess pre-edit evidence readiness without authorizing a refactor."""
@@ -74,21 +183,21 @@ def behavior_preservation_readiness(
         ):
             unresolved.append(identity)
 
-    normalized_tests = sorted(
-        [
-            {
-                "path": str(row.get("path") or ""),
-                "evidence_identity": str(row.get("evidence_identity") or ""),
-            }
-            for row in test_references
-        ],
-        key=lambda row: (row["path"], row["evidence_identity"]),
-    )
+    normalized_tests = _normalize_test_references(test_references)
     if not normalized_tests or any(
         not _nonempty(row["path"]) or not _nonempty(row["evidence_identity"])
         for row in normalized_tests
     ):
         unresolved.append("confirmed-test-references")
+
+    ownership_ok, normalized_ownership = _target_test_ownership_matches(
+        test_ownership_evidence,
+        target=target,
+        source_identity=source_identity,
+        normalized_tests=normalized_tests,
+    )
+    if not ownership_ok:
+        unresolved.append("target-bound-test-ownership")
 
     receipt_ok = False
     normalized_receipt: dict[str, object] | None = None
@@ -146,6 +255,7 @@ def behavior_preservation_readiness(
         "source_identity": source_identity,
         "boundaries": sorted(normalized_boundaries, key=lambda row: str(row["identity"])),
         "test_references": normalized_tests,
+        "test_ownership_evidence": normalized_ownership,
         "execution_receipt": normalized_receipt,
         "repository_gates": normalized_gates,
         "coverage_evidence": dict(coverage_evidence) if coverage_evidence is not None else None,

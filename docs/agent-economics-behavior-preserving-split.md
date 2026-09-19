@@ -19,6 +19,7 @@ This is deliberately a **behavior-preserving split** workflow, not a generic "cl
 - Debt, size, complexity, churn, or hotspot rank may nominate an investigation target; none authorizes an edit.
 - No production split begins until the relevant behavior has strong executable evidence. Missing or weak coverage is a reason to strengthen tests first.
 - Tests must capture intended behavior, authority boundaries, failure modes, and important negative cases. Do not add tests that merely mirror implementation structure.
+- Pre-edit test evidence must be bound to the exact target and source identity. Passing tests owned by another target cannot satisfy BP1.
 - The pre-split behavioral suite becomes the invariant used to detect accidental behavior change during extraction.
 - A split must not intentionally change public behavior, acceptance policy, repository authority, or observable failure semantics.
 - Prefer small typed state/configuration objects and focused helpers when they make ownership explicit. Do not create parallel code paths, compatibility shims, or abstraction layers solely to reduce a metric.
@@ -123,6 +124,7 @@ Therefore the next implementation must not add a coverage score or infer semanti
 - exact target/source identity;
 - declared behavior/risk boundaries supplied by the caller or evidence provider;
 - confirmed owning-test references from `test-focus`;
+- a target-bound ownership packet tying those exact test identities to the exact target/source state and provider evidence;
 - execution receipts proving the selected pre-edit tests actually passed against the bound source state;
 - freshness/provider references when external repository intelligence is used;
 - broader repository gates that remain required after the edit.
@@ -148,10 +150,11 @@ Before using the contract on Hashmarks, qualification must prove at least:
 7. line/branch coverage percentages, if supplied as evidence, cannot independently promote readiness;
 8. all declared boundaries with fresh direct proof plus passing bound execution can become READY;
 9. changing source, boundary declarations, selected tests, or execution receipt changes the evidence identity;
-10. no status claims that the proposed refactor itself is safe or behavior-preserving before post-edit verification.
+10. no status claims that the proposed refactor itself is safe or behavior-preserving before post-edit verification;
+11. passing tests and a passing execution receipt bound to a different target cannot become READY, even when every other field is valid.
 
 ### BP2 consequence
 
 Only after BP1 is qualified should a split packet be added. The split packet should reference the BP1 evidence identity rather than copying repository intelligence. That keeps the sequence explicit:
 
-`current debt → test ownership → pre-edit executable behavior proof → external edit → post-edit verification → fresh debt`.
+`current debt → target-bound test ownership → pre-edit executable behavior proof → external edit → post-edit verification → fresh debt`.
