@@ -12,7 +12,12 @@ from .behavior_preservation import (
     PRESERVED,
     behavior_preservation_readiness,
     behavior_preservation_receipt,
-    target_test_ownership_evidence,\n    behavior_preservation_debt_delta,\n    DEBT_VERIFIED,\n    DEBT_REDISTRIBUTED,\n    TARGET_DEBT_NOT_REDUCED,\n    MEASUREMENT_NOT_COMPARABLE,
+    target_test_ownership_evidence,
+    behavior_preservation_debt_delta,
+    DEBT_VERIFIED,
+    DEBT_REDISTRIBUTED,
+    TARGET_DEBT_NOT_REDUCED,
+    MEASUREMENT_NOT_COMPARABLE,
 )
 
 
@@ -320,7 +325,10 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         "authority": authority,
         "post_edit_requirements": ready.get("post_edit_requirements"),
         "post_edit_status": post_receipt["status"],
-        "post_edit_authority": post_authority,\n        "debt_delta_status": debt_verified["status"],\n        "redistributed_status": redistributed["status"],\n        "incomparable_status": incomparable["status"],
+        "post_edit_authority": post_authority,
+        "debt_delta_status": debt_verified["status"],
+        "redistributed_status": redistributed["status"],
+        "incomparable_status": incomparable["status"],
     }
     result: dict[str, object] = {
         "probe": "behavior-preservation",
@@ -331,7 +339,8 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     }
     if artifact_path is not None:
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        artifact_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+        artifact_path.write_text(json.dumps(result, indent=2) + "
+", encoding="utf-8")
     return result
 
 
