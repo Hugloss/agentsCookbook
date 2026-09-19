@@ -8,7 +8,7 @@ SCHEMA = "agentscookbook-behavior-preservation-evidence/v1"
 TARGET_TEST_OWNERSHIP_SCHEMA = "agentscookbook-target-test-ownership-evidence/v1"
 POST_EDIT_SCHEMA = "agentscookbook-behavior-preservation-receipt/v1"
 PRESERVED = "BEHAVIOR_PRESERVATION_VERIFIED"
-POST_EDIT_EVIDENCE_REQUIRED = "POST_EDIT_EVIDENCE_REQUIRED"
+POST_EDIT_EVIDENCE_REQUIRED = "POST_EDIT_EVIDENCE_REQUIRED"\nDEBT_DELTA_SCHEMA = "agentscookbook-behavior-preservation-debt-delta/v1"\nDEBT_VERIFIED = "VERIFIED"\nDEBT_REDISTRIBUTED = "DEBT_REDISTRIBUTED"\nTARGET_DEBT_NOT_REDUCED = "TARGET_DEBT_NOT_REDUCED"\nMEASUREMENT_NOT_COMPARABLE = "MEASUREMENT_NOT_COMPARABLE"
 READY = "READY_FOR_BEHAVIOR_PRESERVING_EDIT"
 TEST_STRENGTHENING_REQUIRED = "TEST_STRENGTHENING_REQUIRED"
 EVIDENCE_REQUIRED = "EVIDENCE_REQUIRED"
@@ -409,4 +409,91 @@ def behavior_preservation_receipt(
         "required_next_evidence": (
             [{"kind": "resolve_post_edit_evidence", "items": unresolved}] if unresolved else []
         ),
+    }
+
+
+def behavior_preservation_debt_delta(
+    *,
+    target: str,
+    pre_measurement_identity: str,
+    post_measurement_identity: str,
+    measurement_configuration_identity: str,
+    post_measurement_configuration_identity: str,
+    pre_repository_excess: int,
+    post_repository_excess: int,
+    pre_target_excess: int,
+    post_target_excess: int,
+    preservation_receipt: Mapping[str, object],
+) -> dict[str, object]:
+    """Prove that measured cleanup debt was removed from the selected target, not moved."""
+    if not _nonempty(target):
+        raise ValueError("target must be non-empty")
+    identities = (
+        pre_measurement_identity,
+        post_measurement_identity,
+        measurement_configuration_identity,
+        post_measurement_configuration_identity,
+    )
+    if any(not _nonempty(value) for value in identities):
+        raise ValueError("measurement identities must be non-empty")
+    values = (
+        pre_repository_excess,
+        post_repository_excess,
+        pre_target_excess,
+        post_target_excess,
+    )
+    if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in values):
+        raise ValueError("debt excess values must be non-negative integers")
+
+    repository_reduction = pre_repository_excess - post_repository_excess
+    target_reduction = pre_target_excess - post_target_excess
+    outside_target_delta = (
+        post_repository_excess - post_target_excess
+    ) - (
+        pre_repository_excess - pre_target_excess
+    )
+    preservation_verified = preservation_receipt.get("status") == PRESERVED
+    comparable = (
+        measurement_configuration_identity
+        == post_measurement_configuration_identity
+        and pre_measurement_identity != post_measurement_identity
+    )
+
+    if not preservation_verified:
+        status = POST_EDIT_EVIDENCE_REQUIRED
+    elif not comparable:
+        status = MEASUREMENT_NOT_COMPARABLE
+    elif target_reduction <= 0:
+        status = TARGET_DEBT_NOT_REDUCED
+    elif outside_target_delta > 0:
+        status = DEBT_REDISTRIBUTED
+    else:
+        status = DEBT_VERIFIED
+
+    semantic = {
+        "schema": DEBT_DELTA_SCHEMA,
+        "target": target,
+        "pre_measurement_identity": pre_measurement_identity,
+        "post_measurement_identity": post_measurement_identity,
+        "measurement_configuration_identity": measurement_configuration_identity,
+        "post_measurement_configuration_identity": post_measurement_configuration_identity,
+        "pre_repository_excess": pre_repository_excess,
+        "post_repository_excess": post_repository_excess,
+        "pre_target_excess": pre_target_excess,
+        "post_target_excess": post_target_excess,
+        "repository_reduction": repository_reduction,
+        "target_reduction": target_reduction,
+        "outside_target_delta": outside_target_delta,
+        "preservation_evidence_identity": preservation_receipt.get("evidence_identity"),
+        "status": status,
+    }
+    return {
+        **semantic,
+        "evidence_identity": _identity(semantic),
+        "claims": {
+            "behavior_preservation_verified": preservation_verified,
+            "measurement_comparable": comparable,
+            "target_debt_reduced": target_reduction > 0,
+            "debt_not_redistributed": outside_target_delta <= 0,
+        },
     }
