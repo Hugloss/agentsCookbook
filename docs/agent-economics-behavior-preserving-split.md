@@ -104,3 +104,54 @@ Start with current-main measurement. Do not select a file from memory or the old
 For the first candidate, prefer a boundary where debt evidence is concrete, behavior already has strong tests (or can be strengthened narrowly), extraction can be done without changing public semantics, and the result can remove complexity rather than redistribute it.
 
 The first Hashmarks iteration also qualifies this workflow. If existing Agent Economics surfaces already provide enough evidence, keep the cookbook change documentation-only. Add code only for a demonstrated reusable gap.
+
+
+## BP1 review result — smallest demonstrated gap
+
+Existing capabilities already cover most of the workflow:
+
+- `quality-debt` and `hotspot-focus` explicitly make ranking investigation-only rather than edit authority.
+- `quality-debt` routes a debt candidate to `test-focus` before editing.
+- `test-focus` distinguishes confirmed ownership from naming/path conventions, emits affected tests, requires repository-supplied broader gates, and explicitly states that focused suggestions never prove broader verification unnecessary.
+- `working_evidence.evidence_stop_facts` can fail closed when declared risk boundaries lack fresh direct provider proof.
+- `repair_packet` keeps verification incomplete and CI separate.
+
+The missing reusable boundary is **pre-edit behavior protection readiness**. Today `test-focus` can say that a source has confirmed owning tests, but confirmed ownership is not the same fact as "the behavior we intend to preserve has been demonstrated by executable passing evidence." A test may import the source yet fail, be stale, cover only a neighboring behavior, or never have been executed in the current source state.
+
+Therefore the next implementation must not add a coverage score or infer semantic adequacy from imports. Add a small provider-neutral **behavior-preservation evidence contract** that can bind:
+
+- exact target/source identity;
+- declared behavior/risk boundaries supplied by the caller or evidence provider;
+- confirmed owning-test references from `test-focus`;
+- execution receipts proving the selected pre-edit tests actually passed against the bound source state;
+- freshness/provider references when external repository intelligence is used;
+- broader repository gates that remain required after the edit.
+
+Its output may be only one of:
+
+- `READY_FOR_BEHAVIOR_PRESERVING_EDIT`: every declared boundary has fresh direct evidence and the required pre-edit test execution passed on the bound source;
+- `TEST_STRENGTHENING_REQUIRED`: ownership/tests exist but one or more declared behavior boundaries lack direct executable protection;
+- `EVIDENCE_REQUIRED`: source/test identity, execution, freshness, or repository-gate evidence is unresolved.
+
+This status is evidence readiness only. It does not authorize an edit, choose an extraction, or claim coverage completeness.
+
+### BP1 adversarial qualification requirements
+
+Before using the contract on Hashmarks, qualification must prove at least:
+
+1. a matching test import without an execution receipt cannot become READY;
+2. a passing receipt for a different source identity cannot become READY;
+3. a stale provider proof cannot become READY;
+4. an indirect-only proof produces TEST_STRENGTHENING_REQUIRED, not READY;
+5. a failed pre-edit test cannot become READY;
+6. missing broader repository gates remains explicit even when focused tests pass;
+7. line/branch coverage percentages, if supplied as evidence, cannot independently promote readiness;
+8. all declared boundaries with fresh direct proof plus passing bound execution can become READY;
+9. changing source, boundary declarations, selected tests, or execution receipt changes the evidence identity;
+10. no status claims that the proposed refactor itself is safe or behavior-preserving before post-edit verification.
+
+### BP2 consequence
+
+Only after BP1 is qualified should a split packet be added. The split packet should reference the BP1 evidence identity rather than copying repository intelligence. That keeps the sequence explicit:
+
+`current debt → test ownership → pre-edit executable behavior proof → external edit → post-edit verification → fresh debt`.
