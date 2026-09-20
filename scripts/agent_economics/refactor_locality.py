@@ -98,7 +98,7 @@ LOCALITY_DIMENSIONS = (
     "verifier_file_count",
     "cross_file_symbol_count",
     "unresolved_call_count",
-    "target_meaningful_caller_count",
+    "target_exact_caller_count",
 )
 
 HARD_REGRESSION_DIMENSIONS = frozenset(
@@ -213,9 +213,9 @@ def locality_snapshot(
         structure_kind = str(row.get("structure_kind") or "implementation")
         value_kind = str(row.get("value_kind") or "")
         value_evidence_identity = str(row.get("value_evidence_identity") or "")
-        meaningful_caller_count = row.get("meaningful_caller_count", 0)
+        exact_caller_count = row.get("exact_caller_count", 0)
         direct_verifier_count = row.get("direct_verifier_count", 0)
-        caller_count_complete = bool(row.get("caller_count_complete", False))
+        caller_reference_bound_complete = bool(row.get("caller_reference_bound_complete", False))
         value_evidence_provider = str(row.get("value_evidence_provider") or "")
         value_repository_identity = str(row.get("value_repository_identity") or "")
         if (
@@ -231,9 +231,9 @@ def locality_snapshot(
             or isinstance(navigation_depth, bool)
             or navigation_depth < 0
             or not _nonempty(structure_kind)
-            or not isinstance(meaningful_caller_count, int)
-            or isinstance(meaningful_caller_count, bool)
-            or meaningful_caller_count < 0
+            or not isinstance(exact_caller_count, int)
+            or isinstance(exact_caller_count, bool)
+            or exact_caller_count < 0
             or not isinstance(direct_verifier_count, int)
             or isinstance(direct_verifier_count, bool)
             or direct_verifier_count < 0
@@ -267,9 +267,9 @@ def locality_snapshot(
                 "evidence_required": bool(row.get("evidence_required", True)),
                 "value_kind": value_kind or None,
                 "value_evidence_identity": value_evidence_identity or None,
-                "meaningful_caller_count": meaningful_caller_count,
+                "exact_caller_count": exact_caller_count,
                 "direct_verifier_count": direct_verifier_count,
-                "caller_count_complete": caller_count_complete,
+                "caller_reference_bound_complete": caller_reference_bound_complete,
                 "value_evidence_provider": value_evidence_provider or None,
                 "value_repository_identity": value_repository_identity or None,
             }
@@ -319,9 +319,9 @@ def locality_snapshot(
             1 for row in normalized_symbols if row["path"] != target_path
         ),
         "unresolved_call_count": 0,
-        "target_meaningful_caller_count": next(
+        "target_exact_caller_count": next(
             (
-                int(row["meaningful_caller_count"])
+                int(row["exact_caller_count"])
                 for row in normalized_symbols
                 if row["path"] == target_path and row["navigation_depth"] == 0
             ),
@@ -736,8 +736,8 @@ def locality_snapshot_from_hashmarks(
             incomplete.append(f"forwarding-shape:{symbol_id}")
         elif not isinstance(forwarding, bool):
             raise ValueError(f"invalid forwarding fact for {symbol_id}")
-        caller_count = raw.get("meaningful_caller_count")
-        caller_complete = raw.get("caller_count_complete")
+        caller_count = raw.get("exact_caller_count")
+        caller_complete = raw.get("caller_reference_bound_complete")
         if (
             not isinstance(caller_count, int)
             or isinstance(caller_count, bool)
@@ -775,8 +775,8 @@ def locality_snapshot_from_hashmarks(
                 "value_repository_identity": None
                 if value is None
                 else repository_identity,
-                "meaningful_caller_count": caller_count,
-                "caller_count_complete": caller_complete,
+                "exact_caller_count": caller_count,
+                "caller_reference_bound_complete": caller_complete,
                 # Hashmarks v1 exposes related verifier paths, not exact
                 # symbol-to-test seam ownership. Do not manufacture direct seams.
                 "direct_verifier_count": 0,
@@ -865,9 +865,9 @@ def _structural_value_is_credible(row: Mapping[str, object]) -> bool:
     value_identity = row.get("value_evidence_identity")
     structure_kind = str(row.get("structure_kind") or "implementation")
     forwarding_only = bool(row.get("forwarding_only", False))
-    caller_count = row.get("meaningful_caller_count", 0)
+    caller_count = row.get("exact_caller_count", 0)
     verifier_count = row.get("direct_verifier_count", 0)
-    caller_count_complete = row.get("caller_count_complete", False)
+    caller_reference_bound_complete = row.get("caller_reference_bound_complete", False)
     value_provider = row.get("value_evidence_provider")
     value_repository_identity = row.get("value_repository_identity")
     if (
@@ -884,7 +884,6 @@ def _structural_value_is_credible(row: Mapping[str, object]) -> bool:
         not isinstance(caller_count, int)
         or isinstance(caller_count, bool)
         or caller_count < 2
-        or caller_count_complete is not True
     ):
         return False
     if value_kind == "direct_test_seam" and (
@@ -948,15 +947,11 @@ def _introduced_structure_evidence(
                     "code": "forwarder-without-external-boundary",
                 }
             )
-        if (
-            structure_kind == "implementation"
-            and not earned
-            and int(row.get("meaningful_caller_count", 0)) <= 1
-        ):
+        if structure_kind == "implementation" and not earned:
             anti_patterns.append(
                 {
                     "symbol": identity,
-                    "code": "single-use-extraction-without-semantic-value",
+                    "code": "extraction-without-evidence-bound-semantic-value",
                 }
             )
         introduced.append(
@@ -967,9 +962,9 @@ def _introduced_structure_evidence(
                 "forwarding_only": forwarding_only,
                 "value_kind": value_kind,
                 "value_evidence_identity": value_identity,
-                "meaningful_caller_count": row.get("meaningful_caller_count", 0),
+                "exact_caller_count": row.get("exact_caller_count", 0),
                 "direct_verifier_count": row.get("direct_verifier_count", 0),
-                "caller_count_complete": row.get("caller_count_complete", False),
+                "caller_reference_bound_complete": row.get("caller_reference_bound_complete", False),
                 "value_evidence_provider": row.get("value_evidence_provider"),
                 "value_repository_identity": row.get("value_repository_identity"),
                 "earned_structural_value": earned,
