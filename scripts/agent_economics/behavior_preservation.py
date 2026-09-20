@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 
 SCHEMA = "agentscookbook-behavior-preservation-evidence/v2"
 TARGET_TEST_OWNERSHIP_SCHEMA = "agentscookbook-target-test-ownership-evidence/v1"
-POST_EDIT_SCHEMA = "agentscookbook-behavior-preservation-receipt/v1"
+POST_EDIT_SCHEMA = "agentscookbook-behavior-preservation-receipt/v2"
 PRESERVED = "BEHAVIOR_PRESERVATION_VERIFIED"
 POST_EDIT_EVIDENCE_REQUIRED = "POST_EDIT_EVIDENCE_REQUIRED"
 DEBT_DELTA_SCHEMA = "agentscookbook-behavior-preservation-debt-delta/v1"
@@ -42,6 +42,33 @@ def _normalize_test_references(
         ],
         key=lambda row: (row["path"], row["evidence_identity"]),
     )
+
+
+def _normalize_source_references(
+    source_references: Sequence[Mapping[str, object]],
+) -> list[dict[str, str]]:
+    return sorted(
+        [
+            {
+                "path": str(row.get("path") or ""),
+                "evidence_identity": str(row.get("evidence_identity") or ""),
+            }
+            for row in source_references
+        ],
+        key=lambda row: (row["path"], row["evidence_identity"]),
+    )
+
+
+def source_set_identity(
+    source_references: Sequence[Mapping[str, object]],
+) -> str:
+    normalized = _normalize_source_references(source_references)
+    if not normalized or any(
+        not _nonempty(row["path"]) or not _nonempty(row["evidence_identity"])
+        for row in normalized
+    ):
+        raise ValueError("source_references must contain identified source files")
+    return _identity({"source_references": normalized})
 
 
 def target_test_ownership_evidence(
@@ -317,6 +344,7 @@ def behavior_preservation_receipt(
     *,
     pre_edit_evidence: Mapping[str, object],
     post_edit_source_identity: str,
+    post_edit_source_references: Sequence[Mapping[str, object]],
     post_edit_test_references: Sequence[Mapping[str, object]],
     post_edit_execution_receipt: Mapping[str, object] | None,
     repository_gate_receipts: Sequence[Mapping[str, object]],
@@ -329,7 +357,20 @@ def behavior_preservation_receipt(
     pre_edit_source_identity = pre_edit_evidence.get("source_identity")
     if not _nonempty(pre_edit_evidence_identity) or not _nonempty(pre_edit_source_identity):
         unresolved.append("identified-pre-edit-evidence")
-    if not _nonempty(post_edit_source_identity):
+    normalized_sources = _normalize_source_references(post_edit_source_references)
+    sources_ok = bool(normalized_sources) and all(
+        _nonempty(row["path"]) and _nonempty(row["evidence_identity"])
+        for row in normalized_sources
+    )
+    if not sources_ok:
+        unresolved.append("post-edit-source-references")
+    expected_post_identity = (
+        source_set_identity(normalized_sources) if sources_ok else None
+    )
+    if (
+        not _nonempty(post_edit_source_identity)
+        or post_edit_source_identity != expected_post_identity
+    ):
         unresolved.append("post-edit-source-identity")
 
     frozen_tests = sorted(
@@ -412,6 +453,7 @@ def behavior_preservation_receipt(
         "pre_edit_evidence_identity": pre_edit_evidence_identity,
         "pre_edit_source_identity": pre_edit_source_identity,
         "post_edit_source_identity": post_edit_source_identity,
+        "post_edit_source_references": normalized_sources,
         "frozen_test_references": frozen_tests,
         "post_edit_execution_receipt": normalized_execution,
         "repository_gate_receipts": normalized_gate_receipts,
