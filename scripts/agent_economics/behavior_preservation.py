@@ -75,6 +75,7 @@ def source_set_identity(
 def post_edit_change_set_evidence(
     *,
     pre_edit_source_identity: str,
+    post_edit_repository_identity: str,
     changed_source_references: Sequence[Mapping[str, object]],
     provider: str,
     provider_evidence_identity: str,
@@ -86,6 +87,8 @@ def post_edit_change_set_evidence(
     """
     if not _nonempty(pre_edit_source_identity):
         raise ValueError("pre_edit_source_identity must be non-empty")
+    if not _nonempty(post_edit_repository_identity):
+        raise ValueError("post_edit_repository_identity must be non-empty")
     if not _nonempty(provider) or not _nonempty(provider_evidence_identity):
         raise ValueError("provider and provider_evidence_identity must be non-empty")
     normalized_sources = _normalize_source_references(changed_source_references)
@@ -97,6 +100,7 @@ def post_edit_change_set_evidence(
     semantic = {
         "schema": POST_EDIT_CHANGE_SET_SCHEMA,
         "pre_edit_source_identity": pre_edit_source_identity,
+        "post_edit_repository_identity": post_edit_repository_identity,
         "changed_source_references": normalized_sources,
         "scope": "complete-changed-production-source-set",
         "provider": provider,
@@ -109,6 +113,7 @@ def _post_edit_change_set_matches(
     evidence: Mapping[str, object] | None,
     *,
     pre_edit_source_identity: str,
+    post_edit_repository_identity: str,
     normalized_sources: Sequence[Mapping[str, str]],
 ) -> tuple[bool, dict[str, object] | None]:
     if not isinstance(evidence, Mapping):
@@ -125,6 +130,7 @@ def _post_edit_change_set_matches(
     normalized = {
         "schema": evidence.get("schema"),
         "pre_edit_source_identity": evidence.get("pre_edit_source_identity"),
+        "post_edit_repository_identity": evidence.get("post_edit_repository_identity"),
         "changed_source_references": sources,
         "scope": evidence.get("scope"),
         "provider": evidence.get("provider"),
@@ -136,6 +142,7 @@ def _post_edit_change_set_matches(
         for key in (
             "schema",
             "pre_edit_source_identity",
+            "post_edit_repository_identity",
             "changed_source_references",
             "scope",
             "provider",
@@ -145,6 +152,7 @@ def _post_edit_change_set_matches(
     valid = (
         normalized["schema"] == POST_EDIT_CHANGE_SET_SCHEMA
         and normalized["pre_edit_source_identity"] == pre_edit_source_identity
+        and normalized["post_edit_repository_identity"] == post_edit_repository_identity
         and normalized["changed_source_references"] == list(normalized_sources)
         and normalized["scope"] == "complete-changed-production-source-set"
         and _nonempty(normalized["provider"])
@@ -427,6 +435,7 @@ def behavior_preservation_receipt(
     *,
     pre_edit_evidence: Mapping[str, object],
     post_edit_source_identity: str,
+    post_edit_repository_identity: str,
     post_edit_source_references: Sequence[Mapping[str, object]],
     post_edit_change_set_evidence: Mapping[str, object] | None,
     post_edit_test_references: Sequence[Mapping[str, object]],
@@ -441,6 +450,8 @@ def behavior_preservation_receipt(
     pre_edit_source_identity = pre_edit_evidence.get("source_identity")
     if not _nonempty(pre_edit_evidence_identity) or not _nonempty(pre_edit_source_identity):
         unresolved.append("identified-pre-edit-evidence")
+    if not _nonempty(post_edit_repository_identity):
+        unresolved.append("post-edit-repository-identity")
     normalized_sources = _normalize_source_references(post_edit_source_references)
     sources_ok = bool(normalized_sources) and all(
         _nonempty(row["path"]) and _nonempty(row["evidence_identity"])
@@ -459,6 +470,7 @@ def behavior_preservation_receipt(
     change_set_ok, normalized_change_set = _post_edit_change_set_matches(
         post_edit_change_set_evidence,
         pre_edit_source_identity=str(pre_edit_source_identity or ""),
+        post_edit_repository_identity=post_edit_repository_identity,
         normalized_sources=normalized_sources,
     )
     if not change_set_ok:
@@ -494,6 +506,7 @@ def behavior_preservation_receipt(
         receipt_tests = post_edit_execution_receipt.get("test_evidence_identities")
         normalized_execution = {
             "source_identity": post_edit_execution_receipt.get("source_identity"),
+            "repository_identity": post_edit_execution_receipt.get("repository_identity"),
             "status": post_edit_execution_receipt.get("status"),
             "test_evidence_identities": sorted(str(item) for item in receipt_tests)
             if isinstance(receipt_tests, Sequence)
@@ -503,6 +516,7 @@ def behavior_preservation_receipt(
         }
         execution_ok = (
             normalized_execution["source_identity"] == post_edit_source_identity
+            and normalized_execution["repository_identity"] == post_edit_repository_identity
             and normalized_execution["status"] == "PASS"
             and normalized_execution["test_evidence_identities"]
             == sorted(row["evidence_identity"] for row in frozen_tests)
@@ -522,6 +536,7 @@ def behavior_preservation_receipt(
                 "name": str(row.get("name") or ""),
                 "command": str(row.get("command") or ""),
                 "status": str(row.get("status") or ""),
+                "repository_identity": str(row.get("repository_identity") or ""),
                 "execution_identity": str(row.get("execution_identity") or ""),
             }
             for row in repository_gate_receipts
@@ -532,7 +547,12 @@ def behavior_preservation_receipt(
     gates_ok = (
         bool(expected_gates)
         and actual_gates == expected_gates
-        and all(row["status"] == "PASS" and _nonempty(row["execution_identity"]) for row in normalized_gate_receipts)
+        and all(
+            row["status"] == "PASS"
+            and row["repository_identity"] == post_edit_repository_identity
+            and _nonempty(row["execution_identity"])
+            for row in normalized_gate_receipts
+        )
     )
     if not gates_ok:
         unresolved.append("bound-repository-gate-execution")
@@ -544,6 +564,7 @@ def behavior_preservation_receipt(
         "pre_edit_evidence_identity": pre_edit_evidence_identity,
         "pre_edit_source_identity": pre_edit_source_identity,
         "post_edit_source_identity": post_edit_source_identity,
+        "post_edit_repository_identity": post_edit_repository_identity,
         "post_edit_source_references": normalized_sources,
         "post_edit_change_set_evidence": normalized_change_set,
         "frozen_test_references": frozen_tests,
