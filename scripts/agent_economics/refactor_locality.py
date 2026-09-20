@@ -197,6 +197,9 @@ def locality_snapshot(
         value_evidence_identity = str(row.get("value_evidence_identity") or "")
         meaningful_caller_count = row.get("meaningful_caller_count", 0)
         direct_verifier_count = row.get("direct_verifier_count", 0)
+        caller_count_complete = bool(row.get("caller_count_complete", False))
+        value_evidence_provider = str(row.get("value_evidence_provider") or "")
+        value_repository_identity = str(row.get("value_repository_identity") or "")
         if (
             not _nonempty(path)
             or not _nonempty(qualname)
@@ -218,12 +221,21 @@ def locality_snapshot(
             or direct_verifier_count < 0
         ):
             raise ValueError("symbols must contain valid path/qualname/span/depth/kind evidence")
-        if bool(value_kind) != bool(value_evidence_identity):
+        value_fields = (
+            bool(value_kind),
+            bool(value_evidence_identity),
+            bool(value_evidence_provider),
+            bool(value_repository_identity),
+        )
+        if len(set(value_fields)) != 1:
             raise ValueError(
-                "value_kind and value_evidence_identity must either both be set or both be empty"
+                "structural value kind, identity, provider, and repository identity "
+                "must either all be set or all be empty"
             )
         if value_kind and value_kind not in STRUCTURAL_VALUE_KINDS:
             raise ValueError(f"unsupported structural value kind: {value_kind}")
+        if value_kind and value_repository_identity != repository_identity:
+            raise ValueError("structural value evidence must bind the measured repository identity")
         normalized_symbols.append(
             {
                 "path": path,
@@ -239,6 +251,9 @@ def locality_snapshot(
                 "value_evidence_identity": value_evidence_identity or None,
                 "meaningful_caller_count": meaningful_caller_count,
                 "direct_verifier_count": direct_verifier_count,
+                "caller_count_complete": caller_count_complete,
+                "value_evidence_provider": value_evidence_provider or None,
+                "value_repository_identity": value_repository_identity or None,
             }
         )
     normalized_symbols.sort(key=lambda row: (str(row["path"]), str(row["qualname"])))
@@ -285,6 +300,15 @@ def locality_snapshot(
         "cross_file_symbol_count": sum(
             1 for row in normalized_symbols if row["path"] != target_path
         ),
+        "unresolved_call_count": 0,
+        "target_meaningful_caller_count": next(
+            (
+                int(row["meaningful_caller_count"])
+                for row in normalized_symbols
+                if row["path"] == target_path and row["navigation_depth"] == 0
+            ),
+            0,
+        ),
     }
     structural_signals = {
         "authority_lines": authority_lines,
@@ -316,6 +340,7 @@ def locality_snapshot(
             "composite_score_used": False,
             "size_alone_justifies_decomposition": False,
             "edit_authorized": False,
+            "independent_structural_provider": False,
         },
     }
 
