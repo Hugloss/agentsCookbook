@@ -14,6 +14,7 @@ from .refactor_locality import (
     LOCALITY_TRADEOFF_REVIEW_REQUIRED,
     compare_locality,
     decomposition_decision,
+    _locality_snapshot_from_observed_hashmarks,
     locality_snapshot,
     locality_snapshot_from_hashmarks,
 )
@@ -402,7 +403,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     hm_pre_diagnostic = locality_snapshot_from_hashmarks(packet=hm_pre_packet)
     if hm_pre_diagnostic.get("claims", {}).get("independent_structural_provider") is not False:
         failures.append("packet-only Hashmarks input claimed independent execution authority")
-    hm_pre = locality_snapshot_from_hashmarks(
+    hm_pre = _locality_snapshot_from_observed_hashmarks(
         packet=hm_pre_packet,
         observation_receipt=_receipt(hm_pre_packet),
     )
@@ -415,7 +416,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             _hm_node("src/pkg/core.py", "persist", 92, 140, depth=1, callers=1),
         ],
     )
-    hm_post = locality_snapshot_from_hashmarks(
+    hm_post = _locality_snapshot_from_observed_hashmarks(
         packet=hm_post_packet,
         observation_receipt=_receipt(hm_post_packet),
         structural_values=[
@@ -481,7 +482,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             ),
         ],
     )
-    fragmented = locality_snapshot_from_hashmarks(
+    fragmented = _locality_snapshot_from_observed_hashmarks(
         packet=fragmented_packet,
         observation_receipt=_receipt(fragmented_packet),
     )
@@ -508,7 +509,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             _hm_node("src/pkg/core.py", "_shared", 182, 210, depth=1, callers=1),
         ],
     )
-    reuse_snapshot = locality_snapshot_from_hashmarks(
+    reuse_snapshot = _locality_snapshot_from_observed_hashmarks(
         packet=reuse_packet,
         observation_receipt=_receipt(reuse_packet),
         structural_values=[
@@ -539,7 +540,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             ),
         ],
     )
-    incomplete_reuse = locality_snapshot_from_hashmarks(
+    incomplete_reuse = _locality_snapshot_from_observed_hashmarks(
         packet=incomplete_reuse_packet,
         observation_receipt=_receipt(incomplete_reuse_packet),
         structural_values=[
@@ -564,7 +565,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             _hm_node("src/pkg/core.py", "_test_seam", 182, 205, depth=1, callers=1),
         ],
     )
-    direct_test_snapshot = locality_snapshot_from_hashmarks(
+    direct_test_snapshot = _locality_snapshot_from_observed_hashmarks(
         packet=direct_test_packet,
         observation_receipt=_receipt(direct_test_packet),
         structural_values=[
@@ -594,7 +595,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             }
         ],
     )
-    unresolved_snapshot = locality_snapshot_from_hashmarks(
+    unresolved_snapshot = _locality_snapshot_from_observed_hashmarks(
         packet=unresolved_packet,
         observation_receipt=_receipt(unresolved_packet),
     )
@@ -608,7 +609,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         [_hm_node("src/pkg/core.py", "authority", 1, 200)],
         freshness="unknown",
     )
-    stale_snapshot = locality_snapshot_from_hashmarks(
+    stale_snapshot = _locality_snapshot_from_observed_hashmarks(
         packet=stale_packet,
         observation_receipt=_receipt(stale_packet),
     )
@@ -635,7 +636,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         **wrong_target_semantic,
         "evidence_identity": _hashmarks_identity(wrong_target_semantic),
     }
-    wrong_target_snapshot = locality_snapshot_from_hashmarks(
+    wrong_target_snapshot = _locality_snapshot_from_observed_hashmarks(
         packet=hm_post_packet,
         observation_receipt=wrong_target_receipt,
     )
@@ -657,7 +658,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         **mutated_semantic,
         "evidence_identity": _hashmarks_identity(mutated_semantic),
     }
-    mutated_snapshot = locality_snapshot_from_hashmarks(
+    mutated_snapshot = _locality_snapshot_from_observed_hashmarks(
         packet=hm_post_packet,
         observation_receipt=mutated_receipt,
     )
@@ -674,7 +675,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         "sha256:wrong-binding",
     )
     try:
-        locality_snapshot_from_hashmarks(
+        _locality_snapshot_from_observed_hashmarks(
             packet=hm_post_packet,
             observation_receipt=_receipt(hm_post_packet),
             structural_values=[wrong_repo_value],
