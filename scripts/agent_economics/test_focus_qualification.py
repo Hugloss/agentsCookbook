@@ -69,6 +69,13 @@ def _build_repo(root: Path) -> None:
         "    with Facade() as facade:\n"
         "        assert facade.facade_only() == 'facade'\n",
     )
+    _write(
+        root / "tests/test_feature_uninitialized.py",
+        "from samplepkg import Facade\n\n"
+        "def test_feature_without_initialization():\n"
+        "    facade = object.__new__(Facade)\n"
+        "    assert facade.feature('x') == 'x'\n",
+    )
     _write(root / "config/settings.yaml", "mode: safe\n")
 
 
@@ -116,7 +123,10 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
         inherited = _run(root, ["src/samplepkg/feature_mixin.py"])
         inherited_direct = _paths(inherited, "direct")
-        if inherited_direct != ["tests/test_feature_facade.py"]:
+        if inherited_direct != [
+            "tests/test_feature_facade.py",
+            "tests/test_feature_uninitialized.py",
+        ]:
             failures.append(
                 f"inherited method owning tests mismatch: {inherited_direct}"
             )
@@ -143,6 +153,13 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
                 for item in inherited_confirmed
             ):
                 failures.append("inherited method ownership provenance missing")
+            if not any(
+                isinstance(item, dict)
+                and item.get("test_path") == "tests/test_feature_uninitialized.py"
+                and item.get("match_type") == "inherited_method_call"
+                for item in inherited_confirmed
+            ):
+                failures.append("object.__new__ inherited ownership provenance missing")
         interpretation = core.get("interpretation", {})
         if not isinstance(interpretation, dict) or interpretation.get("sufficiency_rule") != "focused suggestions never prove broader verification unnecessary":
             failures.append("focused verification sufficiency boundary missing")
