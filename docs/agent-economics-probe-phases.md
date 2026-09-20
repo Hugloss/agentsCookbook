@@ -159,3 +159,13 @@ P13 freezes a 12-task adversarial dogfood corpus covering assertion, syntax/impo
 The permanent qualification also runs a bounded stress layer: repeated stable commands, independent stdout/stderr flood bounds, non-UTF8 decoding, a 128-iteration loop-state ceiling, and repeated process-tree timeout termination. The GitHub job has a 20-minute outer safety timeout while individual subprocess limits remain smaller.
 
 This phase does not claim empirical economics improvement. Closure of that claim requires real baseline-vs-bridge agent runs on identical fixture bytes.
+
+## Phase 14 — Refactor locality preservation
+
+Status: **implementation and deterministic qualification added; real-repository dogfood follows through consumers such as Oh-Goon**.
+
+P14 closes a methodology defect exposed by real Oh-Goon cleanup: reducing function length/branch counts can make code worse for coding agents when the result introduces wrappers, cross-file fragmentation, forwarding-only layers, deeper navigation, or broader edit/evidence surfaces. Refactor size and complexity are therefore investigation signals only.
+
+The new `refactor-locality` contract records transparent pre/post dimensions with no composite score, binds measurements to repository/source/configuration identities, rejects incomplete or incomparable evidence, and distinguishes cohesive authority from justified decomposition, locality regression, and insufficient evidence. Size-only evidence cannot justify a split. `refactor-focus` no longer recommends wrappers/splits from size/dependency counts and no longer ranks by an opaque risk score; it ranks investigations by visible dimensions and requires locality evidence before decomposition. BP2 remains behavior-preservation evidence and now explicitly requires locality remeasurement rather than implying architectural improvement from green tests or debt reduction.
+
+Qualification includes a 225-line-to-16-line size-only case that must remain `KEEP_COHESIVE_AUTHORITY`, a cross-file fragmentation case that must become `DECOMPOSITION_LOCALITY_RISK`, and a bounded same-file semantic extraction case that can become `DECOMPOSITION_JUSTIFIED` only with non-size responsibility evidence.
