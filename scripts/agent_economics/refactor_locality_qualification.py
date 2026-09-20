@@ -621,6 +621,49 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     else:
         failures.append("tampered Hashmarks evidence identity was accepted")
 
+    wrong_target_receipt = _receipt(hm_post_packet)
+    wrong_target_semantic = {
+        key: value
+        for key, value in wrong_target_receipt.items()
+        if key != "evidence_identity"
+    }
+    wrong_target_semantic["target"] = "src/pkg/core.py::different"
+    wrong_target_receipt = {
+        **wrong_target_semantic,
+        "evidence_identity": _hashmarks_identity(wrong_target_semantic),
+    }
+    wrong_target_snapshot = locality_snapshot_from_hashmarks(
+        packet=hm_post_packet,
+        observation_receipt=wrong_target_receipt,
+    )
+    if (
+        wrong_target_snapshot.get("claims", {}).get("independent_structural_provider")
+        is not False
+    ):
+        failures.append("wrong-target execution receipt promoted structural authority")
+
+    mutated_receipt = _receipt(hm_post_packet)
+    mutated_semantic = {
+        key: value
+        for key, value in mutated_receipt.items()
+        if key != "evidence_identity"
+    }
+    mutated_semantic["changed_tracked_paths"] = ["src/pkg/core.py"]
+    mutated_semantic["workspace_after_identity"] = "sha256:mutated-workspace"
+    mutated_receipt = {
+        **mutated_semantic,
+        "evidence_identity": _hashmarks_identity(mutated_semantic),
+    }
+    mutated_snapshot = locality_snapshot_from_hashmarks(
+        packet=hm_post_packet,
+        observation_receipt=mutated_receipt,
+    )
+    if (
+        mutated_snapshot.get("claims", {}).get("independent_structural_provider")
+        is not False
+    ):
+        failures.append("tracked-mutating Hashmarks execution promoted structural authority")
+
     wrong_repo_value = _value(
         "sha256:wrong-repository",
         "src/pkg/core.py::validate",
