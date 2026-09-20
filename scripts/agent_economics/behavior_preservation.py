@@ -427,6 +427,7 @@ def behavior_preservation_readiness(
             "run-affected-component-verification",
             "run-repository-gates",
             "remeasure-current-debt",
+            "remeasure-refactor-locality",
         ],
     }
 
@@ -584,6 +585,8 @@ def behavior_preservation_receipt(
         "claims": {
             "frozen_behavioral_evidence_preserved": status == PRESERVED,
             "debt_reduction_proves_preservation": False,
+            "locality_preservation_proven": False,
+            "architectural_improvement_proven": False,
         },
         "required_next_evidence": (
             [{"kind": "resolve_post_edit_evidence", "items": unresolved}] if unresolved else []
