@@ -184,6 +184,8 @@ def locality_snapshot(
         structure_kind = str(row.get("structure_kind") or "implementation")
         value_kind = str(row.get("value_kind") or "")
         value_evidence_identity = str(row.get("value_evidence_identity") or "")
+        meaningful_caller_count = row.get("meaningful_caller_count", 0)
+        direct_verifier_count = row.get("direct_verifier_count", 0)
         if (
             not _nonempty(path)
             or not _nonempty(qualname)
@@ -197,6 +199,12 @@ def locality_snapshot(
             or isinstance(navigation_depth, bool)
             or navigation_depth < 0
             or not _nonempty(structure_kind)
+            or not isinstance(meaningful_caller_count, int)
+            or isinstance(meaningful_caller_count, bool)
+            or meaningful_caller_count < 0
+            or not isinstance(direct_verifier_count, int)
+            or isinstance(direct_verifier_count, bool)
+            or direct_verifier_count < 0
         ):
             raise ValueError("symbols must contain valid path/qualname/span/depth/kind evidence")
         if bool(value_kind) != bool(value_evidence_identity):
@@ -218,6 +226,8 @@ def locality_snapshot(
                 "evidence_required": bool(row.get("evidence_required", True)),
                 "value_kind": value_kind or None,
                 "value_evidence_identity": value_evidence_identity or None,
+                "meaningful_caller_count": meaningful_caller_count,
+                "direct_verifier_count": direct_verifier_count,
             }
         )
     normalized_symbols.sort(key=lambda row: (str(row["path"]), str(row["qualname"])))
@@ -313,15 +323,61 @@ def _symbol_map(snapshot: Mapping[str, object]) -> dict[tuple[str, str], Mapping
     return result
 
 
+def _structural_value_is_credible(row: Mapping[str, object]) -> bool:
+    value_kind = row.get("value_kind")
+    value_identity = row.get("value_evidence_identity")
+    structure_kind = str(row.get("structure_kind") or "implementation")
+    forwarding_only = bool(row.get("forwarding_only", False))
+    caller_count = row.get("meaningful_caller_count", 0)
+    verifier_count = row.get("direct_verifier_count", 0)
+    if (
+        not isinstance(value_kind, str)
+        or value_kind not in STRUCTURAL_VALUE_KINDS
+        or not _nonempty(value_identity)
+    ):
+        return False
+    if forwarding_only and value_kind not in FORWARDING_BOUNDARY_VALUES:
+        return False
+    if value_kind == "shared_reuse" and (
+        not isinstance(caller_count, int)
+        or isinstance(caller_count, bool)
+        or caller_count < 2
+    ):
+        return False
+    if value_kind == "direct_test_seam" and (
+        not isinstance(verifier_count, int)
+        or isinstance(verifier_count, bool)
+        or verifier_count < 1
+    ):
+        return False
+    if structure_kind in {
+        "shim",
+        "proxy",
+        "delegate",
+        "forwarding_helper",
+        "reexport",
+        "alias_module",
+    } and value_kind not in FORWARDING_BOUNDARY_VALUES:
+        return False
+    if structure_kind == "adapter" and value_kind not in {
+        "protocol_adapter",
+        "stable_external_boundary",
+        "compatibility_boundary",
+    }:
+        return False
+    return True
+
+
 def _introduced_structure_evidence(
     pre_snapshot: Mapping[str, object],
     post_snapshot: Mapping[str, object],
-) -> tuple[list[dict[str, object]], list[str], list[str]]:
+) -> tuple[list[dict[str, object]], list[str], list[str], list[dict[str, str]]]:
     pre_symbols = _symbol_map(pre_snapshot)
     post_symbols = _symbol_map(post_snapshot)
     introduced: list[dict[str, object]] = []
     unjustified: list[str] = []
     easy_path: list[str] = []
+    anti_patterns: list[dict[str, str]] = []
     for key in sorted(set(post_symbols) - set(pre_symbols)):
         row = post_symbols[key]
         path, qualname = key
@@ -329,20 +385,37 @@ def _introduced_structure_evidence(
         value_kind = row.get("value_kind")
         value_identity = row.get("value_evidence_identity")
         forwarding_only = bool(row.get("forwarding_only", False))
-        has_value = (
-            isinstance(value_kind, str)
-            and value_kind in STRUCTURAL_VALUE_KINDS
-            and _nonempty(value_identity)
-        )
-        forwarding_value_ok = (
-            not forwarding_only or value_kind in FORWARDING_BOUNDARY_VALUES
-        )
-        earned = has_value and forwarding_value_ok
+        earned = _structural_value_is_credible(row)
         identity = f"{path}::{qualname}"
         if not earned:
             unjustified.append(identity)
         if structure_kind in EASY_PATH_STRUCTURE_KINDS or forwarding_only:
             easy_path.append(identity)
+        if not earned and structure_kind in EASY_PATH_STRUCTURE_KINDS:
+            anti_patterns.append(
+                {
+                    "symbol": identity,
+                    "code": "unearned-easy-path-layer",
+                }
+            )
+        if forwarding_only and not earned:
+            anti_patterns.append(
+                {
+                    "symbol": identity,
+                    "code": "forwarder-without-external-boundary",
+                }
+            )
+        if (
+            structure_kind == "implementation"
+            and not earned
+            and int(row.get("meaningful_caller_count", 0)) <= 1
+        ):
+            anti_patterns.append(
+                {
+                    "symbol": identity,
+                    "code": "single-use-extraction-without-semantic-value",
+                }
+            )
         introduced.append(
             {
                 "path": path,
@@ -351,10 +424,17 @@ def _introduced_structure_evidence(
                 "forwarding_only": forwarding_only,
                 "value_kind": value_kind,
                 "value_evidence_identity": value_identity,
+                "meaningful_caller_count": row.get("meaningful_caller_count", 0),
+                "direct_verifier_count": row.get("direct_verifier_count", 0),
                 "earned_structural_value": earned,
             }
         )
-    return introduced, sorted(unjustified), sorted(easy_path)
+    return (
+        introduced,
+        sorted(unjustified),
+        sorted(easy_path),
+        sorted(anti_patterns, key=lambda row: (row["symbol"], row["code"])),
+    )
 
 
 def compare_locality(
@@ -427,7 +507,7 @@ def compare_locality(
         elif delta < 0:
             improved.append(dimension)
 
-    introduced, unjustified, easy_path = _introduced_structure_evidence(
+    introduced, unjustified, easy_path, anti_patterns = _introduced_structure_evidence(
         pre_snapshot, post_snapshot
     )
     if unjustified:
@@ -462,6 +542,7 @@ def compare_locality(
         "introduced_structures": introduced,
         "unjustified_new_structures": unjustified,
         "easy_path_structures": easy_path,
+        "structural_anti_patterns": anti_patterns,
         "status": status,
         "unresolved_evidence": unresolved,
     }
