@@ -611,10 +611,15 @@ def _structural_value_is_credible(row: Mapping[str, object]) -> bool:
     forwarding_only = bool(row.get("forwarding_only", False))
     caller_count = row.get("meaningful_caller_count", 0)
     verifier_count = row.get("direct_verifier_count", 0)
+    caller_count_complete = row.get("caller_count_complete", False)
+    value_provider = row.get("value_evidence_provider")
+    value_repository_identity = row.get("value_repository_identity")
     if (
         not isinstance(value_kind, str)
         or value_kind not in STRUCTURAL_VALUE_KINDS
         or not _nonempty(value_identity)
+        or not _nonempty(value_provider)
+        or not _nonempty(value_repository_identity)
     ):
         return False
     if forwarding_only and value_kind not in FORWARDING_BOUNDARY_VALUES:
@@ -623,6 +628,7 @@ def _structural_value_is_credible(row: Mapping[str, object]) -> bool:
         not isinstance(caller_count, int)
         or isinstance(caller_count, bool)
         or caller_count < 2
+        or caller_count_complete is not True
     ):
         return False
     if value_kind == "direct_test_seam" and (
@@ -707,6 +713,9 @@ def _introduced_structure_evidence(
                 "value_evidence_identity": value_identity,
                 "meaningful_caller_count": row.get("meaningful_caller_count", 0),
                 "direct_verifier_count": row.get("direct_verifier_count", 0),
+                "caller_count_complete": row.get("caller_count_complete", False),
+                "value_evidence_provider": row.get("value_evidence_provider"),
+                "value_repository_identity": row.get("value_repository_identity"),
                 "earned_structural_value": earned,
             }
         )
@@ -737,6 +746,18 @@ def compare_locality(
         unresolved.append("comparable-measurement-configuration")
     if pre_snapshot.get("provider") != post_snapshot.get("provider"):
         unresolved.append("same-measurement-provider")
+    pre_claims = pre_snapshot.get("claims")
+    post_claims = post_snapshot.get("claims")
+    pre_independent = (
+        isinstance(pre_claims, Mapping)
+        and pre_claims.get("independent_structural_provider") is True
+    )
+    post_independent = (
+        isinstance(post_claims, Mapping)
+        and post_claims.get("independent_structural_provider") is True
+    )
+    if pre_independent != post_independent:
+        unresolved.append("same-structural-evidence-authority")
     same_repository = (
         pre_snapshot.get("repository_identity")
         == post_snapshot.get("repository_identity")
@@ -882,6 +903,14 @@ def decomposition_decision(
     structural_value_complete = not bool(
         comparison.get("unjustified_new_structures")
     )
+    pre_claims = pre_snapshot.get("claims")
+    post_claims = post_snapshot.get("claims")
+    independent_structural_evidence = (
+        isinstance(pre_claims, Mapping)
+        and isinstance(post_claims, Mapping)
+        and pre_claims.get("independent_structural_provider") is True
+        and post_claims.get("independent_structural_provider") is True
+    )
 
     if (
         invalid_evidence
@@ -893,6 +922,8 @@ def decomposition_decision(
         status = DECOMPOSITION_LOCALITY_RISK
     elif not justifying:
         status = KEEP_COHESIVE_AUTHORITY
+    elif not independent_structural_evidence:
+        status = INSUFFICIENT_LOCALITY_EVIDENCE
     elif comparison_status == LOCALITY_PRESERVED_OR_IMPROVED:
         status = DECOMPOSITION_JUSTIFIED
     elif (
@@ -923,6 +954,7 @@ def decomposition_decision(
             "merge_authorized": False,
             "composite_score_used": False,
             "prefer_deletion_or_consolidation_before_new_layers": True,
+            "independent_structural_evidence": independent_structural_evidence,
         },
         "required_next_evidence": (
             [{"kind": "resolve-locality-evidence"}]
