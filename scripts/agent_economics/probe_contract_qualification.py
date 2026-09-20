@@ -216,8 +216,14 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
                 failures.append(f"candidate {index} facts contain recommendation/interpretation fields")
             if set(recommendations) != {"test_action", "strategy"}:
                 failures.append(f"candidate {index} recommendations have unexpected shape")
-            if "risk_score" not in interpretation:
-                failures.append(f"candidate {index} interpretation missing risk_score")
+            if interpretation.get("size_complexity_is_investigation_signal_only") is not True:
+                failures.append(
+                    f"candidate {index} did not mark size/complexity as investigation-only"
+                )
+            if interpretation.get("decomposition_requires_locality_evidence") is not True:
+                failures.append(
+                    f"candidate {index} did not require locality evidence before decomposition"
+                )
             confirmed = evidence.get("confirmed", [])
             if isinstance(confirmed, list) and confirmed:
                 confirmed_candidate_seen = True
