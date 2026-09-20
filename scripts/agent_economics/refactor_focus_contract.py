@@ -27,15 +27,7 @@ def _portable_optional_path(path: Path | None, *, repository_root: Path) -> str 
 def _candidate_uncertainty(row: FocusRow) -> list[dict[str, object]]:
     status = row["correspondence_status"]
     if status == "confirmed":
-        return [
-            {
-                "kind": "measure_refactor_locality",
-                "reason": (
-                    "size/complexity selects an investigation target only; "
-                    "decomposition requires explicit pre/post locality evidence"
-                ),
-            }
-        ]
+        return []
     if status == "supported":
         return [
             {
@@ -61,7 +53,15 @@ def _candidate_uncertainty(row: FocusRow) -> list[dict[str, object]]:
 def _candidate_required_next_evidence(row: FocusRow) -> list[dict[str, object]]:
     status = row["correspondence_status"]
     if status == "confirmed":
-        return []
+        return [
+            {
+                "kind": "measure_refactor_locality",
+                "reason": (
+                    "size/complexity selects an investigation target only; "
+                    "decomposition requires explicit pre/post locality evidence"
+                ),
+            }
+        ]
     candidate_paths = sorted({match["test_path"] for match in row["matches"]})
     if candidate_paths:
         return [
