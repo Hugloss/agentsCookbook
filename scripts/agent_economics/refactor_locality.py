@@ -1202,6 +1202,21 @@ def _load(path: Path) -> dict[str, object]:
     return payload
 
 
+def _load_structural_values(path: Path | None) -> list[Mapping[str, object]]:
+    if path is None:
+        return []
+    raw_values = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(raw_values, Mapping):
+        raw_values = raw_values.get("structural_values", [])
+    if not isinstance(raw_values, list) or any(
+        not isinstance(row, Mapping) for row in raw_values
+    ):
+        raise ValueError(
+            "structural values must contain a JSON array or structural_values array"
+        )
+    return list(raw_values)
+
+
 def _write(path: Path | None, payload: Mapping[str, object]) -> None:
     rendered = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     if path is None:
@@ -1234,7 +1249,25 @@ def main(argv: list[str] | None = None) -> None:
         type=Path,
         help="Optional JSON array/object of repository-bound structural value evidence.",
     )
+    hashmarks_parser.add_argument(
+        "--observation-receipt",
+        type=Path,
+        help="Optional observed Hashmarks execution receipt; without it the packet is diagnostic only.",
+    )
     hashmarks_parser.add_argument("--artifact", type=Path)
+
+    observe_parser = sub.add_parser(
+        "observe-hashmarks",
+        help="Execute Hashmarks under bounded process/workspace controls and capture an observation bundle.",
+    )
+    observe_parser.add_argument("target")
+    observe_parser.add_argument("--repository-root", type=Path, default=Path("."))
+    observe_parser.add_argument("--hashmarks-executable", default="hashmarks")
+    observe_parser.add_argument("--max-depth", type=int, default=2)
+    observe_parser.add_argument("--call-limit", type=int, default=64)
+    observe_parser.add_argument("--ref-limit", type=int, default=256)
+    observe_parser.add_argument("--timeout-seconds", type=float, default=60.0)
+    observe_parser.add_argument("--artifact", type=Path)
 
     compare_parser = sub.add_parser(
         "compare", help="Compare pre/post locality snapshots."
@@ -1256,24 +1289,53 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.command == "from-hashmarks":
-        packet = _load(args.input)
-        value_rows: list[Mapping[str, object]] = []
-        if args.values is not None:
-            raw_values = json.loads(args.values.read_text(encoding="utf-8"))
-            if isinstance(raw_values, Mapping):
-                raw_values = raw_values.get("structural_values", [])
-            if not isinstance(raw_values, list) or any(
-                not isinstance(row, Mapping) for row in raw_values
-            ):
-                raise ValueError(
-                    "--values must contain a JSON array or structural_values array"
-                )
-            value_rows = list(raw_values)
+        raw = _load(args.input)
+        bundled_packet = raw.get("packet")
+        bundled_receipt = raw.get("observation_receipt")
+        packet = (
+            bundled_packet
+            if isinstance(bundled_packet, Mapping)
+            else raw
+        )
+        receipt: Mapping[str, object] | None = (
+            bundled_receipt if isinstance(bundled_receipt, Mapping) else None
+        )
+        if args.observation_receipt is not None:
+            receipt = _load(args.observation_receipt)
         payload = locality_snapshot_from_hashmarks(
             packet=packet,
-            structural_values=value_rows,
+            observation_receipt=receipt,
+            structural_values=_load_structural_values(args.values),
         )
         _write(args.artifact, payload)
+        return
+
+    if args.command == "observe-hashmarks":
+        observed = observe_hashmarks_locality(
+            repository_root=args.repository_root,
+            target=args.target,
+            hashmarks_executable=args.hashmarks_executable,
+            max_depth=args.max_depth,
+            call_limit=args.call_limit,
+            ref_limit=args.ref_limit,
+            timeout_seconds=args.timeout_seconds,
+        )
+        packet = observed.get("packet")
+        receipt = observed.get("observation_receipt")
+        snapshot = None
+        if isinstance(packet, Mapping) and isinstance(receipt, Mapping):
+            snapshot = locality_snapshot_from_hashmarks(
+                packet=packet,
+                observation_receipt=receipt,
+            )
+        payload = {
+            "schema": "agentscookbook-observed-hashmarks-locality/v1",
+            **observed,
+            "snapshot": snapshot,
+        }
+        _write(args.artifact, payload)
+        if snapshot is None:
+            raise SystemExit(1)
         return
 
     pre = _load(args.pre)
