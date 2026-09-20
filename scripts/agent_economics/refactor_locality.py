@@ -670,6 +670,7 @@ def locality_snapshot_from_hashmarks(
     packet: Mapping[str, object],
     observation_receipt: Mapping[str, object] | None = None,
     structural_values: Sequence[Mapping[str, object]] = (),
+    _provider_execution_observed: bool = False,
     responsibilities: Sequence[str] = (),
     authority_lines: int | None = None,
     branch_points: int | None = None,
@@ -680,7 +681,7 @@ def locality_snapshot_from_hashmarks(
     errors, incomplete = _hashmarks_packet_validation(packet)
     if errors:
         raise ValueError("invalid Hashmarks structural-locality evidence: " + ", ".join(errors))
-    observed_execution = _observation_receipt_matches(
+    observed_execution = _provider_execution_observed and _observation_receipt_matches(
         observation_receipt, packet=packet
     )
     if not observed_execution:
@@ -844,6 +845,31 @@ def locality_snapshot_from_hashmarks(
     }
     normalized["evidence_identity"] = _identity(semantic)
     return normalized
+
+
+def _locality_snapshot_from_observed_hashmarks(
+    *,
+    packet: Mapping[str, object],
+    observation_receipt: Mapping[str, object],
+    structural_values: Sequence[Mapping[str, object]] = (),
+    responsibilities: Sequence[str] = (),
+    authority_lines: int | None = None,
+    branch_points: int | None = None,
+    nesting_depth: int | None = None,
+    state_kind: str = "observed",
+) -> dict[str, object]:
+    """Internal promotion path used only after this process executed Hashmarks."""
+    return locality_snapshot_from_hashmarks(
+        packet=packet,
+        observation_receipt=observation_receipt,
+        structural_values=structural_values,
+        responsibilities=responsibilities,
+        authority_lines=authority_lines,
+        branch_points=branch_points,
+        nesting_depth=nesting_depth,
+        state_kind=state_kind,
+        _provider_execution_observed=True,
+    )
 
 
 def _symbol_map(snapshot: Mapping[str, object]) -> dict[tuple[str, str], Mapping[str, object]]:
@@ -1279,11 +1305,6 @@ def main(argv: list[str] | None = None) -> None:
         type=Path,
         help="Optional JSON array/object of repository-bound structural value evidence.",
     )
-    hashmarks_parser.add_argument(
-        "--observation-receipt",
-        type=Path,
-        help="Optional observed Hashmarks execution receipt; without it the packet is diagnostic only.",
-    )
     hashmarks_parser.add_argument("--artifact", type=Path)
 
     observe_parser = sub.add_parser(
@@ -1327,14 +1348,11 @@ def main(argv: list[str] | None = None) -> None:
             if isinstance(bundled_packet, Mapping)
             else raw
         )
-        receipt: Mapping[str, object] | None = (
-            bundled_receipt if isinstance(bundled_receipt, Mapping) else None
-        )
-        if args.observation_receipt is not None:
-            receipt = _load(args.observation_receipt)
+        # Saved packet/receipt input is intentionally diagnostic. A caller-supplied
+        # receipt cannot promote itself to independent observation authority.
+        _ = bundled_receipt
         payload = locality_snapshot_from_hashmarks(
             packet=packet,
-            observation_receipt=receipt,
             structural_values=_load_structural_values(args.values),
         )
         _write(args.artifact, payload)
@@ -1354,7 +1372,7 @@ def main(argv: list[str] | None = None) -> None:
         receipt = observed.get("observation_receipt")
         snapshot = None
         if isinstance(packet, Mapping) and isinstance(receipt, Mapping):
-            snapshot = locality_snapshot_from_hashmarks(
+            snapshot = _locality_snapshot_from_observed_hashmarks(
                 packet=packet,
                 observation_receipt=receipt,
             )
