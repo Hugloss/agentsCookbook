@@ -56,8 +56,8 @@ def _symbol(
         "structure_kind": structure_kind,
         "value_kind": value_kind or "",
         "value_evidence_identity": value_identity or "",
-        "meaningful_caller_count": callers,
-        "caller_count_complete": True,
+        "exact_caller_count": callers,
+        "caller_reference_bound_complete": True,
         "direct_verifier_count": direct_verifiers,
     }
 
@@ -127,7 +127,7 @@ def _hm_node(
         "file_digest": source_semantic["file_digest"],
         "forwarding_only": forwarding,
         "forwarding_provider": "python-ast",
-        "meaningful_callers": [
+        "exact_callers": [
             {
                 "path": "src/pkg/core.py",
                 "source": "authority",
@@ -136,8 +136,8 @@ def _hm_node(
             }
             for _ in range(callers)
         ],
-        "meaningful_caller_count": callers,
-        "caller_count_complete": complete,
+        "exact_caller_count": callers,
+        "caller_reference_bound_complete": complete,
         "unresolved_caller_candidates": [],
     }
     return {
@@ -196,7 +196,7 @@ def _hm_packet(
             1 for row in nodes if row["path"] != target["path"]
         ),
         "unresolved_call_count": len(unresolved),
-        "target_meaningful_caller_count": int(target["meaningful_caller_count"]),
+        "target_exact_caller_count": int(target["exact_caller_count"]),
     }
     semantic: dict[str, object] = {
         "schema": "hashmarks.structural-locality.v1",
@@ -551,8 +551,11 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             )
         ],
     )
-    if compare_locality(hm_pre, incomplete_reuse)["status"] != LOCALITY_REGRESSED:
-        failures.append("incomplete provider caller evidence justified shared reuse")
+    incomplete_reuse_status = compare_locality(hm_pre, incomplete_reuse)["status"]
+    if incomplete_reuse_status == LOCALITY_REGRESSED:
+        failures.append(
+            "three exact callers were rejected merely because the wider reference bound was incomplete"
+        )
 
     direct_test_packet = _hm_packet(
         "sha256:hm-test-seam",
