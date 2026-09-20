@@ -42,6 +42,7 @@ MATCH_AUTHORITY: dict[str, EvidenceAuthority] = {
     # a source/test relationship.
     "declared_owner": "confirmed",
     "import_exact": "confirmed",
+    "inherited_method_call": "confirmed",
     "dynamic_import_literal": "confirmed",
     "support_loader": "confirmed",
     "conftest_fixture": "confirmed",
@@ -61,7 +62,8 @@ MATCH_AUTHORITY: dict[str, EvidenceAuthority] = {
 MATCH_PRIORITY = {
     "declared_owner": 0,
     "import_exact": 1,
-    "dynamic_import_literal": 2,
+    "inherited_method_call": 2,
+    "dynamic_import_literal": 3,
     "conftest_fixture": 3,
     "pytest_fixture": 4,
     "pytest_plugin_fixture": 5,
