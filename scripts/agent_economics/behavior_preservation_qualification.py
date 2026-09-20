@@ -84,10 +84,12 @@ def _change_set(
     source_references: list[dict[str, str]] | None = None,
     *,
     pre_edit_source_identity: str = "sha256:source-a",
+    post_edit_repository_identity: str = "sha256:repo-b",
     provider_evidence_identity: str = "sha256:change-set-a",
 ) -> dict[str, object]:
     return post_edit_change_set_evidence(
         pre_edit_source_identity=pre_edit_source_identity,
+        post_edit_repository_identity=post_edit_repository_identity,
         changed_source_references=source_references or _post_sources(),
         provider="repository-change-set",
         provider_evidence_identity=provider_evidence_identity,
@@ -97,11 +99,13 @@ def _change_set(
 def _receipt(
     *,
     source_identity: str = "sha256:source-a",
+    repository_identity: str = "sha256:repo-a",
     status: str = "PASS",
     test_ids: list[str] | None = None,
 ) -> dict[str, object]:
     return {
         "source_identity": source_identity,
+        "repository_identity": repository_identity,
         "status": status,
         "test_evidence_identities": test_ids or ["sha256:test-core"],
         "execution_identity": "sha256:execution-a",
@@ -263,15 +267,17 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     post_receipt = behavior_preservation_receipt(
         pre_edit_evidence=ready,
         post_edit_source_identity=_post_identity(),
+        post_edit_repository_identity="sha256:repo-b",
         post_edit_source_references=_post_sources(),
         post_edit_change_set_evidence=_change_set(),
         post_edit_test_references=post_tests,
-        post_edit_execution_receipt=_receipt(source_identity=_post_identity()),
+        post_edit_execution_receipt=_receipt(source_identity=_post_identity(, repository_identity="sha256:repo-b")),
         repository_gate_receipts=[
             {
                 "name": "full",
                 "command": "uv run pytest",
                 "status": "PASS",
+                "repository_identity": "sha256:repo-b",
                 "execution_identity": "sha256:gate-full-b",
             }
         ],
@@ -279,18 +285,68 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     if post_receipt["status"] != PRESERVED:
         failures.append("matching frozen post-edit evidence did not verify preservation")
 
-    missing_post_sources = behavior_preservation_receipt(
+    stale_post_execution = behavior_preservation_receipt(
         pre_edit_evidence=ready,
         post_edit_source_identity=_post_identity(),
-        post_edit_source_references=[],
+        post_edit_repository_identity="sha256:repo-b",
+        post_edit_source_references=_post_sources(),
         post_edit_change_set_evidence=_change_set(),
         post_edit_test_references=post_tests,
-        post_edit_execution_receipt=_receipt(source_identity=_post_identity()),
+        post_edit_execution_receipt=_receipt(
+            source_identity=_post_identity(),
+            repository_identity="sha256:repo-a",
+        ),
         repository_gate_receipts=[
             {
                 "name": "full",
                 "command": "uv run pytest",
                 "status": "PASS",
+                "repository_identity": "sha256:repo-b",
+                "execution_identity": "sha256:gate-current",
+            }
+        ],
+    )
+    if stale_post_execution["status"] != POST_EDIT_EVIDENCE_REQUIRED:
+        failures.append("focused execution from a different repository state verified preservation")
+
+    stale_repository_gate = behavior_preservation_receipt(
+        pre_edit_evidence=ready,
+        post_edit_source_identity=_post_identity(),
+        post_edit_repository_identity="sha256:repo-b",
+        post_edit_source_references=_post_sources(),
+        post_edit_change_set_evidence=_change_set(),
+        post_edit_test_references=post_tests,
+        post_edit_execution_receipt=_receipt(
+            source_identity=_post_identity(),
+            repository_identity="sha256:repo-b",
+        ),
+        repository_gate_receipts=[
+            {
+                "name": "full",
+                "command": "uv run pytest",
+                "status": "PASS",
+                "repository_identity": "sha256:repo-a",
+                "execution_identity": "sha256:gate-stale",
+            }
+        ],
+    )
+    if stale_repository_gate["status"] != POST_EDIT_EVIDENCE_REQUIRED:
+        failures.append("repository gate from a different repository state verified preservation")
+
+    missing_post_sources = behavior_preservation_receipt(
+        pre_edit_evidence=ready,
+        post_edit_source_identity=_post_identity(),
+        post_edit_repository_identity="sha256:repo-b",
+        post_edit_source_references=[],
+        post_edit_change_set_evidence=_change_set(),
+        post_edit_test_references=post_tests,
+        post_edit_execution_receipt=_receipt(source_identity=_post_identity(, repository_identity="sha256:repo-b")),
+        repository_gate_receipts=[
+            {
+                "name": "full",
+                "command": "uv run pytest",
+                "status": "PASS",
+                "repository_identity": "sha256:repo-b",
                 "execution_identity": "sha256:gate",
             }
         ],
@@ -306,15 +362,17 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     split_receipt = behavior_preservation_receipt(
         pre_edit_evidence=ready,
         post_edit_source_identity=split_identity,
+        post_edit_repository_identity="sha256:repo-b",
         post_edit_source_references=split_sources,
         post_edit_change_set_evidence=_change_set(split_sources),
         post_edit_test_references=post_tests,
-        post_edit_execution_receipt=_receipt(source_identity=split_identity),
+        post_edit_execution_receipt=_receipt(source_identity=split_identity, repository_identity="sha256:repo-b"),
         repository_gate_receipts=[
             {
                 "name": "full",
                 "command": "uv run pytest",
                 "status": "PASS",
+                "repository_identity": "sha256:repo-b",
                 "execution_identity": "sha256:gate-split",
             }
         ],
@@ -325,15 +383,17 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     incomplete_split = behavior_preservation_receipt(
         pre_edit_evidence=ready,
         post_edit_source_identity=split_identity,
+        post_edit_repository_identity="sha256:repo-b",
         post_edit_source_references=_post_sources(),
         post_edit_change_set_evidence=_change_set(split_sources),
         post_edit_test_references=post_tests,
-        post_edit_execution_receipt=_receipt(source_identity=split_identity),
+        post_edit_execution_receipt=_receipt(source_identity=split_identity, repository_identity="sha256:repo-b"),
         repository_gate_receipts=[
             {
                 "name": "full",
                 "command": "uv run pytest",
                 "status": "PASS",
+                "repository_identity": "sha256:repo-b",
                 "execution_identity": "sha256:gate",
             }
         ],
@@ -346,15 +406,17 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     self_consistent_incomplete_split = behavior_preservation_receipt(
         pre_edit_evidence=ready,
         post_edit_source_identity=incomplete_identity,
+        post_edit_repository_identity="sha256:repo-b",
         post_edit_source_references=incomplete_sources,
         post_edit_change_set_evidence=_change_set(split_sources),
         post_edit_test_references=post_tests,
-        post_edit_execution_receipt=_receipt(source_identity=incomplete_identity),
+        post_edit_execution_receipt=_receipt(source_identity=incomplete_identity, repository_identity="sha256:repo-b"),
         repository_gate_receipts=[
             {
                 "name": "full",
                 "command": "uv run pytest",
                 "status": "PASS",
+                "repository_identity": "sha256:repo-b",
                 "execution_identity": "sha256:gate-incomplete",
             }
         ],
@@ -376,11 +438,12 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     changed_post_tests = behavior_preservation_receipt(
         pre_edit_evidence=ready,
         post_edit_source_identity=_post_identity(),
+        post_edit_repository_identity="sha256:repo-b",
         post_edit_source_references=_post_sources(),
         post_edit_change_set_evidence=_change_set(),
         post_edit_test_references=[{"path": "tests/test_core.py", "evidence_identity": "sha256:test-changed"}],
-        post_edit_execution_receipt=_receipt(source_identity="sha256:source-b", test_ids=["sha256:test-changed"]),
-        repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "PASS", "execution_identity": "sha256:gate"}],
+        post_edit_execution_receipt=_receipt(source_identity="sha256:source-b", repository_identity="sha256:repo-b", test_ids=["sha256:test-changed"]),
+        repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "PASS", "repository_identity": "sha256:repo-b", "execution_identity": "sha256:gate"}],
     )
     if changed_post_tests["status"] != POST_EDIT_EVIDENCE_REQUIRED:
         failures.append("changed frozen test identity verified preservation")
@@ -388,11 +451,12 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     wrong_post_source = behavior_preservation_receipt(
         pre_edit_evidence=ready,
         post_edit_source_identity=_post_identity(),
+        post_edit_repository_identity="sha256:repo-b",
         post_edit_source_references=_post_sources(),
         post_edit_change_set_evidence=_change_set(),
         post_edit_test_references=post_tests,
-        post_edit_execution_receipt=_receipt(source_identity="sha256:source-c"),
-        repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "PASS", "execution_identity": "sha256:gate"}],
+        post_edit_execution_receipt=_receipt(source_identity="sha256:source-c", repository_identity="sha256:repo-b"),
+        repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "PASS", "repository_identity": "sha256:repo-b", "execution_identity": "sha256:gate"}],
     )
     if wrong_post_source["status"] != POST_EDIT_EVIDENCE_REQUIRED:
         failures.append("post-edit receipt bound to wrong source verified preservation")
@@ -400,11 +464,12 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     failed_post = behavior_preservation_receipt(
         pre_edit_evidence=ready,
         post_edit_source_identity=_post_identity(),
+        post_edit_repository_identity="sha256:repo-b",
         post_edit_source_references=_post_sources(),
         post_edit_change_set_evidence=_change_set(),
         post_edit_test_references=post_tests,
-        post_edit_execution_receipt=_receipt(source_identity=_post_identity(), status="FAIL"),
-        repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "PASS", "execution_identity": "sha256:gate"}],
+        post_edit_execution_receipt=_receipt(source_identity=_post_identity(, repository_identity="sha256:repo-b"), status="FAIL"),
+        repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "PASS", "repository_identity": "sha256:repo-b", "execution_identity": "sha256:gate"}],
     )
     if failed_post["status"] != POST_EDIT_EVIDENCE_REQUIRED:
         failures.append("failed post-edit focused execution verified preservation")
@@ -412,10 +477,11 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     missing_gate = behavior_preservation_receipt(
         pre_edit_evidence=ready,
         post_edit_source_identity=_post_identity(),
+        post_edit_repository_identity="sha256:repo-b",
         post_edit_source_references=_post_sources(),
         post_edit_change_set_evidence=_change_set(),
         post_edit_test_references=post_tests,
-        post_edit_execution_receipt=_receipt(source_identity=_post_identity()),
+        post_edit_execution_receipt=_receipt(source_identity=_post_identity(, repository_identity="sha256:repo-b")),
         repository_gate_receipts=[],
     )
     if missing_gate["status"] != POST_EDIT_EVIDENCE_REQUIRED:
@@ -424,11 +490,12 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     failed_gate = behavior_preservation_receipt(
         pre_edit_evidence=ready,
         post_edit_source_identity=_post_identity(),
+        post_edit_repository_identity="sha256:repo-b",
         post_edit_source_references=_post_sources(),
         post_edit_change_set_evidence=_change_set(),
         post_edit_test_references=post_tests,
-        post_edit_execution_receipt=_receipt(source_identity=_post_identity()),
-        repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "FAIL", "execution_identity": "sha256:gate"}],
+        post_edit_execution_receipt=_receipt(source_identity=_post_identity(, repository_identity="sha256:repo-b")),
+        repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "FAIL", "repository_identity": "sha256:repo-b", "execution_identity": "sha256:gate"}],
     )
     if failed_gate["status"] != POST_EDIT_EVIDENCE_REQUIRED:
         failures.append("failed post-edit repository gate verified preservation")
@@ -490,6 +557,8 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         "authority": authority,
         "post_edit_requirements": ready.get("post_edit_requirements"),
         "post_edit_status": post_receipt["status"],
+        "stale_post_execution_status": stale_post_execution["status"],
+        "stale_repository_gate_status": stale_repository_gate["status"],
         "post_edit_authority": post_authority,
         "missing_post_sources_status": missing_post_sources["status"],
         "split_source_set_status": split_receipt["status"],
