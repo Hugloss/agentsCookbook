@@ -137,6 +137,16 @@ def _bounded_command_identity(argv: Sequence[str], cwd: str = ".") -> str:
     return "sha256:" + hashlib.sha256(raw).hexdigest()
 
 
+def _artifact_identity_valid(payload: Mapping[str, object]) -> bool:
+    identity = payload.get("evidence_identity")
+    if not isinstance(identity, str) or not identity:
+        return False
+    semantic = {
+        str(key): value for key, value in payload.items() if key != "evidence_identity"
+    }
+    return identity == _identity(semantic)
+
+
 def _nonempty(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
@@ -351,16 +361,14 @@ def locality_snapshot(
         "dimensions": dimensions,
         "structural_signals": structural_signals,
     }
-    return {
-        **semantic,
-        "evidence_identity": _identity(semantic),
-        "claims": {
-            "composite_score_used": False,
-            "size_alone_justifies_decomposition": False,
-            "edit_authorized": False,
-            "independent_structural_provider": False,
-        },
+    claims = {
+        "composite_score_used": False,
+        "size_alone_justifies_decomposition": False,
+        "edit_authorized": False,
+        "independent_structural_provider": False,
     }
+    payload = {**semantic, "claims": claims}
+    return {**payload, "evidence_identity": _identity(payload)}
 
 
 def _hashmarks_packet_validation(
@@ -839,9 +847,7 @@ def locality_snapshot_from_hashmarks(
     normalized["claims"] = claims
 
     semantic = {
-        key: value
-        for key, value in normalized.items()
-        if key not in {"evidence_identity", "claims"}
+        key: value for key, value in normalized.items() if key != "evidence_identity"
     }
     normalized["evidence_identity"] = _identity(semantic)
     return normalized
@@ -1008,6 +1014,10 @@ def compare_locality(
     post_snapshot: Mapping[str, object],
 ) -> dict[str, object]:
     unresolved: list[str] = []
+    if not _artifact_identity_valid(pre_snapshot):
+        unresolved.append("pre-snapshot-integrity")
+    if not _artifact_identity_valid(post_snapshot):
+        unresolved.append("post-snapshot-integrity")
     if (
         pre_snapshot.get("schema") != SNAPSHOT_SCHEMA
         or post_snapshot.get("schema") != SNAPSHOT_SCHEMA
@@ -1124,17 +1134,15 @@ def compare_locality(
         "status": status,
         "unresolved_evidence": unresolved,
     }
-    return {
-        **semantic,
-        "evidence_identity": _identity(semantic),
-        "claims": {
-            "composite_score_used": False,
-            "lower_entrypoint_loc_is_improvement_proof": False,
-            "locality_preserved": status == LOCALITY_PRESERVED_OR_IMPROVED,
-            "all_new_structure_earned_value": not unjustified,
-            "wrappers_shims_are_default_solution": False,
-        },
+    claims = {
+        "composite_score_used": False,
+        "lower_entrypoint_loc_is_improvement_proof": False,
+        "locality_preserved": status == LOCALITY_PRESERVED_OR_IMPROVED,
+        "all_new_structure_earned_value": not unjustified,
+        "wrappers_shims_are_default_solution": False,
     }
+    payload = {**semantic, "claims": claims}
+    return {**payload, "evidence_identity": _identity(payload)}
 
 
 def decomposition_decision(
@@ -1171,7 +1179,10 @@ def decomposition_decision(
     size_only = bool(normalized_evidence) and not justifying
     comparison_status = comparison.get("status")
     comparison_bound = (
-        comparison.get("pre_snapshot_identity")
+        _artifact_identity_valid(pre_snapshot)
+        and _artifact_identity_valid(post_snapshot)
+        and _artifact_identity_valid(comparison)
+        and comparison.get("pre_snapshot_identity")
         == pre_snapshot.get("evidence_identity")
         and comparison.get("post_snapshot_identity")
         == post_snapshot.get("evidence_identity")
@@ -1219,36 +1230,38 @@ def decomposition_decision(
         "decomposition_evidence": normalized_evidence,
         "status": status,
     }
-    return {
-        **semantic,
-        "evidence_identity": _identity(semantic),
-        "claims": {
-            "size_only_signal": size_only,
-            "size_alone_justifies_decomposition": False,
-            "all_new_structure_earned_value": structural_value_complete,
-            "edit_authorized": False,
-            "merge_authorized": False,
-            "composite_score_used": False,
-            "prefer_deletion_or_consolidation_before_new_layers": True,
-            "independent_structural_evidence": independent_structural_evidence,
-        },
-        "required_next_evidence": (
-            [{"kind": "resolve-locality-evidence"}]
-            if status == INSUFFICIENT_LOCALITY_EVIDENCE
-            else (
-                [
-                    {
-                        "kind": "revise-decomposition-to-remove-unearned-structure",
-                        "symbols": comparison.get(
-                            "unjustified_new_structures", []
-                        ),
-                    }
-                ]
-                if status == DECOMPOSITION_LOCALITY_RISK
-                else []
-            )
-        ),
+    claims = {
+        "size_only_signal": size_only,
+        "size_alone_justifies_decomposition": False,
+        "all_new_structure_earned_value": structural_value_complete,
+        "edit_authorized": False,
+        "merge_authorized": False,
+        "composite_score_used": False,
+        "prefer_deletion_or_consolidation_before_new_layers": True,
+        "independent_structural_evidence": independent_structural_evidence,
     }
+    required_next_evidence = (
+        [{"kind": "resolve-locality-evidence"}]
+        if status == INSUFFICIENT_LOCALITY_EVIDENCE
+        else (
+            [
+                {
+                    "kind": "revise-decomposition-to-remove-unearned-structure",
+                    "symbols": comparison.get(
+                        "unjustified_new_structures", []
+                    ),
+                }
+            ]
+            if status == DECOMPOSITION_LOCALITY_RISK
+            else []
+        )
+    )
+    payload = {
+        **semantic,
+        "claims": claims,
+        "required_next_evidence": required_next_evidence,
+    }
+    return {**payload, "evidence_identity": _identity(payload)}
 
 
 def _load(path: Path) -> dict[str, object]:
