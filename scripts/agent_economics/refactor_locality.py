@@ -3,13 +3,22 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+
+from .bounded_process import ProcessLimits, run_bounded
+from .workspace_state import (
+    WorkspaceStateError,
+    changed_tracked_paths,
+    tracked_workspace_state,
+)
 
 SNAPSHOT_SCHEMA = "agentscookbook-refactor-locality-snapshot/v1"
 COMPARISON_SCHEMA = "agentscookbook-refactor-locality-comparison/v1"
 DECISION_SCHEMA = "agentscookbook-refactor-locality-decision/v1"
 HASHMARKS_STRUCTURAL_LOCALITY_SCHEMA = "hashmarks.structural-locality.v1"
+HASHMARKS_OBSERVATION_SCHEMA = "agentscookbook-hashmarks-locality-observation/v1"
 
 KEEP_COHESIVE_AUTHORITY = "KEEP_COHESIVE_AUTHORITY"
 DECOMPOSITION_JUSTIFIED = "DECOMPOSITION_JUSTIFIED"
@@ -421,9 +430,203 @@ def _hashmarks_packet_validation(
     return sorted(set(errors)), sorted(set(incomplete))
 
 
+def _observation_semantic(
+    *,
+    target: str,
+    executable: str,
+    argv: Sequence[str],
+    command_identity: str,
+    packet: Mapping[str, object] | None,
+    status: str,
+    classification: str,
+    workspace_before_identity: str | None,
+    workspace_after_identity: str | None,
+    changed_paths: Sequence[str],
+    stdout_sha256: str,
+    stderr_sha256: str,
+    return_code: int | None,
+    timed_out: bool,
+    executable_missing: bool,
+    output_truncated: bool,
+) -> dict[str, object]:
+    return {
+        "schema": HASHMARKS_OBSERVATION_SCHEMA,
+        "target": target,
+        "executable": executable,
+        "argv": list(argv),
+        "command_identity": command_identity,
+        "packet_evidence_identity": None
+        if packet is None
+        else packet.get("evidence_identity"),
+        "packet_repository_identity": None
+        if packet is None
+        else packet.get("repository_identity"),
+        "status": status,
+        "classification": classification,
+        "workspace_before_identity": workspace_before_identity,
+        "workspace_after_identity": workspace_after_identity,
+        "changed_tracked_paths": list(changed_paths),
+        "stdout_sha256": stdout_sha256,
+        "stderr_sha256": stderr_sha256,
+        "return_code": return_code,
+        "timed_out": timed_out,
+        "executable_missing": executable_missing,
+        "output_truncated": output_truncated,
+    }
+
+
+def observe_hashmarks_locality(
+    *,
+    repository_root: Path,
+    target: str,
+    hashmarks_executable: str = "hashmarks",
+    max_depth: int = 2,
+    call_limit: int = 64,
+    ref_limit: int = 256,
+    timeout_seconds: float = 60.0,
+    max_stdout_bytes: int = 2_000_000,
+    max_stderr_bytes: int = 500_000,
+) -> dict[str, object]:
+    """Execute Hashmarks directly and bind its packet to observed repository bytes."""
+    root = repository_root.resolve()
+    if not root.is_dir():
+        raise ValueError(f"repository root does not exist: {root}")
+    if not target.strip():
+        raise ValueError("target must be non-empty")
+    if shutil.which(hashmarks_executable) is None:
+        raise ValueError(f"Hashmarks executable not found: {hashmarks_executable}")
+
+    try:
+        before = tracked_workspace_state(root)
+    except WorkspaceStateError as exc:
+        raise ValueError(
+            "authoritative Hashmarks observation requires bounded Git tracked-byte identity"
+        ) from exc
+
+    argv = (
+        hashmarks_executable,
+        "--workspace",
+        ".",
+        "structural-locality",
+        target,
+        "--max-depth",
+        str(max_depth),
+        "--call-limit",
+        str(call_limit),
+        "--ref-limit",
+        str(ref_limit),
+    )
+    result = run_bounded(
+        repository_root=root,
+        argv=argv,
+        limits=ProcessLimits(
+            timeout_seconds=timeout_seconds,
+            max_stdout_bytes=max_stdout_bytes,
+            max_stderr_bytes=max_stderr_bytes,
+        ),
+    )
+    try:
+        after = tracked_workspace_state(root)
+    except WorkspaceStateError as exc:
+        raise ValueError(
+            "cannot establish post-observation tracked-byte identity"
+        ) from exc
+    changed = changed_tracked_paths(before, after)
+    stdout_sha = hashlib.sha256(result.stdout).hexdigest()
+    stderr_sha = hashlib.sha256(result.stderr).hexdigest()
+    output_truncated = result.stdout_truncated or result.stderr_truncated
+
+    packet: Mapping[str, object] | None = None
+    classification = "pass"
+    if result.executable_missing:
+        classification = "executable_missing"
+    elif result.timed_out:
+        classification = "timeout"
+    elif output_truncated:
+        classification = "output_limit_exceeded"
+    elif result.return_code != 0:
+        classification = "hashmarks_failed"
+    elif changed:
+        classification = "tracked_workspace_mutation"
+    else:
+        try:
+            parsed = json.loads(result.stdout.decode("utf-8", errors="strict"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            classification = "invalid_hashmarks_json"
+        else:
+            if not isinstance(parsed, Mapping):
+                classification = "invalid_hashmarks_packet"
+            else:
+                errors, _ = _hashmarks_packet_validation(parsed)
+                if errors:
+                    classification = "invalid_hashmarks_packet"
+                else:
+                    packet = parsed
+
+    status = "PASS" if classification == "pass" and packet is not None else "FAIL"
+    semantic = _observation_semantic(
+        target=target,
+        executable=hashmarks_executable,
+        argv=argv,
+        command_identity=result.command_identity,
+        packet=packet,
+        status=status,
+        classification=classification,
+        workspace_before_identity=str(before["identity"]),
+        workspace_after_identity=str(after["identity"]),
+        changed_paths=changed,
+        stdout_sha256=stdout_sha,
+        stderr_sha256=stderr_sha,
+        return_code=result.return_code,
+        timed_out=result.timed_out,
+        executable_missing=result.executable_missing,
+        output_truncated=output_truncated,
+    )
+    receipt = {**semantic, "evidence_identity": _identity(semantic)}
+    return {
+        "packet": None if packet is None else dict(packet),
+        "observation_receipt": receipt,
+        "execution": result.metrics(),
+        "stderr": result.stderr.decode("utf-8", errors="replace"),
+    }
+
+
+def _observation_receipt_matches(
+    receipt: Mapping[str, object] | None,
+    *,
+    packet: Mapping[str, object],
+) -> bool:
+    if not isinstance(receipt, Mapping):
+        return False
+    if receipt.get("schema") != HASHMARKS_OBSERVATION_SCHEMA:
+        return False
+    semantic = {
+        str(key): value for key, value in receipt.items() if key != "evidence_identity"
+    }
+    if receipt.get("evidence_identity") != _identity(semantic):
+        return False
+    return (
+        receipt.get("status") == "PASS"
+        and receipt.get("classification") == "pass"
+        and receipt.get("packet_evidence_identity") == packet.get("evidence_identity")
+        and receipt.get("packet_repository_identity")
+        == packet.get("repository_identity")
+        and receipt.get("target") == packet.get("target")
+        and receipt.get("workspace_before_identity")
+        == receipt.get("workspace_after_identity")
+        and receipt.get("changed_tracked_paths") == []
+        and receipt.get("return_code") == 0
+        and receipt.get("timed_out") is False
+        and receipt.get("executable_missing") is False
+        and receipt.get("output_truncated") is False
+        and _nonempty(receipt.get("command_identity"))
+    )
+
+
 def locality_snapshot_from_hashmarks(
     *,
     packet: Mapping[str, object],
+    observation_receipt: Mapping[str, object] | None = None,
     structural_values: Sequence[Mapping[str, object]] = (),
     responsibilities: Sequence[str] = (),
     authority_lines: int | None = None,
@@ -435,6 +638,11 @@ def locality_snapshot_from_hashmarks(
     errors, incomplete = _hashmarks_packet_validation(packet)
     if errors:
         raise ValueError("invalid Hashmarks structural-locality evidence: " + ", ".join(errors))
+    observed_execution = _observation_receipt_matches(
+        observation_receipt, packet=packet
+    )
+    if not observed_execution:
+        incomplete.append("provider-execution-binding")
     repository_identity = str(packet["repository_identity"])
     value_rows: dict[str, Mapping[str, object]] = {}
     for row in structural_values:
@@ -574,11 +782,17 @@ def locality_snapshot_from_hashmarks(
     }
     normalized["provider_packet_schema"] = HASHMARKS_STRUCTURAL_LOCALITY_SCHEMA
     normalized["provider_packet_identity"] = packet["evidence_identity"]
+    normalized["provider_observation_identity"] = (
+        None
+        if observation_receipt is None
+        else observation_receipt.get("evidence_identity")
+    )
     claims = dict(normalized["claims"])
-    claims["independent_structural_provider"] = True
+    claims["independent_structural_provider"] = observed_execution
     claims["caller_counts_from_provider"] = True
     claims["forwarding_shape_from_provider"] = True
     claims["direct_test_seam_inferred"] = False
+    claims["provider_execution_observed"] = observed_execution
     normalized["claims"] = claims
 
     semantic = {
