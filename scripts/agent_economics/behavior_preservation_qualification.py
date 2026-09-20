@@ -468,7 +468,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         post_edit_source_references=_post_sources(),
         post_edit_change_set_evidence=_change_set(),
         post_edit_test_references=post_tests,
-        post_edit_execution_receipt=_receipt(source_identity=_post_identity(), repository_identity="sha256:repo-b"), status="FAIL"),
+        post_edit_execution_receipt=_receipt(source_identity=_post_identity(), repository_identity="sha256:repo-b", status="FAIL"),
         repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "PASS", "repository_identity": "sha256:repo-b", "execution_identity": "sha256:gate"}],
     )
     if failed_post["status"] != POST_EDIT_EVIDENCE_REQUIRED:
