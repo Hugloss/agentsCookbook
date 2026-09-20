@@ -71,7 +71,7 @@ def recommended_test_action_for(
     if correspondence_status in {"supported", "ambiguous"}:
         return "verify_test_correspondence_first"
     if max_test_lines > file_line_threshold:
-        return "split_existing_test_file"
+        return "inspect_test_locality_before_split"
     if corresponding_test_count == 1:
         return "update_existing_test_file"
     return "keep_existing_test_file"
