@@ -9,6 +9,7 @@ from pathlib import Path
 SNAPSHOT_SCHEMA = "agentscookbook-refactor-locality-snapshot/v1"
 COMPARISON_SCHEMA = "agentscookbook-refactor-locality-comparison/v1"
 DECISION_SCHEMA = "agentscookbook-refactor-locality-decision/v1"
+HASHMARKS_STRUCTURAL_LOCALITY_SCHEMA = "hashmarks.structural-locality.v1"
 
 KEEP_COHESIVE_AUTHORITY = "KEEP_COHESIVE_AUTHORITY"
 DECOMPOSITION_JUSTIFIED = "DECOMPOSITION_JUSTIFIED"
@@ -86,18 +87,17 @@ LOCALITY_DIMENSIONS = (
     "forwarding_only_symbol_count",
     "context_lines",
     "verifier_file_count",
-    "edit_file_count",
-    "evidence_file_count",
     "cross_file_symbol_count",
+    "unresolved_call_count",
+    "target_meaningful_caller_count",
 )
 
 HARD_REGRESSION_DIMENSIONS = frozenset(
     {
         "file_count",
         "context_lines",
-        "edit_file_count",
-        "evidence_file_count",
         "cross_file_symbol_count",
+        "unresolved_call_count",
     }
 )
 
@@ -105,6 +105,17 @@ HARD_REGRESSION_DIMENSIONS = frozenset(
 def _identity(payload: Mapping[str, object]) -> str:
     return "sha256:" + hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _hashmarks_identity(payload: Mapping[str, object]) -> str:
+    return "sha256:" + hashlib.sha256(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode()
     ).hexdigest()
 
 
