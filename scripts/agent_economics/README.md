@@ -152,7 +152,7 @@ Hotspot evidence also reports the largest definitions (functions/classes with qu
 
 ### behavior-preservation
 
-Use `behavior_preservation_readiness(...)` before a structural split when the goal is to preserve existing behavior. It binds the exact source identity, declared behavior/risk boundaries, confirmed test references, a PASS execution receipt for those exact source/test identities, provider freshness, and repository-owned broader gates.
+Use `behavior_preservation_readiness(...)` before a structural split when the goal is to preserve existing behavior. It binds the exact source identity, declared behavior/risk boundaries, confirmed test references, a PASS execution receipt for those exact source/test identities, provider freshness, and repository-owned broader gates. Every boundary must also name the frozen test evidence identities that prove that boundary; missing bindings or references to tests outside the selected/executed test set fail closed as `EVIDENCE_REQUIRED`.
 
 The result is evidence readiness only: `READY_FOR_BEHAVIOR_PRESERVING_EDIT` never authorizes an edit and never claims that a future refactor is safe. Indirect-only protection yields `TEST_STRENGTHENING_REQUIRED`; stale, failed, mismatched, unexecuted, or incomplete evidence yields `EVIDENCE_REQUIRED`. Coverage percentages may be recorded but cannot independently promote readiness.
 

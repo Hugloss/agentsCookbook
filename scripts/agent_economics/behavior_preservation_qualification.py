@@ -26,6 +26,7 @@ def _boundary(
     *,
     classification: str = "direct",
     freshness: str = "fresh",
+    test_ids: list[str] | None = None,
 ) -> dict[str, object]:
     return {
         "identity": identity,
@@ -35,6 +36,9 @@ def _boundary(
             "provider": "test-focus",
             "evidence_identity": f"sha256:{identity}",
         },
+        "test_evidence_identities": (
+            ["sha256:test-core"] if test_ids is None else list(test_ids)
+        ),
     }
 
 
@@ -141,6 +145,29 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     stale = _run(boundaries=[_boundary(freshness="stale")])
     if stale["status"] != EVIDENCE_REQUIRED:
         failures.append("stale provider proof became READY")
+
+    unbound_boundary = _run(boundaries=[_boundary(test_ids=[])])
+    if unbound_boundary["status"] != EVIDENCE_REQUIRED:
+        failures.append("direct boundary without frozen test binding became READY")
+    if "public-normalization:boundary-test-binding" not in unbound_boundary.get(
+        "unresolved_evidence", []
+    ):
+        failures.append("missing boundary-to-test binding was not explicit")
+
+    unknown_boundary_test = _run(
+        boundaries=[_boundary(test_ids=["sha256:not-selected"])]
+    )
+    if unknown_boundary_test["status"] != EVIDENCE_REQUIRED:
+        failures.append("boundary bound to an unselected test became READY")
+
+    partially_bound_multi_boundary = _run(
+        boundaries=[
+            _boundary("public-normalization"),
+            _boundary("error-contract", test_ids=[]),
+        ]
+    )
+    if partially_bound_multi_boundary["status"] != EVIDENCE_REQUIRED:
+        failures.append("multi-boundary evidence with one unbound boundary became READY")
 
     indirect = _run(boundaries=[_boundary(classification="indirect")])
     if indirect["status"] != TEST_STRENGTHENING_REQUIRED:
@@ -318,6 +345,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         "no_receipt_status": no_receipt["status"],
         "wrong_source_status": wrong_source["status"],
         "stale_status": stale["status"],
+        "unbound_boundary_status": unbound_boundary["status"],
+        "unknown_boundary_test_status": unknown_boundary_test["status"],
+        "partially_bound_multi_boundary_status": partially_bound_multi_boundary["status"],
         "indirect_status": indirect["status"],
         "failed_status": failed["status"],
         "no_gates_status": no_gates["status"],
