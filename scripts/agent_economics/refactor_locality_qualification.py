@@ -625,6 +625,18 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     else:
         failures.append("tampered Hashmarks evidence identity was accepted")
 
+    forged_snapshot = dict(manual_semantic)
+    forged_claims = dict(forged_snapshot["claims"])
+    forged_claims["independent_structural_provider"] = True
+    forged_snapshot["claims"] = forged_claims
+    forged_comparison = compare_locality(manual_pre, forged_snapshot)
+    if forged_comparison["status"] != INSUFFICIENT_LOCALITY_EVIDENCE:
+        failures.append("tampered locality claims retained comparison authority")
+    if "post-snapshot-integrity" not in forged_comparison.get(
+        "unresolved_evidence", []
+    ):
+        failures.append("tampered locality claims did not invalidate snapshot identity")
+
     wrong_target_receipt = _receipt(hm_post_packet)
     wrong_target_semantic = {
         key: value
