@@ -71,7 +71,7 @@ def recommended_test_action_for(
     if correspondence_status in {"supported", "ambiguous"}:
         return "verify_test_correspondence_first"
     if max_test_lines > file_line_threshold:
-        return "split_existing_test_file"
+        return "inspect_test_locality_before_split"
     if corresponding_test_count == 1:
         return "update_existing_test_file"
     return "keep_existing_test_file"
@@ -86,41 +86,16 @@ def recommended_strategy_for(
     max_test_lines: int,
     file_line_threshold: int,
 ) -> str:
+    # Size, dependency counts, and branch pressure may select an investigation
+    # target, but they do not establish that decomposition is an improvement.
+    # Keep the signature stable because callers already expose these facts.
+    _ = (
+        source_lines,
+        dependent_source_count,
+        imports_out_count,
+        max_test_lines,
+        file_line_threshold,
+    )
     if correspondence_status in {"missing", "supported", "ambiguous"}:
         return "recover_test_correspondence_first"
-    if max_test_lines > file_line_threshold:
-        return "split_source_and_tests_together"
-    if dependent_source_count >= 5:
-        return "wrapper_required"
-    if imports_out_count >= 8:
-        return "extract_shared_boundaries_first"
-    if source_lines >= file_line_threshold + 250:
-        return "extract_cohesive_helpers_first"
-    return "small_safe_split"
-
-
-def risk_score_for(
-    *,
-    source_lines: int,
-    file_line_threshold: int,
-    dependent_source_count: int,
-    imports_out_count: int,
-    corresponding_test_count: int,
-    max_test_lines: int,
-    function_over_limit_count: int,
-    correspondence_status: str,
-) -> int:
-    score = 0
-    score += max(1, (source_lines - file_line_threshold) // 50 + 1)
-    score += min(dependent_source_count, 5)
-    score += min(imports_out_count // 2, 4)
-    score += min(function_over_limit_count * 2, 6)
-    if corresponding_test_count == 0:
-        score += 5
-    if correspondence_status == "supported":
-        score += 1
-    elif correspondence_status == "ambiguous":
-        score += 2
-    if max_test_lines > file_line_threshold:
-        score += 3
-    return score
+    return "measure_refactor_locality_before_decomposition"

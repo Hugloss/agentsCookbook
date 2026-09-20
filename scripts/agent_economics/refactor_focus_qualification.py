@@ -334,7 +334,6 @@ def contract_candidate_as_legacy_row(candidate: dict[str, object]) -> dict[str, 
         "correspondence_status": derived.get("correspondence_status"),
         "test_sync_required_if_split": derived.get("test_sync_required_if_split"),
         "max_test_lines": facts.get("max_confirmed_test_lines"),
-        "risk_score": interpretation.get("risk_score"),
         "recommended_test_action": recommendations.get("test_action"),
         "recommended_strategy": recommendations.get("strategy"),
     }

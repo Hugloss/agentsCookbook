@@ -292,13 +292,14 @@ Current capabilities include:
 | inspect historical coupling | `coupling-focus` | bounded Git co-change correlation, never dependency authority |
 | find investigation hotspots | `hotspot-focus` | visible size/branch/fan/churn/ownership dimensions, no opaque score |
 | measure analyzer debt | `quality-debt` | bounded Ruff-derived debt and comparable baseline evidence |
+| `refactor-locality` | pre/post navigation, file, symbol, edit, evidence, and forwarding locality without a composite score |
 | inspect local execution capability | `capabilities` | honest host/Git/process/isolation capability facts |
 | execute an authorized check | `run-command` | argv-only repository command with cwd/time/output/mutation bounds |
 | escalate local verification | `qualify-local` | focused → affected → component → repository receipts |
 | compare agent economics | `benchmark-outcomes` | paired baseline/bridge measurements without automatic promotion |
 | freeze dogfood tasks | `dogfood-corpus` | stable adversarial task identities and experiment protocol |
 
-A useful host loop is: **inspect → select evidence → edit in the host → run the smallest authorized verification → escalate only when justified**. Agent Economics owns the evidence and bounded command receipt; the coding agent still owns reasoning and edits.
+A useful host loop is: **inspect → select evidence → edit in the host → run the smallest authorized verification → escalate only when justified**. For structural cleanup, size/branch/complexity evidence selects an investigation target only. Before decomposing, compare explicit refactor-locality evidence; a smaller entry point is not architectural improvement proof if it increases file fan-out, forwarding layers, navigation depth, edit surface, or evidence surface. Agent Economics owns the evidence and bounded command receipt; the coding agent still owns reasoning and edits.
 
 ## Optional Agent Economics capability bridge
 

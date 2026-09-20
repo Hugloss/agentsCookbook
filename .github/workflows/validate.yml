@@ -83,6 +83,7 @@ jobs:
             agent_outcome_benchmark_qualification
             quality_debt_qualification
             behavior_preservation_qualification
+            refactor_locality_qualification
             bounded_evidence_batches_qualification
             bootstrap_qualification
             zero_to_first_result_qualification
@@ -108,4 +109,5 @@ jobs:
           python -m scripts.agent_economics help quality-debt >/dev/null
           python -m scripts.agent_economics capabilities --repository-root . --json >/dev/null
           python -m scripts.agent_economics evidence-batches --help >/dev/null
+          python -m scripts.agent_economics refactor-locality --help >/dev/null
           python -m scripts.agent_economics benchmark-outcomes --template-task ci-smoke >/dev/null

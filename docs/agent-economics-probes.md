@@ -142,6 +142,7 @@ The probe family is no longer only a refactor experiment. The current public sur
 
 - evidence selection: `refactor-focus`, `context-focus`, `test-focus`, `change-impact`, `coupling-focus`, and `hotspot-focus`;
 - analyzer evidence: `quality-debt`;
+- structural-change evidence: `refactor-locality`, which keeps locality dimensions visible and rejects size-only decomposition authority;
 - local capability/execution: `capabilities`, `run-command`, and `qualify-local`;
 - measurement: `benchmark-outcomes` and `dogfood-corpus`.
 
@@ -185,6 +186,14 @@ Use repeatable `--changed-path`, optional `--changed-paths-file`, explicit trave
 
 Git history can be `auto`, `required`, or `disabled`. Missing history and missing test-tree evidence are represented as unknown, not as reassuring zeros. Use `python -m scripts.agent_economics hotspot-focus --source-root src/pkg --tests-root tests --package-name pkg`.
 
+
+## Refactor locality preservation
+
+A maintainability hotspot is permission to investigate, not permission to decompose. `refactor-locality` compares explicit pre/post (or pre/proposed) evidence for one semantic authority without an opaque score. It keeps file fan-out, symbol fan-out, navigation depth, forwarding-only layers, context footprint, verifier files, edit surface, evidence surface, and cross-file reach separate.
+
+The decision contract has four outcomes: `KEEP_COHESIVE_AUTHORITY`, `DECOMPOSITION_JUSTIFIED`, `DECOMPOSITION_LOCALITY_RISK`, and `INSUFFICIENT_LOCALITY_EVIDENCE`. A drop from 225 lines to 16 lines is not justification by itself. New structure must earn its existence: each introduced helper/module/layer carries a structure kind plus an evidence-bound structural value. Wrapper, shim, adapter, facade, proxy, delegate, re-export, manager, service, and forwarding-helper shapes are treated as easy-path structures and remain visible even when justified. Size-only evidence keeps the cohesive authority. A decomposition that increases hard locality costs such as files, forwarding-only layers, context/evidence/edit surface, or cross-file reach is a locality risk even if line/branch counts improve. Same-file semantic extraction may expose a navigation tradeoff and can be justified only by independent non-size evidence such as mixed responsibilities, duplicated authority, ownership ambiguity, hidden side effects, or change-isolation failure, plus explicit evidence accepting the bounded locality tradeoff. Merely moving statements into private one-use helpers is classified as unearned structure. Forwarding-only layers must own an evidence-bound external compatibility/protocol boundary; otherwise they are locality regressions.
+
+This evidence is deliberately separate from BP1/BP2 behavior preservation and quality-debt reduction. Passing tests prove behavior; debt delta proves measured debt movement; locality evidence addresses whether the structural change made future agent understanding and safe editing more or less expensive.
 
 ## Capability bridge boundary
 

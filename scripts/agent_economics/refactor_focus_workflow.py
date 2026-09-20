@@ -44,7 +44,6 @@ from .refactor_focus_scoring import (
     function_size_summary,
     recommended_strategy_for,
     recommended_test_action_for,
-    risk_score_for,
 )
 
 
@@ -438,16 +437,6 @@ def refactor_focus_audit(
             max_test_lines=max_test_lines,
             file_line_threshold=file_line_threshold,
         )
-        risk_score = risk_score_for(
-            source_lines=source_lines,
-            file_line_threshold=file_line_threshold,
-            dependent_source_count=len(dependent_sources),
-            imports_out_count=imports_out_count,
-            corresponding_test_count=len(confirmed_matches),
-            max_test_lines=max_test_lines,
-            function_over_limit_count=function_over_limit_count,
-            correspondence_status=correspondence_status,
-        )
 
         row: FocusRow = {
             "source_path": report_path(
@@ -471,7 +460,6 @@ def refactor_focus_audit(
             "imports_out_count": imports_out_count,
             "function_over_limit_count": function_over_limit_count,
             "largest_function_lines": largest_function_lines,
-            "risk_score": risk_score,
             "recommended_test_action": recommended_test_action,
             "recommended_strategy": recommended_strategy,
         }
@@ -487,7 +475,6 @@ def refactor_focus_audit(
             supporting_test_count=row["supporting_test_count"],
             candidate_test_count=row["candidate_test_count"],
             max_test_lines=row["max_test_lines"],
-            risk_score=row["risk_score"],
             recommended_test_action=row["recommended_test_action"],
             recommended_strategy=row["recommended_strategy"],
         )
@@ -501,8 +488,11 @@ def refactor_focus_audit(
     rows.sort(
         key=lambda row: (
             correspondence_rank.get(row["correspondence_status"], 99),
-            -row["risk_score"],
+            -row["function_over_limit_count"],
+            -row["largest_function_lines"],
             -row["source_lines"],
+            -row["dependent_source_count"],
+            -row["imports_out_count"],
             row["source_path"],
         ),
     )
