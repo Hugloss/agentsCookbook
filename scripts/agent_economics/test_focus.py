@@ -28,7 +28,7 @@ from .refactor_focus_paths import iso_utc_now, module_path_for_file, report_path
 from .refactor_focus_pytest import build_pytest_ownership_evidence
 
 TOOL_NAME = "test-focus"
-TOOL_VERSION = "0.7.1"
+TOOL_VERSION = "0.7.2"
 
 
 class TestFocusError(ValueError):
