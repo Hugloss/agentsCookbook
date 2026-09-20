@@ -6,7 +6,8 @@ from collections.abc import Mapping, Sequence
 
 SCHEMA = "agentscookbook-behavior-preservation-evidence/v2"
 TARGET_TEST_OWNERSHIP_SCHEMA = "agentscookbook-target-test-ownership-evidence/v1"
-POST_EDIT_SCHEMA = "agentscookbook-behavior-preservation-receipt/v2"
+POST_EDIT_SCHEMA = "agentscookbook-behavior-preservation-receipt/v3"
+POST_EDIT_CHANGE_SET_SCHEMA = "agentscookbook-post-edit-change-set-evidence/v1"
 PRESERVED = "BEHAVIOR_PRESERVATION_VERIFIED"
 POST_EDIT_EVIDENCE_REQUIRED = "POST_EDIT_EVIDENCE_REQUIRED"
 DEBT_DELTA_SCHEMA = "agentscookbook-behavior-preservation-debt-delta/v1"
@@ -69,6 +70,88 @@ def source_set_identity(
     ):
         raise ValueError("source_references must contain identified source files")
     return _identity({"source_references": normalized})
+
+
+def post_edit_change_set_evidence(
+    *,
+    pre_edit_source_identity: str,
+    changed_source_references: Sequence[Mapping[str, object]],
+    provider: str,
+    provider_evidence_identity: str,
+) -> dict[str, object]:
+    """Bind the claimed complete changed/new production source set to provider evidence.
+
+    The provider owns repository change-set completeness. This packet only
+    canonicalizes and binds that evidence for BP2 consumption.
+    """
+    if not _nonempty(pre_edit_source_identity):
+        raise ValueError("pre_edit_source_identity must be non-empty")
+    if not _nonempty(provider) or not _nonempty(provider_evidence_identity):
+        raise ValueError("provider and provider_evidence_identity must be non-empty")
+    normalized_sources = _normalize_source_references(changed_source_references)
+    if not normalized_sources or any(
+        not _nonempty(row["path"]) or not _nonempty(row["evidence_identity"])
+        for row in normalized_sources
+    ):
+        raise ValueError("changed_source_references must contain identified source files")
+    semantic = {
+        "schema": POST_EDIT_CHANGE_SET_SCHEMA,
+        "pre_edit_source_identity": pre_edit_source_identity,
+        "changed_source_references": normalized_sources,
+        "scope": "complete-changed-production-source-set",
+        "provider": provider,
+        "provider_evidence_identity": provider_evidence_identity,
+    }
+    return {**semantic, "evidence_identity": _identity(semantic)}
+
+
+def _post_edit_change_set_matches(
+    evidence: Mapping[str, object] | None,
+    *,
+    pre_edit_source_identity: str,
+    normalized_sources: Sequence[Mapping[str, str]],
+) -> tuple[bool, dict[str, object] | None]:
+    if not isinstance(evidence, Mapping):
+        return False, None
+    raw_sources = evidence.get("changed_source_references")
+    sources = (
+        _normalize_source_references(
+            [row for row in raw_sources if isinstance(row, Mapping)]
+        )
+        if isinstance(raw_sources, Sequence)
+        and not isinstance(raw_sources, (str, bytes, bytearray))
+        else []
+    )
+    normalized = {
+        "schema": evidence.get("schema"),
+        "pre_edit_source_identity": evidence.get("pre_edit_source_identity"),
+        "changed_source_references": sources,
+        "scope": evidence.get("scope"),
+        "provider": evidence.get("provider"),
+        "provider_evidence_identity": evidence.get("provider_evidence_identity"),
+        "evidence_identity": evidence.get("evidence_identity"),
+    }
+    semantic = {
+        key: normalized[key]
+        for key in (
+            "schema",
+            "pre_edit_source_identity",
+            "changed_source_references",
+            "scope",
+            "provider",
+            "provider_evidence_identity",
+        )
+    }
+    valid = (
+        normalized["schema"] == POST_EDIT_CHANGE_SET_SCHEMA
+        and normalized["pre_edit_source_identity"] == pre_edit_source_identity
+        and normalized["changed_source_references"] == list(normalized_sources)
+        and normalized["scope"] == "complete-changed-production-source-set"
+        and _nonempty(normalized["provider"])
+        and _nonempty(normalized["provider_evidence_identity"])
+        and normalized["evidence_identity"] == _identity(semantic)
+    )
+    return valid, normalized
 
 
 def target_test_ownership_evidence(
@@ -345,6 +428,7 @@ def behavior_preservation_receipt(
     pre_edit_evidence: Mapping[str, object],
     post_edit_source_identity: str,
     post_edit_source_references: Sequence[Mapping[str, object]],
+    post_edit_change_set_evidence: Mapping[str, object] | None,
     post_edit_test_references: Sequence[Mapping[str, object]],
     post_edit_execution_receipt: Mapping[str, object] | None,
     repository_gate_receipts: Sequence[Mapping[str, object]],
@@ -372,6 +456,13 @@ def behavior_preservation_receipt(
         or post_edit_source_identity != expected_post_identity
     ):
         unresolved.append("post-edit-source-identity")
+    change_set_ok, normalized_change_set = _post_edit_change_set_matches(
+        post_edit_change_set_evidence,
+        pre_edit_source_identity=str(pre_edit_source_identity or ""),
+        normalized_sources=normalized_sources,
+    )
+    if not change_set_ok:
+        unresolved.append("post-edit-source-set-completeness")
 
     frozen_tests = sorted(
         [
@@ -454,6 +545,7 @@ def behavior_preservation_receipt(
         "pre_edit_source_identity": pre_edit_source_identity,
         "post_edit_source_identity": post_edit_source_identity,
         "post_edit_source_references": normalized_sources,
+        "post_edit_change_set_evidence": normalized_change_set,
         "frozen_test_references": frozen_tests,
         "post_edit_execution_receipt": normalized_execution,
         "repository_gate_receipts": normalized_gate_receipts,
