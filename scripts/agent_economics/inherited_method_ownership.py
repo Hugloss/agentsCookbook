@@ -286,12 +286,26 @@ def _constructor_class(
 ) -> str | None:
     if not isinstance(node, ast.Call):
         return None
-    symbol = _expr_symbol(
-        node.func,
-        module="",
-        aliases=aliases,
-        local_classes=set(),
-    )
+    if (
+        isinstance(node.func, ast.Attribute)
+        and node.func.attr == "__new__"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "object"
+        and node.args
+    ):
+        symbol = _expr_symbol(
+            node.args[0],
+            module="",
+            aliases=aliases,
+            local_classes=set(),
+        )
+    else:
+        symbol = _expr_symbol(
+            node.func,
+            module="",
+            aliases=aliases,
+            local_classes=set(),
+        )
     return _resolve_class_symbol(
         symbol,
         classes=classes,
