@@ -19,6 +19,8 @@ LOCALITY_PRESERVED_OR_IMPROVED = "LOCALITY_PRESERVED_OR_IMPROVED"
 LOCALITY_TRADEOFF_REVIEW_REQUIRED = "LOCALITY_TRADEOFF_REVIEW_REQUIRED"
 LOCALITY_REGRESSED = "LOCALITY_REGRESSED"
 
+TRADEOFF_EVIDENCE_KIND = "bounded_locality_tradeoff"
+
 JUSTIFYING_EVIDENCE_KINDS = frozenset(
     {
         "mixed_responsibilities",
@@ -28,6 +30,52 @@ JUSTIFYING_EVIDENCE_KINDS = frozenset(
         "duplicated_authority",
         "hidden_side_effects",
         "change_isolation_failure",
+    }
+)
+
+# Every introduced symbol/layer must earn its existence with one of these
+# semantic values. Merely lowering LOC/branches/nesting is intentionally absent.
+STRUCTURAL_VALUE_KINDS = frozenset(
+    {
+        "semantic_responsibility_owner",
+        "independent_policy_owner",
+        "validation_boundary",
+        "data_contract_owner",
+        "side_effect_isolation",
+        "resource_lifetime_owner",
+        "change_isolation",
+        "duplicated_authority_removed",
+        "shared_reuse",
+        "direct_test_seam",
+        "stable_external_boundary",
+        "compatibility_boundary",
+        "protocol_adapter",
+    }
+)
+
+# These shapes are especially easy for an agent to introduce just to satisfy a
+# size/complexity target. They are not forbidden, but require explicit value.
+EASY_PATH_STRUCTURE_KINDS = frozenset(
+    {
+        "wrapper",
+        "shim",
+        "adapter",
+        "facade",
+        "proxy",
+        "delegate",
+        "forwarding_helper",
+        "reexport",
+        "alias_module",
+        "manager",
+        "service",
+    }
+)
+
+FORWARDING_BOUNDARY_VALUES = frozenset(
+    {
+        "stable_external_boundary",
+        "compatibility_boundary",
+        "protocol_adapter",
     }
 )
 
@@ -46,7 +94,6 @@ LOCALITY_DIMENSIONS = (
 HARD_REGRESSION_DIMENSIONS = frozenset(
     {
         "file_count",
-        "forwarding_only_symbol_count",
         "context_lines",
         "edit_file_count",
         "evidence_file_count",
@@ -69,6 +116,31 @@ def _normalized_paths(values: Sequence[object]) -> list[str]:
     return sorted({str(value) for value in values if _nonempty(value)})
 
 
+def _union_line_count(symbols: Sequence[Mapping[str, object]]) -> int:
+    by_path: dict[str, list[tuple[int, int]]] = {}
+    for row in symbols:
+        by_path.setdefault(str(row["path"]), []).append(
+            (int(row["line_start"]), int(row["line_end"]))
+        )
+    total = 0
+    for spans in by_path.values():
+        current_start: int | None = None
+        current_end: int | None = None
+        for start, end in sorted(spans):
+            if current_start is None:
+                current_start, current_end = start, end
+                continue
+            assert current_end is not None
+            if start <= current_end + 1:
+                current_end = max(current_end, end)
+                continue
+            total += current_end - current_start + 1
+            current_start, current_end = start, end
+        if current_start is not None and current_end is not None:
+            total += current_end - current_start + 1
+    return total
+
+
 def locality_snapshot(
     *,
     repository_identity: str,
@@ -76,6 +148,8 @@ def locality_snapshot(
     target_path: str,
     source_identity: str,
     measurement_configuration_identity: str,
+    provider: str,
+    provider_evidence_identity: str,
     symbols: Sequence[Mapping[str, object]],
     verifier_paths: Sequence[str],
     responsibilities: Sequence[str] = (),
@@ -92,9 +166,11 @@ def locality_snapshot(
         target_path,
         source_identity,
         measurement_configuration_identity,
+        provider,
+        provider_evidence_identity,
     )
     if any(not _nonempty(value) for value in required):
-        raise ValueError("snapshot identities and target fields must be non-empty")
+        raise ValueError("snapshot identities, provider, and target fields must be non-empty")
     if state_kind not in {"observed", "proposed"}:
         raise ValueError("state_kind must be observed or proposed")
 
@@ -105,6 +181,9 @@ def locality_snapshot(
         line_start = row.get("line_start")
         line_end = row.get("line_end")
         navigation_depth = row.get("navigation_depth", 0)
+        structure_kind = str(row.get("structure_kind") or "implementation")
+        value_kind = str(row.get("value_kind") or "")
+        value_evidence_identity = str(row.get("value_evidence_identity") or "")
         if (
             not _nonempty(path)
             or not _nonempty(qualname)
@@ -117,8 +196,15 @@ def locality_snapshot(
             or not isinstance(navigation_depth, int)
             or isinstance(navigation_depth, bool)
             or navigation_depth < 0
+            or not _nonempty(structure_kind)
         ):
-            raise ValueError("symbols must contain valid path/qualname/span/depth evidence")
+            raise ValueError("symbols must contain valid path/qualname/span/depth/kind evidence")
+        if bool(value_kind) != bool(value_evidence_identity):
+            raise ValueError(
+                "value_kind and value_evidence_identity must either both be set or both be empty"
+            )
+        if value_kind and value_kind not in STRUCTURAL_VALUE_KINDS:
+            raise ValueError(f"unsupported structural value kind: {value_kind}")
         normalized_symbols.append(
             {
                 "path": path,
@@ -126,36 +212,58 @@ def locality_snapshot(
                 "line_start": line_start,
                 "line_end": line_end,
                 "navigation_depth": navigation_depth,
+                "structure_kind": structure_kind,
                 "forwarding_only": bool(row.get("forwarding_only", False)),
                 "edit_required": bool(row.get("edit_required", False)),
                 "evidence_required": bool(row.get("evidence_required", True)),
+                "value_kind": value_kind or None,
+                "value_evidence_identity": value_evidence_identity or None,
             }
         )
     normalized_symbols.sort(key=lambda row: (str(row["path"]), str(row["qualname"])))
     if not normalized_symbols:
         raise ValueError("at least one symbol reference is required")
+    symbol_identities = [
+        (str(row["path"]), str(row["qualname"])) for row in normalized_symbols
+    ]
+    if len(symbol_identities) != len(set(symbol_identities)):
+        raise ValueError("symbol references must be unique by path and qualname")
+    if not any(
+        row["path"] == target_path and row["navigation_depth"] == 0
+        for row in normalized_symbols
+    ):
+        raise ValueError("snapshot must include the target authority at navigation depth 0")
 
     verifier_files = _normalized_paths(list(verifier_paths))
-    responsibility_rows = sorted({str(value) for value in responsibilities if _nonempty(value)})
-    unresolved = sorted({str(value) for value in unresolved_evidence if _nonempty(value)})
+    responsibility_rows = sorted(
+        {str(value) for value in responsibilities if _nonempty(value)}
+    )
+    unresolved = sorted(
+        {str(value) for value in unresolved_evidence if _nonempty(value)}
+    )
     symbol_files = {str(row["path"]) for row in normalized_symbols}
-    edit_files = {str(row["path"]) for row in normalized_symbols if row["edit_required"]}
+    edit_files = {
+        str(row["path"]) for row in normalized_symbols if row["edit_required"]
+    }
     evidence_files = {
         str(row["path"]) for row in normalized_symbols if row["evidence_required"]
     } | set(verifier_files)
-    context_lines = sum(
-        int(row["line_end"]) - int(row["line_start"]) + 1 for row in normalized_symbols
-    )
     dimensions = {
         "symbol_count": len(normalized_symbols),
         "file_count": len(symbol_files),
-        "max_navigation_depth": max(int(row["navigation_depth"]) for row in normalized_symbols),
-        "forwarding_only_symbol_count": sum(1 for row in normalized_symbols if row["forwarding_only"]),
-        "context_lines": context_lines,
+        "max_navigation_depth": max(
+            int(row["navigation_depth"]) for row in normalized_symbols
+        ),
+        "forwarding_only_symbol_count": sum(
+            1 for row in normalized_symbols if row["forwarding_only"]
+        ),
+        "context_lines": _union_line_count(normalized_symbols),
         "verifier_file_count": len(verifier_files),
         "edit_file_count": len(edit_files),
         "evidence_file_count": len(evidence_files),
-        "cross_file_symbol_count": sum(1 for row in normalized_symbols if row["path"] != target_path),
+        "cross_file_symbol_count": sum(
+            1 for row in normalized_symbols if row["path"] != target_path
+        ),
     }
     structural_signals = {
         "authority_lines": authority_lines,
@@ -170,6 +278,8 @@ def locality_snapshot(
         "target_path": target_path,
         "source_identity": source_identity,
         "measurement_configuration_identity": measurement_configuration_identity,
+        "provider": provider,
+        "provider_evidence_identity": provider_evidence_identity,
         "state_kind": state_kind,
         "symbols": normalized_symbols,
         "verifier_paths": verifier_files,
@@ -189,28 +299,106 @@ def locality_snapshot(
     }
 
 
+def _symbol_map(snapshot: Mapping[str, object]) -> dict[tuple[str, str], Mapping[str, object]]:
+    raw = snapshot.get("symbols")
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes, bytearray)):
+        return {}
+    result: dict[tuple[str, str], Mapping[str, object]] = {}
+    for row in raw:
+        if not isinstance(row, Mapping):
+            continue
+        key = (str(row.get("path") or ""), str(row.get("qualname") or ""))
+        if all(key):
+            result[key] = row
+    return result
+
+
+def _introduced_structure_evidence(
+    pre_snapshot: Mapping[str, object],
+    post_snapshot: Mapping[str, object],
+) -> tuple[list[dict[str, object]], list[str], list[str]]:
+    pre_symbols = _symbol_map(pre_snapshot)
+    post_symbols = _symbol_map(post_snapshot)
+    introduced: list[dict[str, object]] = []
+    unjustified: list[str] = []
+    easy_path: list[str] = []
+    for key in sorted(set(post_symbols) - set(pre_symbols)):
+        row = post_symbols[key]
+        path, qualname = key
+        structure_kind = str(row.get("structure_kind") or "implementation")
+        value_kind = row.get("value_kind")
+        value_identity = row.get("value_evidence_identity")
+        forwarding_only = bool(row.get("forwarding_only", False))
+        has_value = (
+            isinstance(value_kind, str)
+            and value_kind in STRUCTURAL_VALUE_KINDS
+            and _nonempty(value_identity)
+        )
+        forwarding_value_ok = (
+            not forwarding_only or value_kind in FORWARDING_BOUNDARY_VALUES
+        )
+        earned = has_value and forwarding_value_ok
+        identity = f"{path}::{qualname}"
+        if not earned:
+            unjustified.append(identity)
+        if structure_kind in EASY_PATH_STRUCTURE_KINDS or forwarding_only:
+            easy_path.append(identity)
+        introduced.append(
+            {
+                "path": path,
+                "qualname": qualname,
+                "structure_kind": structure_kind,
+                "forwarding_only": forwarding_only,
+                "value_kind": value_kind,
+                "value_evidence_identity": value_identity,
+                "earned_structural_value": earned,
+            }
+        )
+    return introduced, sorted(unjustified), sorted(easy_path)
+
+
 def compare_locality(
     pre_snapshot: Mapping[str, object],
     post_snapshot: Mapping[str, object],
 ) -> dict[str, object]:
     unresolved: list[str] = []
-    if pre_snapshot.get("schema") != SNAPSHOT_SCHEMA or post_snapshot.get("schema") != SNAPSHOT_SCHEMA:
+    if (
+        pre_snapshot.get("schema") != SNAPSHOT_SCHEMA
+        or post_snapshot.get("schema") != SNAPSHOT_SCHEMA
+    ):
         unresolved.append("valid-locality-snapshots")
     if pre_snapshot.get("target") != post_snapshot.get("target"):
         unresolved.append("same-semantic-target")
-    if pre_snapshot.get("measurement_configuration_identity") != post_snapshot.get("measurement_configuration_identity"):
+    if (
+        pre_snapshot.get("measurement_configuration_identity")
+        != post_snapshot.get("measurement_configuration_identity")
+    ):
         unresolved.append("comparable-measurement-configuration")
-    if pre_snapshot.get("repository_identity") == post_snapshot.get("repository_identity"):
-        unresolved.append("distinct-repository-state")
+    if pre_snapshot.get("provider") != post_snapshot.get("provider"):
+        unresolved.append("same-measurement-provider")
+    same_repository = (
+        pre_snapshot.get("repository_identity")
+        == post_snapshot.get("repository_identity")
+    )
+    proposed_post = post_snapshot.get("state_kind") == "proposed"
+    distinct_source = (
+        pre_snapshot.get("source_identity") != post_snapshot.get("source_identity")
+    )
+    if same_repository and not (proposed_post and distinct_source):
+        unresolved.append("distinct-observed-state-or-proposal")
     for label, snapshot in (("pre", pre_snapshot), ("post", post_snapshot)):
         if snapshot.get("unresolved_evidence"):
             unresolved.append(f"{label}-snapshot-completeness")
         if not _nonempty(snapshot.get("evidence_identity")):
             unresolved.append(f"{label}-snapshot-identity")
+        if not _nonempty(snapshot.get("provider_evidence_identity")):
+            unresolved.append(f"{label}-provider-evidence")
 
     pre_dimensions = pre_snapshot.get("dimensions")
     post_dimensions = post_snapshot.get("dimensions")
-    if not isinstance(pre_dimensions, Mapping) or not isinstance(post_dimensions, Mapping):
+    if not isinstance(pre_dimensions, Mapping) or not isinstance(
+        post_dimensions, Mapping
+    ):
         unresolved.append("locality-dimensions")
         pre_dimensions = {}
         post_dimensions = {}
@@ -239,12 +427,19 @@ def compare_locality(
         elif delta < 0:
             improved.append(dimension)
 
+    introduced, unjustified, easy_path = _introduced_structure_evidence(
+        pre_snapshot, post_snapshot
+    )
+    if unjustified:
+        hard_regressions.append("unjustified-new-structure")
+
     unresolved = sorted(set(unresolved))
+    hard_regressions = sorted(set(hard_regressions))
     if unresolved:
         status = INSUFFICIENT_LOCALITY_EVIDENCE
     elif hard_regressions:
         status = LOCALITY_REGRESSED
-    elif worsened:
+    elif worsened or easy_path:
         status = LOCALITY_TRADEOFF_REVIEW_REQUIRED
     else:
         status = LOCALITY_PRESERVED_OR_IMPROVED
@@ -256,11 +451,17 @@ def compare_locality(
         "post_repository_identity": post_snapshot.get("repository_identity"),
         "pre_snapshot_identity": pre_snapshot.get("evidence_identity"),
         "post_snapshot_identity": post_snapshot.get("evidence_identity"),
-        "measurement_configuration_identity": pre_snapshot.get("measurement_configuration_identity"),
+        "measurement_configuration_identity": pre_snapshot.get(
+            "measurement_configuration_identity"
+        ),
+        "provider": pre_snapshot.get("provider"),
         "deltas": deltas,
         "worsened_dimensions": sorted(worsened),
         "improved_dimensions": sorted(improved),
-        "hard_regressions": sorted(hard_regressions),
+        "hard_regressions": hard_regressions,
+        "introduced_structures": introduced,
+        "unjustified_new_structures": unjustified,
+        "easy_path_structures": easy_path,
         "status": status,
         "unresolved_evidence": unresolved,
     }
@@ -271,6 +472,8 @@ def compare_locality(
             "composite_score_used": False,
             "lower_entrypoint_loc_is_improvement_proof": False,
             "locality_preserved": status == LOCALITY_PRESERVED_OR_IMPROVED,
+            "all_new_structure_earned_value": not unjustified,
+            "wrappers_shims_are_default_solution": False,
         },
     }
 
@@ -299,25 +502,41 @@ def decomposition_decision(
         if not _nonempty(row["kind"]) or not _nonempty(row["evidence_identity"])
     ]
     justifying = [
-        row for row in normalized_evidence if row["kind"] in JUSTIFYING_EVIDENCE_KINDS
+        row
+        for row in normalized_evidence
+        if row["kind"] in JUSTIFYING_EVIDENCE_KINDS
     ]
+    tradeoff_bound = any(
+        row["kind"] == TRADEOFF_EVIDENCE_KIND for row in normalized_evidence
+    )
     size_only = bool(normalized_evidence) and not justifying
     comparison_status = comparison.get("status")
     comparison_bound = (
-        comparison.get("pre_snapshot_identity") == pre_snapshot.get("evidence_identity")
-        and comparison.get("post_snapshot_identity") == post_snapshot.get("evidence_identity")
+        comparison.get("pre_snapshot_identity")
+        == pre_snapshot.get("evidence_identity")
+        and comparison.get("post_snapshot_identity")
+        == post_snapshot.get("evidence_identity")
+    )
+    structural_value_complete = not bool(
+        comparison.get("unjustified_new_structures")
     )
 
-    if invalid_evidence or not comparison_bound or comparison_status == INSUFFICIENT_LOCALITY_EVIDENCE:
+    if (
+        invalid_evidence
+        or not comparison_bound
+        or comparison_status == INSUFFICIENT_LOCALITY_EVIDENCE
+    ):
         status = INSUFFICIENT_LOCALITY_EVIDENCE
-    elif comparison_status == LOCALITY_REGRESSED:
+    elif not structural_value_complete or comparison_status == LOCALITY_REGRESSED:
         status = DECOMPOSITION_LOCALITY_RISK
     elif not justifying:
         status = KEEP_COHESIVE_AUTHORITY
-    elif comparison_status in {
-        LOCALITY_PRESERVED_OR_IMPROVED,
-        LOCALITY_TRADEOFF_REVIEW_REQUIRED,
-    }:
+    elif comparison_status == LOCALITY_PRESERVED_OR_IMPROVED:
+        status = DECOMPOSITION_JUSTIFIED
+    elif (
+        comparison_status == LOCALITY_TRADEOFF_REVIEW_REQUIRED
+        and tradeoff_bound
+    ):
         status = DECOMPOSITION_JUSTIFIED
     else:
         status = INSUFFICIENT_LOCALITY_EVIDENCE
@@ -337,15 +556,24 @@ def decomposition_decision(
         "claims": {
             "size_only_signal": size_only,
             "size_alone_justifies_decomposition": False,
+            "all_new_structure_earned_value": structural_value_complete,
             "edit_authorized": False,
             "merge_authorized": False,
             "composite_score_used": False,
+            "prefer_deletion_or_consolidation_before_new_layers": True,
         },
         "required_next_evidence": (
             [{"kind": "resolve-locality-evidence"}]
             if status == INSUFFICIENT_LOCALITY_EVIDENCE
             else (
-                [{"kind": "revise-decomposition-to-preserve-locality"}]
+                [
+                    {
+                        "kind": "revise-decomposition-to-remove-unearned-structure",
+                        "symbols": comparison.get(
+                            "unjustified_new_structures", []
+                        ),
+                    }
+                ]
                 if status == DECOMPOSITION_LOCALITY_RISK
                 else []
             )
@@ -371,13 +599,20 @@ def _write(path: Path | None, payload: Mapping[str, object]) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description="Compare refactor locality without reducing it to a score."
+        description=(
+            "Compare refactor locality without a score and require every new "
+            "structural layer to earn its existence."
+        )
     )
     sub = parser.add_subparsers(dest="command", required=True)
-    snapshot_parser = sub.add_parser("snapshot", help="Canonicalize explicit locality facts.")
+    snapshot_parser = sub.add_parser(
+        "snapshot", help="Canonicalize explicit locality facts."
+    )
     snapshot_parser.add_argument("input", type=Path)
     snapshot_parser.add_argument("--artifact", type=Path)
-    compare_parser = sub.add_parser("compare", help="Compare pre/post locality snapshots.")
+    compare_parser = sub.add_parser(
+        "compare", help="Compare pre/post locality snapshots."
+    )
     compare_parser.add_argument("pre", type=Path)
     compare_parser.add_argument("post", type=Path)
     compare_parser.add_argument(
@@ -411,7 +646,9 @@ def main(argv: list[str] | None = None) -> None:
         pre_snapshot=pre,
         post_snapshot=post,
         comparison=comparison,
-        decomposition_evidence=[row for row in rows if isinstance(row, dict)],
+        decomposition_evidence=[
+            row for row in rows if isinstance(row, dict)
+        ],
     )
     _write(args.artifact, {"comparison": comparison, "decision": decision})
 
