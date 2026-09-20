@@ -4,7 +4,7 @@ import hashlib
 import json
 from collections.abc import Mapping, Sequence
 
-SCHEMA = "agentscookbook-behavior-preservation-evidence/v1"
+SCHEMA = "agentscookbook-behavior-preservation-evidence/v2"
 TARGET_TEST_OWNERSHIP_SCHEMA = "agentscookbook-target-test-ownership-evidence/v1"
 POST_EDIT_SCHEMA = "agentscookbook-behavior-preservation-receipt/v1"
 PRESERVED = "BEHAVIOR_PRESERVATION_VERIFIED"
@@ -155,12 +155,31 @@ def behavior_preservation_readiness(
 
     unresolved: list[str] = []
     strengthening: list[str] = []
+    normalized_tests = _normalize_test_references(test_references)
+    if not normalized_tests or any(
+        not _nonempty(row["path"]) or not _nonempty(row["evidence_identity"])
+        for row in normalized_tests
+    ):
+        unresolved.append("confirmed-test-references")
+    selected_test_ids = {
+        row["evidence_identity"]
+        for row in normalized_tests
+        if _nonempty(row["evidence_identity"])
+    }
+
     normalized_boundaries: list[dict[str, object]] = []
     for row in boundaries:
         identity = row.get("identity")
         classification = row.get("classification")
         freshness = row.get("freshness")
         provider_reference = row.get("provider_reference")
+        raw_boundary_test_ids = row.get("test_evidence_identities")
+        boundary_test_ids = (
+            sorted({str(item) for item in raw_boundary_test_ids})
+            if isinstance(raw_boundary_test_ids, Sequence)
+            and not isinstance(raw_boundary_test_ids, (str, bytes, bytearray))
+            else []
+        )
         if not _nonempty(identity):
             unresolved.append("<invalid-boundary>")
             continue
@@ -171,6 +190,7 @@ def behavior_preservation_readiness(
                 "classification": classification,
                 "freshness": freshness,
                 "provider_reference": provider_reference,
+                "test_evidence_identities": boundary_test_ids,
             }
         )
         if classification not in {"direct", "indirect"}:
@@ -187,13 +207,12 @@ def behavior_preservation_readiness(
             provider_reference.get("evidence_identity")
         ):
             unresolved.append(identity)
-
-    normalized_tests = _normalize_test_references(test_references)
-    if not normalized_tests or any(
-        not _nonempty(row["path"]) or not _nonempty(row["evidence_identity"])
-        for row in normalized_tests
-    ):
-        unresolved.append("confirmed-test-references")
+        if (
+            not boundary_test_ids
+            or any(not _nonempty(test_id) for test_id in boundary_test_ids)
+            or any(test_id not in selected_test_ids for test_id in boundary_test_ids)
+        ):
+            unresolved.append(f"{identity}:boundary-test-binding")
 
     ownership_ok, normalized_ownership = _target_test_ownership_matches(
         test_ownership_evidence,
