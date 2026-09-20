@@ -202,6 +202,7 @@ def _hm_packet(
         "schema": "hashmarks.structural-locality.v1",
         "provider": "hashmarks",
         "provider_version": "qualification",
+        "provider_implementation_identity": "sha256:qualification-hashmarks-implementation",
         "repository_identity": repo,
         "source_identity": target["symbol_source_identity"],
         "measurement_configuration_identity": "sha256:locality-config-v1",
@@ -234,6 +235,57 @@ def _hm_packet(
             "ambiguous_calls_promoted_to_exact": False,
             "execution_authority": False,
         },
+    }
+    return {**semantic, "evidence_identity": _hashmarks_identity(semantic)}
+
+
+def _command_identity(argv: list[str]) -> str:
+    return "sha256:" + hashlib.sha256(
+        json.dumps(
+            {"argv": argv, "cwd": "."},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+
+
+def _receipt(packet: dict[str, object]) -> dict[str, object]:
+    bounds = packet["bounds"]
+    assert isinstance(bounds, dict)
+    executable = "hashmarks"
+    argv = [
+        executable,
+        "--workspace",
+        ".",
+        "structural-locality",
+        str(packet["target"]),
+        "--max-depth",
+        str(bounds["max_depth"]),
+        "--call-limit",
+        str(bounds["call_limit_per_symbol"]),
+        "--ref-limit",
+        str(bounds["ref_limit_per_symbol"]),
+    ]
+    semantic = {
+        "schema": "agentscookbook-hashmarks-locality-observation/v1",
+        "target": packet["target"],
+        "executable": executable,
+        "argv": argv,
+        "command_identity": _command_identity(argv),
+        "packet_evidence_identity": packet["evidence_identity"],
+        "packet_repository_identity": packet["repository_identity"],
+        "provider_implementation_identity": packet["provider_implementation_identity"],
+        "status": "PASS",
+        "classification": "pass",
+        "workspace_before_identity": "sha256:tracked-workspace",
+        "workspace_after_identity": "sha256:tracked-workspace",
+        "changed_tracked_paths": [],
+        "stdout_sha256": "0" * 64,
+        "stderr_sha256": "0" * 64,
+        "return_code": 0,
+        "timed_out": False,
+        "executable_missing": False,
+        "output_truncated": False,
     }
     return {**semantic, "evidence_identity": _hashmarks_identity(semantic)}
 
@@ -347,7 +399,13 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         "sha256:hm-pre",
         [_hm_node("src/pkg/core.py", "authority", 1, 225)],
     )
-    hm_pre = locality_snapshot_from_hashmarks(packet=hm_pre_packet)
+    hm_pre_diagnostic = locality_snapshot_from_hashmarks(packet=hm_pre_packet)
+    if hm_pre_diagnostic.get("claims", {}).get("independent_structural_provider") is not False:
+        failures.append("packet-only Hashmarks input claimed independent execution authority")
+    hm_pre = locality_snapshot_from_hashmarks(
+        packet=hm_pre_packet,
+        observation_receipt=_receipt(hm_pre_packet),
+    )
 
     hm_post_packet = _hm_packet(
         "sha256:hm-post",
@@ -359,6 +417,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     )
     hm_post = locality_snapshot_from_hashmarks(
         packet=hm_post_packet,
+        observation_receipt=_receipt(hm_post_packet),
         structural_values=[
             _value(
                 "sha256:hm-post",
@@ -422,7 +481,10 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             ),
         ],
     )
-    fragmented = locality_snapshot_from_hashmarks(packet=fragmented_packet)
+    fragmented = locality_snapshot_from_hashmarks(
+        packet=fragmented_packet,
+        observation_receipt=_receipt(fragmented_packet),
+    )
     fragmented_comparison, fragmented_decision = _decision(
         hm_pre,
         fragmented,
@@ -448,6 +510,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     )
     reuse_snapshot = locality_snapshot_from_hashmarks(
         packet=reuse_packet,
+        observation_receipt=_receipt(reuse_packet),
         structural_values=[
             _value(
                 "sha256:hm-reuse",
@@ -478,6 +541,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     )
     incomplete_reuse = locality_snapshot_from_hashmarks(
         packet=incomplete_reuse_packet,
+        observation_receipt=_receipt(incomplete_reuse_packet),
         structural_values=[
             _value(
                 "sha256:hm-incomplete-reuse",
@@ -499,6 +563,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     )
     direct_test_snapshot = locality_snapshot_from_hashmarks(
         packet=direct_test_packet,
+        observation_receipt=_receipt(direct_test_packet),
         structural_values=[
             _value(
                 "sha256:hm-test-seam",
@@ -526,7 +591,10 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             }
         ],
     )
-    unresolved_snapshot = locality_snapshot_from_hashmarks(packet=unresolved_packet)
+    unresolved_snapshot = locality_snapshot_from_hashmarks(
+        packet=unresolved_packet,
+        observation_receipt=_receipt(unresolved_packet),
+    )
     if not unresolved_snapshot["unresolved_evidence"]:
         failures.append("Hashmarks unresolved call did not make locality evidence incomplete")
     if compare_locality(hm_pre, unresolved_snapshot)["status"] != INSUFFICIENT_LOCALITY_EVIDENCE:
@@ -537,7 +605,10 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         [_hm_node("src/pkg/core.py", "authority", 1, 200)],
         freshness="unknown",
     )
-    stale_snapshot = locality_snapshot_from_hashmarks(packet=stale_packet)
+    stale_snapshot = locality_snapshot_from_hashmarks(
+        packet=stale_packet,
+        observation_receipt=_receipt(stale_packet),
+    )
     if compare_locality(hm_pre, stale_snapshot)["status"] != INSUFFICIENT_LOCALITY_EVIDENCE:
         failures.append("non-current Hashmarks evidence remained sufficient")
 
@@ -559,6 +630,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     try:
         locality_snapshot_from_hashmarks(
             packet=hm_post_packet,
+            observation_receipt=_receipt(hm_post_packet),
             structural_values=[wrong_repo_value],
         )
     except ValueError:
@@ -567,7 +639,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         failures.append("semantic value evidence from another repository state was accepted")
 
     if hm_pre.get("claims", {}).get("independent_structural_provider") is not True:
-        failures.append("Hashmarks-backed snapshot did not retain independent provider authority")
+        failures.append("observed Hashmarks snapshot did not retain independent provider authority")
     if manual_pre.get("claims", {}).get("independent_structural_provider") is not False:
         failures.append("manual snapshot incorrectly claimed independent structural authority")
     if any("score" in key for key in hm_pre.get("dimensions", {})):
