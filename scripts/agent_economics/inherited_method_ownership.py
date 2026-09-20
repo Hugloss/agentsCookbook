@@ -26,6 +26,84 @@ class _ClassInfo:
     bases: tuple[str, ...]
 
 
+def _lazy_getattr_export_name(node: ast.AST, argument: str) -> str | None:
+    if not isinstance(node, ast.Compare) or len(node.ops) != 1 or len(node.comparators) != 1:
+        return None
+    if not isinstance(node.ops[0], ast.Eq):
+        return None
+    left, right = node.left, node.comparators[0]
+    if isinstance(left, ast.Name) and left.id == argument:
+        value = right
+    elif isinstance(right, ast.Name) and right.id == argument:
+        value = left
+    else:
+        return None
+    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+        return value.value
+    return None
+
+
+def _lazy_getattr_aliases(
+    *,
+    tree: ast.AST,
+    current_module_parts: list[str],
+    current_is_package: bool,
+    package_name: str,
+) -> dict[str, str]:
+    """Recover simple module-level __getattr__ lazy re-exports.
+
+    Only a literal name comparison, a first-party import in that branch, and a
+    return of that exact imported local are admitted. Dynamic or ambiguous
+    export logic remains unresolved.
+    """
+
+    exports: dict[str, str] = {}
+    for function in getattr(tree, "body", []):
+        if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if function.name != "__getattr__":
+            continue
+        positional = [*function.args.posonlyargs, *function.args.args]
+        if len(positional) != 1:
+            continue
+        argument = positional[0].arg
+        for branch in function.body:
+            if not isinstance(branch, ast.If):
+                continue
+            export_name = _lazy_getattr_export_name(branch.test, argument)
+            if not export_name:
+                continue
+            imported: dict[str, str] = {}
+            returned: set[str] = set()
+            for statement in branch.body:
+                if isinstance(statement, ast.ImportFrom):
+                    base = resolve_import_from_module(
+                        node=statement,
+                        current_module_parts=current_module_parts,
+                        current_is_package=current_is_package,
+                    )
+                    if not base or not is_first_party_module(base, {package_name}):
+                        continue
+                    for alias in statement.names:
+                        if alias.name == "*":
+                            continue
+                        imported[alias.asname or alias.name] = f"{base}.{alias.name}"
+                elif isinstance(statement, ast.Import):
+                    for alias in statement.names:
+                        target = alias.name.strip()
+                        if not is_first_party_module(target, {package_name}):
+                            continue
+                        imported[alias.asname or target.split(".")[0]] = target
+                elif isinstance(statement, ast.Return) and isinstance(
+                    statement.value, ast.Name
+                ):
+                    returned.add(statement.value.id)
+            targets = {imported[name] for name in returned if name in imported}
+            if len(targets) == 1:
+                exports[export_name] = next(iter(targets))
+    return exports
+
+
 def _module_aliases(
     *,
     path: Path,
@@ -67,6 +145,13 @@ def _module_aliases(
                 if alias.name == "*":
                     continue
                 aliases[alias.asname or alias.name] = f"{base}.{alias.name}"
+    for local, target in _lazy_getattr_aliases(
+        tree=tree,
+        current_module_parts=current_module_parts,
+        current_is_package=path.name == "__init__.py",
+        package_name=package_name,
+    ).items():
+        aliases.setdefault(local, target)
     return aliases
 
 
