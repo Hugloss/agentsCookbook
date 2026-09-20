@@ -345,6 +345,251 @@ def locality_snapshot(
     }
 
 
+def _hashmarks_packet_validation(
+    packet: Mapping[str, object],
+) -> tuple[list[str], list[str]]:
+    """Return integrity errors and incompleteness from one Hashmarks packet."""
+    errors: list[str] = []
+    incomplete: list[str] = []
+    if packet.get("schema") != HASHMARKS_STRUCTURAL_LOCALITY_SCHEMA:
+        errors.append("hashmarks-schema")
+    if packet.get("provider") != "hashmarks":
+        errors.append("hashmarks-provider")
+    semantic = {
+        str(key): value for key, value in packet.items() if key != "evidence_identity"
+    }
+    expected_identity = _hashmarks_identity(semantic)
+    if packet.get("evidence_identity") != expected_identity:
+        errors.append("hashmarks-evidence-identity")
+    for key in (
+        "repository_identity",
+        "source_identity",
+        "measurement_configuration_identity",
+        "target",
+        "target_symbol_id",
+        "provider_version",
+    ):
+        if not _nonempty(packet.get(key)):
+            errors.append(f"hashmarks-{key.replace('_', '-')}")
+    freshness = packet.get("freshness")
+    if not isinstance(freshness, Mapping):
+        errors.append("hashmarks-freshness")
+    elif freshness.get("state") != "current":
+        incomplete.append("hashmarks-current-freshness")
+    claims = packet.get("claims")
+    if not isinstance(claims, Mapping):
+        errors.append("hashmarks-claims")
+    else:
+        forbidden_true = (
+            "refactor_recommendation",
+            "semantic_responsibility_inferred",
+            "ambiguous_calls_promoted_to_exact",
+            "execution_authority",
+        )
+        if any(claims.get(key) is not False for key in forbidden_true):
+            errors.append("hashmarks-observer-boundary")
+    nodes = packet.get("nodes")
+    if (
+        not isinstance(nodes, Sequence)
+        or isinstance(nodes, (str, bytes, bytearray))
+        or not nodes
+        or any(not isinstance(row, Mapping) for row in nodes)
+    ):
+        errors.append("hashmarks-nodes")
+        nodes = []
+    target_symbol_id = packet.get("target_symbol_id")
+    if nodes and not any(
+        row.get("symbol_id") == target_symbol_id for row in nodes if isinstance(row, Mapping)
+    ):
+        errors.append("hashmarks-target-node")
+    dimensions = packet.get("dimensions")
+    if not isinstance(dimensions, Mapping):
+        errors.append("hashmarks-dimensions")
+    else:
+        for dimension in LOCALITY_DIMENSIONS:
+            value = dimensions.get(dimension)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                errors.append(f"hashmarks-dimension:{dimension}")
+    unresolved = packet.get("unresolved_calls")
+    if isinstance(unresolved, Sequence) and not isinstance(
+        unresolved, (str, bytes, bytearray)
+    ):
+        if unresolved:
+            incomplete.append("hashmarks-unresolved-calls")
+    else:
+        errors.append("hashmarks-unresolved-calls-shape")
+    return sorted(set(errors)), sorted(set(incomplete))
+
+
+def locality_snapshot_from_hashmarks(
+    *,
+    packet: Mapping[str, object],
+    structural_values: Sequence[Mapping[str, object]] = (),
+    responsibilities: Sequence[str] = (),
+    authority_lines: int | None = None,
+    branch_points: int | None = None,
+    nesting_depth: int | None = None,
+    state_kind: str = "observed",
+) -> dict[str, object]:
+    """Build refactor-locality evidence from independently observed Hashmarks facts."""
+    errors, incomplete = _hashmarks_packet_validation(packet)
+    if errors:
+        raise ValueError("invalid Hashmarks structural-locality evidence: " + ", ".join(errors))
+    repository_identity = str(packet["repository_identity"])
+    value_rows: dict[str, Mapping[str, object]] = {}
+    for row in structural_values:
+        symbol_id = str(row.get("symbol_id") or "")
+        if not _nonempty(symbol_id):
+            raise ValueError("structural value evidence requires symbol_id")
+        if symbol_id in value_rows:
+            raise ValueError(f"duplicate structural value evidence: {symbol_id}")
+        if str(row.get("repository_identity") or "") != repository_identity:
+            raise ValueError(
+                f"structural value evidence for {symbol_id} is not bound to the measured repository"
+            )
+        if not _nonempty(row.get("evidence_provider")) or not _nonempty(
+            row.get("evidence_identity")
+        ):
+            raise ValueError(
+                f"structural value evidence for {symbol_id} requires provider and identity"
+            )
+        value_kind = str(row.get("value_kind") or "")
+        if value_kind not in STRUCTURAL_VALUE_KINDS:
+            raise ValueError(f"unsupported structural value kind: {value_kind}")
+        value_rows[symbol_id] = row
+
+    raw_nodes = packet["nodes"]
+    assert isinstance(raw_nodes, Sequence)
+    symbols: list[dict[str, object]] = []
+    known_symbol_ids: set[str] = set()
+    target_symbol_id = str(packet["target_symbol_id"])
+    target_path = target_symbol_id.split("::", 1)[0]
+    for raw in raw_nodes:
+        assert isinstance(raw, Mapping)
+        symbol_id = str(raw.get("symbol_id") or "")
+        path = str(raw.get("path") or "")
+        qualname = str(raw.get("qualname") or "")
+        lines = raw.get("lines")
+        if (
+            not _nonempty(symbol_id)
+            or not _nonempty(path)
+            or not _nonempty(qualname)
+            or not isinstance(lines, Sequence)
+            or isinstance(lines, (str, bytes, bytearray))
+            or len(lines) != 2
+        ):
+            raise ValueError("Hashmarks symbol row is malformed")
+        known_symbol_ids.add(symbol_id)
+        value = value_rows.get(symbol_id)
+        forwarding = raw.get("forwarding_only")
+        if forwarding is None:
+            incomplete.append(f"forwarding-shape:{symbol_id}")
+        elif not isinstance(forwarding, bool):
+            raise ValueError(f"invalid forwarding fact for {symbol_id}")
+        caller_count = raw.get("meaningful_caller_count")
+        caller_complete = raw.get("caller_count_complete")
+        if (
+            not isinstance(caller_count, int)
+            or isinstance(caller_count, bool)
+            or caller_count < 0
+            or not isinstance(caller_complete, bool)
+        ):
+            raise ValueError(f"invalid caller facts for {symbol_id}")
+        structure_kind = (
+            str(value.get("structure_kind") or "")
+            if value is not None
+            else ""
+        ) or ("forwarding_helper" if forwarding is True else "implementation")
+        symbols.append(
+            {
+                "path": path,
+                "qualname": qualname,
+                "line_start": int(lines[0]),
+                "line_end": int(lines[1]),
+                "navigation_depth": int(raw.get("navigation_depth", 0)),
+                "structure_kind": structure_kind,
+                "forwarding_only": forwarding is True,
+                "edit_required": bool(value.get("edit_required", False))
+                if value is not None
+                else False,
+                "evidence_required": True,
+                "value_kind": None
+                if value is None
+                else str(value.get("value_kind") or ""),
+                "value_evidence_identity": None
+                if value is None
+                else str(value.get("evidence_identity") or ""),
+                "value_evidence_provider": None
+                if value is None
+                else str(value.get("evidence_provider") or ""),
+                "value_repository_identity": None
+                if value is None
+                else repository_identity,
+                "meaningful_caller_count": caller_count,
+                "caller_count_complete": caller_complete,
+                # Hashmarks v1 exposes related verifier paths, not exact
+                # symbol-to-test seam ownership. Do not manufacture direct seams.
+                "direct_verifier_count": 0,
+                "provider_symbol_evidence_identity": raw.get(
+                    "symbol_evidence_identity"
+                ),
+            }
+        )
+    unknown_values = sorted(set(value_rows) - known_symbol_ids)
+    if unknown_values:
+        raise ValueError(
+            "structural value evidence references symbols absent from Hashmarks: "
+            + ", ".join(unknown_values)
+        )
+
+    verifier_paths = packet.get("verification_paths")
+    if not isinstance(verifier_paths, Sequence) or isinstance(
+        verifier_paths, (str, bytes, bytearray)
+    ):
+        raise ValueError("Hashmarks verification_paths is malformed")
+    normalized = locality_snapshot(
+        repository_identity=repository_identity,
+        target=str(packet["target"]),
+        target_path=target_path,
+        source_identity=str(packet["source_identity"]),
+        measurement_configuration_identity=str(
+            packet["measurement_configuration_identity"]
+        ),
+        provider="hashmarks",
+        provider_evidence_identity=str(packet["evidence_identity"]),
+        symbols=symbols,
+        verifier_paths=[str(value) for value in verifier_paths],
+        responsibilities=responsibilities,
+        unresolved_evidence=sorted(set(incomplete)),
+        authority_lines=authority_lines,
+        branch_points=branch_points,
+        nesting_depth=nesting_depth,
+        state_kind=state_kind,
+    )
+    provider_dimensions = packet.get("dimensions")
+    assert isinstance(provider_dimensions, Mapping)
+    normalized["dimensions"] = {
+        dimension: int(provider_dimensions[dimension])
+        for dimension in LOCALITY_DIMENSIONS
+    }
+    normalized["provider_packet_schema"] = HASHMARKS_STRUCTURAL_LOCALITY_SCHEMA
+    normalized["provider_packet_identity"] = packet["evidence_identity"]
+    claims = dict(normalized["claims"])
+    claims["independent_structural_provider"] = True
+    claims["caller_counts_from_provider"] = True
+    claims["forwarding_shape_from_provider"] = True
+    claims["direct_test_seam_inferred"] = False
+    normalized["claims"] = claims
+
+    semantic = {
+        key: value
+        for key, value in normalized.items()
+        if key not in {"evidence_identity", "claims"}
+    }
+    normalized["evidence_identity"] = _identity(semantic)
+    return normalized
+
+
 def _symbol_map(snapshot: Mapping[str, object]) -> dict[tuple[str, str], Mapping[str, object]]:
     raw = snapshot.get("symbols")
     if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes, bytearray)):
