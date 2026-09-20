@@ -33,7 +33,6 @@ class FocusRow(TypedDict):
     imports_out_count: int
     function_over_limit_count: int
     largest_function_lines: int
-    risk_score: int
     recommended_test_action: str
     recommended_strategy: str
 
