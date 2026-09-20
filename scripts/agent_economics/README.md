@@ -163,6 +163,78 @@ A successful BP2 receipt reports `BEHAVIOR_PRESERVATION_VERIFIED`, but still doe
 Probe artifacts that do not publish their own top-level `evidence_identity` can be bound canonically with `agent_economics.probe_contract.sha256_identity(payload)`. Consumers should not invent repository-local JSON serialization or hashing rules.
 
 
+### bounded-evidence-batches
+
+Use `bounded_evidence_batches` when a constrained agent or controller cannot safely finish one expensive evidence sweep inside a single execution window. It freezes the exact repository identity, provider/artifact identity, operation, ordered targets, and batch size before work starts. The helper **does not execute Hashmarks, tests, or repository commands**; it only plans and binds externally produced evidence.
+
+For example, a 90-target verification-ownership sweep can be frozen as nine deterministic 10-target batches. Each receipt distinguishes `INCOMPLETE_CONTROLLER_TIMEOUT` from `PRODUCT_FAILURE`, so controller economics never become a repository defect. Missing batches remain `INCOMPLETE`; they can never aggregate to a complete proof.
+
+The contract also supports deterministic subdivision after timeout (for example 10 targets -> 5 + 5), collapse back to the exact parent-batch semantics, and explicit resume at the first missing/incomplete/failed parent batch. Repository and provider identities are present in every descriptor and receipt, preventing reuse across a changed repository generation or a different Hashmarks wheel/commit.
+
+The same contract is available through the canonical package CLI, so constrained environments do not need repository-specific Python wrappers:
+
+```bash
+python -m agent_economics evidence-batches plan \
+  --targets-file targets.json \
+  --repository-identity sha256:<repo-generation> \
+  --provider-identity sha256:<provider-artifact> \
+  --operation verification_ownership_graph \
+  --batch-size 10 \
+  --artifact manifest.json
+
+python -m agent_economics evidence-batches batch manifest.json \
+  --index 0 --artifact batch-0.json
+
+# Execute batch-0.json targets externally, write results-0.json, then bind them:
+python -m agent_economics evidence-batches receipt batch-0.json \
+  --results-file results-0.json \
+  --execution-class hosted-diagnostic \
+  --elapsed-ms 1234 \
+  --observed-repository-identity sha256:<repo-generation> \
+  --observed-provider-identity sha256:<provider-artifact> \
+  --observed-operation verification_ownership_graph \
+  --artifact receipt-0.json
+
+python -m agent_economics evidence-batches aggregate manifest.json receipt-*.json
+python -m agent_economics evidence-batches resume manifest.json receipt-*.json
+```
+
+The CLI writes only the requested evidence JSON. It never invokes the provider operation itself. Receipt creation requires the executor-observed repository identity, provider identity, and operation; all three must match the frozen batch descriptor, so a checkout/provider change between batches fails closed instead of being stamped with stale manifest authority.
+
+Typical Python use:
+
+```python
+from agent_economics.bounded_evidence_batches import (
+    aggregate_receipts,
+    batch_descriptor,
+    build_manifest,
+    build_receipt,
+)
+
+manifest = build_manifest(
+    targets=qualified_targets,
+    repository_identity=repository_identity,
+    provider_identity=hashmarks_artifact_identity,
+    operation="verification_ownership_graph",
+    batch_size=10,
+)
+batch = batch_descriptor(manifest, 0)
+
+# Run batch["targets"] outside Agent Economics, then bind the observed results.
+receipt = build_receipt(
+    batch,
+    results=observed_results,
+    execution_class="hosted-diagnostic",
+    elapsed_ms=elapsed_ms,
+)
+aggregate = aggregate_receipts(manifest, [receipt])
+```
+
+Use different `execution_class` values for hosted diagnostics versus native qualification. Sharing the same manifest shape does not promote hosted evidence to native authority.
+
+For expensive evidence ladders, the same contract can derive a follow-up manifest from a complete cheaper-stage receipt set. Per-target results may set `followup_required` with a reason; `derive_followup_manifest(...)` preserves original target order and binds the expensive-stage selection to the parent manifest, aggregate, and exact receipt identities. Missing/incomplete parent batches cannot produce a follow-up manifest, and tampering with a target's follow-up flag invalidates the receipt identity. This makes patterns such as “run task-action/evidence broadly, then verification ownership only for ambiguity/disagreement” auditable and resumable rather than ad hoc.
+
+
 ### dogfood-corpus
 
 `dogfood-corpus` emits the immutable adversarial task specification used for empirical baseline-vs-bridge runs. It contains the 12 planned failure/authority/bounds cases and a protocol that requires local repair iterations, no CI during the repair loop, outcome freeze before opening the oracle, and one independent CI qualification only after local evidence is frozen.
