@@ -16,7 +16,15 @@ def _write(path: Path, text: str) -> None:
 
 
 def _build_repo(root: Path) -> None:
-    _write(root / "src/samplepkg/__init__.py", "from .facade import Facade\n")
+    _write(
+        root / "src/samplepkg/__init__.py",
+        "__all__ = ['Facade']\n\n"
+        "def __getattr__(name):\n"
+        "    if name == 'Facade':\n"
+        "        from .facade import Facade\n"
+        "        return Facade\n"
+        "    raise AttributeError(name)\n",
+    )
     _write(
         root / "src/samplepkg/feature_mixin.py",
         "class FeatureMixin:\n"
