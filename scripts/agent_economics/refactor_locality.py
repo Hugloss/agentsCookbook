@@ -377,6 +377,7 @@ def _hashmarks_packet_validation(
         "target",
         "target_symbol_id",
         "provider_version",
+        "provider_implementation_identity",
     ):
         if not _nonempty(packet.get(key)):
             errors.append(f"hashmarks-{key.replace('_', '-')}")
@@ -461,6 +462,9 @@ def _observation_semantic(
         "packet_repository_identity": None
         if packet is None
         else packet.get("repository_identity"),
+        "provider_implementation_identity": None
+        if packet is None
+        else packet.get("provider_implementation_identity"),
         "status": status,
         "classification": classification,
         "workspace_before_identity": workspace_before_identity,
@@ -611,6 +615,8 @@ def _observation_receipt_matches(
         and receipt.get("packet_evidence_identity") == packet.get("evidence_identity")
         and receipt.get("packet_repository_identity")
         == packet.get("repository_identity")
+        and receipt.get("provider_implementation_identity")
+        == packet.get("provider_implementation_identity")
         and receipt.get("target") == packet.get("target")
         and receipt.get("workspace_before_identity")
         == receipt.get("workspace_after_identity")
