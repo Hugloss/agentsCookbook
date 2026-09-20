@@ -27,7 +27,15 @@ def _portable_optional_path(path: Path | None, *, repository_root: Path) -> str 
 def _candidate_uncertainty(row: FocusRow) -> list[dict[str, object]]:
     status = row["correspondence_status"]
     if status == "confirmed":
-        return []
+        return [
+            {
+                "kind": "measure_refactor_locality",
+                "reason": (
+                    "size/complexity selects an investigation target only; "
+                    "decomposition requires explicit pre/post locality evidence"
+                ),
+            }
+        ]
     if status == "supported":
         return [
             {
@@ -117,7 +125,10 @@ def _candidate_from_row(row: FocusRow) -> dict[str, object]:
             "has_corresponding_tests": row["has_corresponding_tests"],
             "test_sync_required_if_split": row["test_sync_required_if_split"],
         },
-        "interpretation": {"risk_score": row["risk_score"]},
+        "interpretation": {
+            "size_complexity_is_investigation_signal_only": True,
+            "decomposition_requires_locality_evidence": True,
+        },
         "recommendations": {
             "test_action": row["recommended_test_action"],
             "strategy": row["recommended_strategy"],
@@ -282,10 +293,15 @@ def build_refactor_focus_contract(
         interpretation={
             "ranking_policy": [
                 "correspondence_authority",
-                "risk_score_desc",
+                "function_over_limit_count_desc",
+                "largest_function_lines_desc",
                 "source_lines_desc",
+                "dependent_source_count_desc",
+                "imports_out_count_desc",
                 "source_path",
             ],
+            "ranking_authority": "investigation-only",
+            "decomposition_authority": "refactor-locality-evidence-required",
             "selected_targets": [row["source_path"] for row in selected_rows],
         },
         uncertainty=uncertainty,
