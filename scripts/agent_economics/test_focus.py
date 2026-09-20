@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from .inherited_method_ownership import build_inherited_method_ownership_evidence
 from .probe_contract import analyzed_input_identity, build_probe_contract
 from .refactor_focus_analysis import AnalysisCache
 from .refactor_focus_discovery import (
@@ -27,7 +28,7 @@ from .refactor_focus_paths import iso_utc_now, module_path_for_file, report_path
 from .refactor_focus_pytest import build_pytest_ownership_evidence
 
 TOOL_NAME = "test-focus"
-TOOL_VERSION = "0.7.0"
+TOOL_VERSION = "0.7.1"
 
 
 class TestFocusError(ValueError):
@@ -144,7 +145,8 @@ def _dedupe_ownership(records: Iterable[OwnershipRecord]) -> list[OwnershipRecor
     priority = {
         "declared_owner": 0,
         "import_exact": 1,
-        "dynamic_import_literal": 2,
+        "inherited_method_call": 2,
+        "dynamic_import_literal": 3,
         "conftest_fixture": 3,
         "pytest_fixture": 4,
         "pytest_plugin_fixture": 5,
@@ -328,6 +330,19 @@ def test_focus_audit(
         helper_max_depth=helper_max_depth,
     ):
         ownership.append(OwnershipRecord(item.source_path, item.test_path, item.match_type, item.provenance))
+    for item in build_inherited_method_ownership_evidence(
+        source_files=source_files,
+        test_files=test_files,
+        source_root=source_root,
+        tests_root=tests_root,
+        package_name=effective_package_name,
+        tests_package_name=effective_tests_package_name,
+        analysis_cache=analysis_cache,
+        repository_root=repository_root,
+    ):
+        ownership.append(
+            OwnershipRecord(item.source_path, item.test_path, item.match_type, item.provenance)
+        )
     for item in build_pytest_ownership_evidence(
         test_files=test_files,
         all_test_python_files=all_test_python_files,
