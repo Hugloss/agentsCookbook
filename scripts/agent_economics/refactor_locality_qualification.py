@@ -29,6 +29,8 @@ def _symbol(
     structure_kind: str = "implementation",
     value_kind: str | None = None,
     value_identity: str | None = None,
+    callers: int = 0,
+    direct_verifiers: int = 0,
 ) -> dict[str, object]:
     return {
         "path": path,
@@ -42,6 +44,8 @@ def _symbol(
         "structure_kind": structure_kind,
         "value_kind": value_kind or "",
         "value_evidence_identity": value_identity or "",
+        "meaningful_caller_count": callers,
+        "direct_verifier_count": direct_verifiers,
     }
 
 
@@ -323,6 +327,59 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     if compatibility_comparison.get("unjustified_new_structures"):
         failures.append("evidence-bound compatibility shim was incorrectly unearned")
 
+
+    # Labels alone cannot launder clutter into value. Shared-reuse and direct
+    # test-seam claims have minimum observable evidence requirements.
+    fake_reuse = _snapshot(
+        "sha256:repo-h",
+        [
+            _symbol("src/pkg/core.py", "authority", 1, 180),
+            _symbol(
+                "src/pkg/core.py",
+                "_shared",
+                182,
+                210,
+                depth=1,
+                structure_kind="helper",
+                value_kind="shared_reuse",
+                value_identity="sha256:claimed-reuse",
+                callers=1,
+            ),
+        ],
+        lines=180,
+        branches=20,
+        nesting=3,
+        state_kind="proposed",
+    )
+    fake_reuse_comparison = compare_locality(pre, fake_reuse)
+    if fake_reuse_comparison["status"] != LOCALITY_REGRESSED:
+        failures.append("single-caller helper laundered itself as shared reuse")
+
+    fake_test_seam = _snapshot(
+        "sha256:repo-i",
+        [
+            _symbol("src/pkg/core.py", "authority", 1, 180),
+            _symbol(
+                "src/pkg/core.py",
+                "_test_seam",
+                182,
+                205,
+                depth=1,
+                structure_kind="helper",
+                value_kind="direct_test_seam",
+                value_identity="sha256:claimed-test-seam",
+                direct_verifiers=0,
+            ),
+        ],
+        lines=180,
+        branches=20,
+        nesting=3,
+        state_kind="proposed",
+    )
+    fake_test_seam_comparison = compare_locality(pre, fake_test_seam)
+    if fake_test_seam_comparison["status"] != LOCALITY_REGRESSED:
+        failures.append("helper without direct verifier laundered itself as a test seam")
+
     # Measurement provider/configuration drift is incomparable.
     wrong_provider = _snapshot(
         "sha256:repo-g",
@@ -350,6 +407,8 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             "same_file_clutter": clutter_decision["status"],
             "same_file_semantic": same_file_decision["status"],
             "compatibility_shim": compatibility_comparison["status"],
+            "fake_shared_reuse": fake_reuse_comparison["status"],
+            "fake_test_seam": fake_test_seam_comparison["status"],
         },
     }
     if artifact_path is not None:
