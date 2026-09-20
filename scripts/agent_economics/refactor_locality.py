@@ -867,7 +867,6 @@ def _structural_value_is_credible(row: Mapping[str, object]) -> bool:
     forwarding_only = bool(row.get("forwarding_only", False))
     caller_count = row.get("exact_caller_count", 0)
     verifier_count = row.get("direct_verifier_count", 0)
-    caller_reference_bound_complete = row.get("caller_reference_bound_complete", False)
     value_provider = row.get("value_evidence_provider")
     value_repository_identity = row.get("value_repository_identity")
     if (
