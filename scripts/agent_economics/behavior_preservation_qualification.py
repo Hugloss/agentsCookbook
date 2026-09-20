@@ -247,7 +247,8 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     post_tests = _tests()
     post_receipt = behavior_preservation_receipt(
         pre_edit_evidence=ready,
-        post_edit_source_identity=_post_identity(),\n        post_edit_source_references=_post_sources(),
+        post_edit_source_identity=_post_identity(),
+        post_edit_source_references=_post_sources(),
         post_edit_test_references=post_tests,
         post_edit_execution_receipt=_receipt(source_identity=_post_identity()),
         repository_gate_receipts=[
@@ -326,7 +327,8 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
     changed_post_tests = behavior_preservation_receipt(
         pre_edit_evidence=ready,
-        post_edit_source_identity=_post_identity(),\n        post_edit_source_references=_post_sources(),
+        post_edit_source_identity=_post_identity(),
+        post_edit_source_references=_post_sources(),
         post_edit_test_references=[{"path": "tests/test_core.py", "evidence_identity": "sha256:test-changed"}],
         post_edit_execution_receipt=_receipt(source_identity="sha256:source-b", test_ids=["sha256:test-changed"]),
         repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "PASS", "execution_identity": "sha256:gate"}],
@@ -336,7 +338,8 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
     wrong_post_source = behavior_preservation_receipt(
         pre_edit_evidence=ready,
-        post_edit_source_identity=_post_identity(),\n        post_edit_source_references=_post_sources(),
+        post_edit_source_identity=_post_identity(),
+        post_edit_source_references=_post_sources(),
         post_edit_test_references=post_tests,
         post_edit_execution_receipt=_receipt(source_identity="sha256:source-c"),
         repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "PASS", "execution_identity": "sha256:gate"}],
@@ -346,7 +349,8 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
     failed_post = behavior_preservation_receipt(
         pre_edit_evidence=ready,
-        post_edit_source_identity=_post_identity(),\n        post_edit_source_references=_post_sources(),
+        post_edit_source_identity=_post_identity(),
+        post_edit_source_references=_post_sources(),
         post_edit_test_references=post_tests,
         post_edit_execution_receipt=_receipt(source_identity=_post_identity(), status="FAIL"),
         repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "PASS", "execution_identity": "sha256:gate"}],
@@ -356,7 +360,8 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
     missing_gate = behavior_preservation_receipt(
         pre_edit_evidence=ready,
-        post_edit_source_identity=_post_identity(),\n        post_edit_source_references=_post_sources(),
+        post_edit_source_identity=_post_identity(),
+        post_edit_source_references=_post_sources(),
         post_edit_test_references=post_tests,
         post_edit_execution_receipt=_receipt(source_identity=_post_identity()),
         repository_gate_receipts=[],
@@ -366,7 +371,8 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
     failed_gate = behavior_preservation_receipt(
         pre_edit_evidence=ready,
-        post_edit_source_identity=_post_identity(),\n        post_edit_source_references=_post_sources(),
+        post_edit_source_identity=_post_identity(),
+        post_edit_source_references=_post_sources(),
         post_edit_test_references=post_tests,
         post_edit_execution_receipt=_receipt(source_identity=_post_identity()),
         repository_gate_receipts=[{"name": "full", "command": "uv run pytest", "status": "FAIL", "execution_identity": "sha256:gate"}],
