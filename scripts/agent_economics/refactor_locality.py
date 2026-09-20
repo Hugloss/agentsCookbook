@@ -128,6 +128,15 @@ def _hashmarks_identity(payload: Mapping[str, object]) -> str:
     ).hexdigest()
 
 
+def _bounded_command_identity(argv: Sequence[str], cwd: str = ".") -> str:
+    raw = json.dumps(
+        {"argv": list(argv), "cwd": cwd},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return "sha256:" + hashlib.sha256(raw).hexdigest()
+
+
 def _nonempty(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
@@ -609,6 +618,34 @@ def _observation_receipt_matches(
     }
     if receipt.get("evidence_identity") != _identity(semantic):
         return False
+    executable = receipt.get("executable")
+    bounds = packet.get("bounds")
+    argv = receipt.get("argv")
+    if (
+        not _nonempty(executable)
+        or not isinstance(bounds, Mapping)
+        or not isinstance(argv, Sequence)
+        or isinstance(argv, (str, bytes, bytearray))
+    ):
+        return False
+    expected_argv = [
+        str(executable),
+        "--workspace",
+        ".",
+        "structural-locality",
+        str(packet.get("target") or ""),
+        "--max-depth",
+        str(bounds.get("max_depth")),
+        "--call-limit",
+        str(bounds.get("call_limit_per_symbol")),
+        "--ref-limit",
+        str(bounds.get("ref_limit_per_symbol")),
+    ]
+    observed_argv = [str(value) for value in argv]
+    if observed_argv != expected_argv:
+        return False
+    if receipt.get("command_identity") != _bounded_command_identity(observed_argv):
+        return False
     return (
         receipt.get("status") == "PASS"
         and receipt.get("classification") == "pass"
@@ -625,7 +662,6 @@ def _observation_receipt_matches(
         and receipt.get("timed_out") is False
         and receipt.get("executable_missing") is False
         and receipt.get("output_truncated") is False
-        and _nonempty(receipt.get("command_identity"))
     )
 
 
