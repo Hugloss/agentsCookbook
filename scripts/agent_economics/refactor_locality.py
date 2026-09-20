@@ -1004,6 +1004,18 @@ def main(argv: list[str] | None = None) -> None:
     )
     snapshot_parser.add_argument("input", type=Path)
     snapshot_parser.add_argument("--artifact", type=Path)
+    hashmarks_parser = sub.add_parser(
+        "from-hashmarks",
+        help="Build locality evidence from a fresh Hashmarks structural-locality packet.",
+    )
+    hashmarks_parser.add_argument("input", type=Path)
+    hashmarks_parser.add_argument(
+        "--values",
+        type=Path,
+        help="Optional JSON array/object of repository-bound structural value evidence.",
+    )
+    hashmarks_parser.add_argument("--artifact", type=Path)
+
     compare_parser = sub.add_parser(
         "compare", help="Compare pre/post locality snapshots."
     )
@@ -1020,6 +1032,27 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "snapshot":
         raw = _load(args.input)
         payload = locality_snapshot(**raw)  # type: ignore[arg-type]
+        _write(args.artifact, payload)
+        return
+
+    if args.command == "from-hashmarks":
+        packet = _load(args.input)
+        value_rows: list[Mapping[str, object]] = []
+        if args.values is not None:
+            raw_values = json.loads(args.values.read_text(encoding="utf-8"))
+            if isinstance(raw_values, Mapping):
+                raw_values = raw_values.get("structural_values", [])
+            if not isinstance(raw_values, list) or any(
+                not isinstance(row, Mapping) for row in raw_values
+            ):
+                raise ValueError(
+                    "--values must contain a JSON array or structural_values array"
+                )
+            value_rows = list(raw_values)
+        payload = locality_snapshot_from_hashmarks(
+            packet=packet,
+            structural_values=value_rows,
+        )
         _write(args.artifact, payload)
         return
 
