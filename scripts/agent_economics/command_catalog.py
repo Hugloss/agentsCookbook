@@ -19,7 +19,7 @@ COMMANDS = (
     CommandSpec("coupling-focus", "Inspect bounded Git co-change correlation.", "repository evidence", "coupling_focus_cli"),
     CommandSpec("hotspot-focus", "Rank transparent repository investigation hotspots.", "repository evidence", "hotspot_focus_cli"),
     CommandSpec("quality-debt", "Measure configured analyzer debt without policy authority.", "repository evidence", "quality_debt_cli"),
-    CommandSpec("refactor-locality", "Compare refactor locality without an opaque score.", "repository evidence", "refactor_locality"),
+    CommandSpec("refactor-locality", "Compare structural-change locality without an opaque score.", "measurement", "refactor_locality"),
     CommandSpec("doctor", "Inspect repository readiness and suggest configuration.", "environment", "doctor"),
     CommandSpec("next", "Translate required next evidence into a bounded command without executing it.", "environment", "evidence_next"),
     CommandSpec("evidence-batches", "Plan and bind resumable evidence batches without executing them.", "environment", "bounded_evidence_batches_cli"),
