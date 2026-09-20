@@ -16,7 +16,24 @@ def _write(path: Path, text: str) -> None:
 
 
 def _build_repo(root: Path) -> None:
-    _write(root / "src/samplepkg/__init__.py", "")
+    _write(root / "src/samplepkg/__init__.py", "from .facade import Facade\n")
+    _write(
+        root / "src/samplepkg/feature_mixin.py",
+        "class FeatureMixin:\n"
+        "    def feature(self, value):\n"
+        "        return value\n",
+    )
+    _write(
+        root / "src/samplepkg/facade.py",
+        "from samplepkg.feature_mixin import FeatureMixin\n\n"
+        "class Facade(FeatureMixin):\n"
+        "    def __enter__(self):\n"
+        "        return self\n\n"
+        "    def __exit__(self, exc_type, exc, tb):\n"
+        "        return None\n\n"
+        "    def facade_only(self):\n"
+        "        return 'facade'\n",
+    )
     _write(root / "src/samplepkg/core.py", "def normalize(x):\n    return x.strip()\n")
     _write(
         root / "src/samplepkg/service.py",
@@ -38,6 +55,20 @@ def _build_repo(root: Path) -> None:
         "from samplepkg.service import serve\n\ndef test_service():\n    assert serve(' z ') == 'z'\n",
     )
     _write(root / "tests/test_mirror.py", "def test_name_only():\n    assert True\n")
+    _write(
+        root / "tests/test_feature_facade.py",
+        "from samplepkg import Facade\n\n"
+        "def test_feature_through_facade():\n"
+        "    with Facade() as facade:\n"
+        "        assert facade.feature('x') == 'x'\n",
+    )
+    _write(
+        root / "tests/test_facade_only.py",
+        "from samplepkg import Facade\n\n"
+        "def test_facade_only():\n"
+        "    with Facade() as facade:\n"
+        "        assert facade.facade_only() == 'facade'\n",
+    )
     _write(root / "config/settings.yaml", "mode: safe\n")
 
 
@@ -82,6 +113,36 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             failures.append(f"direct owning tests mismatch: {direct}")
         if affected != ["tests/test_service.py"]:
             failures.append(f"affected dependent tests mismatch: {affected}")
+
+        inherited = _run(root, ["src/samplepkg/feature_mixin.py"])
+        inherited_direct = _paths(inherited, "direct")
+        if inherited_direct != ["tests/test_feature_facade.py"]:
+            failures.append(
+                f"inherited method owning tests mismatch: {inherited_direct}"
+            )
+        if "tests/test_facade_only.py" in inherited_direct:
+            failures.append("facade-only call became inherited method ownership authority")
+        inherited_candidates = inherited.get("candidates", [])
+        if not isinstance(inherited_candidates, list) or not inherited_candidates:
+            failures.append("inherited method candidate missing")
+        else:
+            inherited_evidence = (
+                inherited_candidates[0].get("evidence", {})
+                if isinstance(inherited_candidates[0], dict)
+                else {}
+            )
+            inherited_confirmed = (
+                inherited_evidence.get("confirmed", [])
+                if isinstance(inherited_evidence, dict)
+                else []
+            )
+            if not any(
+                isinstance(item, dict)
+                and item.get("test_path") == "tests/test_feature_facade.py"
+                and item.get("match_type") == "inherited_method_call"
+                for item in inherited_confirmed
+            ):
+                failures.append("inherited method ownership provenance missing")
         interpretation = core.get("interpretation", {})
         if not isinstance(interpretation, dict) or interpretation.get("sufficiency_rule") != "focused suggestions never prove broader verification unnecessary":
             failures.append("focused verification sufficiency boundary missing")
@@ -175,6 +236,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         observations = {
             "direct_tests": direct,
             "affected_tests": affected,
+            "inherited_direct_tests": inherited_direct,
             "bounded_direct": _paths(bounded, "direct"),
             "deferred_count": len(deferred) if isinstance(deferred, list) else None,
             "contract_errors": contract_errors,
