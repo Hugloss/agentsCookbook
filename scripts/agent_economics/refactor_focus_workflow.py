@@ -2,6 +2,7 @@ import json
 import time
 from pathlib import Path
 
+from .inherited_method_ownership import build_inherited_method_ownership_evidence
 from .refactor_focus_analysis import AnalysisCache
 from .refactor_focus_discovery import (
     DEFAULT_EXCLUDE_PATTERNS,
@@ -227,6 +228,16 @@ def refactor_focus_audit(
         repository_root=effective_repository_root,
         helper_max_depth=helper_max_depth,
     )
+    inherited_test_evidence = build_inherited_method_ownership_evidence(
+        source_files=source_files,
+        test_files=test_files,
+        source_root=source_root,
+        tests_root=tests_root,
+        package_name=effective_package_name,
+        tests_package_name=effective_tests_package_name,
+        analysis_cache=analysis_cache,
+        repository_root=effective_repository_root,
+    )
     pytest_test_evidence = build_pytest_ownership_evidence(
         test_files=test_files,
         all_test_python_files=all_test_python_files,
@@ -240,6 +251,8 @@ def refactor_focus_audit(
         pytest_max_depth=pytest_max_depth,
     )
     direct_test_owners = ownership_map_from_evidence(python_test_evidence)
+    for item in inherited_test_evidence:
+        direct_test_owners.setdefault(item.source_path, set()).add(item.test_path)
     for item in pytest_test_evidence:
         direct_test_owners.setdefault(item.source_path, set()).add(item.test_path)
 
@@ -274,6 +287,9 @@ def refactor_focus_audit(
     python_evidence_by_source: dict[Path, list[object]] = {}
     for item in python_test_evidence:
         python_evidence_by_source.setdefault(item.source_path, []).append(item)
+    inherited_evidence_by_source: dict[Path, list[object]] = {}
+    for item in inherited_test_evidence:
+        inherited_evidence_by_source.setdefault(item.source_path, []).append(item)
     pytest_evidence_by_source: dict[Path, list[object]] = {}
     for item in pytest_test_evidence:
         pytest_evidence_by_source.setdefault(item.source_path, []).append(item)
@@ -327,6 +343,15 @@ def refactor_focus_audit(
         module_path = source_module_by_path[source_file]
 
         for item in python_evidence_by_source.get(source_file, []):
+            add_match(
+                matches_by_path=matches_by_path,
+                test_path=item.test_path,
+                match_type=item.match_type,
+                test_lines_by_path=test_lines_by_path,
+                test_path_anchor=effective_repository_root,
+                provenance=item.provenance,
+            )
+        for item in inherited_evidence_by_source.get(source_file, []):
             add_match(
                 matches_by_path=matches_by_path,
                 test_path=item.test_path,
