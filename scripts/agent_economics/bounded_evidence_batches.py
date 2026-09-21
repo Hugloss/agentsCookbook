@@ -298,7 +298,10 @@ def collapse_subbatch_receipts(
         ):
             raise ValueError("subbatch receipt identity mismatch")
         elapsed += int(receipt.get("elapsed_ms") or 0)
-        if receipt.get("status") == INCOMPLETE_CONTROLLER_TIMEOUT:
+        if receipt.get("status") in {
+            INCOMPLETE_CONTROLLER_TIMEOUT,
+            INCOMPLETE_BUDGET_EXCEEDED,
+        }:
             return build_receipt(
                 parent_batch,
                 results=results,
@@ -353,9 +356,24 @@ def aggregate_receipts(manifest: Mapping[str, object], receipts: Sequence[Mappin
         by_index[index] = receipt
     missing = [index for index in range(count) if index not in by_index]
     ordered = [by_index[index] for index in range(count) if index in by_index]
-    timeouts = [int(row["batch_index"]) for row in ordered if row.get("status") == INCOMPLETE_CONTROLLER_TIMEOUT]
+    timeouts = [
+        int(row["batch_index"])
+        for row in ordered
+        if row.get("status") == INCOMPLETE_CONTROLLER_TIMEOUT
+    ]
+    budget_exceeded = [
+        int(row["batch_index"])
+        for row in ordered
+        if row.get("status") == INCOMPLETE_BUDGET_EXCEEDED
+    ]
     failed = [int(row["batch_index"]) for row in ordered if row.get("status") == PRODUCT_FAILURE]
-    status = INCOMPLETE if missing or timeouts else PRODUCT_FAILURE if failed else COMPLETE_PASS
+    status = (
+        INCOMPLETE
+        if missing or timeouts or budget_exceeded
+        else PRODUCT_FAILURE
+        if failed
+        else COMPLETE_PASS
+    )
     semantic: dict[str, object] = {
         "schema": AGGREGATE_SCHEMA,
         "manifest_identity": manifest["manifest_identity"],
@@ -369,6 +387,7 @@ def aggregate_receipts(manifest: Mapping[str, object], receipts: Sequence[Mappin
         "expected_batch_count": count,
         "missing_batch_indexes": missing,
         "controller_timeout_batch_indexes": timeouts,
+        "budget_exceeded_batch_indexes": budget_exceeded,
         "failed_batch_indexes": failed,
         "passed_targets": sum(1 for row in ordered for result in row.get("results", ()) if isinstance(result, Mapping) and result.get("status") == "PASS"),
         "failed_targets": sum(1 for row in ordered for result in row.get("results", ()) if isinstance(result, Mapping) and result.get("status") == "FAIL"),
@@ -420,6 +439,17 @@ def derive_followup_manifest(
         provider_identity=str(parent_manifest["provider_identity"]),
         operation=operation,
         batch_size=batch_size,
+        controller_budget_ms=(
+            int(parent_manifest["controller_budget_ms"])
+            if "controller_budget_ms" in parent_manifest
+            else None
+        ),
+        batch_timeout_ms=(
+            int(parent_manifest["batch_timeout_ms"])
+            if "batch_timeout_ms" in parent_manifest
+            else None
+        ),
+        minimum_headroom_ms=int(parent_manifest.get("minimum_headroom_ms", 5_000)),
         parent_manifest_identity=str(parent_manifest["manifest_identity"]),
         selection_identity=selection_identity,
     )
