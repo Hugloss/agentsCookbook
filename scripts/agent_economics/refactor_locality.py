@@ -224,6 +224,9 @@ def locality_snapshot(
         value_kind = str(row.get("value_kind") or "")
         value_evidence_identity = str(row.get("value_evidence_identity") or "")
         exact_caller_count = row.get("exact_caller_count", 0)
+        exact_non_verifier_caller_count = row.get(
+            "exact_non_verifier_caller_count", exact_caller_count
+        )
         direct_verifier_count = row.get("direct_verifier_count", 0)
         caller_reference_bound_complete = bool(row.get("caller_reference_bound_complete", False))
         value_evidence_provider = str(row.get("value_evidence_provider") or "")
@@ -244,6 +247,10 @@ def locality_snapshot(
             or not isinstance(exact_caller_count, int)
             or isinstance(exact_caller_count, bool)
             or exact_caller_count < 0
+            or not isinstance(exact_non_verifier_caller_count, int)
+            or isinstance(exact_non_verifier_caller_count, bool)
+            or exact_non_verifier_caller_count < 0
+            or exact_non_verifier_caller_count > exact_caller_count
             or not isinstance(direct_verifier_count, int)
             or isinstance(direct_verifier_count, bool)
             or direct_verifier_count < 0
@@ -278,6 +285,7 @@ def locality_snapshot(
                 "value_kind": value_kind or None,
                 "value_evidence_identity": value_evidence_identity or None,
                 "exact_caller_count": exact_caller_count,
+                "exact_non_verifier_caller_count": exact_non_verifier_caller_count,
                 "direct_verifier_count": direct_verifier_count,
                 "caller_reference_bound_complete": caller_reference_bound_complete,
                 "value_evidence_provider": value_evidence_provider or None,
@@ -717,6 +725,13 @@ def locality_snapshot_from_hashmarks(
             raise ValueError(f"unsupported structural value kind: {value_kind}")
         value_rows[symbol_id] = row
 
+    verifier_paths = packet.get("verification_paths")
+    if not isinstance(verifier_paths, Sequence) or isinstance(
+        verifier_paths, (str, bytes, bytearray)
+    ):
+        raise ValueError("Hashmarks verification_paths is malformed")
+    verifier_file_set = {str(value) for value in verifier_paths if _nonempty(value)}
+
     raw_nodes = packet["nodes"]
     assert isinstance(raw_nodes, Sequence)
     symbols: list[dict[str, object]] = []
@@ -747,13 +762,27 @@ def locality_snapshot_from_hashmarks(
             raise ValueError(f"invalid forwarding fact for {symbol_id}")
         caller_count = raw.get("exact_caller_count")
         caller_complete = raw.get("caller_reference_bound_complete")
+        exact_callers = raw.get("exact_callers")
         if (
             not isinstance(caller_count, int)
             or isinstance(caller_count, bool)
             or caller_count < 0
             or not isinstance(caller_complete, bool)
+            or not isinstance(exact_callers, Sequence)
+            or isinstance(exact_callers, (str, bytes, bytearray))
+            or any(not isinstance(caller, Mapping) for caller in exact_callers)
         ):
             raise ValueError(f"invalid caller facts for {symbol_id}")
+        caller_rows = [caller for caller in exact_callers if isinstance(caller, Mapping)]
+        if len(caller_rows) != caller_count:
+            raise ValueError(f"exact caller count does not match caller rows for {symbol_id}")
+        if any(not _nonempty(caller.get("path")) for caller in caller_rows):
+            raise ValueError(f"exact caller rows require paths for {symbol_id}")
+        exact_non_verifier_caller_count = sum(
+            1
+            for caller in caller_rows
+            if str(caller.get("path") or "") not in verifier_file_set
+        )
         structure_kind = (
             str(value.get("structure_kind") or "")
             if value is not None
@@ -785,6 +814,7 @@ def locality_snapshot_from_hashmarks(
                 if value is None
                 else repository_identity,
                 "exact_caller_count": caller_count,
+                "exact_non_verifier_caller_count": exact_non_verifier_caller_count,
                 "caller_reference_bound_complete": caller_complete,
                 # Hashmarks v1 exposes related verifier paths, not exact
                 # symbol-to-test seam ownership. Do not manufacture direct seams.
@@ -801,11 +831,6 @@ def locality_snapshot_from_hashmarks(
             + ", ".join(unknown_values)
         )
 
-    verifier_paths = packet.get("verification_paths")
-    if not isinstance(verifier_paths, Sequence) or isinstance(
-        verifier_paths, (str, bytes, bytearray)
-    ):
-        raise ValueError("Hashmarks verification_paths is malformed")
     normalized = locality_snapshot(
         repository_identity=repository_identity,
         target=str(packet["target"]),
@@ -898,6 +923,9 @@ def _structural_value_is_credible(row: Mapping[str, object]) -> bool:
     structure_kind = str(row.get("structure_kind") or "implementation")
     forwarding_only = bool(row.get("forwarding_only", False))
     caller_count = row.get("exact_caller_count", 0)
+    non_verifier_caller_count = row.get(
+        "exact_non_verifier_caller_count", caller_count
+    )
     verifier_count = row.get("direct_verifier_count", 0)
     value_provider = row.get("value_evidence_provider")
     value_repository_identity = row.get("value_repository_identity")
@@ -912,9 +940,9 @@ def _structural_value_is_credible(row: Mapping[str, object]) -> bool:
     if forwarding_only and value_kind not in FORWARDING_BOUNDARY_VALUES:
         return False
     if value_kind == "shared_reuse" and (
-        not isinstance(caller_count, int)
-        or isinstance(caller_count, bool)
-        or caller_count < 2
+        not isinstance(non_verifier_caller_count, int)
+        or isinstance(non_verifier_caller_count, bool)
+        or non_verifier_caller_count < 2
     ):
         return False
     if value_kind == "direct_test_seam" and (
@@ -994,6 +1022,10 @@ def _introduced_structure_evidence(
                 "value_kind": value_kind,
                 "value_evidence_identity": value_identity,
                 "exact_caller_count": row.get("exact_caller_count", 0),
+                "exact_non_verifier_caller_count": row.get(
+                    "exact_non_verifier_caller_count",
+                    row.get("exact_caller_count", 0),
+                ),
                 "direct_verifier_count": row.get("direct_verifier_count", 0),
                 "caller_reference_bound_complete": row.get("caller_reference_bound_complete", False),
                 "value_evidence_provider": row.get("value_evidence_provider"),
