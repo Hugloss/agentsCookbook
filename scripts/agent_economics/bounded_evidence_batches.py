@@ -13,6 +13,7 @@ COMPLETE_PASS = "COMPLETE_PASS"
 PRODUCT_FAILURE = "PRODUCT_FAILURE"
 INCOMPLETE = "INCOMPLETE"
 INCOMPLETE_CONTROLLER_TIMEOUT = "INCOMPLETE_CONTROLLER_TIMEOUT"
+INCOMPLETE_BUDGET_EXCEEDED = "INCOMPLETE_BUDGET_EXCEEDED"
 
 
 def _identity(payload: Mapping[str, object]) -> str:
@@ -41,6 +42,9 @@ def build_manifest(
     provider_identity: str,
     operation: str,
     batch_size: int = 10,
+    controller_budget_ms: int | None = None,
+    batch_timeout_ms: int | None = None,
+    minimum_headroom_ms: int = 5_000,
     parent_manifest_identity: str | None = None,
     selection_identity: str | None = None,
 ) -> dict[str, object]:
@@ -50,6 +54,27 @@ def build_manifest(
         raise ValueError("repository/provider/operation identities must be non-empty")
     if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size < 1:
         raise ValueError("batch_size must be a positive integer")
+    if (controller_budget_ms is None) != (batch_timeout_ms is None):
+        raise ValueError(
+            "controller_budget_ms and batch_timeout_ms must be provided together"
+        )
+    if controller_budget_ms is not None:
+        if (
+            not isinstance(controller_budget_ms, int)
+            or isinstance(controller_budget_ms, bool)
+            or controller_budget_ms < 1
+            or not isinstance(batch_timeout_ms, int)
+            or isinstance(batch_timeout_ms, bool)
+            or batch_timeout_ms < 1
+            or not isinstance(minimum_headroom_ms, int)
+            or isinstance(minimum_headroom_ms, bool)
+            or minimum_headroom_ms < 0
+        ):
+            raise ValueError("execution budgets must be positive integer milliseconds")
+        if batch_timeout_ms + minimum_headroom_ms > controller_budget_ms:
+            raise ValueError(
+                "batch timeout must leave declared headroom below controller budget"
+            )
     if (parent_manifest_identity is None) != (selection_identity is None):
         raise ValueError("follow-up manifests require both parent and selection identities")
     if parent_manifest_identity is not None and (
@@ -66,6 +91,11 @@ def build_manifest(
         "batch_size": batch_size,
         "batch_count": (len(normalized) + batch_size - 1) // batch_size,
     }
+    if controller_budget_ms is not None:
+        semantic["controller_budget_ms"] = controller_budget_ms
+        semantic["batch_timeout_ms"] = batch_timeout_ms
+        semantic["minimum_headroom_ms"] = minimum_headroom_ms
+        semantic["controller_headroom_ms"] = controller_budget_ms - int(batch_timeout_ms)
     if parent_manifest_identity is not None:
         semantic["parent_manifest_identity"] = parent_manifest_identity
         semantic["selection_identity"] = selection_identity
@@ -95,6 +125,14 @@ def batch_descriptor(manifest: Mapping[str, object], batch_index: int) -> dict[s
         "end": end,
         "targets": targets[start:end],
     }
+    for key in (
+        "controller_budget_ms",
+        "batch_timeout_ms",
+        "minimum_headroom_ms",
+        "controller_headroom_ms",
+    ):
+        if key in manifest:
+            semantic[key] = manifest[key]
     return {**semantic, "batch_identity": _identity(semantic)}
 
 
@@ -121,6 +159,14 @@ def subdivide_batch(batch: Mapping[str, object], *, subbatch_size: int) -> list[
             "end": int(batch["start"]) + offset + len(child_targets),
             "targets": child_targets,
         }
+        for key in (
+            "controller_budget_ms",
+            "batch_timeout_ms",
+            "minimum_headroom_ms",
+            "controller_headroom_ms",
+        ):
+            if key in batch:
+                semantic[key] = batch[key]
         children.append({**semantic, "batch_identity": _identity(semantic)})
     return children
 
@@ -178,6 +224,13 @@ def build_receipt(
         if actual != expected:
             raise ValueError("completed receipt must cover every target in order")
         status = PRODUCT_FAILURE if any(row["status"] == "FAIL" for row in normalized) else COMPLETE_PASS
+        batch_timeout_ms = descriptor.get("batch_timeout_ms")
+        if (
+            isinstance(batch_timeout_ms, int)
+            and not isinstance(batch_timeout_ms, bool)
+            and elapsed_ms > batch_timeout_ms
+        ):
+            status = INCOMPLETE_BUDGET_EXCEEDED
     else:
         if actual != expected[: len(actual)]:
             raise ValueError("timeout receipt may contain only completed target prefix")
@@ -200,6 +253,9 @@ def build_receipt(
         "observed_operation": observed_operation,
         "controller_status": controller_status,
         "elapsed_ms": elapsed_ms,
+        "controller_budget_ms": descriptor.get("controller_budget_ms"),
+        "batch_timeout_ms": descriptor.get("batch_timeout_ms"),
+        "minimum_headroom_ms": descriptor.get("minimum_headroom_ms"),
         "status": status,
         "product_failure": status == PRODUCT_FAILURE,
     }
@@ -242,7 +298,10 @@ def collapse_subbatch_receipts(
         ):
             raise ValueError("subbatch receipt identity mismatch")
         elapsed += int(receipt.get("elapsed_ms") or 0)
-        if receipt.get("status") == INCOMPLETE_CONTROLLER_TIMEOUT:
+        if receipt.get("status") in {
+            INCOMPLETE_CONTROLLER_TIMEOUT,
+            INCOMPLETE_BUDGET_EXCEEDED,
+        }:
             return build_receipt(
                 parent_batch,
                 results=results,
@@ -297,9 +356,24 @@ def aggregate_receipts(manifest: Mapping[str, object], receipts: Sequence[Mappin
         by_index[index] = receipt
     missing = [index for index in range(count) if index not in by_index]
     ordered = [by_index[index] for index in range(count) if index in by_index]
-    timeouts = [int(row["batch_index"]) for row in ordered if row.get("status") == INCOMPLETE_CONTROLLER_TIMEOUT]
+    timeouts = [
+        int(row["batch_index"])
+        for row in ordered
+        if row.get("status") == INCOMPLETE_CONTROLLER_TIMEOUT
+    ]
+    budget_exceeded = [
+        int(row["batch_index"])
+        for row in ordered
+        if row.get("status") == INCOMPLETE_BUDGET_EXCEEDED
+    ]
     failed = [int(row["batch_index"]) for row in ordered if row.get("status") == PRODUCT_FAILURE]
-    status = INCOMPLETE if missing or timeouts else PRODUCT_FAILURE if failed else COMPLETE_PASS
+    status = (
+        INCOMPLETE
+        if missing or timeouts or budget_exceeded
+        else PRODUCT_FAILURE
+        if failed
+        else COMPLETE_PASS
+    )
     semantic: dict[str, object] = {
         "schema": AGGREGATE_SCHEMA,
         "manifest_identity": manifest["manifest_identity"],
@@ -313,6 +387,7 @@ def aggregate_receipts(manifest: Mapping[str, object], receipts: Sequence[Mappin
         "expected_batch_count": count,
         "missing_batch_indexes": missing,
         "controller_timeout_batch_indexes": timeouts,
+        "budget_exceeded_batch_indexes": budget_exceeded,
         "failed_batch_indexes": failed,
         "passed_targets": sum(1 for row in ordered for result in row.get("results", ()) if isinstance(result, Mapping) and result.get("status") == "PASS"),
         "failed_targets": sum(1 for row in ordered for result in row.get("results", ()) if isinstance(result, Mapping) and result.get("status") == "FAIL"),
@@ -364,6 +439,17 @@ def derive_followup_manifest(
         provider_identity=str(parent_manifest["provider_identity"]),
         operation=operation,
         batch_size=batch_size,
+        controller_budget_ms=(
+            int(parent_manifest["controller_budget_ms"])
+            if "controller_budget_ms" in parent_manifest
+            else None
+        ),
+        batch_timeout_ms=(
+            int(parent_manifest["batch_timeout_ms"])
+            if "batch_timeout_ms" in parent_manifest
+            else None
+        ),
+        minimum_headroom_ms=int(parent_manifest.get("minimum_headroom_ms", 5_000)),
         parent_manifest_identity=str(parent_manifest["manifest_identity"]),
         selection_identity=selection_identity,
     )

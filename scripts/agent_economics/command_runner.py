@@ -57,6 +57,34 @@ def classify_result(
     return "unknown_failure"
 
 
+_PRODUCT_FAILURE_CLASSIFICATIONS = frozenset({
+    "assertion_test_failure",
+    "syntax_compile_failure",
+    "type_check_failure",
+    "lint_static_failure",
+    "unknown_failure",
+})
+
+
+def _process_outcome(classification: str) -> dict[str, object]:
+    if classification == "pass":
+        return {"status": "PASS", "classification": classification, "product_failure": False}
+    if classification in _PRODUCT_FAILURE_CLASSIFICATIONS:
+        return {"status": "FAIL", "classification": classification, "product_failure": True}
+    return {"status": "INCOMPLETE", "classification": classification, "product_failure": False}
+
+
+def _overall_evidence_status(
+    process_outcome: dict[str, object],
+    harness_outcome: dict[str, object],
+) -> str:
+    if process_outcome["status"] == "FAIL":
+        return "PRODUCT_FAILURE"
+    if process_outcome["status"] != "PASS" or harness_outcome["status"] != "PASS":
+        return "INCOMPLETE"
+    return "COMPLETE_PASS"
+
+
 def run_named_command(
     *, repository_root: Path, manifest_path: Path, name: str,
     selected_paths: Iterable[str] = (), timeout_seconds: float = 60.0,
@@ -87,25 +115,63 @@ def run_named_command(
     except WorkspaceStateError as exc:
         raise CommandRunnerError(f"cannot establish pre-command tracked-byte identity: {exc}") from exc
     started_at = datetime.now(timezone.utc).isoformat()
+    runtime_environment = {"TERM": "dumb", **dict(spec.environment)}
     result = run_bounded(
-        repository_root=root, argv=argv, cwd=spec.cwd,
+        repository_root=root,
+        argv=argv,
+        cwd=spec.cwd,
         limits=ProcessLimits(timeout_seconds, max_stdout_bytes, max_stderr_bytes),
+        environment=runtime_environment,
     )
     ended_at = datetime.now(timezone.utc).isoformat()
+    postflight_error: str | None = None
     try:
         after_state = tracked_workspace_state(root)
     except WorkspaceStateError as exc:
-        raise CommandRunnerError(f"cannot establish post-command tracked-byte identity: {exc}") from exc
-    changed = changed_tracked_paths(before_state, after_state)
-    unexpected = [p for p in changed if not _allowed(p, spec.allowed_mutation_paths)]
-    policy_violation = bool(spec.must_not_modify_tracked_files and unexpected)
+        after_state = None
+        changed: list[str] = []
+        unexpected: list[str] = []
+        policy_violation = False
+        postflight_error = f"{type(exc).__name__}: {exc}"
+    else:
+        changed = changed_tracked_paths(before_state, after_state)
+        unexpected = [p for p in changed if not _allowed(p, spec.allowed_mutation_paths)]
+        policy_violation = bool(spec.must_not_modify_tracked_files and unexpected)
     stdout_text = result.stdout.decode("utf-8", errors="replace")
     stderr_text = result.stderr.decode("utf-8", errors="replace")
-    classification = classify_result(
-        return_code=result.return_code, timed_out=result.timed_out,
-        executable_missing=result.executable_missing, stdout=stdout_text, stderr=stderr_text,
-        policy_violation=policy_violation,
+    process_classification = classify_result(
+        return_code=result.return_code,
+        timed_out=result.timed_out,
+        executable_missing=result.executable_missing,
+        stdout=stdout_text,
+        stderr=stderr_text,
+        policy_violation=False,
         output_limited=result.stdout_truncated or result.stderr_truncated,
+    )
+    process_outcome = _process_outcome(process_classification)
+    if postflight_error is not None:
+        harness_outcome = {
+            "status": "FAIL",
+            "classification": "postflight_workspace_identity_unavailable",
+            "detail": postflight_error,
+        }
+    elif policy_violation:
+        harness_outcome = {
+            "status": "FAIL",
+            "classification": "policy_mutation_violation",
+            "detail": None,
+        }
+    else:
+        harness_outcome = {
+            "status": "PASS",
+            "classification": "pass",
+            "detail": None,
+        }
+    evidence_status = _overall_evidence_status(process_outcome, harness_outcome)
+    classification = (
+        str(process_outcome["classification"])
+        if process_outcome["status"] != "PASS"
+        else str(harness_outcome["classification"])
     )
     semantic = {
         "manifest_identity": manifest.identity, "command_identity": result.command_identity,
@@ -115,6 +181,10 @@ def run_named_command(
         "stdout_sha256": hashlib.sha256(result.stdout).hexdigest(),
         "stderr_sha256": hashlib.sha256(result.stderr).hexdigest(),
         "unexpected_tracked_mutations": unexpected,
+        "evidence_status": evidence_status,
+        "process_outcome": process_outcome,
+        "harness_outcome": harness_outcome,
+        "environment_identity": result.environment_identity,
     }
     failure_identity = "sha256:" + hashlib.sha256(
         json.dumps(semantic, sort_keys=True, separators=(",", ":")).encode()
@@ -123,22 +193,47 @@ def run_named_command(
         "schema": {"name": "agent-economics-command-result", "version": 2},
         "command": {"name": name, "argv": argv, "cwd": spec.cwd, "stage": spec.stage, "identity": result.command_identity},
         "manifest_identity": manifest.identity,
-        "status": "PASS" if classification == "pass" else "FAIL",
-        "classification": classification, "failure_identity": failure_identity,
+        "status": "PASS" if evidence_status == "COMPLETE_PASS" else "FAIL",
+        "classification": classification,
+        "evidence_status": evidence_status,
+        "outcomes": {
+            "process": process_outcome,
+            "harness": harness_outcome,
+            "controller": {
+                "status": "NOT_OBSERVED",
+                "classification": "external-controller-boundary",
+            },
+        },
+        "failure_identity": failure_identity,
         "execution": {**result.metrics(), "started_at": started_at, "ended_at": ended_at},
         "provenance": {
-            "platform": platform.system(), "python": platform.python_version(),
-            "shell_used": False, "network_isolation_enforced": False, "sandbox_isolation_enforced": False,
+            "platform": platform.system(),
+            "python": platform.python_version(),
+            "shell_used": False,
+            "network_isolation_enforced": False,
+            "sandbox_isolation_enforced": False,
+            "runtime_environment": {
+                "identity": result.environment_identity,
+                "explicit_variables": list(result.environment_variables),
+                "default_noninteractive_term": "TERM" in result.environment_variables,
+            },
         },
         "stdout": stdout_text, "stderr": stderr_text,
         "workspace": {
-            "before_identity": before_state["identity"], "after_identity": after_state["identity"],
-            "tracked_files": after_state["tracked_files"], "tracked_bytes": after_state["tracked_bytes"],
+            "before_identity": before_state["identity"],
+            "after_identity": None if after_state is None else after_state["identity"],
+            "tracked_files": None if after_state is None else after_state["tracked_files"],
+            "tracked_bytes": None if after_state is None else after_state["tracked_bytes"],
             "unexpected_tracked_mutations": unexpected,
+            "postflight_error": postflight_error,
         },
         "authority": {
-            "repair_performed": False, "ci_status": "NOT_RUN",
-            "network_isolation_enforced": False, "sandbox_isolation_enforced": False,
+            "repair_performed": False,
+            "ci_status": "NOT_RUN",
+            "network_isolation_enforced": False,
+            "sandbox_isolation_enforced": False,
+            "authoritative_execution_evidence": evidence_status in {"COMPLETE_PASS", "PRODUCT_FAILURE"},
+            "product_failure": evidence_status == "PRODUCT_FAILURE",
         },
     }
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from .bounded_evidence_batches import (
     COMPLETE_PASS,
     INCOMPLETE,
+    INCOMPLETE_BUDGET_EXCEEDED,
     INCOMPLETE_CONTROLLER_TIMEOUT,
     PRODUCT_FAILURE,
     aggregate_receipts,
@@ -46,9 +47,29 @@ def qualify() -> dict[str, object]:
         provider_identity="sha256:hashmarks-wheel-a",
         operation="verification_ownership_graph",
         batch_size=10,
+        controller_budget_ms=45_000,
+        batch_timeout_ms=30_000,
+        minimum_headroom_ms=5_000,
     )
     if manifest["batch_count"] != 9:
         failures.append("90 targets did not partition into nine deterministic batches")
+    if manifest.get("controller_headroom_ms") != 15_000:
+        failures.append("controller headroom was not frozen into manifest identity")
+    try:
+        build_manifest(
+            targets=targets[:2],
+            repository_identity="sha256:repo-generation-a",
+            provider_identity="sha256:hashmarks-wheel-a",
+            operation="too-tight",
+            batch_size=2,
+            controller_budget_ms=45_000,
+            batch_timeout_ms=43_000,
+            minimum_headroom_ms=5_000,
+        )
+    except ValueError:
+        pass
+    else:
+        failures.append("batch plan admitted timeout without controller headroom")
 
     receipts = []
     for index in range(9):
@@ -91,6 +112,25 @@ def qualify() -> dict[str, object]:
         failures.append("timeout campaign was promoted or treated as product failure")
     if next_resume_batch(manifest, timed_receipts) != 4:
         failures.append("timeout campaign did not resume at timed-out batch")
+
+    budget_batch = batch_descriptor(manifest, 5)
+    budget_exceeded = _observed_receipt(
+        budget_batch,
+        results=_pass_results(list(budget_batch["targets"])),
+        execution_class="hosted-diagnostic",
+        elapsed_ms=30_001,
+    )
+    if budget_exceeded["status"] != INCOMPLETE_BUDGET_EXCEEDED:
+        failures.append("completed-over-budget batch was promoted to complete evidence")
+    budget_receipts = list(receipts)
+    budget_receipts[5] = budget_exceeded
+    budget_aggregate = aggregate_receipts(manifest, budget_receipts)
+    if (
+        budget_aggregate["status"] != INCOMPLETE
+        or budget_aggregate["budget_exceeded_batch_indexes"] != [5]
+        or budget_aggregate["product_failure"]
+    ):
+        failures.append("budget-exceeded batch did not remain incomplete/non-product-failure")
 
     children = subdivide_batch(timeout_batch, subbatch_size=5)
     if [child["targets"] for child in children] != [
@@ -282,6 +322,9 @@ def qualify() -> dict[str, object]:
                 "--provider-identity", "sha256:hashmarks-wheel-a",
                 "--operation", "task_evidence",
                 "--batch-size", "10",
+                "--controller-budget-ms", "45000",
+                "--batch-timeout-ms", "30000",
+                "--minimum-headroom-ms", "5000",
                 "--artifact", str(manifest_path),
             ])
         cli_manifest = json.loads(output.getvalue())
@@ -343,6 +386,8 @@ def qualify() -> dict[str, object]:
             "complete_status": aggregate["status"],
             "missing_status": missing["status"],
             "timeout_status": timeout["status"],
+            "budget_exceeded_status": budget_exceeded["status"],
+            "controller_headroom_ms": manifest.get("controller_headroom_ms"),
             "subdivision_sizes": [len(child["targets"]) for child in children],
             "failure_status": failure_receipt["status"],
             "followup_target_count": 0 if followup is None else followup["target_count"],

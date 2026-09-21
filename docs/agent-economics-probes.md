@@ -197,7 +197,7 @@ This evidence is deliberately separate from BP1/BP2 behavior preservation and qu
 
 ## Capability bridge boundary
 
-P10 adds a constrained local capability helper for environments such as ChatGPT that have repository bytes but lack convenient command execution/evidence tooling. It requires Python 3.11+. The bridge accepts versioned TOML manifests containing argv arrays, never implicit shell strings. Selecting a manifest/command is explicit execution authorization.
+P10 adds a constrained local capability helper for environments such as ChatGPT that have repository bytes but lack convenient command execution/evidence tooling. It requires Python 3.11+. The bridge accepts versioned TOML manifests containing argv arrays, never implicit shell strings. Selecting a manifest/command is explicit execution authorization. Command environment overrides are explicit manifest inputs; the runner owns a noninteractive `TERM=dumb` default unless explicitly overridden. Runtime-environment identity participates in command identity without publishing raw values. Execution receipts keep child-process outcome, harness/postflight outcome, and external-controller observability separate: a child `return_code=0` does not become authoritative evidence when postflight workspace checks fail, and timeout/missing-executable/output-limit/harness failures remain incomplete evidence rather than product failures.
 
 The bridge is not a sandbox: child commands inherit host filesystem/environment/network authority unless the host isolates them. It reports process-tree, mutation-guard, sandbox, and network capabilities truthfully. It never edits source, installs dependencies, promotes focused verification into repository authority, or replaces CI/CD.
 

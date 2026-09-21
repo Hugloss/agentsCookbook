@@ -83,6 +83,17 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--provider-identity", required=True)
     plan.add_argument("--operation", required=True)
     plan.add_argument("--batch-size", type=int, default=10)
+    plan.add_argument(
+        "--controller-budget-ms",
+        type=int,
+        help="External controller budget for one batch invocation.",
+    )
+    plan.add_argument(
+        "--batch-timeout-ms",
+        type=int,
+        help="Internal batch timeout; must leave declared controller headroom.",
+    )
+    plan.add_argument("--minimum-headroom-ms", type=int, default=5_000)
     _artifact_arg(plan)
 
     batch = commands.add_parser("batch", help="Project one parent batch descriptor.")
@@ -162,6 +173,9 @@ def main(argv: list[str] | None = None) -> None:
                 provider_identity=args.provider_identity,
                 operation=args.operation,
                 batch_size=args.batch_size,
+                controller_budget_ms=args.controller_budget_ms,
+                batch_timeout_ms=args.batch_timeout_ms,
+                minimum_headroom_ms=args.minimum_headroom_ms,
             )
         elif args.command == "batch":
             payload = batch_descriptor(_load_object(args.manifest), args.index)

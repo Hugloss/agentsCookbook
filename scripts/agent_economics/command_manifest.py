@@ -20,6 +20,7 @@ class CommandSpec:
     append_selected_tests: bool
     must_not_modify_tracked_files: bool
     allowed_mutation_paths: tuple[str, ...]
+    environment: tuple[tuple[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -32,7 +33,7 @@ class CommandManifest:
 _ROOT_FIELDS = {"version", "commands"}
 _COMMAND_FIELDS = {
     "argv", "cwd", "stage", "append_selected_tests",
-    "must_not_modify_tracked_files", "allowed_mutation_paths",
+    "must_not_modify_tracked_files", "allowed_mutation_paths", "environment",
 }
 
 
@@ -41,6 +42,28 @@ def _safe_relative(value: str) -> str:
     if candidate.is_absolute() or any(part in {"", ".."} for part in candidate.parts):
         raise CommandManifestError(f"path must be repository-relative: {value!r}")
     return candidate.as_posix() if candidate != Path(".") else "."
+
+
+def _environment(value: object, *, field: str) -> tuple[tuple[str, str], ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, dict):
+        raise CommandManifestError(f"{field} must be a TOML table")
+    rows: list[tuple[str, str]] = []
+    for key, raw in sorted(value.items()):
+        if (
+            not isinstance(key, str)
+            or not key
+            or "=" in key
+            or "\x00" in key
+            or not isinstance(raw, str)
+            or "\x00" in raw
+        ):
+            raise CommandManifestError(
+                f"{field} must contain valid non-NUL string environment pairs"
+            )
+        rows.append((key, raw))
+    return tuple(rows)
 
 
 def _bool(value: object, *, field: str, default: bool) -> bool:
@@ -96,6 +119,7 @@ def load_command_manifest(path: Path) -> CommandManifest:
             append_selected_tests=_bool(value.get("append_selected_tests"), field=f"{name}.append_selected_tests", default=False),
             must_not_modify_tracked_files=_bool(value.get("must_not_modify_tracked_files"), field=f"{name}.must_not_modify_tracked_files", default=True),
             allowed_mutation_paths=tuple(_safe_relative(x) for x in allowed),
+            environment=_environment(value.get("environment"), field=f"{name}.environment"),
         )
     identity = "sha256:" + hashlib.sha256(
         json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
