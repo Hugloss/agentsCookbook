@@ -108,6 +108,7 @@ def _hm_node(
     depth: int = 0,
     forwarding: bool = False,
     callers: int = 0,
+    caller_paths: list[str] | None = None,
     complete: bool = True,
 ) -> dict[str, object]:
     name = qualname.rsplit(".", 1)[-1]
@@ -117,6 +118,9 @@ def _hm_node(
         "file_digest": f"sha256:{path}:{end}",
         "lines": [start, end],
     }
+    caller_paths = caller_paths or ["src/pkg/core.py"] * callers
+    if len(caller_paths) != callers:
+        raise ValueError("caller_paths length must match callers")
     semantic = {
         "path": path,
         "qualname": qualname,
@@ -130,12 +134,12 @@ def _hm_node(
         "forwarding_provider": "python-ast",
         "exact_callers": [
             {
-                "path": "src/pkg/core.py",
-                "source": "authority",
-                "line": start,
+                "path": caller_path,
+                "source": f"caller_{index}",
+                "line": start + index,
                 "confidence": "static-name",
             }
-            for _ in range(callers)
+            for index, caller_path in enumerate(caller_paths)
         ],
         "exact_caller_count": callers,
         "caller_reference_bound_complete": complete,
@@ -539,6 +543,55 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         "src/pkg/core.py::_shared"
     ]:
         failures.append("limited observed reuse evidence omitted the one-caller helper")
+
+    verifier_inflated_reuse_packet = _hm_packet(
+        "sha256:hm-verifier-inflated-reuse",
+        [
+            _hm_node("src/pkg/core.py", "authority", 1, 180),
+            _hm_node(
+                "src/pkg/core.py",
+                "_shared",
+                182,
+                210,
+                depth=1,
+                callers=3,
+                caller_paths=[
+                    "src/pkg/core.py",
+                    "tests/test_core.py",
+                    "tests/test_core.py",
+                ],
+            ),
+        ],
+    )
+    verifier_inflated_reuse = _locality_snapshot_from_observed_hashmarks(
+        packet=verifier_inflated_reuse_packet,
+        observation_receipt=_receipt(verifier_inflated_reuse_packet),
+        structural_values=[
+            _value(
+                "sha256:hm-verifier-inflated-reuse",
+                "src/pkg/core.py::_shared",
+                "shared_reuse",
+                "sha256:claimed-verifier-inflated-reuse",
+            )
+        ],
+    )
+    verifier_inflated_comparison = compare_locality(hm_pre, verifier_inflated_reuse)
+    if verifier_inflated_comparison["status"] != LOCALITY_REGRESSED:
+        failures.append(
+            "verifier-only callers laundered one source caller into shared reuse"
+        )
+    introduced = verifier_inflated_comparison.get("introduced_structures", [])
+    if not any(
+        isinstance(row, dict)
+        and row.get("qualname") == "_shared"
+        and row.get("exact_caller_count") == 3
+        and row.get("exact_non_verifier_caller_count") == 1
+        and row.get("earned_structural_value") is False
+        for row in introduced
+    ):
+        failures.append(
+            "verifier-inflated reuse evidence did not retain total/non-verifier caller facts"
+        )
 
     incomplete_reuse_packet = _hm_packet(
         "sha256:hm-incomplete-reuse",
