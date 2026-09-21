@@ -9,6 +9,7 @@ from pathlib import Path
 from .bounded_evidence_batches import (
     COMPLETE_PASS,
     INCOMPLETE,
+    INCOMPLETE_BUDGET_EXCEEDED,
     INCOMPLETE_CONTROLLER_TIMEOUT,
     PRODUCT_FAILURE,
     aggregate_receipts,
@@ -46,9 +47,29 @@ def qualify() -> dict[str, object]:
         provider_identity="sha256:hashmarks-wheel-a",
         operation="verification_ownership_graph",
         batch_size=10,
+        controller_budget_ms=45_000,
+        batch_timeout_ms=30_000,
+        minimum_headroom_ms=5_000,
     )
     if manifest["batch_count"] != 9:
         failures.append("90 targets did not partition into nine deterministic batches")
+    if manifest.get("controller_headroom_ms") != 15_000:
+        failures.append("controller headroom was not frozen into manifest identity")
+    try:
+        build_manifest(
+            targets=targets[:2],
+            repository_identity="sha256:repo-generation-a",
+            provider_identity="sha256:hashmarks-wheel-a",
+            operation="too-tight",
+            batch_size=2,
+            controller_budget_ms=45_000,
+            batch_timeout_ms=43_000,
+            minimum_headroom_ms=5_000,
+        )
+    except ValueError:
+        pass
+    else:
+        failures.append("batch plan admitted timeout without controller headroom")
 
     receipts = []
     for index in range(9):
