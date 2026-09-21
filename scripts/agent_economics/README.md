@@ -91,7 +91,7 @@ Run `python -m scripts.agent_economics context-focus --task "..." --repository-r
 
 ### P7 test-focus
 
-Run `python -m scripts.agent_economics test-focus --source-root src/pkg --changed-path src/pkg/foo.py --gate 'package=pytest -q'`. Changed paths, source/test roots, package names, ownership hints, discovery policy, reverse-impact depth/source limits, per-stage test limits, changed-input identity byte bounds, and broader gates are all parameters. `test-focus` only suggests verification order; it does not execute tests or waive broader repository validation.
+Run `python -m scripts.agent_economics test-focus --source-root src/pkg --changed-path src/pkg/foo.py --gate 'package=pytest -q'`. Changed paths, source/test roots, package names, ownership hints, discovery policy, reverse-impact depth/source limits, per-stage test limits, changed-input identity byte bounds, and broader gates are all parameters. `test-focus` only suggests verification order; it does not execute tests or waive broader repository validation. Exact first-party static façade re-exports are followed back to one unambiguous top-level defining symbol for direct ownership; ambiguous, cyclic, dynamic, or non-defining re-export chains remain unclaimed.
 
 
 ### P8 change-impact
