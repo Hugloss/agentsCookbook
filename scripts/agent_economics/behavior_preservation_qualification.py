@@ -5,21 +5,28 @@ import json
 from pathlib import Path
 
 from .behavior_preservation import (
+    DEBT_REDISTRIBUTED,
+    DEBT_VERIFIED,
     EVIDENCE_REQUIRED,
-    READY,
-    TEST_STRENGTHENING_REQUIRED,
+    LOCALITY_REVIEW_REQUIRED,
+    MEASUREMENT_NOT_COMPARABLE,
     POST_EDIT_EVIDENCE_REQUIRED,
     PRESERVED,
+    READY,
+    TARGET_DEBT_NOT_REDUCED,
+    TEST_STRENGTHENING_REQUIRED,
+    behavior_preservation_debt_delta,
     behavior_preservation_readiness,
     behavior_preservation_receipt,
-    target_test_ownership_evidence,
-    behavior_preservation_debt_delta,
-    source_set_identity,
     post_edit_change_set_evidence,
-    DEBT_VERIFIED,
-    DEBT_REDISTRIBUTED,
-    TARGET_DEBT_NOT_REDUCED,
-    MEASUREMENT_NOT_COMPARABLE,
+    source_set_identity,
+    target_test_ownership_evidence,
+)
+from .refactor_locality import (
+    _identity as _locality_identity,
+    compare_locality,
+    decomposition_decision,
+    locality_snapshot,
 )
 
 
@@ -78,6 +85,73 @@ def _post_identity(
     source_references: list[dict[str, str]] | None = None,
 ) -> str:
     return source_set_identity(source_references or _post_sources())
+
+
+def _independent_locality_snapshot(
+    *,
+    repository_identity: str,
+    source_identity: str,
+    include_earned_helper: bool = False,
+) -> dict[str, object]:
+    symbols: list[dict[str, object]] = [
+        {
+            "path": "src/pkg/core.py",
+            "qualname": "authority",
+            "line_start": 1,
+            "line_end": 80 if repository_identity.endswith("b") else 100,
+            "navigation_depth": 0,
+            "structure_kind": "implementation",
+            "forwarding_only": False,
+            "edit_required": True,
+            "evidence_required": True,
+            "exact_caller_count": 2,
+            "direct_verifier_count": 1,
+            "caller_reference_bound_complete": True,
+        }
+    ]
+    if include_earned_helper:
+        symbols.append(
+            {
+                "path": "src/pkg/core.py",
+                "qualname": "_normalize",
+                "line_start": 82,
+                "line_end": 96,
+                "navigation_depth": 1,
+                "structure_kind": "implementation",
+                "forwarding_only": False,
+                "edit_required": True,
+                "evidence_required": True,
+                "value_kind": "semantic_responsibility_owner",
+                "value_evidence_identity": "sha256:normalize-responsibility",
+                "value_evidence_provider": "qualification",
+                "value_repository_identity": repository_identity,
+                "exact_caller_count": 1,
+                "direct_verifier_count": 0,
+                "caller_reference_bound_complete": True,
+            }
+        )
+    snapshot = locality_snapshot(
+        repository_identity=repository_identity,
+        target="src/pkg/core.py::authority",
+        target_path="src/pkg/core.py",
+        source_identity=source_identity,
+        measurement_configuration_identity="sha256:locality-config-v1",
+        provider="hashmarks",
+        provider_evidence_identity=f"{repository_identity}:hashmarks-locality",
+        symbols=symbols,
+        verifier_paths=["tests/test_core.py"],
+        responsibilities=["authority"],
+        state_kind="observed",
+    )
+    semantic = {
+        str(key): value
+        for key, value in snapshot.items()
+        if key != "evidence_identity"
+    }
+    claims = dict(semantic["claims"])
+    claims["independent_structural_provider"] = True
+    semantic["claims"] = claims
+    return {**semantic, "evidence_identity": _locality_identity(semantic)}
 
 
 def _change_set(
@@ -500,6 +574,22 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     if failed_gate["status"] != POST_EDIT_EVIDENCE_REQUIRED:
         failures.append("failed post-edit repository gate verified preservation")
 
+    locality_pre = _independent_locality_snapshot(
+        repository_identity="sha256:repo-a",
+        source_identity="sha256:locality-source-a",
+    )
+    locality_post = _independent_locality_snapshot(
+        repository_identity="sha256:repo-b",
+        source_identity="sha256:locality-source-b",
+    )
+    locality_comparison = compare_locality(locality_pre, locality_post)
+    locality_decision = decomposition_decision(
+        pre_snapshot=locality_pre,
+        post_snapshot=locality_post,
+        comparison=locality_comparison,
+        decomposition_evidence=[],
+    )
+
     delta_args = {
         "target": "src/pkg/core.py",
         "pre_measurement_identity": "sha256:debt-before",
@@ -511,10 +601,75 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         "pre_target_excess": 118,
         "post_target_excess": 53,
         "preservation_receipt": post_receipt,
+        "locality_decision": locality_decision,
+        "post_locality_snapshot": locality_post,
     }
     debt_verified = behavior_preservation_debt_delta(**delta_args)
     if debt_verified["status"] != DEBT_VERIFIED:
-        failures.append("matching -65 target/repository debt delta did not verify")
+        failures.append("matching behavior/locality/debt closure did not verify")
+
+    missing_locality = behavior_preservation_debt_delta(
+        **{
+            **delta_args,
+            "locality_decision": None,
+            "post_locality_snapshot": None,
+        }
+    )
+    if missing_locality["status"] != LOCALITY_REVIEW_REQUIRED:
+        failures.append("Ruff debt reduction closed without locality qualification")
+
+    extracted_post = _independent_locality_snapshot(
+        repository_identity="sha256:repo-b",
+        source_identity="sha256:locality-source-extracted",
+        include_earned_helper=True,
+    )
+    extracted_comparison = compare_locality(locality_pre, extracted_post)
+    extracted_unreviewed = decomposition_decision(
+        pre_snapshot=locality_pre,
+        post_snapshot=extracted_post,
+        comparison=extracted_comparison,
+        decomposition_evidence=[],
+    )
+    extracted_without_review = behavior_preservation_debt_delta(
+        **{
+            **delta_args,
+            "locality_decision": extracted_unreviewed,
+            "post_locality_snapshot": extracted_post,
+        }
+    )
+    if extracted_without_review["status"] != LOCALITY_REVIEW_REQUIRED:
+        failures.append(
+            "earned one-caller extraction closed debt without decomposition review"
+        )
+
+    extracted_justified = decomposition_decision(
+        pre_snapshot=locality_pre,
+        post_snapshot=extracted_post,
+        comparison=extracted_comparison,
+        decomposition_evidence=[
+            {
+                "kind": "mixed_responsibilities",
+                "evidence_identity": "sha256:mixed-responsibilities",
+                "summary": "normalization owns an independent semantic responsibility",
+            },
+            {
+                "kind": "bounded_locality_tradeoff",
+                "evidence_identity": "sha256:bounded-tradeoff",
+                "summary": "one additional navigation hop is explicitly accepted",
+            },
+        ],
+    )
+    justified_extraction = behavior_preservation_debt_delta(
+        **{
+            **delta_args,
+            "locality_decision": extracted_justified,
+            "post_locality_snapshot": extracted_post,
+        }
+    )
+    if justified_extraction["status"] != DEBT_VERIFIED:
+        failures.append(
+            "evidence-bound good decomposition could not close verified debt reduction"
+        )
 
     redistributed = behavior_preservation_debt_delta(
         **{**delta_args, "post_repository_excess": 1850}
@@ -557,6 +712,10 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         "authority": authority,
         "post_edit_requirements": ready.get("post_edit_requirements"),
         "post_edit_status": post_receipt["status"],
+        "debt_closure_status": debt_verified["status"],
+        "missing_locality_status": missing_locality["status"],
+        "unreviewed_extraction_status": extracted_without_review["status"],
+        "justified_extraction_status": justified_extraction["status"],
         "stale_post_execution_status": stale_post_execution["status"],
         "stale_repository_gate_status": stale_repository_gate["status"],
         "post_edit_authority": post_authority,

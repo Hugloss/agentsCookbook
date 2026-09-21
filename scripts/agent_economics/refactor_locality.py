@@ -1098,6 +1098,13 @@ def compare_locality(
     introduced, unjustified, easy_path, anti_patterns = _introduced_structure_evidence(
         pre_snapshot, post_snapshot
     )
+    limited_observed_reuse = sorted(
+        f"{row['path']}::{row['qualname']}"
+        for row in introduced
+        if isinstance(row.get("exact_caller_count"), int)
+        and not isinstance(row.get("exact_caller_count"), bool)
+        and int(row["exact_caller_count"]) <= 1
+    )
     if unjustified:
         hard_regressions.append("unjustified-new-structure")
 
@@ -1130,6 +1137,7 @@ def compare_locality(
         "introduced_structures": introduced,
         "unjustified_new_structures": unjustified,
         "easy_path_structures": easy_path,
+        "limited_observed_reuse_structures": limited_observed_reuse,
         "structural_anti_patterns": anti_patterns,
         "status": status,
         "unresolved_evidence": unresolved,
@@ -1139,6 +1147,7 @@ def compare_locality(
         "lower_entrypoint_loc_is_improvement_proof": False,
         "locality_preserved": status == LOCALITY_PRESERVED_OR_IMPROVED,
         "all_new_structure_earned_value": not unjustified,
+        "limited_observed_reuse_proves_single_use": False,
         "wrappers_shims_are_default_solution": False,
     }
     payload = {**semantic, "claims": claims}
@@ -1221,12 +1230,29 @@ def decomposition_decision(
     else:
         status = INSUFFICIENT_LOCALITY_EVIDENCE
 
+    introduced_structures = comparison.get("introduced_structures")
+    introduced_structure_count = (
+        len(introduced_structures)
+        if isinstance(introduced_structures, Sequence)
+        and not isinstance(introduced_structures, (str, bytes, bytearray))
+        else 0
+    )
+    limited_observed_reuse = comparison.get("limited_observed_reuse_structures")
+    limited_observed_reuse_rows = (
+        sorted(str(value) for value in limited_observed_reuse)
+        if isinstance(limited_observed_reuse, Sequence)
+        and not isinstance(limited_observed_reuse, (str, bytes, bytearray))
+        else []
+    )
     semantic = {
         "schema": DECISION_SCHEMA,
         "target": pre_snapshot.get("target"),
         "pre_snapshot_identity": pre_snapshot.get("evidence_identity"),
         "post_snapshot_identity": post_snapshot.get("evidence_identity"),
         "comparison_identity": comparison.get("evidence_identity"),
+        "comparison_status": comparison_status,
+        "introduced_structure_count": introduced_structure_count,
+        "limited_observed_reuse_structures": limited_observed_reuse_rows,
         "decomposition_evidence": normalized_evidence,
         "status": status,
     }

@@ -449,6 +449,17 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     )
     if hm_comparison["status"] != LOCALITY_TRADEOFF_REVIEW_REQUIRED:
         failures.append("Hashmarks-backed same-file extraction hid its locality tradeoff")
+    if hm_comparison.get("limited_observed_reuse_structures") != [
+        "src/pkg/core.py::persist",
+        "src/pkg/core.py::validate",
+    ]:
+        failures.append(
+            "one-caller introduced helpers were not surfaced as limited observed reuse"
+        )
+    if hm_comparison.get("claims", {}).get(
+        "limited_observed_reuse_proves_single_use"
+    ) is not False:
+        failures.append("limited observed reuse was promoted into a single-use claim")
     if hm_without_tradeoff["status"] != INSUFFICIENT_LOCALITY_EVIDENCE:
         failures.append("Hashmarks-backed tradeoff was accepted without explicit evidence")
     _, hm_decision = _decision(
@@ -524,6 +535,10 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     reuse_comparison = compare_locality(hm_pre, reuse_snapshot)
     if reuse_comparison["status"] != LOCALITY_REGRESSED:
         failures.append("provider-observed single caller laundered itself as shared reuse")
+    if reuse_comparison.get("limited_observed_reuse_structures") != [
+        "src/pkg/core.py::_shared"
+    ]:
+        failures.append("limited observed reuse evidence omitted the one-caller helper")
 
     incomplete_reuse_packet = _hm_packet(
         "sha256:hm-incomplete-reuse",
