@@ -13,6 +13,7 @@ COMPLETE_PASS = "COMPLETE_PASS"
 PRODUCT_FAILURE = "PRODUCT_FAILURE"
 INCOMPLETE = "INCOMPLETE"
 INCOMPLETE_CONTROLLER_TIMEOUT = "INCOMPLETE_CONTROLLER_TIMEOUT"
+INCOMPLETE_BUDGET_EXCEEDED = "INCOMPLETE_BUDGET_EXCEEDED"
 
 
 def _identity(payload: Mapping[str, object]) -> str:
@@ -41,6 +42,9 @@ def build_manifest(
     provider_identity: str,
     operation: str,
     batch_size: int = 10,
+    controller_budget_ms: int | None = None,
+    batch_timeout_ms: int | None = None,
+    minimum_headroom_ms: int = 5_000,
     parent_manifest_identity: str | None = None,
     selection_identity: str | None = None,
 ) -> dict[str, object]:
@@ -50,6 +54,27 @@ def build_manifest(
         raise ValueError("repository/provider/operation identities must be non-empty")
     if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size < 1:
         raise ValueError("batch_size must be a positive integer")
+    if (controller_budget_ms is None) != (batch_timeout_ms is None):
+        raise ValueError(
+            "controller_budget_ms and batch_timeout_ms must be provided together"
+        )
+    if controller_budget_ms is not None:
+        if (
+            not isinstance(controller_budget_ms, int)
+            or isinstance(controller_budget_ms, bool)
+            or controller_budget_ms < 1
+            or not isinstance(batch_timeout_ms, int)
+            or isinstance(batch_timeout_ms, bool)
+            or batch_timeout_ms < 1
+            or not isinstance(minimum_headroom_ms, int)
+            or isinstance(minimum_headroom_ms, bool)
+            or minimum_headroom_ms < 0
+        ):
+            raise ValueError("execution budgets must be positive integer milliseconds")
+        if batch_timeout_ms + minimum_headroom_ms > controller_budget_ms:
+            raise ValueError(
+                "batch timeout must leave declared headroom below controller budget"
+            )
     if (parent_manifest_identity is None) != (selection_identity is None):
         raise ValueError("follow-up manifests require both parent and selection identities")
     if parent_manifest_identity is not None and (
@@ -66,6 +91,11 @@ def build_manifest(
         "batch_size": batch_size,
         "batch_count": (len(normalized) + batch_size - 1) // batch_size,
     }
+    if controller_budget_ms is not None:
+        semantic["controller_budget_ms"] = controller_budget_ms
+        semantic["batch_timeout_ms"] = batch_timeout_ms
+        semantic["minimum_headroom_ms"] = minimum_headroom_ms
+        semantic["controller_headroom_ms"] = controller_budget_ms - int(batch_timeout_ms)
     if parent_manifest_identity is not None:
         semantic["parent_manifest_identity"] = parent_manifest_identity
         semantic["selection_identity"] = selection_identity
