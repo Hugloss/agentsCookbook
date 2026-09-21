@@ -18,7 +18,8 @@ def _write(path: Path, text: str) -> None:
 def _build_repo(root: Path) -> None:
     _write(
         root / "src/samplepkg/__init__.py",
-        "__all__ = ['Facade']\n\n"
+        "from .locality import structural_locality_delta\n\n"
+        "__all__ = ['Facade', 'structural_locality_delta']\n\n"
         "def __getattr__(name):\n"
         "    if name == 'Facade':\n"
         "        from .facade import Facade\n"
@@ -44,12 +45,36 @@ def _build_repo(root: Path) -> None:
     )
     _write(root / "src/samplepkg/core.py", "def normalize(x):\n    return x.strip()\n")
     _write(
+        root / "src/samplepkg/locality.py",
+        "def structural_locality_delta(before, after):\n"
+        "    return after - before\n",
+    )
+    _write(root / "src/samplepkg/ambiguous_a.py", "def shared():\n    return 'a'\n")
+    _write(root / "src/samplepkg/ambiguous_b.py", "def shared():\n    return 'b'\n")
+    _write(
+        root / "src/samplepkg/ambiguous_api.py",
+        "from .ambiguous_a import shared\n"
+        "from .ambiguous_b import shared\n",
+    )
+    _write(
         root / "src/samplepkg/service.py",
         "from samplepkg.core import normalize\n\ndef serve(x):\n    return normalize(x)\n",
     )
     _write(root / "src/samplepkg/mirror.py", "def mirror(x):\n    return x\n")
     _write(root / "src/samplepkg/unrelated.py", "def unrelated():\n    return 1\n")
     _write(root / "tests/__init__.py", "")
+    _write(
+        root / "tests/test_static_reexport.py",
+        "from samplepkg import structural_locality_delta\n\n"
+        "def test_static_reexport():\n"
+        "    assert structural_locality_delta(1, 3) == 2\n",
+    )
+    _write(
+        root / "tests/test_ambiguous_reexport.py",
+        "from samplepkg.ambiguous_api import shared\n\n"
+        "def test_ambiguous_reexport():\n"
+        "    assert shared() in {'a', 'b'}\n",
+    )
     _write(
         root / "tests/test_core.py",
         "from samplepkg.core import normalize\n\ndef test_core():\n    assert normalize(' x ') == 'x'\n",
@@ -128,6 +153,39 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             failures.append(f"direct owning tests mismatch: {direct}")
         if affected != ["tests/test_service.py"]:
             failures.append(f"affected dependent tests mismatch: {affected}")
+
+        static_reexport = _run(root, ["src/samplepkg/locality.py"])
+        static_reexport_direct = _paths(static_reexport, "direct")
+        if static_reexport_direct != ["tests/test_static_reexport.py"]:
+            failures.append(
+                f"static re-export owning tests mismatch: {static_reexport_direct}"
+            )
+        static_candidates = static_reexport.get("candidates", [])
+        if not isinstance(static_candidates, list) or not static_candidates:
+            failures.append("static re-export candidate missing")
+        else:
+            static_evidence = (
+                static_candidates[0].get("evidence", {})
+                if isinstance(static_candidates[0], dict)
+                else {}
+            )
+            static_confirmed = (
+                static_evidence.get("confirmed", [])
+                if isinstance(static_evidence, dict)
+                else []
+            )
+            if not any(
+                isinstance(item, dict)
+                and item.get("test_path") == "tests/test_static_reexport.py"
+                and item.get("match_type") == "import_exact"
+                and "static_reexport:" in str(item.get("provenance") or "")
+                for item in static_confirmed
+            ):
+                failures.append("static re-export ownership provenance missing")
+
+        ambiguous_a = _run(root, ["src/samplepkg/ambiguous_a.py"])
+        if "tests/test_ambiguous_reexport.py" in _paths(ambiguous_a, "direct"):
+            failures.append("ambiguous static re-export became direct ownership authority")
 
         inherited = _run(root, ["src/samplepkg/feature_mixin.py"])
         inherited_direct = _paths(inherited, "direct")
@@ -262,6 +320,7 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             "direct_tests": direct,
             "affected_tests": affected,
             "inherited_direct_tests": inherited_direct,
+            "static_reexport_direct_tests": static_reexport_direct,
             "bounded_direct": _paths(bounded, "direct"),
             "deferred_count": len(deferred) if isinstance(deferred, list) else None,
             "contract_errors": contract_errors,
