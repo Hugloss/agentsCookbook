@@ -57,7 +57,7 @@ stage = "focused"
 environment = {{ TERM = "xterm-agent-economics" }}
 
 [commands.mutate]
-argv = ["{py}", "-c", "from pathlib import Path; Path('tracked.txt').write_text('mutated\\n')"]
+argv = ["{py}", "-c", "from pathlib import Path; Path('tracked.txt').write_text('mutated')"]
 stage = "component"
 
 [commands.timeout]
