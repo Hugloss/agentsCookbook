@@ -574,6 +574,22 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     if failed_gate["status"] != POST_EDIT_EVIDENCE_REQUIRED:
         failures.append("failed post-edit repository gate verified preservation")
 
+    locality_pre = _independent_locality_snapshot(
+        repository_identity="sha256:repo-a",
+        source_identity="sha256:locality-source-a",
+    )
+    locality_post = _independent_locality_snapshot(
+        repository_identity="sha256:repo-b",
+        source_identity="sha256:locality-source-b",
+    )
+    locality_comparison = compare_locality(locality_pre, locality_post)
+    locality_decision = decomposition_decision(
+        pre_snapshot=locality_pre,
+        post_snapshot=locality_post,
+        comparison=locality_comparison,
+        decomposition_evidence=[],
+    )
+
     delta_args = {
         "target": "src/pkg/core.py",
         "pre_measurement_identity": "sha256:debt-before",
@@ -585,10 +601,75 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         "pre_target_excess": 118,
         "post_target_excess": 53,
         "preservation_receipt": post_receipt,
+        "locality_decision": locality_decision,
+        "post_locality_snapshot": locality_post,
     }
     debt_verified = behavior_preservation_debt_delta(**delta_args)
     if debt_verified["status"] != DEBT_VERIFIED:
-        failures.append("matching -65 target/repository debt delta did not verify")
+        failures.append("matching behavior/locality/debt closure did not verify")
+
+    missing_locality = behavior_preservation_debt_delta(
+        **{
+            **delta_args,
+            "locality_decision": None,
+            "post_locality_snapshot": None,
+        }
+    )
+    if missing_locality["status"] != LOCALITY_REVIEW_REQUIRED:
+        failures.append("Ruff debt reduction closed without locality qualification")
+
+    extracted_post = _independent_locality_snapshot(
+        repository_identity="sha256:repo-b",
+        source_identity="sha256:locality-source-extracted",
+        include_earned_helper=True,
+    )
+    extracted_comparison = compare_locality(locality_pre, extracted_post)
+    extracted_unreviewed = decomposition_decision(
+        pre_snapshot=locality_pre,
+        post_snapshot=extracted_post,
+        comparison=extracted_comparison,
+        decomposition_evidence=[],
+    )
+    extracted_without_review = behavior_preservation_debt_delta(
+        **{
+            **delta_args,
+            "locality_decision": extracted_unreviewed,
+            "post_locality_snapshot": extracted_post,
+        }
+    )
+    if extracted_without_review["status"] != LOCALITY_REVIEW_REQUIRED:
+        failures.append(
+            "earned one-caller extraction closed debt without decomposition review"
+        )
+
+    extracted_justified = decomposition_decision(
+        pre_snapshot=locality_pre,
+        post_snapshot=extracted_post,
+        comparison=extracted_comparison,
+        decomposition_evidence=[
+            {
+                "kind": "mixed_responsibilities",
+                "evidence_identity": "sha256:mixed-responsibilities",
+                "summary": "normalization owns an independent semantic responsibility",
+            },
+            {
+                "kind": "bounded_locality_tradeoff",
+                "evidence_identity": "sha256:bounded-tradeoff",
+                "summary": "one additional navigation hop is explicitly accepted",
+            },
+        ],
+    )
+    justified_extraction = behavior_preservation_debt_delta(
+        **{
+            **delta_args,
+            "locality_decision": extracted_justified,
+            "post_locality_snapshot": extracted_post,
+        }
+    )
+    if justified_extraction["status"] != DEBT_VERIFIED:
+        failures.append(
+            "evidence-bound good decomposition could not close verified debt reduction"
+        )
 
     redistributed = behavior_preservation_debt_delta(
         **{**delta_args, "post_repository_excess": 1850}
@@ -631,6 +712,10 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         "authority": authority,
         "post_edit_requirements": ready.get("post_edit_requirements"),
         "post_edit_status": post_receipt["status"],
+        "debt_closure_status": debt_verified["status"],
+        "missing_locality_status": missing_locality["status"],
+        "unreviewed_extraction_status": extracted_without_review["status"],
+        "justified_extraction_status": justified_extraction["status"],
         "stale_post_execution_status": stale_post_execution["status"],
         "stale_repository_gate_status": stale_repository_gate["status"],
         "post_edit_authority": post_authority,
