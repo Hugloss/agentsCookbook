@@ -322,6 +322,9 @@ def qualify() -> dict[str, object]:
                 "--provider-identity", "sha256:hashmarks-wheel-a",
                 "--operation", "task_evidence",
                 "--batch-size", "10",
+                "--controller-budget-ms", "45000",
+                "--batch-timeout-ms", "30000",
+                "--minimum-headroom-ms", "5000",
                 "--artifact", str(manifest_path),
             ])
         cli_manifest = json.loads(output.getvalue())
@@ -383,6 +386,8 @@ def qualify() -> dict[str, object]:
             "complete_status": aggregate["status"],
             "missing_status": missing["status"],
             "timeout_status": timeout["status"],
+            "budget_exceeded_status": budget_exceeded["status"],
+            "controller_headroom_ms": manifest.get("controller_headroom_ms"),
             "subdivision_sizes": [len(child["targets"]) for child in children],
             "failure_status": failure_receipt["status"],
             "followup_target_count": 0 if followup is None else followup["target_count"],
