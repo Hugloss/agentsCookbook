@@ -11,7 +11,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping, Sequence
 
 
 class BoundedProcessError(ValueError):
@@ -36,6 +36,8 @@ class ProcessResult:
     argv: tuple[str, ...]
     cwd: str
     command_identity: str
+    environment_identity: str
+    environment_variables: tuple[str, ...]
     return_code: int | None
     signal: int | None
     timed_out: bool
@@ -50,6 +52,8 @@ class ProcessResult:
     def metrics(self) -> dict[str, object]:
         return {
             "command_identity": self.command_identity,
+            "environment_identity": self.environment_identity,
+            "environment_variables": list(self.environment_variables),
             "return_code": self.return_code,
             "signal": self.signal,
             "timed_out": self.timed_out,
@@ -74,8 +78,29 @@ def process_tree_capability() -> dict[str, object]:
     }
 
 
-def _identity(argv: Sequence[str], cwd_relative: str) -> str:
-    raw = json.dumps({"argv": list(argv), "cwd": cwd_relative}, sort_keys=True, separators=(",", ":")).encode()
+def _environment_evidence(environment: Mapping[str, str]) -> tuple[str, tuple[str, ...]]:
+    semantic = {
+        key: "sha256:" + hashlib.sha256(value.encode()).hexdigest()
+        for key, value in sorted(environment.items())
+    }
+    raw = json.dumps(semantic, sort_keys=True, separators=(",", ":")).encode()
+    return "sha256:" + hashlib.sha256(raw).hexdigest(), tuple(sorted(semantic))
+
+
+def _identity(
+    argv: Sequence[str],
+    cwd_relative: str,
+    environment_identity: str,
+) -> str:
+    raw = json.dumps(
+        {
+            "argv": list(argv),
+            "cwd": cwd_relative,
+            "environment_identity": environment_identity,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
     return "sha256:" + hashlib.sha256(raw).hexdigest()
 
 
@@ -129,14 +154,33 @@ def run_bounded(
     argv: Sequence[str],
     cwd: Path | str = ".",
     limits: ProcessLimits = ProcessLimits(),
+    environment: Mapping[str, str] | None = None,
 ) -> ProcessResult:
     if not argv or not all(isinstance(item, str) and item for item in argv):
         raise BoundedProcessError("argv must contain non-empty strings")
     resolved_cwd, cwd_relative = safe_cwd(repository_root, cwd)
-    command_identity = _identity(argv, cwd_relative)
+    runtime_environment = dict(environment or {})
+    if any(
+        not isinstance(key, str)
+        or not key
+        or "=" in key
+        or "\x00" in key
+        or not isinstance(value, str)
+        or "\x00" in value
+        for key, value in runtime_environment.items()
+    ):
+        raise BoundedProcessError("environment overrides must be valid non-NUL string pairs")
+    environment_identity, environment_variables = _environment_evidence(runtime_environment)
+    command_identity = _identity(argv, cwd_relative, environment_identity)
     started = time.perf_counter()
+    child_environment = os.environ.copy()
+    child_environment.update(runtime_environment)
     popen_kwargs: dict[str, object] = {
-        "cwd": resolved_cwd, "stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "shell": False,
+        "cwd": resolved_cwd,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "shell": False,
+        "env": child_environment,
     }
     if os.name == "nt":
         popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -147,6 +191,8 @@ def run_bounded(
     except FileNotFoundError:
         return ProcessResult(
             argv=tuple(argv), cwd=cwd_relative, command_identity=command_identity,
+            environment_identity=environment_identity,
+            environment_variables=environment_variables,
             return_code=None, signal=None, timed_out=False, executable_missing=True,
             stdout=b"", stderr=b"", stdout_truncated=False, stderr_truncated=False,
             elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
@@ -203,6 +249,8 @@ def run_bounded(
     sig = -return_code if return_code < 0 else None
     return ProcessResult(
         argv=tuple(argv), cwd=cwd_relative, command_identity=command_identity,
+        environment_identity=environment_identity,
+        environment_variables=environment_variables,
         return_code=return_code, signal=sig, timed_out=timed_out.is_set(),
         executable_missing=False, stdout=bytes(stdout), stderr=bytes(stderr),
         stdout_truncated=stdout_truncated.is_set(), stderr_truncated=stderr_truncated.is_set(),
