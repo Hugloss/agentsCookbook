@@ -5,28 +5,28 @@ import json
 from pathlib import Path
 
 from .behavior_preservation import (
+    DEBT_REDISTRIBUTED,
+    DEBT_VERIFIED,
     EVIDENCE_REQUIRED,
-    READY,
-    TEST_STRENGTHENING_REQUIRED,
+    LOCALITY_REVIEW_REQUIRED,
+    MEASUREMENT_NOT_COMPARABLE,
     POST_EDIT_EVIDENCE_REQUIRED,
     PRESERVED,
+    READY,
+    TARGET_DEBT_NOT_REDUCED,
+    TEST_STRENGTHENING_REQUIRED,
+    behavior_preservation_debt_delta,
     behavior_preservation_readiness,
     behavior_preservation_receipt,
-    target_test_ownership_evidence,
-    behavior_preservation_debt_delta,
-    source_set_identity,
     post_edit_change_set_evidence,
-    DEBT_VERIFIED,
-    DEBT_REDISTRIBUTED,
-    TARGET_DEBT_NOT_REDUCED,
-    MEASUREMENT_NOT_COMPARABLE,
-    LOCALITY_REVIEW_REQUIRED,
+    source_set_identity,
+    target_test_ownership_evidence,
 )
 from .refactor_locality import (
+    _identity as _locality_identity,
     compare_locality,
     decomposition_decision,
     locality_snapshot,
-    _identity as _locality_identity,
 )
 
 
