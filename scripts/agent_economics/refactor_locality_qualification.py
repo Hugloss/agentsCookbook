@@ -4,7 +4,10 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
+from . import refactor_locality as refactor_locality_module
 from .refactor_locality import (
     DECOMPOSITION_JUSTIFIED,
     DECOMPOSITION_LOCALITY_RISK,
@@ -481,6 +484,80 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     if hm_decision["status"] != DECOMPOSITION_JUSTIFIED:
         failures.append("independent Hashmarks facts could not justify earned decomposition")
 
+    with TemporaryDirectory() as temporary_directory:
+        temporary = Path(temporary_directory)
+        values_path = temporary / "structural-values.json"
+        observed_path = temporary / "observed.json"
+        values_path.write_text(
+            json.dumps(
+                [
+                    _value(
+                        "sha256:hm-post",
+                        "src/pkg/core.py::validate",
+                        "validation_boundary",
+                        "sha256:validation-contract",
+                    ),
+                    _value(
+                        "sha256:hm-post",
+                        "src/pkg/core.py::persist",
+                        "side_effect_isolation",
+                        "sha256:persistence-contract",
+                    ),
+                ]
+            ),
+            encoding="utf-8",
+        )
+        observed = {
+            "packet": hm_post_packet,
+            "observation_receipt": _receipt(hm_post_packet),
+        }
+        with patch.object(
+            refactor_locality_module,
+            "observe_hashmarks_locality",
+            return_value=observed,
+        ):
+            refactor_locality_module.main(
+                [
+                    "observe-hashmarks",
+                    "src/pkg/core.py::authority",
+                    "--repository-root",
+                    str(temporary),
+                    "--values",
+                    str(values_path),
+                    "--artifact",
+                    str(observed_path),
+                ]
+            )
+        observed_payload = json.loads(observed_path.read_text(encoding="utf-8"))
+        observed_snapshot = observed_payload.get("snapshot")
+        observed_symbols = (
+            observed_snapshot.get("symbols", [])
+            if isinstance(observed_snapshot, dict)
+            else []
+        )
+        observed_values = {
+            f"{row.get('path')}::{row.get('qualname')}": row.get("value_kind")
+            for row in observed_symbols
+            if isinstance(row, dict) and row.get("value_kind")
+        }
+        if observed_values != {
+            "src/pkg/core.py::persist": "side_effect_isolation",
+            "src/pkg/core.py::validate": "validation_boundary",
+        }:
+            failures.append(
+                "live observe-hashmarks CLI did not bind supplied structural values"
+            )
+        if (
+            not isinstance(observed_snapshot, dict)
+            or observed_snapshot.get("claims", {}).get(
+                "independent_structural_provider"
+            )
+            is not True
+        ):
+            failures.append(
+                "live observe-hashmarks values path lost independent provider authority"
+            )
+
     fragmented_packet = _hm_packet(
         "sha256:hm-fragmented",
         [
@@ -726,6 +803,11 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             "size_only": size_only_decision["status"],
             "manual_semantic": manual_semantic_decision["status"],
             "hashmarks_semantic": hm_decision["status"],
+            "live_observe_values": (
+                "BOUND"
+                if observed_values
+                else "MISSING"
+            ),
             "fragmented_wrappers": fragmented_decision["status"],
             "provider_single_caller_reuse": reuse_comparison["status"],
             "unresolved_hashmarks": compare_locality(hm_pre, unresolved_snapshot)["status"],
