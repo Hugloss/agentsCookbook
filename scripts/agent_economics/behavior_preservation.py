@@ -4,6 +4,15 @@ import hashlib
 import json
 from collections.abc import Mapping, Sequence
 
+from .refactor_locality import (
+    DECISION_SCHEMA as REFACTOR_LOCALITY_DECISION_SCHEMA,
+    SNAPSHOT_SCHEMA as REFACTOR_LOCALITY_SNAPSHOT_SCHEMA,
+    DECOMPOSITION_JUSTIFIED,
+    KEEP_COHESIVE_AUTHORITY,
+    LOCALITY_PRESERVED_OR_IMPROVED,
+    _artifact_identity_valid as _locality_artifact_identity_valid,
+)
+
 SCHEMA = "agentscookbook-behavior-preservation-evidence/v2"
 TARGET_TEST_OWNERSHIP_SCHEMA = "agentscookbook-target-test-ownership-evidence/v1"
 POST_EDIT_SCHEMA = "agentscookbook-behavior-preservation-receipt/v3"
@@ -15,6 +24,7 @@ DEBT_VERIFIED = "VERIFIED"
 DEBT_REDISTRIBUTED = "DEBT_REDISTRIBUTED"
 TARGET_DEBT_NOT_REDUCED = "TARGET_DEBT_NOT_REDUCED"
 MEASUREMENT_NOT_COMPARABLE = "MEASUREMENT_NOT_COMPARABLE"
+LOCALITY_REVIEW_REQUIRED = "LOCALITY_REVIEW_REQUIRED"
 READY = "READY_FOR_BEHAVIOR_PRESERVING_EDIT"
 TEST_STRENGTHENING_REQUIRED = "TEST_STRENGTHENING_REQUIRED"
 EVIDENCE_REQUIRED = "EVIDENCE_REQUIRED"
@@ -606,8 +616,10 @@ def behavior_preservation_debt_delta(
     pre_target_excess: int,
     post_target_excess: int,
     preservation_receipt: Mapping[str, object],
+    locality_decision: Mapping[str, object] | None,
+    post_locality_snapshot: Mapping[str, object] | None,
 ) -> dict[str, object]:
-    """Prove that measured cleanup debt was removed from the selected target, not moved."""
+    """Bind behavior, locality, and analyzer evidence for one cleanup closure."""
     if not _nonempty(target):
         raise ValueError("target must be non-empty")
     identities = (
@@ -624,7 +636,10 @@ def behavior_preservation_debt_delta(
         pre_target_excess,
         post_target_excess,
     )
-    if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in values):
+    if any(
+        not isinstance(value, int) or isinstance(value, bool) or value < 0
+        for value in values
+    ):
         raise ValueError("debt excess values must be non-negative integers")
 
     repository_reduction = pre_repository_excess - post_repository_excess
@@ -635,6 +650,71 @@ def behavior_preservation_debt_delta(
         pre_repository_excess - pre_target_excess
     )
     preservation_verified = preservation_receipt.get("status") == PRESERVED
+
+    locality_reasons: list[str] = []
+    decision_valid = (
+        isinstance(locality_decision, Mapping)
+        and locality_decision.get("schema") == REFACTOR_LOCALITY_DECISION_SCHEMA
+        and _locality_artifact_identity_valid(locality_decision)
+    )
+    snapshot_valid = (
+        isinstance(post_locality_snapshot, Mapping)
+        and post_locality_snapshot.get("schema") == REFACTOR_LOCALITY_SNAPSHOT_SCHEMA
+        and _locality_artifact_identity_valid(post_locality_snapshot)
+    )
+    if not decision_valid:
+        locality_reasons.append("locality-decision")
+    if not snapshot_valid:
+        locality_reasons.append("post-locality-snapshot")
+
+    if decision_valid and snapshot_valid:
+        assert isinstance(locality_decision, Mapping)
+        assert isinstance(post_locality_snapshot, Mapping)
+        if (
+            locality_decision.get("post_snapshot_identity")
+            != post_locality_snapshot.get("evidence_identity")
+        ):
+            locality_reasons.append("post-locality-snapshot-binding")
+        if (
+            post_locality_snapshot.get("repository_identity")
+            != preservation_receipt.get("post_edit_repository_identity")
+        ):
+            locality_reasons.append("post-edit-repository-binding")
+        locality_target = str(post_locality_snapshot.get("target") or "")
+        if not (
+            locality_target == target
+            or locality_target.startswith(f"{target}::")
+        ):
+            locality_reasons.append("cleanup-target-binding")
+        if post_locality_snapshot.get("provider") != "hashmarks":
+            locality_reasons.append("independent-hashmarks-provider")
+        if post_locality_snapshot.get("state_kind") != "observed":
+            locality_reasons.append("observed-post-locality")
+        decision_claims = locality_decision.get("claims")
+        snapshot_claims = post_locality_snapshot.get("claims")
+        independent = (
+            isinstance(decision_claims, Mapping)
+            and decision_claims.get("independent_structural_evidence") is True
+            and isinstance(snapshot_claims, Mapping)
+            and snapshot_claims.get("independent_structural_provider") is True
+        )
+        if not independent:
+            locality_reasons.append("independent-structural-evidence")
+
+        decision_status = locality_decision.get("status")
+        comparison_status = locality_decision.get("comparison_status")
+        introduced_count = locality_decision.get("introduced_structure_count")
+        in_place_locality_preserved = (
+            decision_status == KEEP_COHESIVE_AUTHORITY
+            and comparison_status == LOCALITY_PRESERVED_OR_IMPROVED
+            and introduced_count == 0
+        )
+        justified_decomposition = decision_status == DECOMPOSITION_JUSTIFIED
+        if not (in_place_locality_preserved or justified_decomposition):
+            locality_reasons.append("acceptable-locality-decision")
+
+    locality_reasons = sorted(set(locality_reasons))
+    locality_verified = not locality_reasons
     comparable = (
         measurement_configuration_identity
         == post_measurement_configuration_identity
@@ -643,6 +723,8 @@ def behavior_preservation_debt_delta(
 
     if not preservation_verified:
         status = POST_EDIT_EVIDENCE_REQUIRED
+    elif not locality_verified:
+        status = LOCALITY_REVIEW_REQUIRED
     elif not comparable:
         status = MEASUREMENT_NOT_COMPARABLE
     elif target_reduction <= 0:
@@ -667,6 +749,13 @@ def behavior_preservation_debt_delta(
         "target_reduction": target_reduction,
         "outside_target_delta": outside_target_delta,
         "preservation_evidence_identity": preservation_receipt.get("evidence_identity"),
+        "locality_decision_identity": None
+        if locality_decision is None
+        else locality_decision.get("evidence_identity"),
+        "post_locality_snapshot_identity": None
+        if post_locality_snapshot is None
+        else post_locality_snapshot.get("evidence_identity"),
+        "locality_review_reasons": locality_reasons,
         "status": status,
     }
     return {
@@ -674,8 +763,11 @@ def behavior_preservation_debt_delta(
         "evidence_identity": _identity(semantic),
         "claims": {
             "behavior_preservation_verified": preservation_verified,
+            "locality_review_verified": locality_verified,
             "measurement_comparable": comparable,
             "target_debt_reduced": target_reduction > 0,
             "debt_not_redistributed": outside_target_delta <= 0,
+            "ruff_or_analyzer_reduction_alone_closes_cleanup": False,
         },
     }
+
