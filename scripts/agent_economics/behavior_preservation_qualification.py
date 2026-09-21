@@ -20,6 +20,13 @@ from .behavior_preservation import (
     DEBT_REDISTRIBUTED,
     TARGET_DEBT_NOT_REDUCED,
     MEASUREMENT_NOT_COMPARABLE,
+    LOCALITY_REVIEW_REQUIRED,
+)
+from .refactor_locality import (
+    compare_locality,
+    decomposition_decision,
+    locality_snapshot,
+    _identity as _locality_identity,
 )
 
 
@@ -78,6 +85,73 @@ def _post_identity(
     source_references: list[dict[str, str]] | None = None,
 ) -> str:
     return source_set_identity(source_references or _post_sources())
+
+
+def _independent_locality_snapshot(
+    *,
+    repository_identity: str,
+    source_identity: str,
+    include_earned_helper: bool = False,
+) -> dict[str, object]:
+    symbols: list[dict[str, object]] = [
+        {
+            "path": "src/pkg/core.py",
+            "qualname": "authority",
+            "line_start": 1,
+            "line_end": 80 if repository_identity.endswith("b") else 100,
+            "navigation_depth": 0,
+            "structure_kind": "implementation",
+            "forwarding_only": False,
+            "edit_required": True,
+            "evidence_required": True,
+            "exact_caller_count": 2,
+            "direct_verifier_count": 1,
+            "caller_reference_bound_complete": True,
+        }
+    ]
+    if include_earned_helper:
+        symbols.append(
+            {
+                "path": "src/pkg/core.py",
+                "qualname": "_normalize",
+                "line_start": 82,
+                "line_end": 96,
+                "navigation_depth": 1,
+                "structure_kind": "implementation",
+                "forwarding_only": False,
+                "edit_required": True,
+                "evidence_required": True,
+                "value_kind": "semantic_responsibility_owner",
+                "value_evidence_identity": "sha256:normalize-responsibility",
+                "value_evidence_provider": "qualification",
+                "value_repository_identity": repository_identity,
+                "exact_caller_count": 1,
+                "direct_verifier_count": 0,
+                "caller_reference_bound_complete": True,
+            }
+        )
+    snapshot = locality_snapshot(
+        repository_identity=repository_identity,
+        target="src/pkg/core.py::authority",
+        target_path="src/pkg/core.py",
+        source_identity=source_identity,
+        measurement_configuration_identity="sha256:locality-config-v1",
+        provider="hashmarks",
+        provider_evidence_identity=f"{repository_identity}:hashmarks-locality",
+        symbols=symbols,
+        verifier_paths=["tests/test_core.py"],
+        responsibilities=["authority"],
+        state_kind="observed",
+    )
+    semantic = {
+        str(key): value
+        for key, value in snapshot.items()
+        if key != "evidence_identity"
+    }
+    claims = dict(semantic["claims"])
+    claims["independent_structural_provider"] = True
+    semantic["claims"] = claims
+    return {**semantic, "evidence_identity": _locality_identity(semantic)}
 
 
 def _change_set(
