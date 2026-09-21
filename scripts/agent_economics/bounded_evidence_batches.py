@@ -125,6 +125,14 @@ def batch_descriptor(manifest: Mapping[str, object], batch_index: int) -> dict[s
         "end": end,
         "targets": targets[start:end],
     }
+    for key in (
+        "controller_budget_ms",
+        "batch_timeout_ms",
+        "minimum_headroom_ms",
+        "controller_headroom_ms",
+    ):
+        if key in manifest:
+            semantic[key] = manifest[key]
     return {**semantic, "batch_identity": _identity(semantic)}
 
 
@@ -151,6 +159,14 @@ def subdivide_batch(batch: Mapping[str, object], *, subbatch_size: int) -> list[
             "end": int(batch["start"]) + offset + len(child_targets),
             "targets": child_targets,
         }
+        for key in (
+            "controller_budget_ms",
+            "batch_timeout_ms",
+            "minimum_headroom_ms",
+            "controller_headroom_ms",
+        ):
+            if key in batch:
+                semantic[key] = batch[key]
         children.append({**semantic, "batch_identity": _identity(semantic)})
     return children
 
@@ -208,6 +224,13 @@ def build_receipt(
         if actual != expected:
             raise ValueError("completed receipt must cover every target in order")
         status = PRODUCT_FAILURE if any(row["status"] == "FAIL" for row in normalized) else COMPLETE_PASS
+        batch_timeout_ms = descriptor.get("batch_timeout_ms")
+        if (
+            isinstance(batch_timeout_ms, int)
+            and not isinstance(batch_timeout_ms, bool)
+            and elapsed_ms > batch_timeout_ms
+        ):
+            status = INCOMPLETE_BUDGET_EXCEEDED
     else:
         if actual != expected[: len(actual)]:
             raise ValueError("timeout receipt may contain only completed target prefix")
@@ -230,6 +253,9 @@ def build_receipt(
         "observed_operation": observed_operation,
         "controller_status": controller_status,
         "elapsed_ms": elapsed_ms,
+        "controller_budget_ms": descriptor.get("controller_budget_ms"),
+        "batch_timeout_ms": descriptor.get("batch_timeout_ms"),
+        "minimum_headroom_ms": descriptor.get("minimum_headroom_ms"),
         "status": status,
         "product_failure": status == PRODUCT_FAILURE,
     }
