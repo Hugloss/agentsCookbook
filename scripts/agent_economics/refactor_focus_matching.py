@@ -1,3 +1,4 @@
+import ast
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -5,7 +6,9 @@ from pathlib import Path
 from .refactor_focus_analysis import AnalysisCache
 from .refactor_focus_imports import (
     internal_imports_for_file,
+    is_first_party_module,
     parse_dynamic_loaded_source_module_evidence,
+    resolve_import_from_module,
 )
 from .refactor_focus_models import (
     MATCH_AUTHORITY,
@@ -26,6 +29,134 @@ class TestOwnershipEvidence:
     test_path: Path
     match_type: str
     provenance: str
+
+
+def _top_level_defined_names(tree: ast.AST) -> set[str]:
+    names: set[str] = set()
+    for node in getattr(tree, "body", []):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+    return names
+
+
+def _static_reexport_index(
+    *,
+    source_files: list[Path],
+    source_root: Path,
+    package_name: str,
+    analysis_cache: AnalysisCache,
+) -> tuple[dict[tuple[str, str], str], dict[str, set[str]]]:
+    module_by_path = {
+        path: module_path_for_file(
+            path=path,
+            root=source_root,
+            package_name=package_name,
+        )
+        for path in source_files
+    }
+    module_paths = {module: path for path, module in module_by_path.items()}
+    definitions: dict[str, set[str]] = {}
+    candidates: dict[tuple[str, str], set[str]] = defaultdict(set)
+
+    for path, module in module_by_path.items():
+        tree = analysis_cache.get(path).tree
+        if tree is None:
+            continue
+        definitions[module] = _top_level_defined_names(tree)
+        current_module_parts = module.split(".")
+        for node in getattr(tree, "body", []):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            base = resolve_import_from_module(
+                node=node,
+                current_module_parts=current_module_parts,
+                current_is_package=path.name == "__init__.py",
+            )
+            if not base or not is_first_party_module(base, {package_name}):
+                continue
+            if base not in module_paths:
+                continue
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                candidates[(module, alias.asname or alias.name)].add(
+                    f"{base}:{alias.name}"
+                )
+
+    reexports: dict[tuple[str, str], str] = {}
+    for key, targets in candidates.items():
+        if len(targets) != 1:
+            continue
+        target = next(iter(targets))
+        owner_module, symbol = target.rsplit(":", 1)
+        reexports[key] = f"{owner_module}:{symbol}"
+    return reexports, definitions
+
+
+def _resolve_static_symbol_owner(
+    *,
+    module: str,
+    symbol: str,
+    reexports: dict[tuple[str, str], str],
+    definitions: dict[str, set[str]],
+) -> str | None:
+    seen: set[tuple[str, str]] = set()
+    current_module = module
+    current_symbol = symbol
+    while True:
+        key = (current_module, current_symbol)
+        if key in seen:
+            return None
+        seen.add(key)
+        if current_symbol in definitions.get(current_module, set()):
+            return current_module
+        target = reexports.get(key)
+        if target is None:
+            return None
+        current_module, current_symbol = target.rsplit(":", 1)
+
+
+def _static_import_from_symbols(
+    *,
+    path: Path,
+    root: Path,
+    current_package_name: str,
+    package_name: str,
+    analysis_cache: AnalysisCache,
+) -> list[tuple[str, str]]:
+    tree = analysis_cache.get(path).tree
+    if tree is None:
+        return []
+    try:
+        current_module_parts = module_path_for_file(
+            path=path,
+            root=root,
+            package_name=current_package_name,
+        ).split(".")
+    except ValueError:
+        current_module_parts = []
+
+    imports: list[tuple[str, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        base = resolve_import_from_module(
+            node=node,
+            current_module_parts=current_module_parts,
+            current_is_package=path.name == "__init__.py",
+        )
+        if not base or not is_first_party_module(base, {package_name}):
+            continue
+        for alias in node.names:
+            if alias.name != "*":
+                imports.append((base, alias.name))
+    return imports
 
 
 def build_test_ownership_evidence(
@@ -59,6 +190,18 @@ def build_test_ownership_evidence(
     test_imports_by_path: dict[Path, set[Path]] = {}
     source_static_by_path: dict[Path, set[str]] = {}
     source_dynamic_by_path: dict[Path, dict[str, set[str]]] = {}
+    source_files = [
+        path
+        for path in module_to_path.values()
+        if path.is_relative_to(source_root)
+    ]
+    static_reexports, source_definitions = _static_reexport_index(
+        source_files=source_files,
+        source_root=source_root,
+        package_name=package_name,
+        analysis_cache=analysis_cache,
+    )
+    static_import_symbols_by_path: dict[Path, list[tuple[str, str]]] = {}
 
     for path in all_test_python_files:
         test_imports_by_path[path] = {
@@ -83,6 +226,14 @@ def build_test_ownership_evidence(
         source_dynamic_by_path[path] = parse_dynamic_loaded_source_module_evidence(
             path=path,
             source_root=source_root,
+            package_name=package_name,
+            analysis_cache=analysis_cache,
+        )
+
+        static_import_symbols_by_path[path] = _static_import_from_symbols(
+            path=path,
+            root=tests_root,
+            current_package_name=tests_package_name,
             package_name=package_name,
             analysis_cache=analysis_cache,
         )
@@ -121,6 +272,26 @@ def build_test_ownership_evidence(
                 test_file=test_file,
                 match_type="import_exact",
                 provenance=f"static_import:test={test_report}:source={source_module}",
+            )
+        for facade_module, symbol in sorted(
+            static_import_symbols_by_path.get(test_file, [])
+        ):
+            owner_module = _resolve_static_symbol_owner(
+                module=facade_module,
+                symbol=symbol,
+                reexports=static_reexports,
+                definitions=source_definitions,
+            )
+            if owner_module is None or owner_module == facade_module:
+                continue
+            append(
+                source_module=owner_module,
+                test_file=test_file,
+                match_type="import_exact",
+                provenance=(
+                    f"static_reexport:test={test_report}:"
+                    f"facade={facade_module}:symbol={symbol}:owner={owner_module}"
+                ),
             )
         for source_module, kinds in sorted(source_dynamic_by_path.get(test_file, {}).items()):
             append(
