@@ -1385,6 +1385,11 @@ def main(argv: list[str] | None = None) -> None:
     observe_parser.add_argument("target")
     observe_parser.add_argument("--repository-root", type=Path, default=Path("."))
     observe_parser.add_argument("--hashmarks-executable", default="hashmarks")
+    observe_parser.add_argument(
+        "--values",
+        type=Path,
+        help="Optional repository-bound structural value evidence for the live observation.",
+    )
     observe_parser.add_argument("--max-depth", type=int, default=2)
     observe_parser.add_argument("--call-limit", type=int, default=64)
     observe_parser.add_argument("--ref-limit", type=int, default=256)
@@ -1446,6 +1451,7 @@ def main(argv: list[str] | None = None) -> None:
             snapshot = _locality_snapshot_from_observed_hashmarks(
                 packet=packet,
                 observation_receipt=receipt,
+                structural_values=_load_structural_values(args.values),
             )
         payload = {
             "schema": "agentscookbook-observed-hashmarks-locality/v1",
