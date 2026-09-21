@@ -113,6 +113,25 @@ def qualify() -> dict[str, object]:
     if next_resume_batch(manifest, timed_receipts) != 4:
         failures.append("timeout campaign did not resume at timed-out batch")
 
+    budget_batch = batch_descriptor(manifest, 5)
+    budget_exceeded = _observed_receipt(
+        budget_batch,
+        results=_pass_results(list(budget_batch["targets"])),
+        execution_class="hosted-diagnostic",
+        elapsed_ms=30_001,
+    )
+    if budget_exceeded["status"] != INCOMPLETE_BUDGET_EXCEEDED:
+        failures.append("completed-over-budget batch was promoted to complete evidence")
+    budget_receipts = list(receipts)
+    budget_receipts[5] = budget_exceeded
+    budget_aggregate = aggregate_receipts(manifest, budget_receipts)
+    if (
+        budget_aggregate["status"] != INCOMPLETE
+        or budget_aggregate["budget_exceeded_batch_indexes"] != [5]
+        or budget_aggregate["product_failure"]
+    ):
+        failures.append("budget-exceeded batch did not remain incomplete/non-product-failure")
+
     children = subdivide_batch(timeout_batch, subbatch_size=5)
     if [child["targets"] for child in children] != [
         list(timeout_batch["targets"])[:5],
