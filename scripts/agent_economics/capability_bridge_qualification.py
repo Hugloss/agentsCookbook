@@ -46,6 +46,23 @@ stage = "repository"
 [commands.missing]
 argv = ["definitely-not-an-agent-economics-executable"]
 stage = "repository"
+
+[commands.term_default]
+argv = ["{py}", "-c", "import os; print(os.environ.get('TERM', '<missing>'))"]
+stage = "focused"
+
+[commands.term_custom]
+argv = ["{py}", "-c", "import os; print(os.environ.get('TERM', '<missing>'))"]
+stage = "focused"
+environment = {{ TERM = "xterm-agent-economics" }}
+
+[commands.mutate]
+argv = ["{py}", "-c", "from pathlib import Path; Path('tracked.txt').write_text('mutated\\n')"]
+stage = "component"
+
+[commands.timeout]
+argv = ["{py}", "-c", "import time; time.sleep(10)"]
+stage = "component"
 ''')
         import subprocess
         subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
@@ -56,7 +73,7 @@ stage = "repository"
         subprocess.run(["git", "-C", str(root), "commit", "-qm", "fixture"], check=True)
 
         loaded = load_command_manifest(manifest)
-        assert loaded.version == 1 and len(loaded.commands) == 5
+        assert loaded.version == 1 and len(loaded.commands) == 9
         try:
             _write(root / "bad.toml", 'version=1\n[commands.x]\nargv=["x"]\ncwd="../escape"\n')
             load_command_manifest(root / "bad.toml")
@@ -71,6 +88,48 @@ stage = "repository"
         assert failed["classification"] == "assertion_test_failure"
         missing = run_named_command(repository_root=root, manifest_path=manifest, name="missing")
         assert missing["classification"] == "executable_missing"
+        assert missing["evidence_status"] == "INCOMPLETE"
+        assert missing["authority"]["product_failure"] is False
+
+        prior_term = os.environ.pop("TERM", None)
+        try:
+            term_default = run_named_command(
+                repository_root=root, manifest_path=manifest, name="term_default"
+            )
+            term_custom = run_named_command(
+                repository_root=root, manifest_path=manifest, name="term_custom"
+            )
+        finally:
+            if prior_term is not None:
+                os.environ["TERM"] = prior_term
+        assert term_default["stdout"].strip() == "dumb"
+        assert term_custom["stdout"].strip() == "xterm-agent-economics"
+        assert (
+            term_default["command"]["identity"]
+            != term_custom["command"]["identity"]
+        )
+        assert term_default["provenance"]["runtime_environment"]["explicit_variables"] == ["TERM"]
+
+        mutated = run_named_command(
+            repository_root=root, manifest_path=manifest, name="mutate"
+        )
+        assert mutated["outcomes"]["process"]["status"] == "PASS"
+        assert mutated["outcomes"]["harness"]["status"] == "FAIL"
+        assert mutated["classification"] == "policy_mutation_violation"
+        assert mutated["evidence_status"] == "INCOMPLETE"
+        assert mutated["authority"]["authoritative_execution_evidence"] is False
+        _write(root / "tracked.txt", "before\n")
+
+        timed_command = run_named_command(
+            repository_root=root,
+            manifest_path=manifest,
+            name="timeout",
+            timeout_seconds=0.05,
+        )
+        assert timed_command["outcomes"]["process"]["status"] == "INCOMPLETE"
+        assert timed_command["outcomes"]["harness"]["status"] == "PASS"
+        assert timed_command["evidence_status"] == "INCOMPLETE"
+        assert timed_command["authority"]["product_failure"] is False
         literal = run_named_command(
             repository_root=root, manifest_path=manifest, name="literal",
             selected_paths=["semi;colon.py"],
@@ -129,6 +188,8 @@ stage = "repository"
             "cases": [
                 "versioned-manifest", "cwd-containment", "argv-literal",
                 "pass-classification", "assertion-classification", "missing-executable",
+                "explicit-term-default", "manifest-term-override", "environment-command-identity",
+                "process-pass-harness-fail", "command-timeout-incomplete",
                 "stdout-hard-bound", "timeout", "repair-packet-no-edit-authority",
                 "no-progress", "state-lock", "tracked-byte-identity", "capability-honesty",
             ],
