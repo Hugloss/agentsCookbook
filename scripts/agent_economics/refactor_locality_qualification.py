@@ -109,7 +109,8 @@ def _hm_node(
     end: int,
     *,
     depth: int = 0,
-    forwarding: bool = False,
+    forwarding: bool | None = False,
+    kind: str = "function",
     callers: int = 0,
     caller_paths: list[str] | None = None,
     complete: bool = True,
@@ -128,13 +129,21 @@ def _hm_node(
         "path": path,
         "qualname": qualname,
         "name": name,
-        "kind": "function",
-        "signature": f"def {name}(...):",
+        "kind": kind,
+        "signature": (
+            f"class {name}:"
+            if kind == "class"
+            else f"def {name}(...):"
+        ),
         "lines": [start, end],
         "navigation_depth": depth,
         "file_digest": source_semantic["file_digest"],
         "forwarding_only": forwarding,
-        "forwarding_provider": "python-ast",
+        "forwarding_provider": (
+            "not-applicable-symbol-kind"
+            if kind == "class" and forwarding is None
+            else "python-ast"
+        ),
         "exact_callers": [
             {
                 "path": caller_path,
@@ -697,10 +706,17 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             )
         ],
     )
-    incomplete_reuse_status = compare_locality(hm_pre, incomplete_reuse)["status"]
-    if incomplete_reuse_status == LOCALITY_REGRESSED:
+    expected_reference_bound_gap = (
+        "hashmarks-caller-reference-bound:src/pkg/core.py::_shared"
+    )
+    if expected_reference_bound_gap not in incomplete_reuse["unresolved_evidence"]:
         failures.append(
-            "three exact callers were rejected merely because the wider reference bound was incomplete"
+            "incomplete caller reference bound did not surface as unresolved locality evidence"
+        )
+    incomplete_reuse_status = compare_locality(hm_pre, incomplete_reuse)["status"]
+    if incomplete_reuse_status != INSUFFICIENT_LOCALITY_EVIDENCE:
+        failures.append(
+            "incomplete caller reference bound was allowed to justify locality"
         )
 
     direct_test_packet = _hm_packet(
@@ -724,6 +740,56 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     )
     if compare_locality(hm_pre, direct_test_snapshot)["status"] != LOCALITY_REGRESSED:
         failures.append("related verifier paths were promoted into a direct test seam")
+
+    non_callable_forwarding_packet = _hm_packet(
+        "sha256:hm-non-callable-forwarding",
+        [
+            _hm_node("src/pkg/core.py", "authority", 1, 180),
+            _hm_node(
+                "src/pkg/model.py",
+                "EvidenceVisibility",
+                1,
+                12,
+                depth=1,
+                forwarding=None,
+                kind="class",
+            ),
+        ],
+    )
+    non_callable_forwarding = _locality_snapshot_from_observed_hashmarks(
+        packet=non_callable_forwarding_packet,
+        observation_receipt=_receipt(non_callable_forwarding_packet),
+    )
+    if any(
+        str(value).startswith("forwarding-shape:")
+        for value in non_callable_forwarding["unresolved_evidence"]
+    ):
+        failures.append(
+            "non-callable class forwarding shape was incorrectly required for locality"
+        )
+
+    callable_forwarding_packet = _hm_packet(
+        "sha256:hm-callable-forwarding-unknown",
+        [
+            _hm_node(
+                "src/pkg/core.py",
+                "authority",
+                1,
+                180,
+                forwarding=None,
+            )
+        ],
+    )
+    callable_forwarding = _locality_snapshot_from_observed_hashmarks(
+        packet=callable_forwarding_packet,
+        observation_receipt=_receipt(callable_forwarding_packet),
+    )
+    if "forwarding-shape:src/pkg/core.py::authority" not in callable_forwarding[
+        "unresolved_evidence"
+    ]:
+        failures.append(
+            "unknown callable forwarding shape did not remain incomplete locality evidence"
+        )
 
     unresolved_packet = _hm_packet(
         "sha256:hm-unresolved",
