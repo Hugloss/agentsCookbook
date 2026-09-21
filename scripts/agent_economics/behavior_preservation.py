@@ -5,11 +5,11 @@ import json
 from collections.abc import Mapping, Sequence
 
 from .refactor_locality import (
-    DECISION_SCHEMA as REFACTOR_LOCALITY_DECISION_SCHEMA,
-    SNAPSHOT_SCHEMA as REFACTOR_LOCALITY_SNAPSHOT_SCHEMA,
     DECOMPOSITION_JUSTIFIED,
     KEEP_COHESIVE_AUTHORITY,
     LOCALITY_PRESERVED_OR_IMPROVED,
+    DECISION_SCHEMA as REFACTOR_LOCALITY_DECISION_SCHEMA,
+    SNAPSHOT_SCHEMA as REFACTOR_LOCALITY_SNAPSHOT_SCHEMA,
     _artifact_identity_valid as _locality_artifact_identity_valid,
 )
 
