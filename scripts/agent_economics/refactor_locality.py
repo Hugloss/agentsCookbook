@@ -437,6 +437,13 @@ def _hashmarks_packet_validation(
         row.get("symbol_id") == target_symbol_id for row in nodes if isinstance(row, Mapping)
     ):
         errors.append("hashmarks-target-node")
+    for row in nodes:
+        if (
+            isinstance(row, Mapping)
+            and row.get("caller_reference_bound_complete") is False
+        ):
+            symbol_id = str(row.get("symbol_id") or "<unknown>")
+            incomplete.append(f"hashmarks-caller-reference-bound:{symbol_id}")
     dimensions = packet.get("dimensions")
     if not isinstance(dimensions, Mapping):
         errors.append("hashmarks-dimensions")
@@ -756,8 +763,10 @@ def locality_snapshot_from_hashmarks(
         known_symbol_ids.add(symbol_id)
         value = value_rows.get(symbol_id)
         forwarding = raw.get("forwarding_only")
+        symbol_kind = str(raw.get("kind") or "")
         if forwarding is None:
-            incomplete.append(f"forwarding-shape:{symbol_id}")
+            if symbol_kind != "class":
+                incomplete.append(f"forwarding-shape:{symbol_id}")
         elif not isinstance(forwarding, bool):
             raise ValueError(f"invalid forwarding fact for {symbol_id}")
         caller_count = raw.get("exact_caller_count")

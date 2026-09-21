@@ -160,6 +160,8 @@ A large function is an investigation signal, not decomposition authority. Size-o
 
 Introduced symbols with zero or one observed exact caller are explicitly surfaced as limited-observed-reuse structures for review. This must never be described as proven single-use: Hashmarks caller evidence is a positive lower bound. A low-reuse helper may still be valid, but it must earn an independently evidenced semantic boundary instead of existing only to lower Ruff complexity.
 
+A bounded caller-reference observation is authoritative only when every observed symbol reports `caller_reference_bound_complete=true`. A false value is explicit incomplete evidence, even when the bounded sample already contains several exact callers. Raise `--ref-limit` within the producer's supported bounds and re-observe; do not infer reuse, single-use, or decomposition safety from a truncated sample, and do not shrink navigation depth merely to make locality qualify.
+
 ### behavior-preservation
 
 Use `behavior_preservation_readiness(...)` before a structural split when the goal is to preserve existing behavior. It binds the exact source identity, declared behavior/risk boundaries, confirmed test references, a PASS execution receipt for those exact source/test identities, provider freshness, and repository-owned broader gates. Every boundary must also name the frozen test evidence identities that prove that boundary; missing bindings or references to tests outside the selected/executed test set fail closed as `EVIDENCE_REQUIRED`.
