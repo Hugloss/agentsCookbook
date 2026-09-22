@@ -93,6 +93,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `deterministic-causality-test-review` — Replace scheduler luck with explicit causal control.
 - `test-state-contamination-review` — Find hidden mutable state leaking between tests.
 - `test-contract-coupling-review` — Find tests freezing private choreography instead of contracts.
+- `verification-locality-review` — Find generic-ranked verification displacing stronger target-bound or reference-backed verification.
 
 ## Discovery
 
