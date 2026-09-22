@@ -66,6 +66,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `orthogonal-state-axis-review` — Find independent semantic dimensions collapsed into one status, enum, or flag.
 - `stable-observation-snapshot-review` — Find one logical observation assembled from incompatible revisions or generations.
 - `static-evidence-overclaim-review` — Find static analyzers claiming exact facts beyond what their resolution model proves.
+- `path-scope-confinement-review` — Find path normalization, mapping, symlink, or locator logic that can escape its declared authority root.
 
 ## Semantic authority
 
@@ -143,6 +144,7 @@ Use the narrowest skill that owns the question:
 - `orthogonal-state-axis-review` asks whether independent semantic dimensions are modeled separately; `invalid-state-model-review` asks whether the resulting state model can represent impossible domain states.
 - `stable-observation-snapshot-review` asks whether one logical observation comes from one coherent source state; `single-observation-review` asks whether one operation redundantly observes the same world multiple times.
 - `static-evidence-overclaim-review` owns analyzers claiming more certainty than their proof model permits; `authority-escalation-review` owns downstream layers strengthening already-produced evidence without new proof.
+- `path-scope-confinement-review` owns path/locator escape across repository, workspace, tenant, or analysis roots; `evidence-visibility-enforcement-review` owns already-admitted evidence crossing visibility policy boundaries.
 - `correlation-causation-boundary-review` owns correlation being promoted into causal or remediation claims; `authority-escalation-review` owns broader evidence-to-authority strengthening.
 - `explicit-target-resolution-review` owns preservation of uniquely resolved request targets; `authority-escalation-review` owns any stronger authority later minted from those targets without proof.
 - `verification-locality-review` asks which existing evidence best verifies the target behavior; `coverage-design-review` asks what behavior is not proved at all.
