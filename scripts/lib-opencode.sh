@@ -40,6 +40,7 @@ red-team-leftover-gate
 code-performance-optimization-audit
 stale-work-race-review
 ui-lifecycle-race-review
+shared-state-ownership-review
 atomic-operation-review
 retry-idempotency-review
 resource-lifetime-review
@@ -56,6 +57,7 @@ unknown-state-collapse-review
 cross-surface-convergence-review
 semantic-noninterference-review
 evidence-visibility-enforcement-review
+explicit-target-resolution-review
 authority-escalation-review
 semantic-redecision-review
 durable-commit-path-review
@@ -78,6 +80,7 @@ test-orchestration-complexity-review
 deterministic-causality-test-review
 test-state-contamination-review
 test-contract-coupling-review
+verification-locality-review
 architecture-risk-triage
 "
 
