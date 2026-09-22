@@ -660,6 +660,146 @@
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "Two worker threads mutate the same process-wide cache object through aliases. The cache has one explicit lock owner and every mutation crosses that synchronization boundary."
+    },
+    {
+      "id": "roundtrip-capacity-contract-positive",
+      "skill": "roundtrip-capacity-contract-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "The core API accepts a 900 KiB evidence packet and documents it as reusable as previous_state, but the transport endpoint caps requests at 512 KiB. A fully valid core result therefore cannot be round-tripped through the supported API."
+    },
+    {
+      "id": "roundtrip-capacity-contract-control",
+      "skill": "roundtrip-capacity-contract-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Core and transport share one 512 KiB semantic payload bound. A documented compact transform exists for larger diagnostic views and explicitly marks itself partial and non-authoritative."
+    },
+    {
+      "id": "evidence-integrity-revalidation-positive",
+      "skill": "evidence-integrity-revalidation-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A previous evidence packet carries sha256:abc. A caller mutates nested evidence but leaves the digest field unchanged; delta code trusts the stored digest and compares the tampered packet without recomputing canonical identity."
+    },
+    {
+      "id": "evidence-integrity-revalidation-control",
+      "skill": "evidence-integrity-revalidation-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Every serialized or externally supplied evidence artifact is canonically rehashed at the reuse boundary and rejected before interpretation when content does not match the claimed identity."
+    },
+    {
+      "id": "identifier-scope-uniqueness-positive",
+      "skill": "identifier-scope-uniqueness-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Events have serial numbers unique only per producer. Aggregation uses serial alone as a global dictionary key, so producer A serial 42 overwrites producer B serial 42."
+    },
+    {
+      "id": "identifier-scope-uniqueness-control",
+      "skill": "identifier-scope-uniqueness-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Serial numbers are documented as stream-local and only used inside one stream; cross-stream aggregation uses producer_id plus serial as the composite identity and rejects duplicate composite keys."
+    },
+    {
+      "id": "negative-evidence-admissibility-positive",
+      "skill": "negative-evidence-admissibility-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A bounded dependency scan of the first 100 nodes returns no owner. completeness is caller-claimed complete but truncation is unknown, and downstream code concludes that no owner exists anywhere."
+    },
+    {
+      "id": "negative-evidence-admissibility-control",
+      "skill": "negative-evidence-admissibility-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "No-owner is admitted only after the declared repository scope is fully enumerated, completeness=complete and truncation=complete; bounded or unknown scans remain unknown."
+    },
+    {
+      "id": "orthogonal-state-axis-positive",
+      "skill": "orthogonal-state-axis-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "One status enum uses SAFE_FRESH, SAFE_STALE and UNSAFE to encode both repository freshness and ownership resolution. It cannot represent fresh-but-ambiguous evidence separately from stale-but-resolved ownership."
+    },
+    {
+      "id": "orthogonal-state-axis-control",
+      "skill": "orthogonal-state-axis-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "freshness, ownership_status and completeness are independent fields; a UI may derive a summary badge from them, but authority decisions use the primitive axes."
+    },
+    {
+      "id": "current-measurement-authority-positive",
+      "skill": "current-measurement-authority-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A cleanup selector sorts last month's checked-in debt baseline and chooses the largest entry as today's hotspot even though the executable current inventory no longer contains that file."
+    },
+    {
+      "id": "current-measurement-authority-control",
+      "skill": "current-measurement-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The checked-in baseline is used only as a no-growth ratchet. A fresh executable inventory measured from current source/config selects the cleanup target and is then compared with the baseline."
+    },
+    {
+      "id": "improvement-claim-remeasurement-positive",
+      "skill": "improvement-claim-remeasurement-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A complex function is split into three helpers and the PR claims structural-debt reduction. Focused tests pass, but fresh post-edit debt remains exactly unchanged and no locality metric improved."
+    },
+    {
+      "id": "improvement-claim-remeasurement-control",
+      "skill": "improvement-claim-remeasurement-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A refactor claims behavior preservation only until comparable post-edit measurement shows debt 69→31 with no redistribution and the frozen behavior suite still passes."
+    },
+    {
+      "id": "stable-observation-snapshot-positive",
+      "skill": "stable-observation-snapshot-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A decision reads repository candidates at generation 10, a file changes, then verification evidence is read at generation 11. The result is emitted as one decision packet with no generation mismatch marker."
+    },
+    {
+      "id": "stable-observation-snapshot-control",
+      "skill": "stable-observation-snapshot-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "All component reads in the decision bind generation 10; if any stable read detects a revision change, the decision is retried or fails without emitting a mixed-generation packet."
+    },
+    {
+      "id": "static-evidence-overclaim-positive",
+      "skill": "static-evidence-overclaim-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A static call analyzer sees obj.save() where obj is dynamically supplied and marks it as an exact call to repository class Store.save, despite having no type or alias proof for the receiver."
+    },
+    {
+      "id": "static-evidence-overclaim-control",
+      "skill": "static-evidence-overclaim-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Exact calls are emitted only for lexically or index-proven targets; dynamic receivers and imported external methods remain dynamic/external or ambiguous rather than exact repository facts."
+    },
+    {
+      "id": "correlation-causation-boundary-positive",
+      "skill": "correlation-causation-boundary-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A runtime error anchor and a dependency-upgrade observation both correlate to the same repository module. The system automatically labels the upgrade as the cause and selects that dependency for remediation."
+    },
+    {
+      "id": "correlation-causation-boundary-control",
+      "skill": "correlation-causation-boundary-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The system reports same-repository-target correspondence and preserves dependency/runtime provenance, while causation and remediation remain not-inferred for a separate consumer to adjudicate."
     }
   ]
 }
