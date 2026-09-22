@@ -11,7 +11,9 @@ const defaultCorpus = path.join(repoRoot, 'evals', 'sharp-skill-cases.json');
 const specialistSections = new Set([
   'Concurrency',
   'Execution integrity',
+  'Evidence integrity',
   'Semantic authority',
+  'Qualification integrity',
   'Structural simplicity',
   'Test-derived architecture',
   'Discovery',
