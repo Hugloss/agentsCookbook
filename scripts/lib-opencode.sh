@@ -53,6 +53,9 @@ cache-validity-binding-review
 persistence-roundtrip-convergence-review
 evidence-provenance-binding-review
 unknown-state-collapse-review
+cross-surface-convergence-review
+semantic-noninterference-review
+evidence-visibility-enforcement-review
 authority-escalation-review
 semantic-redecision-review
 durable-commit-path-review
@@ -62,6 +65,7 @@ invalid-state-model-review
 aggregate-hard-failure-masking-review
 measurement-comparability-review
 evidence-readiness-review
+baseline-self-authorization-review
 single-observation-review
 call-chain-collapse-review
 alternate-path-removal-review
