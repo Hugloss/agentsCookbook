@@ -394,6 +394,174 @@
       "kind": "confusion",
       "expected": "CLEAN",
       "scenario": "A storage timeout is converted to None in one layer and treated as not-found, while another caller treats the same timeout as retryable. The disputed semantic fact is specifically failure meaning and retryability."
+    },
+    {
+      "id": "semantic-identity-invariance-positive",
+      "skill": "semantic-identity-invariance-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A proof identity hashes a list of evidence anchors in caller-provided order. Reversing the same unordered anchors changes the identity even though the semantic evidence set is identical."
+    },
+    {
+      "id": "semantic-identity-invariance-control",
+      "skill": "semantic-identity-invariance-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A pipeline-stage identity changes when the ordered stage sequence changes because execution order is explicitly part of the semantic contract."
+    },
+    {
+      "id": "evidence-projection-preservation-positive",
+      "skill": "evidence-projection-preservation-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "The canonical evidence packet records an explicitly changed CSS file as missing. The compact projection filters missing rows out entirely, and downstream callers cannot distinguish missing evidence from a file that was never reported."
+    },
+    {
+      "id": "evidence-projection-preservation-control",
+      "skill": "evidence-projection-preservation-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A UI summary intentionally shows only actionable rows, labels itself as a partial view, exposes truncation/exclusion counts, and all authority decisions consume the complete canonical packet instead."
+    },
+    {
+      "id": "authority-escalation-positive",
+      "skill": "authority-escalation-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A search layer returns the highest-ranked edit candidate with no ownership proof. A later brief converts any non-null candidate into owner_resolved=true without adding structural, explicit, or scoped proof."
+    },
+    {
+      "id": "authority-escalation-control",
+      "skill": "authority-escalation-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A candidate becomes authoritative only after a separate validator proves an exact owner within a declared complete proof scope and records that proof identity."
+    },
+    {
+      "id": "completeness-accounting-positive",
+      "skill": "completeness-accounting-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A streaming importer reports complete when parser_failures==0. Its last record lacks a trailing newline and is never counted as selected, processed, failed, excluded, or missing."
+    },
+    {
+      "id": "completeness-accounting-control",
+      "skill": "completeness-accounting-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A bounded scan reports selected=100, processed=96, excluded=2, malformed=1, missing=1 and sets complete only because the terminal categories reconcile exactly to 100."
+    },
+    {
+      "id": "bounded-authority-monotonicity-positive",
+      "skill": "bounded-authority-monotonicity-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "The same repository/task resolves owner A at limit=10 but owner B at limit=100 solely because more presentation candidates are visible; neither result records new authoritative proof."
+    },
+    {
+      "id": "bounded-authority-monotonicity-control",
+      "skill": "bounded-authority-monotonicity-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Increasing top-k reveals more related candidates but the proven owner and proof identity remain unchanged; only bounded presentation completeness changes."
+    },
+    {
+      "id": "cache-validity-binding-positive",
+      "skill": "cache-validity-binding-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A task-analysis cache key contains task text and limit but not repository generation. After source changes, the same key returns the previous owner's result."
+    },
+    {
+      "id": "cache-validity-binding-control",
+      "skill": "cache-validity-binding-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A derived cache key binds repository generation, task, policy and limits; persisted payloads are content-hash verified and the cache is disposable."
+    },
+    {
+      "id": "persistence-roundtrip-convergence-positive",
+      "skill": "persistence-roundtrip-convergence-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "An integer wider than SQLite's signed range is stored through a float-compatible column. Reopening the database silently changes the exact revision number and therefore the reconstructed identity."
+    },
+    {
+      "id": "persistence-roundtrip-convergence-control",
+      "skill": "persistence-roundtrip-convergence-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Out-of-range metadata uses a canonical checked codec; reopen reproduces the exact integers and malformed/non-canonical persisted bytes fail explicitly."
+    },
+    {
+      "id": "evidence-provenance-binding-positive",
+      "skill": "evidence-provenance-binding-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A PASS receipt identity binds command output but omits repository source identity and execution mode, so a receipt from different bytes and a simulation run can be reused as native proof."
+    },
+    {
+      "id": "evidence-provenance-binding-control",
+      "skill": "evidence-provenance-binding-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A reusable receipt identity binds repository/source, task, policy, generation, producer schema, execution mode and environment dimensions that affect interpretation."
+    },
+    {
+      "id": "unknown-state-collapse-positive",
+      "skill": "unknown-state-collapse-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A missing ranking metric is loaded with value = payload.get('ndcg') or 0.0. Qualification then treats unmeasured ranking as a measured zero instead of unknown evidence."
+    },
+    {
+      "id": "unknown-state-collapse-control",
+      "skill": "unknown-state-collapse-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The model stores metric_value separately from metric_status, preserving unknown, stale, invalid and measured-zero as distinct serialized states."
+    },
+    {
+      "id": "aggregate-hard-failure-masking-positive",
+      "skill": "aggregate-hard-failure-masking-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Qualification averages correctness, speed and cost. One false-authority result scores zero, but excellent speed/cost raise the weighted average above the PASS threshold."
+    },
+    {
+      "id": "aggregate-hard-failure-masking-control",
+      "skill": "aggregate-hard-failure-masking-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Qualification rejects any false-authority violation first, then evaluates readiness, and only afterward uses soft ranking/economics metrics to compare otherwise valid runs."
+    },
+    {
+      "id": "measurement-comparability-positive",
+      "skill": "measurement-comparability-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A before/after debt report claims -40 findings, but the after run uses different Ruff thresholds and excludes a source directory; the delta code never checks configuration or source-universe identity."
+    },
+    {
+      "id": "measurement-comparability-control",
+      "skill": "measurement-comparability-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Two runs have matching metric definition, tool/config identity, source universe, execution mode and population; their receipts share the same comparability identity before a delta is computed."
+    },
+    {
+      "id": "evidence-readiness-positive",
+      "skill": "evidence-readiness-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A benchmark with zero active qualification cases reports PASS because it has zero violations. Its only rows are historical shadow cases and required ambiguity/non-edit slices are absent."
+    },
+    {
+      "id": "evidence-readiness-control",
+      "skill": "evidence-readiness-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Scoring begins only after the corpus proves non-empty active valid qualification membership, adjudicated ground truth and coverage of every required semantic slice."
     }
   ]
 }
