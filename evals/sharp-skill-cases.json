@@ -618,6 +618,48 @@
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "CI first compares the candidate baseline to previous main and permits only independently allowed downward ratchets, then validates candidate code against that admitted baseline."
+    },
+    {
+      "id": "explicit-target-resolution-positive",
+      "skill": "explicit-target-resolution-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "The task names package.module.evaluate. The repository contains one exact module-level evaluate symbol, but owner selection ignores the module qualifier and replaces it with a structurally related helper from another module."
+    },
+    {
+      "id": "explicit-target-resolution-control",
+      "skill": "explicit-target-resolution-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A literal path resolves uniquely and remains the edit target; related dependencies stay related evidence, while ownership authority remains unresolved until separate proof is available."
+    },
+    {
+      "id": "verification-locality-positive",
+      "skill": "verification-locality-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A change to package/runtime/parser.py selects a generic repository-tools test with no reference evidence, while package/runtime/test_parser.py directly imports and exercises the changed function. Generic retrieval rank wins anyway."
+    },
+    {
+      "id": "verification-locality-control",
+      "skill": "verification-locality-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The selected integration test is broader than a nearby unit test but has direct reference evidence to the changed public behavior and is therefore the stronger verifier."
+    },
+    {
+      "id": "shared-state-ownership-positive",
+      "skill": "shared-state-ownership-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A function creates env = os.environ.copy(), reads env, then updates env. A concurrency review requires a global lock solely because the values originated from os.environ, even though the fresh mapping never escapes the function."
+    },
+    {
+      "id": "shared-state-ownership-control",
+      "skill": "shared-state-ownership-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Two worker threads mutate the same process-wide cache object through aliases. The cache has one explicit lock owner and every mutation crosses that synchronization boundary."
     }
   ]
 }
