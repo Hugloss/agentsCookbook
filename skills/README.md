@@ -40,6 +40,10 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `resource-lifetime-review` — Find resources that leak, close too early, or outlive their owner.
 - `failure-contract-review` — Find failure meaning or recovery contracts that diverge across layers.
 
+## Data handling
+
+- `sensitive-data-masking` — Produce shareable bounded documents and logs by consistently masking PII, credentials, secrets, and sensitive infrastructure data, with fail-closed verification.
+
 ## Semantic authority
 
 - `semantic-redecision-review` — Find the same semantic answer being independently decided twice.
