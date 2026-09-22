@@ -65,6 +65,7 @@ negative-evidence-admissibility-review
 orthogonal-state-axis-review
 stable-observation-snapshot-review
 static-evidence-overclaim-review
+path-scope-confinement-review
 authority-escalation-review
 semantic-redecision-review
 durable-commit-path-review
