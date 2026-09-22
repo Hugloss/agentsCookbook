@@ -54,6 +54,9 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `persistence-roundtrip-convergence-review` — Find persisted state that changes semantics or identity across save/reopen/decode.
 - `evidence-provenance-binding-review` — Find reusable evidence whose identity omits provenance required for safe interpretation.
 - `unknown-state-collapse-review` — Find unknown, missing, incomplete, stale, or invalid state collapsed into ordinary values.
+- `cross-surface-convergence-review` — Find semantic or authority divergence across equivalent API, CLI, MCP, compact, report, or persistence surfaces.
+- `semantic-noninterference-review` — Find conclusions changed by evidence outside their declared semantic dependency or proof scope.
+- `evidence-visibility-enforcement-review` — Find denied or hidden evidence leaking into selection, authority, diagnostics, caches, or public output.
 
 ## Semantic authority
 
@@ -69,6 +72,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `aggregate-hard-failure-masking-review` — Find hard contract violations hidden by aggregate scores or unrelated positive measurements.
 - `measurement-comparability-review` — Find deltas or rankings computed across incompatible measurement conditions.
 - `evidence-readiness-review` — Find qualification claims made before the evidence set is eligible, non-vacuous, and sufficiently representative.
+- `baseline-self-authorization-review` — Find changes that weaken their own governing baseline or policy and then validate against that candidate state.
 
 ## Structural simplicity
 
@@ -113,6 +117,10 @@ Use the narrowest skill that owns the question:
 - `evidence-provenance-binding-review` asks whether one reusable evidence artifact binds its authority context; `measurement-comparability-review` asks whether two measurements are valid to compare.
 - `evidence-readiness-review` asks whether evidence is sufficient to qualify at all; `aggregate-hard-failure-masking-review` asks whether a hard violation can be compensated after readiness is established.
 - `cache-validity-binding-review` owns semantic cache-key/validity completeness; `stale-work-race-review` owns superseded asynchronous work committing after newer ownership exists.
+- `cross-surface-convergence-review` compares equivalent public surfaces; `evidence-projection-preservation-review` follows evidence through one projection chain.
+- `semantic-noninterference-review` asks whether out-of-scope evidence changes a conclusion; `bounded-authority-monotonicity-review` narrows that question specifically to retrieval/presentation bounds.
+- `evidence-visibility-enforcement-review` owns denied/hidden evidence crossing an admission boundary; `evidence-projection-preservation-review` owns admitted evidence disappearing after admission.
+- `baseline-self-authorization-review` asks whether a candidate can weaken its own governing oracle; `measurement-comparability-review` asks whether separately produced measurements are comparable once their governing contracts are fixed.
 - `call-chain-collapse-review` targets no-value hops; `dependency-surface-review` targets oversized inputs/contexts even when the call depth is reasonable.
 - `red-team-leftover-gate` reviews a supplied plan/change for material blockers; `architecture-risk-triage` routes repository hotspots to specialist architecture reviews.
 
