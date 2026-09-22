@@ -32,6 +32,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 
 - `stale-work-race-review` — Find old async work that can commit after newer ownership exists.
 - `ui-lifecycle-race-review` — Find delayed UI work that outlives its view or interaction.
+- `shared-state-ownership-review` — Find race or synchronization reasoning that misclassifies whether mutable state is actually shared.
 
 ## Execution integrity
 
@@ -57,6 +58,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `cross-surface-convergence-review` — Find semantic or authority divergence across equivalent API, CLI, MCP, compact, report, or persistence surfaces.
 - `semantic-noninterference-review` — Find conclusions changed by evidence outside their declared semantic dependency or proof scope.
 - `evidence-visibility-enforcement-review` — Find denied or hidden evidence leaking into selection, authority, diagnostics, caches, or public output.
+- `explicit-target-resolution-review` — Find explicit paths or symbols displaced by weaker inferred candidates without conflating intent with ownership.
 
 ## Semantic authority
 
@@ -121,6 +123,9 @@ Use the narrowest skill that owns the question:
 - `semantic-noninterference-review` asks whether out-of-scope evidence changes a conclusion; `bounded-authority-monotonicity-review` narrows that question specifically to retrieval/presentation bounds.
 - `evidence-visibility-enforcement-review` owns denied/hidden evidence crossing an admission boundary; `evidence-projection-preservation-review` owns admitted evidence disappearing after admission.
 - `baseline-self-authorization-review` asks whether a candidate can weaken its own governing oracle; `measurement-comparability-review` asks whether separately produced measurements are comparable once their governing contracts are fixed.
+- `explicit-target-resolution-review` owns preservation of uniquely resolved request targets; `authority-escalation-review` owns any stronger authority later minted from those targets without proof.
+- `verification-locality-review` asks which existing evidence best verifies the target behavior; `coverage-design-review` asks what behavior is not proved at all.
+- `shared-state-ownership-review` asks whether mutable state is actually shared; `stale-work-race-review` asks whether superseded work can commit after newer ownership exists.
 - `call-chain-collapse-review` targets no-value hops; `dependency-surface-review` targets oversized inputs/contexts even when the call depth is reasonable.
 - `red-team-leftover-gate` reviews a supplied plan/change for material blockers; `architecture-risk-triage` routes repository hotspots to specialist architecture reviews.
 
