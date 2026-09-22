@@ -59,6 +59,13 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `semantic-noninterference-review` — Find conclusions changed by evidence outside their declared semantic dependency or proof scope.
 - `evidence-visibility-enforcement-review` — Find denied or hidden evidence leaking into selection, authority, diagnostics, caches, or public output.
 - `explicit-target-resolution-review` — Find explicit paths or symbols displaced by weaker inferred candidates without conflating intent with ownership.
+- `roundtrip-capacity-contract-review` — Find valid payloads that cannot traverse documented downstream or round-trip paths because layer bounds disagree.
+- `evidence-integrity-revalidation-review` — Find reusable evidence identities trusted without recomputing them from current content.
+- `identifier-scope-uniqueness-review` — Find identifiers used as identity outside the scope where uniqueness is guaranteed.
+- `negative-evidence-admissibility-review` — Find absence claims treated as evidence without complete non-truncated observation scope.
+- `orthogonal-state-axis-review` — Find independent semantic dimensions collapsed into one status, enum, or flag.
+- `stable-observation-snapshot-review` — Find one logical observation assembled from incompatible revisions or generations.
+- `static-evidence-overclaim-review` — Find static analyzers claiming exact facts beyond what their resolution model proves.
 
 ## Semantic authority
 
@@ -68,6 +75,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `resolved-fact-regression-review` — Find downstream code falling back from resolved facts to raw inputs.
 - `state-authority-review` — Find competing representations acting as truth.
 - `invalid-state-model-review` — Find impossible domain/lifecycle states that remain representable.
+- `correlation-causation-boundary-review` — Find correlation promoted into causation, incident identity, responsibility, or remediation authority.
 
 ## Qualification integrity
 
@@ -75,6 +83,8 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `measurement-comparability-review` — Find deltas or rankings computed across incompatible measurement conditions.
 - `evidence-readiness-review` — Find qualification claims made before the evidence set is eligible, non-vacuous, and sufficiently representative.
 - `baseline-self-authorization-review` — Find changes that weaken their own governing baseline or policy and then validate against that candidate state.
+- `current-measurement-authority-review` — Find historical baselines or snapshots reused as if they measured current state.
+- `improvement-claim-remeasurement-review` — Find improvement claims inferred from code movement instead of comparable post-change measurement.
 
 ## Structural simplicity
 
@@ -124,6 +134,16 @@ Use the narrowest skill that owns the question:
 - `semantic-noninterference-review` asks whether out-of-scope evidence changes a conclusion; `bounded-authority-monotonicity-review` narrows that question specifically to retrieval/presentation bounds.
 - `evidence-visibility-enforcement-review` owns denied/hidden evidence crossing an admission boundary; `evidence-projection-preservation-review` owns admitted evidence disappearing after admission.
 - `baseline-self-authorization-review` asks whether a candidate can weaken its own governing oracle; `measurement-comparability-review` asks whether separately produced measurements are comparable once their governing contracts are fixed.
+- `current-measurement-authority-review` asks **what measures current state**; `baseline-self-authorization-review` asks **whether the governing baseline itself can be weakened by the candidate**.
+- `improvement-claim-remeasurement-review` asks **whether the claimed improvement actually occurred**; `measurement-comparability-review` asks **whether the before/after measurements are valid to compare**.
+- `roundtrip-capacity-contract-review` owns incompatible bounds across composition paths; `completeness-accounting-review` owns whether all expected units inside one admitted scope were accounted for.
+- `evidence-integrity-revalidation-review` verifies that reusable content still matches its claimed identity; `evidence-provenance-binding-review` verifies that the identity binds the authority context needed to interpret it.
+- `identifier-scope-uniqueness-review` asks whether an identifier is unique where it is used; `semantic-identity-invariance-review` asks whether a canonical identity changes exactly with semantics.
+- `negative-evidence-admissibility-review` owns whether absence can be used as evidence; `unknown-state-collapse-review` owns whether unknown/incomplete state is collapsed into an ordinary value.
+- `orthogonal-state-axis-review` asks whether independent semantic dimensions are modeled separately; `invalid-state-model-review` asks whether the resulting state model can represent impossible domain states.
+- `stable-observation-snapshot-review` asks whether one logical observation comes from one coherent source state; `single-observation-review` asks whether one operation redundantly observes the same world multiple times.
+- `static-evidence-overclaim-review` owns analyzers claiming more certainty than their proof model permits; `authority-escalation-review` owns downstream layers strengthening already-produced evidence without new proof.
+- `correlation-causation-boundary-review` owns correlation being promoted into causal or remediation claims; `authority-escalation-review` owns broader evidence-to-authority strengthening.
 - `explicit-target-resolution-review` owns preservation of uniquely resolved request targets; `authority-escalation-review` owns any stronger authority later minted from those targets without proof.
 - `verification-locality-review` asks which existing evidence best verifies the target behavior; `coverage-design-review` asks what behavior is not proved at all.
 - `shared-state-ownership-review` asks whether mutable state is actually shared; `stale-work-race-review` asks whether superseded work can commit after newer ownership exists.
