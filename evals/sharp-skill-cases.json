@@ -562,6 +562,62 @@
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "Scoring begins only after the corpus proves non-empty active valid qualification membership, adjudicated ground truth and coverage of every required semantic slice."
+    },
+    {
+      "id": "cross-surface-convergence-positive",
+      "skill": "cross-surface-convergence-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "For the same source generation and task, the Python API reports ownership unresolved while the compact CLI brief marks the same candidate safe to edit. The CLI adapter reinterprets candidate presence locally."
+    },
+    {
+      "id": "cross-surface-convergence-control",
+      "skill": "cross-surface-convergence-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "API, CLI and MCP use different field names and formatting, but after removing presentation-only fields they expose the same candidate, ambiguity, authority, freshness and provenance state."
+    },
+    {
+      "id": "semantic-noninterference-positive",
+      "skill": "semantic-noninterference-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Adding an unrelated documentation file changes the selected owner for an exact-symbol task even though the new file is outside the task proof scope and contributes no owner evidence."
+    },
+    {
+      "id": "semantic-noninterference-control",
+      "skill": "semantic-noninterference-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Adding unrelated files and equivalent task wording leaves the conclusion unchanged, while removing the exact owner symbol changes the result to unresolved as expected."
+    },
+    {
+      "id": "evidence-visibility-enforcement-positive",
+      "skill": "evidence-visibility-enforcement-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A repository hit is tagged visibility=deny. Retrieval hides it from the raw list, but owner resolution still receives the unfiltered hit collection and uses the denied exact symbol as ownership proof."
+    },
+    {
+      "id": "evidence-visibility-enforcement-control",
+      "skill": "evidence-visibility-enforcement-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Visibility policy filters denied evidence at the canonical evidence boundary before ranking, caches, projections or authority logic; an authorized privileged surface uses a separate explicitly scoped request."
+    },
+    {
+      "id": "baseline-self-authorization-positive",
+      "skill": "baseline-self-authorization-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A pull request adds 20 lint violations and raises the checked-in allowed-debt baseline by 20. CI validates live debt only against the modified baseline, so the regression passes without comparing the baseline to previous main."
+    },
+    {
+      "id": "baseline-self-authorization-control",
+      "skill": "baseline-self-authorization-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "CI first compares the candidate baseline to previous main and permits only independently allowed downward ratchets, then validates candidate code against that admitted baseline."
     }
   ]
 }
