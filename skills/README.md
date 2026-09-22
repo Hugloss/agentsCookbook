@@ -44,13 +44,31 @@ A strong finding normally removes a path, decision, representation, traversal, b
 
 - `sensitive-data-masking` — Produce shareable bounded documents and logs by consistently masking PII, credentials, secrets, and sensitive infrastructure data, with fail-closed verification.
 
+## Evidence integrity
+
+- `semantic-identity-invariance-review` — Find authoritative identities that change on semantic no-ops or ignore semantic changes they claim to cover.
+- `evidence-projection-preservation-review` — Find admitted evidence silently erased or hidden by downstream projections.
+- `completeness-accounting-review` — Find complete/success claims with expected units left unaccounted.
+- `bounded-authority-monotonicity-review` — Find authority that oscillates when only retrieval or presentation bounds change.
+- `cache-validity-binding-review` — Find cache keys or validity checks that omit semantic inputs or authority generation.
+- `persistence-roundtrip-convergence-review` — Find persisted state that changes semantics or identity across save/reopen/decode.
+- `evidence-provenance-binding-review` — Find reusable evidence whose identity omits provenance required for safe interpretation.
+- `unknown-state-collapse-review` — Find unknown, missing, incomplete, stale, or invalid state collapsed into ordinary values.
+
 ## Semantic authority
 
+- `authority-escalation-review` — Find derived evidence that gains stronger authority without new qualifying proof.
 - `semantic-redecision-review` — Find the same semantic answer being independently decided twice.
 - `durable-commit-path-review` — Find one durable transition committing through multiple paths.
 - `resolved-fact-regression-review` — Find downstream code falling back from resolved facts to raw inputs.
 - `state-authority-review` — Find competing representations acting as truth.
 - `invalid-state-model-review` — Find impossible domain/lifecycle states that remain representable.
+
+## Qualification integrity
+
+- `aggregate-hard-failure-masking-review` — Find hard contract violations hidden by aggregate scores or unrelated positive measurements.
+- `measurement-comparability-review` — Find deltas or rankings computed across incompatible measurement conditions.
+- `evidence-readiness-review` — Find qualification claims made before the evidence set is eligible, non-vacuous, and sufficiently representative.
 
 ## Structural simplicity
 
@@ -87,7 +105,14 @@ Use the narrowest skill that owns the question:
 - `stale-work-race-review` asks whether superseded old work can still commit; `retry-idempotency-review` asks whether the **same logical operation** can repeat a one-shot effect.
 - `durable-commit-path-review` asks why one transition has multiple commit authorities; `atomic-operation-review` asks whether one legitimate path can expose only part of its required outcome.
 - `resource-lifetime-review` owns general acquire/use/release lifetime; `ui-lifecycle-race-review` owns delayed work specifically outliving a UI/view generation.
-- `failure-contract-review` owns failure meaning, retryability, and recovery semantics; `semantic-redecision-review` owns broader repeated policy interpretation.
+- `failure-contract-review` owns failure meaning, retryability, and recovery semantics; `unknown-state-collapse-review` owns loss of uncertainty when no failure contract is being reinterpreted; `semantic-redecision-review` owns broader repeated policy interpretation.
+- `state-authority-review` finds competing truth representations; `authority-escalation-review` finds evidence becoming more authoritative while flowing through a layer without new proof.
+- `semantic-identity-invariance-review` tests whether identity follows semantics; `persistence-roundtrip-convergence-review` tests whether save/reopen/decode preserves those semantics.
+- `evidence-projection-preservation-review` follows individual admitted facts through projections; `completeness-accounting-review` reconciles the whole expected universe.
+- `bounded-authority-monotonicity-review` tests authority across retrieval/presentation bounds; `semantic-identity-invariance-review` tests identity across any semantic no-op representation change.
+- `evidence-provenance-binding-review` asks whether one reusable evidence artifact binds its authority context; `measurement-comparability-review` asks whether two measurements are valid to compare.
+- `evidence-readiness-review` asks whether evidence is sufficient to qualify at all; `aggregate-hard-failure-masking-review` asks whether a hard violation can be compensated after readiness is established.
+- `cache-validity-binding-review` owns semantic cache-key/validity completeness; `stale-work-race-review` owns superseded asynchronous work committing after newer ownership exists.
 - `call-chain-collapse-review` targets no-value hops; `dependency-surface-review` targets oversized inputs/contexts even when the call depth is reasonable.
 - `red-team-leftover-gate` reviews a supplied plan/change for material blockers; `architecture-risk-triage` routes repository hotspots to specialist architecture reviews.
 
