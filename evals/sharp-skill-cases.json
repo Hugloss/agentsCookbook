@@ -394,6 +394,426 @@
       "kind": "confusion",
       "expected": "CLEAN",
       "scenario": "A storage timeout is converted to None in one layer and treated as not-found, while another caller treats the same timeout as retryable. The disputed semantic fact is specifically failure meaning and retryability."
+    },
+    {
+      "id": "semantic-identity-invariance-positive",
+      "skill": "semantic-identity-invariance-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A proof identity hashes a list of evidence anchors in caller-provided order. Reversing the same unordered anchors changes the identity even though the semantic evidence set is identical."
+    },
+    {
+      "id": "semantic-identity-invariance-control",
+      "skill": "semantic-identity-invariance-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A pipeline-stage identity changes when the ordered stage sequence changes because execution order is explicitly part of the semantic contract."
+    },
+    {
+      "id": "evidence-projection-preservation-positive",
+      "skill": "evidence-projection-preservation-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "The canonical evidence packet records an explicitly changed CSS file as missing. The compact projection filters missing rows out entirely, and downstream callers cannot distinguish missing evidence from a file that was never reported."
+    },
+    {
+      "id": "evidence-projection-preservation-control",
+      "skill": "evidence-projection-preservation-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A UI summary intentionally shows only actionable rows, labels itself as a partial view, exposes truncation/exclusion counts, and all authority decisions consume the complete canonical packet instead."
+    },
+    {
+      "id": "authority-escalation-positive",
+      "skill": "authority-escalation-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A search layer returns the highest-ranked edit candidate with no ownership proof. A later brief converts any non-null candidate into owner_resolved=true without adding structural, explicit, or scoped proof."
+    },
+    {
+      "id": "authority-escalation-control",
+      "skill": "authority-escalation-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A candidate becomes authoritative only after a separate validator proves an exact owner within a declared complete proof scope and records that proof identity."
+    },
+    {
+      "id": "completeness-accounting-positive",
+      "skill": "completeness-accounting-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A streaming importer reports complete when parser_failures==0. Its last record lacks a trailing newline and is never counted as selected, processed, failed, excluded, or missing."
+    },
+    {
+      "id": "completeness-accounting-control",
+      "skill": "completeness-accounting-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A bounded scan reports selected=100, processed=96, excluded=2, malformed=1, missing=1 and sets complete only because the terminal categories reconcile exactly to 100."
+    },
+    {
+      "id": "bounded-authority-monotonicity-positive",
+      "skill": "bounded-authority-monotonicity-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "The same repository/task resolves owner A at limit=10 but owner B at limit=100 solely because more presentation candidates are visible; neither result records new authoritative proof."
+    },
+    {
+      "id": "bounded-authority-monotonicity-control",
+      "skill": "bounded-authority-monotonicity-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Increasing top-k reveals more related candidates but the proven owner and proof identity remain unchanged; only bounded presentation completeness changes."
+    },
+    {
+      "id": "cache-validity-binding-positive",
+      "skill": "cache-validity-binding-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A task-analysis cache key contains task text and limit but not repository generation. After source changes, the same key returns the previous owner's result."
+    },
+    {
+      "id": "cache-validity-binding-control",
+      "skill": "cache-validity-binding-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A derived cache key binds repository generation, task, policy and limits; persisted payloads are content-hash verified and the cache is disposable."
+    },
+    {
+      "id": "persistence-roundtrip-convergence-positive",
+      "skill": "persistence-roundtrip-convergence-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "An integer wider than SQLite's signed range is stored through a float-compatible column. Reopening the database silently changes the exact revision number and therefore the reconstructed identity."
+    },
+    {
+      "id": "persistence-roundtrip-convergence-control",
+      "skill": "persistence-roundtrip-convergence-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Out-of-range metadata uses a canonical checked codec; reopen reproduces the exact integers and malformed/non-canonical persisted bytes fail explicitly."
+    },
+    {
+      "id": "evidence-provenance-binding-positive",
+      "skill": "evidence-provenance-binding-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A PASS receipt identity binds command output but omits repository source identity and execution mode, so a receipt from different bytes and a simulation run can be reused as native proof."
+    },
+    {
+      "id": "evidence-provenance-binding-control",
+      "skill": "evidence-provenance-binding-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A reusable receipt identity binds repository/source, task, policy, generation, producer schema, execution mode and environment dimensions that affect interpretation."
+    },
+    {
+      "id": "unknown-state-collapse-positive",
+      "skill": "unknown-state-collapse-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A missing ranking metric is loaded with value = payload.get('ndcg') or 0.0. Qualification then treats unmeasured ranking as a measured zero instead of unknown evidence."
+    },
+    {
+      "id": "unknown-state-collapse-control",
+      "skill": "unknown-state-collapse-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The model stores metric_value separately from metric_status, preserving unknown, stale, invalid and measured-zero as distinct serialized states."
+    },
+    {
+      "id": "aggregate-hard-failure-masking-positive",
+      "skill": "aggregate-hard-failure-masking-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Qualification averages correctness, speed and cost. One false-authority result scores zero, but excellent speed/cost raise the weighted average above the PASS threshold."
+    },
+    {
+      "id": "aggregate-hard-failure-masking-control",
+      "skill": "aggregate-hard-failure-masking-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Qualification rejects any false-authority violation first, then evaluates readiness, and only afterward uses soft ranking/economics metrics to compare otherwise valid runs."
+    },
+    {
+      "id": "measurement-comparability-positive",
+      "skill": "measurement-comparability-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A before/after debt report claims -40 findings, but the after run uses different Ruff thresholds and excludes a source directory; the delta code never checks configuration or source-universe identity."
+    },
+    {
+      "id": "measurement-comparability-control",
+      "skill": "measurement-comparability-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Two runs have matching metric definition, tool/config identity, source universe, execution mode and population; their receipts share the same comparability identity before a delta is computed."
+    },
+    {
+      "id": "evidence-readiness-positive",
+      "skill": "evidence-readiness-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A benchmark with zero active qualification cases reports PASS because it has zero violations. Its only rows are historical shadow cases and required ambiguity/non-edit slices are absent."
+    },
+    {
+      "id": "evidence-readiness-control",
+      "skill": "evidence-readiness-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Scoring begins only after the corpus proves non-empty active valid qualification membership, adjudicated ground truth and coverage of every required semantic slice."
+    },
+    {
+      "id": "cross-surface-convergence-positive",
+      "skill": "cross-surface-convergence-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "For the same source generation and task, the Python API reports ownership unresolved while the compact CLI brief marks the same candidate safe to edit. The CLI adapter reinterprets candidate presence locally."
+    },
+    {
+      "id": "cross-surface-convergence-control",
+      "skill": "cross-surface-convergence-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "API, CLI and MCP use different field names and formatting, but after removing presentation-only fields they expose the same candidate, ambiguity, authority, freshness and provenance state."
+    },
+    {
+      "id": "semantic-noninterference-positive",
+      "skill": "semantic-noninterference-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Adding an unrelated documentation file changes the selected owner for an exact-symbol task even though the new file is outside the task proof scope and contributes no owner evidence."
+    },
+    {
+      "id": "semantic-noninterference-control",
+      "skill": "semantic-noninterference-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Adding unrelated files and equivalent task wording leaves the conclusion unchanged, while removing the exact owner symbol changes the result to unresolved as expected."
+    },
+    {
+      "id": "evidence-visibility-enforcement-positive",
+      "skill": "evidence-visibility-enforcement-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A repository hit is tagged visibility=deny. Retrieval hides it from the raw list, but owner resolution still receives the unfiltered hit collection and uses the denied exact symbol as ownership proof."
+    },
+    {
+      "id": "evidence-visibility-enforcement-control",
+      "skill": "evidence-visibility-enforcement-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Visibility policy filters denied evidence at the canonical evidence boundary before ranking, caches, projections or authority logic; an authorized privileged surface uses a separate explicitly scoped request."
+    },
+    {
+      "id": "baseline-self-authorization-positive",
+      "skill": "baseline-self-authorization-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A pull request adds 20 lint violations and raises the checked-in allowed-debt baseline by 20. CI validates live debt only against the modified baseline, so the regression passes without comparing the baseline to previous main."
+    },
+    {
+      "id": "baseline-self-authorization-control",
+      "skill": "baseline-self-authorization-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "CI first compares the candidate baseline to previous main and permits only independently allowed downward ratchets, then validates candidate code against that admitted baseline."
+    },
+    {
+      "id": "explicit-target-resolution-positive",
+      "skill": "explicit-target-resolution-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "The task names package.module.evaluate. The repository contains one exact module-level evaluate symbol, but owner selection ignores the module qualifier and replaces it with a structurally related helper from another module."
+    },
+    {
+      "id": "explicit-target-resolution-control",
+      "skill": "explicit-target-resolution-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A literal path resolves uniquely and remains the edit target; related dependencies stay related evidence, while ownership authority remains unresolved until separate proof is available."
+    },
+    {
+      "id": "verification-locality-positive",
+      "skill": "verification-locality-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A change to package/runtime/parser.py selects a generic repository-tools test with no reference evidence, while package/runtime/test_parser.py directly imports and exercises the changed function. Generic retrieval rank wins anyway."
+    },
+    {
+      "id": "verification-locality-control",
+      "skill": "verification-locality-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The selected integration test is broader than a nearby unit test but has direct reference evidence to the changed public behavior and is therefore the stronger verifier."
+    },
+    {
+      "id": "shared-state-ownership-positive",
+      "skill": "shared-state-ownership-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A function creates env = os.environ.copy(), reads env, then updates env. A concurrency review requires a global lock solely because the values originated from os.environ, even though the fresh mapping never escapes the function."
+    },
+    {
+      "id": "shared-state-ownership-control",
+      "skill": "shared-state-ownership-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Two worker threads mutate the same process-wide cache object through aliases. The cache has one explicit lock owner and every mutation crosses that synchronization boundary."
+    },
+    {
+      "id": "roundtrip-capacity-contract-positive",
+      "skill": "roundtrip-capacity-contract-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "The core API accepts a 900 KiB evidence packet and documents it as reusable as previous_state, but the transport endpoint caps requests at 512 KiB. A fully valid core result therefore cannot be round-tripped through the supported API."
+    },
+    {
+      "id": "roundtrip-capacity-contract-control",
+      "skill": "roundtrip-capacity-contract-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Core and transport share one 512 KiB semantic payload bound. A documented compact transform exists for larger diagnostic views and explicitly marks itself partial and non-authoritative."
+    },
+    {
+      "id": "evidence-integrity-revalidation-positive",
+      "skill": "evidence-integrity-revalidation-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A previous evidence packet carries sha256:abc. A caller mutates nested evidence but leaves the digest field unchanged; delta code trusts the stored digest and compares the tampered packet without recomputing canonical identity."
+    },
+    {
+      "id": "evidence-integrity-revalidation-control",
+      "skill": "evidence-integrity-revalidation-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Every serialized or externally supplied evidence artifact is canonically rehashed at the reuse boundary and rejected before interpretation when content does not match the claimed identity."
+    },
+    {
+      "id": "identifier-scope-uniqueness-positive",
+      "skill": "identifier-scope-uniqueness-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Events have serial numbers unique only per producer. Aggregation uses serial alone as a global dictionary key, so producer A serial 42 overwrites producer B serial 42."
+    },
+    {
+      "id": "identifier-scope-uniqueness-control",
+      "skill": "identifier-scope-uniqueness-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Serial numbers are documented as stream-local and only used inside one stream; cross-stream aggregation uses producer_id plus serial as the composite identity and rejects duplicate composite keys."
+    },
+    {
+      "id": "negative-evidence-admissibility-positive",
+      "skill": "negative-evidence-admissibility-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A bounded dependency scan of the first 100 nodes returns no owner. completeness is caller-claimed complete but truncation is unknown, and downstream code concludes that no owner exists anywhere."
+    },
+    {
+      "id": "negative-evidence-admissibility-control",
+      "skill": "negative-evidence-admissibility-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "No-owner is admitted only after the declared repository scope is fully enumerated, completeness=complete and truncation=complete; bounded or unknown scans remain unknown."
+    },
+    {
+      "id": "orthogonal-state-axis-positive",
+      "skill": "orthogonal-state-axis-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "One status enum uses SAFE_FRESH, SAFE_STALE and UNSAFE to encode both repository freshness and ownership resolution. It cannot represent fresh-but-ambiguous evidence separately from stale-but-resolved ownership."
+    },
+    {
+      "id": "orthogonal-state-axis-control",
+      "skill": "orthogonal-state-axis-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "freshness, ownership_status and completeness are independent fields; a UI may derive a summary badge from them, but authority decisions use the primitive axes."
+    },
+    {
+      "id": "current-measurement-authority-positive",
+      "skill": "current-measurement-authority-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A cleanup selector sorts last month's checked-in debt baseline and chooses the largest entry as today's hotspot even though the executable current inventory no longer contains that file."
+    },
+    {
+      "id": "current-measurement-authority-control",
+      "skill": "current-measurement-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The checked-in baseline is used only as a no-growth ratchet. A fresh executable inventory measured from current source/config selects the cleanup target and is then compared with the baseline."
+    },
+    {
+      "id": "improvement-claim-remeasurement-positive",
+      "skill": "improvement-claim-remeasurement-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A complex function is split into three helpers and the PR claims structural-debt reduction. Focused tests pass, but fresh post-edit debt remains exactly unchanged and no locality metric improved."
+    },
+    {
+      "id": "improvement-claim-remeasurement-control",
+      "skill": "improvement-claim-remeasurement-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A refactor claims behavior preservation only until comparable post-edit measurement shows debt 69→31 with no redistribution and the frozen behavior suite still passes."
+    },
+    {
+      "id": "stable-observation-snapshot-positive",
+      "skill": "stable-observation-snapshot-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A decision reads repository candidates at generation 10, a file changes, then verification evidence is read at generation 11. The result is emitted as one decision packet with no generation mismatch marker."
+    },
+    {
+      "id": "stable-observation-snapshot-control",
+      "skill": "stable-observation-snapshot-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "All component reads in the decision bind generation 10; if any stable read detects a revision change, the decision is retried or fails without emitting a mixed-generation packet."
+    },
+    {
+      "id": "static-evidence-overclaim-positive",
+      "skill": "static-evidence-overclaim-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A static call analyzer sees obj.save() where obj is dynamically supplied and marks it as an exact call to repository class Store.save, despite having no type or alias proof for the receiver."
+    },
+    {
+      "id": "static-evidence-overclaim-control",
+      "skill": "static-evidence-overclaim-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Exact calls are emitted only for lexically or index-proven targets; dynamic receivers and imported external methods remain dynamic/external or ambiguous rather than exact repository facts."
+    },
+    {
+      "id": "correlation-causation-boundary-positive",
+      "skill": "correlation-causation-boundary-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A runtime error anchor and a dependency-upgrade observation both correlate to the same repository module. The system automatically labels the upgrade as the cause and selects that dependency for remediation."
+    },
+    {
+      "id": "correlation-causation-boundary-control",
+      "skill": "correlation-causation-boundary-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The system reports same-repository-target correspondence and preserves dependency/runtime provenance, while causation and remediation remain not-inferred for a separate consumer to adjudicate."
+    },
+    {
+      "id": "path-scope-confinement-positive",
+      "skill": "path-scope-confinement-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "An external /app/src prefix maps to the repository root. The mapper accepts /app/src/../secrets.txt, normalizes after joining, and produces a path outside the repository while still labeling it repository evidence."
+    },
+    {
+      "id": "path-scope-confinement-control",
+      "skill": "path-scope-confinement-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Path mapping chooses the deterministic longest matching prefix, rejects .. traversal, resolves symlinks/realpath, then re-checks that the final canonical path remains beneath the declared repository root."
     }
   ]
 }
