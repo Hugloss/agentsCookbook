@@ -44,6 +44,7 @@ atomic-operation-review
 retry-idempotency-review
 resource-lifetime-review
 failure-contract-review
+sensitive-data-masking
 semantic-redecision-review
 durable-commit-path-review
 resolved-fact-regression-review
