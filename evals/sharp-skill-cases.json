@@ -800,6 +800,20 @@
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "The system reports same-repository-target correspondence and preserves dependency/runtime provenance, while causation and remediation remain not-inferred for a separate consumer to adjudicate."
+    },
+    {
+      "id": "path-scope-confinement-positive",
+      "skill": "path-scope-confinement-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "An external /app/src prefix maps to the repository root. The mapper accepts /app/src/../secrets.txt, normalizes after joining, and produces a path outside the repository while still labeling it repository evidence."
+    },
+    {
+      "id": "path-scope-confinement-control",
+      "skill": "path-scope-confinement-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Path mapping chooses the deterministic longest matching prefix, rejects .. traversal, resolves symlinks/realpath, then re-checks that the final canonical path remains beneath the declared repository root."
     }
   ]
 }
