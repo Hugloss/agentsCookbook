@@ -47,6 +47,7 @@ _ROOT_FIELDS = {
     "tasks",
     "consumer_cleanup_evidence",
     "final_agentscookbook_ci_evidence_id",
+    "final_agentscookbook_ci_implementation_id",
 }
 
 
@@ -107,6 +108,14 @@ def validate_campaign(
         campaign.get("final_agentscookbook_ci_evidence_id"),
         field="final_agentscookbook_ci_evidence_id",
     )
+    final_ci_implementation = _required_text(
+        campaign.get("final_agentscookbook_ci_implementation_id"),
+        field="final_agentscookbook_ci_implementation_id",
+    )
+    if final_ci_implementation != implementation_id:
+        raise DogfoodCampaignError(
+            "final agentsCookbook CI must bind the exact campaign implementation identity"
+        )
 
     tasks = campaign.get("tasks")
     if not isinstance(tasks, list) or not tasks:
@@ -117,6 +126,7 @@ def validate_campaign(
     independent_repositories: set[str] = set()
     expected_run_ids: set[str] = set()
     repositories: set[str] = set()
+    evidence_receipt_ids: set[str] = set()
 
     for index, raw in enumerate(tasks):
         if not isinstance(raw, Mapping):
@@ -164,15 +174,37 @@ def validate_campaign(
                 )
             expected_run_ids.add(session_id)
 
-        for field in (
+        receipt_fields = (
             "baseline_isolation_evidence_id",
             "bridge_isolation_evidence_id",
             "baseline_freeze_receipt_id",
             "bridge_freeze_receipt_id",
             "baseline_oracle_access_receipt_id",
             "bridge_oracle_access_receipt_id",
+        )
+        receipt_ids: dict[str, str] = {}
+        for field in receipt_fields:
+            receipt_id = _required_text(
+                raw.get(field), field=f"tasks[{index}].{field}"
+            )
+            if receipt_id in evidence_receipt_ids:
+                raise DogfoodCampaignError(
+                    f"evidence receipt identity reused across campaign: {receipt_id}"
+                )
+            evidence_receipt_ids.add(receipt_id)
+            receipt_ids[field] = receipt_id
+        for baseline_field, bridge_field in (
+            ("baseline_isolation_evidence_id", "bridge_isolation_evidence_id"),
+            ("baseline_freeze_receipt_id", "bridge_freeze_receipt_id"),
+            (
+                "baseline_oracle_access_receipt_id",
+                "bridge_oracle_access_receipt_id",
+            ),
         ):
-            _required_text(raw.get(field), field=f"tasks[{index}].{field}")
+            if receipt_ids[baseline_field] == receipt_ids[bridge_field]:
+                raise DogfoodCampaignError(
+                    f"tasks[{index}] baseline and bridge {baseline_field.removeprefix('baseline_')} must differ"
+                )
 
         key = (task_id, treatment_id)
         if key in rows:
@@ -293,6 +325,7 @@ def validate_campaign(
         "run_identities": len(actual_run_ids),
         "consumer_cleanup_evidence": cleanup_by_repo,
         "final_agentscookbook_ci_evidence_id": final_ci,
+        "final_agentscookbook_ci_implementation_id": final_ci_implementation,
         "benchmark": benchmark,
         "authority": {
             "automatic_promotion": False,
