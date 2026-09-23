@@ -5,7 +5,7 @@ import tempfile
 from copy import deepcopy
 from pathlib import Path
 
-from .agent_outcome_benchmark import Outcome
+from .agent_outcome_benchmark import BenchmarkError, Outcome
 from .dogfood_campaign import DogfoodCampaignError, load_campaign, validate_campaign
 
 
