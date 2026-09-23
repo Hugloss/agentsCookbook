@@ -113,3 +113,58 @@ jobs:
           python -m scripts.agent_economics refactor-locality --help >/dev/null
           python -m scripts.agent_economics benchmark-outcomes --template-task ci-smoke >/dev/null
           python -m scripts.agent_economics dogfood-campaign --help >/dev/null
+
+      - name: Build qualified standalone Agent Economics artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision="${GITHUB_SHA}"
+          stage="$RUNNER_TEMP/agent-economics-artifact"
+          artifact="agent-economics-${revision}.zip"
+          mkdir -p "$stage/agent-economics"
+          cp -a scripts/agent_economics "$stage/agent-economics/"
+          cp scripts/bootstrap-agent-economics.sh "$stage/agent-economics/"
+          cp docs/agent-economics-dogfood.md "$stage/agent-economics/"
+          REVISION="$revision" STAGE="$stage/agent-economics" python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["STAGE"])
+          rows = []
+          for path in sorted(p for p in root.rglob("*") if p.is_file()):
+              rows.append({
+                  "path": path.relative_to(root).as_posix(),
+                  "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                  "size": path.stat().st_size,
+              })
+          receipt = {
+              "schema": {"name": "agent-economics-qualified-artifact", "version": 1},
+              "implementation_id": f"github:Hugloss/agentsCookbook@{os.environ['REVISION']}",
+              "qualification_workflow": ".github/workflows/validate.yml",
+              "qualification_job": "agent-economics",
+              "files": rows,
+          }
+          (root / "qualification-receipt.json").write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          (
+            cd "$stage"
+            python -m zipfile -c "$GITHUB_WORKSPACE/$artifact" agent-economics
+          )
+          sha256sum "$artifact" > "$artifact.sha256"
+          printf '%s\n' "$artifact" > agent-economics-artifact-name.txt
+
+      - name: Upload qualified standalone Agent Economics artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-economics-${{ github.sha }}
+          path: |
+            agent-economics-${{ github.sha }}.zip
+            agent-economics-${{ github.sha }}.zip.sha256
+            agent-economics-artifact-name.txt
+          if-no-files-found: error
+          retention-days: 30
