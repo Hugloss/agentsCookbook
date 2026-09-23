@@ -104,7 +104,7 @@ The validator never converts empirical evidence into automatic release, merge, e
 
 Use one bound measurement contract in both modes for files opened, evidence bytes, context estimate, tool calls, local commands, repair iterations, verification attempts, failed edits, and time to first correct edit.
 
-Use fresh isolated worktrees/sessions so artifacts, prior edits, or model memory cannot leak between modes. Keep host permissions and repository/tool supply equivalent; the intended treatment difference is Agent Economics use.
+Use fresh isolated worktrees/session records so artifacts, prior edits, generated evidence, or mutable repository state cannot leak between modes. Baseline and bridge MAY be executed by the same agent/runtime when the campaign explicitly declares that execution model. In that case, model-memory independence is not claimed: comparability comes from exact starting bytes, distinct workspaces/run identities, frozen per-mode inputs and outputs, no cross-mode artifact reuse, and oracle access only after both outcomes are frozen. Keep host permissions and repository/tool supply equivalent; the intended treatment difference is Agent Economics use.
 
 Freeze each outcome before opening the oracle. Retain failed and unfavorable pairs rather than rerunning and discarding them.
 
@@ -118,10 +118,10 @@ Freeze each outcome before opening the oracle. Retain failed and unfavorable pai
 - Missing strict receipts make the pair incomplete.
 - Temporary Agent Economics materialization/artifacts must remain outside consumer release authority unless the consumer explicitly adopts them.
 - Do not add repository-specific parsing, paths, scenario names, commands, or acceptance semantics to AgentsCookbook merely to make one dogfood campaign pass.
-- A campaign manifest can bind session-isolation evidence, but it cannot manufacture independent agent sessions. The evidence producer must actually enforce the claimed isolation.
+- Isolation receipts attest the isolation properties actually enforced by the campaign. They MUST NOT claim stronger isolation than was provided. Separate-agent/model-memory isolation is optional rather than a universal closeout requirement; when the same agent/runtime executes both modes, the receipt must say so and the campaign must still use distinct clean workspaces, run identities, frozen inputs/outputs, and post-freeze oracle access.
 
 ## Producer qualification
 
 AgentsCookbook's own deterministic workflow compiles and qualifies Agent Economics, including adversarial campaign-gate regressions. That validates the bridge/validator implementation but does **not** substitute for consumer repository evidence or real-agent campaign evidence.
 
-A session that cannot create genuinely independent agent sessions must not self-attest that model-memory isolation exists.
+A campaign executed in one agent/runtime must not self-attest model-memory isolation. It may still qualify when its receipts accurately declare same-agent execution and prove the repository/workspace, artifact, run-identity, freeze, and oracle-access boundaries required above.
