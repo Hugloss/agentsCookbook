@@ -115,7 +115,9 @@ Use `python -m scripts.agent_economics capabilities --repository-root . --manife
 
 ### P11 outcome benchmark
 
-Use `python -m scripts.agent_economics benchmark-outcomes --input outcomes.jsonl` with paired `baseline` and `bridge` JSONL records. The comparator measures correctness plus CI activations, evidence/context consumption, tool calls, commands, iterations, verification attempts, failed edits, no-progress stops, bridge overhead, and local-vs-CI agreement. Benchmark results are evidence only and never automatically promote a workflow.
+Use `python -m scripts.agent_economics benchmark-outcomes --input outcomes.jsonl` with paired `baseline` and `bridge` JSONL records. The comparator measures correctness plus repository-owned independent-qualification activations, evidence/context consumption, tool calls, commands, iterations, verification attempts, failed edits, no-progress stops, bridge overhead, and local-vs-independent-qualification agreement. Benchmark results are evidence only and never automatically promote a workflow.
+
+For empirical closeout, valid individual pairs are not enough. Run `python -m scripts.agent_economics dogfood-campaign --outcomes outcomes.jsonl --campaign campaign.json`. Campaign schema v2 is repository-neutral: the manifest declares its own scenario IDs/cardinalities, minimum repository diversity, exact task membership, measurement contract, isolation/freeze/oracle receipts, cleanup evidence, and producer qualification. Each pair binds the consumer repository's own independent qualification authority and evidence. AgentsCookbook does not hardcode Hashmarks, Oh-Goon, GitHub CI, `make certify`, or any other consumer authority.
 
 
 ### Trust and isolation
@@ -249,7 +251,7 @@ For expensive evidence ladders, the same contract can derive a follow-up manifes
 
 ### dogfood-corpus
 
-`dogfood-corpus` emits the immutable adversarial task specification used for empirical baseline-vs-bridge runs. It contains the 12 planned failure/authority/bounds cases and a protocol that requires local repair iterations, no CI during the repair loop, outcome freeze before opening the oracle, and one independent CI qualification only after local evidence is frozen.
+`dogfood-corpus` emits a built-in adversarial reference fixture set for Agent Economics development. It currently contains 13 failure/authority/bounds cases and a protocol that requires local repair iterations, no repository-owned independent qualification during the repair loop, outcome freeze before opening the oracle, and independent repository qualification only after local evidence is frozen. Consumer campaigns are not required to use these scenario names or this corpus.
 
 ```bash
 python -m scripts.agent_economics dogfood-corpus \

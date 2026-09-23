@@ -28,6 +28,7 @@ COMMANDS = (
     CommandSpec("run-command", "Run one explicitly authorized repository command.", "local verification", "command_runner"),
     CommandSpec("qualify-local", "Escalate repository-declared local verification.", "local verification", "local_qualify"),
     CommandSpec("benchmark-outcomes", "Compare paired agent-economics outcomes.", "measurement", "agent_outcome_benchmark"),
+    CommandSpec("dogfood-campaign", "Validate the complete empirical dogfood closeout campaign.", "measurement", "dogfood_campaign"),
     CommandSpec("dogfood-corpus", "Emit the immutable dogfood task corpus.", "measurement", "dogfood_corpus"),
 )
 

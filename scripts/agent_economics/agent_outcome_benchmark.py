@@ -15,7 +15,7 @@ class Outcome:
     task_id: str
     mode: str
     correct: bool
-    ci_activations: int = 0
+    independent_qualification_activations: int = 0
     files_opened: int = 0
     evidence_bytes: int = 0
     context_tokens_estimate: int = 0
@@ -28,7 +28,7 @@ class Outcome:
     failed_edits: int = 0
     no_progress_stops: int = 0
     bridge_elapsed_ms: float = 0.0
-    local_ci_agree: bool | None = None
+    local_independent_qualification_agree: bool | None = None
     treatment_id: str = "default"
     repository_id: str | None = None
     task_fixture_id: str | None = None
@@ -41,14 +41,15 @@ class Outcome:
     manifest_id: str | None = None
     local_qualification_id: str | None = None
     final_source_id: str | None = None
-    ci_evidence_id: str | None = None
+    independent_qualification_authority_id: str | None = None
+    independent_qualification_evidence_id: str | None = None
     oracle_opened_after_freeze: bool | None = None
 
     def __post_init__(self) -> None:
         if self.mode not in {"baseline", "bridge"}:
             raise BenchmarkError("mode must be baseline or bridge")
         numeric = (
-            self.ci_activations, self.files_opened, self.evidence_bytes,
+            self.independent_qualification_activations, self.files_opened, self.evidence_bytes,
             self.context_tokens_estimate, self.tool_calls, self.local_commands,
             self.repair_iterations, self.focused_verifications,
             self.broad_verifications, self.failed_edits, self.no_progress_stops,
@@ -90,6 +91,7 @@ def _compatibility_errors(baseline: Outcome, bridge: Outcome) -> list[str]:
     for field in (
         "repository_id", "task_fixture_id", "corpus_id", "initial_source_id",
         "agent_profile", "execution_environment_id",
+        "independent_qualification_authority_id",
     ):
         left, right = getattr(baseline, field), getattr(bridge, field)
         if left is not None and right is not None and left != right:
@@ -111,7 +113,11 @@ def _strict_protocol_errors(baseline: Outcome, bridge: Outcome) -> list[str]:
     elif baseline.run_id == bridge.run_id:
         errors.append("run_id must differ between baseline and bridge")
     for mode, outcome in (("baseline", baseline), ("bridge", bridge)):
-        for field in ("final_source_id", "ci_evidence_id"):
+        for field in (
+            "final_source_id",
+            "independent_qualification_authority_id",
+            "independent_qualification_evidence_id",
+        ):
             if not getattr(outcome, field):
                 errors.append(f"{mode} {field} missing")
         if outcome.oracle_opened_after_freeze is not True:
@@ -119,8 +125,8 @@ def _strict_protocol_errors(baseline: Outcome, bridge: Outcome) -> list[str]:
     for field in ("bridge_implementation_id", "manifest_id", "local_qualification_id"):
         if not getattr(bridge, field):
             errors.append(f"bridge {field} missing")
-    if bridge.local_ci_agree is None:
-        errors.append("bridge local_ci_agree unknown")
+    if bridge.local_independent_qualification_agree is None:
+        errors.append("bridge local_independent_qualification_agree unknown")
     return errors
 
 
@@ -158,7 +164,7 @@ def compare(
                 raise BenchmarkError(f"incomplete dogfood pair {key}: {', '.join(protocol_errors)}")
 
     metrics = [
-        "ci_activations", "files_opened", "evidence_bytes", "context_tokens_estimate",
+        "independent_qualification_activations", "files_opened", "evidence_bytes", "context_tokens_estimate",
         "tool_calls", "local_commands", "repair_iterations", "focused_verifications",
         "broad_verifications", "failed_edits", "no_progress_stops",
     ]
@@ -190,7 +196,7 @@ def compare(
             1 for _, _, g in pairs
             if all((g.bridge_implementation_id, g.manifest_id, g.local_qualification_id, g.final_source_id))
         ),
-        "ci_evidence_bound": sum(1 for _, _, g in pairs if g.ci_evidence_id is not None),
+        "independent_qualification_evidence_bound": sum(1 for _, _, g in pairs if g.independent_qualification_evidence_id is not None),
         "oracle_opened_after_freeze": sum(1 for _, _, g in pairs if g.oracle_opened_after_freeze is True),
         "oracle_protocol_unknown": sum(1 for _, _, g in pairs if g.oracle_opened_after_freeze is None),
     }
@@ -199,14 +205,14 @@ def compare(
         "bridge_correct": sum(1 for _, _, g in pairs if g.correct),
         "paired_tasks": len(pairs),
         "incomplete_pairs": len(incomplete),
-        "local_ci_disagreements": sum(1 for _, _, g in pairs if g.local_ci_agree is False),
-        "local_ci_unknown": sum(1 for _, _, g in pairs if g.local_ci_agree is None),
+        "local_independent_qualification_disagreements": sum(1 for _, _, g in pairs if g.local_independent_qualification_agree is False),
+        "local_independent_qualification_unknown": sum(1 for _, _, g in pairs if g.local_independent_qualification_agree is None),
     }
     promotion = {
         "correctness_not_reduced": correctness["bridge_correct"] >= correctness["baseline_correct"],
-        "ci_activations_not_increased": deltas["ci_activations"]["delta"] <= 0,
+        "independent_qualification_activations_not_increased": deltas["independent_qualification_activations"]["delta"] <= 0,
         "context_not_increased": deltas["context_tokens_estimate"]["delta"] <= 0,
-        "local_ci_disagreement_zero": correctness["local_ci_disagreements"] == 0 and correctness["local_ci_unknown"] == 0,
+        "local_independent_qualification_disagreement_zero": correctness["local_independent_qualification_disagreements"] == 0 and correctness["local_independent_qualification_unknown"] == 0,
         "all_pairs_complete": correctness["incomplete_pairs"] == 0,
         "strict_dogfood_protocol": strict_dogfood,
     }
@@ -238,7 +244,7 @@ def outcome_template(*, task_id: str, treatment_id: str = "default") -> list[dic
 
 def main(argv: list[str] | None = None) -> None:
     import argparse
-    parser = argparse.ArgumentParser(description="Compare paired baseline and capability-bridge agent outcomes.")
+    parser = argparse.ArgumentParser(description="Compare paired baseline and capability-bridge outcomes against repository-owned qualification authority.")
     parser.add_argument("--input", type=Path, help="JSONL Outcome records")
     parser.add_argument("--artifact", type=Path)
     parser.add_argument("--template-task", help="emit a baseline/bridge JSONL template for this task id")

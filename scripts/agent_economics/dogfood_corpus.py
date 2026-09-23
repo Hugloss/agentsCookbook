@@ -25,6 +25,7 @@ class DogfoodTask:
 DEFAULT_TASKS = (
     ("localized-python", "assertion", "Localized Python assertion failure", "assertion_test_failure"),
     ("syntax-import", "syntax-import", "Syntax or import failure", "syntax_compile_failure"),
+    ("affected-dependent", "verification-selection", "Wrong-test or affected-dependent repair failure", "assertion_test_failure"),
     ("lint-type", "static-analysis", "Lint or type failure", "lint_static_failure"),
     ("focused-pass-broad-fail", "verification-escalation", "Focused verification passes but broader gate fails", "assertion_test_failure"),
     ("missing-executable", "environment", "Declared executable is unavailable", "executable_missing"),
@@ -60,8 +61,8 @@ def default_corpus() -> dict[str, object]:
             "paired_modes":["baseline","bridge"],
             "freeze_before_oracle":True,
             "repair_loop_must_be_local":True,
-            "ci_during_repair_loop":False,
-            "ci_after_local_freeze":"independent-final-qualification",
+            "independent_qualification_during_repair_loop":False,
+            "independent_qualification_after_local_freeze":"repository-owned-independent-qualification",
             "scripts_may_repair_source":False,
         },
         "tasks":[asdict(t) for t in tasks],
