@@ -80,7 +80,8 @@ jobs:
             coupling_focus_qualification
             hotspot_focus_qualification
             capability_bridge_qualification
-            agent_outcome_benchmark_qualification\n            dogfood_campaign_qualification
+            agent_outcome_benchmark_qualification
+            dogfood_campaign_qualification
             quality_debt_qualification
             behavior_preservation_qualification
             refactor_locality_qualification
@@ -110,4 +111,5 @@ jobs:
           python -m scripts.agent_economics capabilities --repository-root . --json >/dev/null
           python -m scripts.agent_economics evidence-batches --help >/dev/null
           python -m scripts.agent_economics refactor-locality --help >/dev/null
-          python -m scripts.agent_economics benchmark-outcomes --template-task ci-smoke >/dev/null\n          python -m scripts.agent_economics dogfood-campaign --help >/dev/null
+          python -m scripts.agent_economics benchmark-outcomes --template-task ci-smoke >/dev/null
+          python -m scripts.agent_economics dogfood-campaign --help >/dev/null
