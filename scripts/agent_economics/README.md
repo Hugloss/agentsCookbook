@@ -72,6 +72,8 @@ python -m agent_economics test-focus ...
 
 The bootstrap never follows a branch tip or silently replaces an existing destination. It fetches the requested commit into a detached checkout, verifies the resolved commit, verifies the package exists, removes a partial destination on failure, and prints `AGENT_ECONOMICS_REVISION`, `AGENT_ECONOMICS_ROOT`, and `AGENT_ECONOMICS_PYTHONPATH` for receipts. `AGENT_ECONOMICS_ROOT` and `AGENT_ECONOMICS_REPOSITORY` can provide default destination/repository values.
 
+CI also emits a standalone qualified artifact named `agent-economics-<full-commit-sha>.zip` from the exact commit exercised by the `agent-economics` qualification job. The archive contains the standalone package, bootstrap, dogfood protocol, and a machine-readable `qualification-receipt.json` binding its file digests to that implementation identity. The workflow publishes the ZIP together with its SHA-256 sidecar. This is transport/supply evidence for restricted consumers; it does not replace the consumer repository's independent qualification authority and is not a PyPI release contract.
+
 A consumer-specific adapter is only needed when the repository must prove parity with an existing repository-owned authority or translate a repository-specific evidence schema. It is not required to run or import Agent Economics.
 
 See `docs/agent-economics-probes.md` in the repository for the evidence-authority contract and portability rules.
