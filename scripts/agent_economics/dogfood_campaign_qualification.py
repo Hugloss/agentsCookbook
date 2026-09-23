@@ -120,6 +120,7 @@ def _fixture() -> tuple[list[Outcome], dict[str, object]]:
             {"repository_id": "repo:oh-goon", "evidence_id": "cleanup:oh-goon"},
         ],
         "final_agentscookbook_ci_evidence_id": "ci:agentscookbook:final",
+        "final_agentscookbook_ci_implementation_id": "git:agentscookbook-main",
     }
     return outcomes, campaign
 
@@ -159,6 +160,16 @@ def main() -> None:
     bad_measurement = deepcopy(campaign)
     bad_measurement["tasks"][0]["measurement_contract_id"] = "measurement:other"
     _expect_error(lambda: validate_campaign(outcomes, bad_measurement))
+
+    reused_receipt = deepcopy(campaign)
+    reused_receipt["tasks"][1]["baseline_isolation_evidence_id"] = campaign["tasks"][0][
+        "baseline_isolation_evidence_id"
+    ]
+    _expect_error(lambda: validate_campaign(outcomes, reused_receipt))
+
+    wrong_final_ci_source = deepcopy(campaign)
+    wrong_final_ci_source["final_agentscookbook_ci_implementation_id"] = "git:other"
+    _expect_error(lambda: validate_campaign(outcomes, wrong_final_ci_source))
 
     no_cleanup = deepcopy(campaign)
     no_cleanup["consumer_cleanup_evidence"] = [
