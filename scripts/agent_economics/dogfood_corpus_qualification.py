@@ -14,7 +14,7 @@ def main() -> None:
     assert [row["task_id"] for row in payload["tasks"]]==[row[0] for row in DEFAULT_TASKS]
     assert len({row["fixture_identity"] for row in payload["tasks"]})==13
     assert payload["protocol"]["freeze_before_oracle"] is True
-    assert payload["protocol"]["ci_during_repair_loop"] is False
+    assert payload["protocol"]["independent_qualification_during_repair_loop"] is False
     assert payload["protocol"]["scripts_may_repair_source"] is False
     with tempfile.TemporaryDirectory() as temp:
         target=Path(temp)/"corpus.json"
