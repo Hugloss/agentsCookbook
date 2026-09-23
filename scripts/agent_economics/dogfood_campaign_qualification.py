@@ -12,7 +12,7 @@ from .dogfood_campaign import DogfoodCampaignError, load_campaign, validate_camp
 def _expect_error(fn) -> None:
     try:
         fn()
-    except DogfoodCampaignError:
+    except BenchmarkError:
         return
     raise AssertionError("expected DogfoodCampaignError")
 
