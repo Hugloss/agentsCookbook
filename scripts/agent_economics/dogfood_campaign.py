@@ -15,17 +15,10 @@ class DogfoodCampaignError(BenchmarkError):
 
 SCHEMA = "agent-economics-dogfood-campaign"
 RESULT_SCHEMA = "agent-economics-dogfood-campaign-result"
-REQUIRED_PRIMARY_SCENARIOS = (
-    "localized-assertion",
-    "syntax-import",
-    "wrong-test-affected-dependent",
-    "focused-pass-broad-fail",
-)
 _TASK_FIELDS = {
     "task_id",
     "treatment_id",
-    "scenario",
-    "repository_role",
+    "scenario_id",
     "repository_id",
     "measurement_contract_id",
     "baseline_session_id",
@@ -43,12 +36,15 @@ _ROOT_FIELDS = {
     "implementation_id",
     "corpus_id",
     "measurement_contract_id",
-    "primary_repository_id",
+    "scenario_requirements",
+    "minimum_distinct_repositories",
     "tasks",
     "consumer_cleanup_evidence",
-    "final_agentscookbook_ci_evidence_id",
-    "final_agentscookbook_ci_implementation_id",
+    "producer_qualification_authority_id",
+    "producer_qualification_evidence_id",
+    "producer_qualification_implementation_id",
 }
+_SCENARIO_REQUIREMENT_FIELDS = {"scenario_id", "required_pair_count"}
 
 
 def _required_text(value: object, *, field: str) -> str:
@@ -57,8 +53,19 @@ def _required_text(value: object, *, field: str) -> str:
     return value.strip()
 
 
+def _required_positive_int(value: object, *, field: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise DogfoodCampaignError(f"{field} must be an integer >= 1")
+    return value
+
+
 def _campaign_identity(value: Mapping[str, object]) -> str:
-    raw = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    raw = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode()
     return "sha256:" + hashlib.sha256(raw).hexdigest()
 
 
@@ -82,39 +89,99 @@ def _paired(outcomes: Sequence[Outcome]) -> dict[tuple[str, str], dict[str, Outc
     return pairs
 
 
+def _scenario_requirements(
+    raw_requirements: object,
+) -> dict[str, int]:
+    if not isinstance(raw_requirements, list) or not raw_requirements:
+        raise DogfoodCampaignError(
+            "scenario_requirements must be a non-empty list"
+        )
+    requirements: dict[str, int] = {}
+    for index, raw in enumerate(raw_requirements):
+        if not isinstance(raw, Mapping):
+            raise DogfoodCampaignError(
+                f"scenario_requirements[{index}] must be an object"
+            )
+        unknown = set(raw) - _SCENARIO_REQUIREMENT_FIELDS
+        missing = _SCENARIO_REQUIREMENT_FIELDS - set(raw)
+        if unknown:
+            raise DogfoodCampaignError(
+                f"scenario_requirements[{index}] has unknown fields: {sorted(unknown)}"
+            )
+        if missing:
+            raise DogfoodCampaignError(
+                f"scenario_requirements[{index}] missing fields: {sorted(missing)}"
+            )
+        scenario_id = _required_text(
+            raw.get("scenario_id"),
+            field=f"scenario_requirements[{index}].scenario_id",
+        )
+        pair_count = _required_positive_int(
+            raw.get("required_pair_count"),
+            field=f"scenario_requirements[{index}].required_pair_count",
+        )
+        if scenario_id in requirements:
+            raise DogfoodCampaignError(
+                f"duplicate scenario requirement: {scenario_id}"
+            )
+        requirements[scenario_id] = pair_count
+    return requirements
+
+
 def validate_campaign(
     outcomes: Sequence[Outcome],
     campaign: Mapping[str, object],
 ) -> dict[str, object]:
-    benchmark = compare(outcomes, strict_dogfood=True)
+    benchmark = compare(list(outcomes), strict_dogfood=True)
 
     unknown_root = set(campaign) - _ROOT_FIELDS
     if unknown_root:
-        raise DogfoodCampaignError(f"unknown campaign fields: {sorted(unknown_root)}")
+        raise DogfoodCampaignError(
+            f"unknown campaign fields: {sorted(unknown_root)}"
+        )
     schema = campaign.get("schema")
-    if not isinstance(schema, Mapping) or schema.get("name") != SCHEMA or schema.get("version") != 1:
-        raise DogfoodCampaignError("campaign schema must be agent-economics-dogfood-campaign v1")
+    if (
+        not isinstance(schema, Mapping)
+        or schema.get("name") != SCHEMA
+        or schema.get("version") != 2
+    ):
+        raise DogfoodCampaignError(
+            "campaign schema must be agent-economics-dogfood-campaign v2"
+        )
 
     campaign_id = _required_text(campaign.get("campaign_id"), field="campaign_id")
-    implementation_id = _required_text(campaign.get("implementation_id"), field="implementation_id")
+    implementation_id = _required_text(
+        campaign.get("implementation_id"),
+        field="implementation_id",
+    )
     corpus_id = _required_text(campaign.get("corpus_id"), field="corpus_id")
     measurement_contract_id = _required_text(
-        campaign.get("measurement_contract_id"), field="measurement_contract_id"
+        campaign.get("measurement_contract_id"),
+        field="measurement_contract_id",
     )
-    primary_repository_id = _required_text(
-        campaign.get("primary_repository_id"), field="primary_repository_id"
+    minimum_distinct_repositories = _required_positive_int(
+        campaign.get("minimum_distinct_repositories"),
+        field="minimum_distinct_repositories",
     )
-    final_ci = _required_text(
-        campaign.get("final_agentscookbook_ci_evidence_id"),
-        field="final_agentscookbook_ci_evidence_id",
+    required_scenarios = _scenario_requirements(
+        campaign.get("scenario_requirements")
     )
-    final_ci_implementation = _required_text(
-        campaign.get("final_agentscookbook_ci_implementation_id"),
-        field="final_agentscookbook_ci_implementation_id",
+
+    producer_authority = _required_text(
+        campaign.get("producer_qualification_authority_id"),
+        field="producer_qualification_authority_id",
     )
-    if final_ci_implementation != implementation_id:
+    producer_evidence = _required_text(
+        campaign.get("producer_qualification_evidence_id"),
+        field="producer_qualification_evidence_id",
+    )
+    producer_implementation = _required_text(
+        campaign.get("producer_qualification_implementation_id"),
+        field="producer_qualification_implementation_id",
+    )
+    if producer_implementation != implementation_id:
         raise DogfoodCampaignError(
-            "final agentsCookbook CI must bind the exact campaign implementation identity"
+            "producer qualification must bind the exact campaign implementation identity"
         )
 
     tasks = campaign.get("tasks")
@@ -122,8 +189,7 @@ def validate_campaign(
         raise DogfoodCampaignError("campaign tasks must be a non-empty list")
 
     rows: dict[tuple[str, str], Mapping[str, object]] = {}
-    primary_scenarios: list[str] = []
-    independent_repositories: set[str] = set()
+    scenario_ids: list[str] = []
     expected_run_ids: set[str] = set()
     repositories: set[str] = set()
     evidence_receipt_ids: set[str] = set()
@@ -134,34 +200,46 @@ def validate_campaign(
         unknown = set(raw) - _TASK_FIELDS
         missing = _TASK_FIELDS - set(raw)
         if unknown:
-            raise DogfoodCampaignError(f"tasks[{index}] has unknown fields: {sorted(unknown)}")
-        if missing:
-            raise DogfoodCampaignError(f"tasks[{index}] missing fields: {sorted(missing)}")
-
-        task_id = _required_text(raw.get("task_id"), field=f"tasks[{index}].task_id")
-        treatment_id = _required_text(
-            raw.get("treatment_id"), field=f"tasks[{index}].treatment_id"
-        )
-        scenario = _required_text(raw.get("scenario"), field=f"tasks[{index}].scenario")
-        role = _required_text(
-            raw.get("repository_role"), field=f"tasks[{index}].repository_role"
-        )
-        if role not in {"primary", "independent"}:
             raise DogfoodCampaignError(
-                f"tasks[{index}].repository_role must be primary or independent"
+                f"tasks[{index}] has unknown fields: {sorted(unknown)}"
+            )
+        if missing:
+            raise DogfoodCampaignError(
+                f"tasks[{index}] missing fields: {sorted(missing)}"
+            )
+
+        task_id = _required_text(
+            raw.get("task_id"),
+            field=f"tasks[{index}].task_id",
+        )
+        treatment_id = _required_text(
+            raw.get("treatment_id"),
+            field=f"tasks[{index}].treatment_id",
+        )
+        scenario_id = _required_text(
+            raw.get("scenario_id"),
+            field=f"tasks[{index}].scenario_id",
+        )
+        if scenario_id not in required_scenarios:
+            raise DogfoodCampaignError(
+                f"tasks[{index}] uses undeclared scenario_id {scenario_id!r}"
             )
         repository_id = _required_text(
-            raw.get("repository_id"), field=f"tasks[{index}].repository_id"
+            raw.get("repository_id"),
+            field=f"tasks[{index}].repository_id",
         )
         if raw.get("measurement_contract_id") != measurement_contract_id:
             raise DogfoodCampaignError(
                 f"tasks[{index}] does not bind the campaign measurement contract"
             )
+
         baseline_session = _required_text(
-            raw.get("baseline_session_id"), field=f"tasks[{index}].baseline_session_id"
+            raw.get("baseline_session_id"),
+            field=f"tasks[{index}].baseline_session_id",
         )
         bridge_session = _required_text(
-            raw.get("bridge_session_id"), field=f"tasks[{index}].bridge_session_id"
+            raw.get("bridge_session_id"),
+            field=f"tasks[{index}].bridge_session_id",
         )
         if baseline_session == bridge_session:
             raise DogfoodCampaignError(
@@ -182,68 +260,43 @@ def validate_campaign(
             "baseline_oracle_access_receipt_id",
             "bridge_oracle_access_receipt_id",
         )
-        receipt_ids: dict[str, str] = {}
         for field in receipt_fields:
             receipt_id = _required_text(
-                raw.get(field), field=f"tasks[{index}].{field}"
+                raw.get(field),
+                field=f"tasks[{index}].{field}",
             )
             if receipt_id in evidence_receipt_ids:
                 raise DogfoodCampaignError(
                     f"evidence receipt identity reused across campaign: {receipt_id}"
                 )
             evidence_receipt_ids.add(receipt_id)
-            receipt_ids[field] = receipt_id
-        for baseline_field, bridge_field in (
-            ("baseline_isolation_evidence_id", "bridge_isolation_evidence_id"),
-            ("baseline_freeze_receipt_id", "bridge_freeze_receipt_id"),
-            (
-                "baseline_oracle_access_receipt_id",
-                "bridge_oracle_access_receipt_id",
-            ),
-        ):
-            if receipt_ids[baseline_field] == receipt_ids[bridge_field]:
-                raise DogfoodCampaignError(
-                    f"tasks[{index}] baseline and bridge {baseline_field.removeprefix('baseline_')} must differ"
-                )
 
         key = (task_id, treatment_id)
         if key in rows:
-            raise DogfoodCampaignError(f"duplicate campaign task pair: {key}")
+            raise DogfoodCampaignError(
+                f"duplicate campaign task pair: {key}"
+            )
         rows[key] = raw
+        scenario_ids.append(scenario_id)
         repositories.add(repository_id)
 
-        if role == "primary":
-            if repository_id != primary_repository_id:
-                raise DogfoodCampaignError(
-                    f"primary task {key} must use primary_repository_id"
-                )
-            if scenario not in REQUIRED_PRIMARY_SCENARIOS:
-                raise DogfoodCampaignError(
-                    f"primary task {key} has unsupported closeout scenario {scenario!r}"
-                )
-            primary_scenarios.append(scenario)
-        else:
-            if repository_id == primary_repository_id:
-                raise DogfoodCampaignError(
-                    f"independent task {key} must use a different repository"
-                )
-            independent_repositories.add(repository_id)
-
-    counts = Counter(primary_scenarios)
-    missing_scenarios = [
-        scenario for scenario in REQUIRED_PRIMARY_SCENARIOS if counts[scenario] == 0
-    ]
-    duplicate_scenarios = [
-        scenario for scenario in REQUIRED_PRIMARY_SCENARIOS if counts[scenario] > 1
-    ]
-    if missing_scenarios or duplicate_scenarios:
+    actual_scenario_counts = Counter(scenario_ids)
+    missing_or_wrong: list[str] = []
+    for scenario_id, required_count in sorted(required_scenarios.items()):
+        observed = actual_scenario_counts.get(scenario_id, 0)
+        if observed != required_count:
+            missing_or_wrong.append(
+                f"{scenario_id}: required={required_count} observed={observed}"
+            )
+    if missing_or_wrong:
         raise DogfoodCampaignError(
-            "primary closeout scenarios must appear exactly once; "
-            f"missing={missing_scenarios} duplicate={duplicate_scenarios}"
+            "scenario cardinality mismatch: " + "; ".join(missing_or_wrong)
         )
-    if not independent_repositories:
+
+    if len(repositories) < minimum_distinct_repositories:
         raise DogfoodCampaignError(
-            "campaign requires at least one complete pair on an independent repository"
+            "campaign repository diversity below declared minimum: "
+            f"required={minimum_distinct_repositories} observed={len(repositories)}"
         )
 
     pairs = _paired(outcomes)
@@ -256,40 +309,67 @@ def validate_campaign(
         )
 
     actual_run_ids: list[str] = []
+    qualification_authorities: set[str] = set()
     for key, row in rows.items():
         pair = pairs[key]
         baseline = pair["baseline"]
         bridge = pair["bridge"]
         repository_id = str(row["repository_id"])
-        if baseline.repository_id != repository_id or bridge.repository_id != repository_id:
-            raise DogfoodCampaignError(f"repository identity mismatch for pair {key}")
+        if (
+            baseline.repository_id != repository_id
+            or bridge.repository_id != repository_id
+        ):
+            raise DogfoodCampaignError(
+                f"repository identity mismatch for pair {key}"
+            )
         if baseline.corpus_id != corpus_id or bridge.corpus_id != corpus_id:
-            raise DogfoodCampaignError(f"corpus identity mismatch for pair {key}")
+            raise DogfoodCampaignError(
+                f"corpus identity mismatch for pair {key}"
+            )
         if bridge.bridge_implementation_id != implementation_id:
             raise DogfoodCampaignError(
                 f"bridge implementation identity mismatch for pair {key}"
             )
         if baseline.run_id != row["baseline_session_id"]:
-            raise DogfoodCampaignError(f"baseline run/session identity mismatch for pair {key}")
+            raise DogfoodCampaignError(
+                f"baseline run/session identity mismatch for pair {key}"
+            )
         if bridge.run_id != row["bridge_session_id"]:
-            raise DogfoodCampaignError(f"bridge run/session identity mismatch for pair {key}")
+            raise DogfoodCampaignError(
+                f"bridge run/session identity mismatch for pair {key}"
+            )
         if baseline.run_id is None or bridge.run_id is None:
             raise DogfoodCampaignError(f"missing run identity for pair {key}")
         actual_run_ids.extend((baseline.run_id, bridge.run_id))
+        assert baseline.independent_qualification_authority_id is not None
+        assert bridge.independent_qualification_authority_id is not None
+        qualification_authorities.add(
+            baseline.independent_qualification_authority_id
+        )
 
     if len(actual_run_ids) != len(set(actual_run_ids)):
-        raise DogfoodCampaignError("run identities must be globally unique across campaign")
+        raise DogfoodCampaignError(
+            "run identities must be globally unique across campaign"
+        )
     if set(actual_run_ids) != expected_run_ids:
-        raise DogfoodCampaignError("campaign session identities do not match outcome run identities")
+        raise DogfoodCampaignError(
+            "campaign session identities do not match outcome run identities"
+        )
 
     cleanup = campaign.get("consumer_cleanup_evidence")
     if not isinstance(cleanup, list) or not cleanup:
-        raise DogfoodCampaignError("consumer_cleanup_evidence must be a non-empty list")
+        raise DogfoodCampaignError(
+            "consumer_cleanup_evidence must be a non-empty list"
+        )
     cleanup_by_repo: dict[str, str] = {}
     for index, row in enumerate(cleanup):
-        if not isinstance(row, Mapping) or set(row) != {"repository_id", "evidence_id"}:
+        if (
+            not isinstance(row, Mapping)
+            or set(row) != {"repository_id", "evidence_id"}
+        ):
             raise DogfoodCampaignError(
-                f"consumer_cleanup_evidence[{index}] must contain repository_id and evidence_id"
+                f"consumer_cleanup_evidence[{index}] must contain "
+                "repository_id and evidence_id"
             )
         repository_id = _required_text(
             row.get("repository_id"),
@@ -309,27 +389,36 @@ def validate_campaign(
             "cleanup evidence must cover exactly every campaign repository"
         )
 
-    semantic = dict(campaign)
-    campaign_identity = _campaign_identity(semantic)
+    campaign_identity = _campaign_identity(campaign)
     return {
-        "schema": {"name": RESULT_SCHEMA, "version": 1},
+        "schema": {"name": RESULT_SCHEMA, "version": 2},
         "campaign_id": campaign_id,
         "campaign_identity": campaign_identity,
         "implementation_id": implementation_id,
         "corpus_id": corpus_id,
         "measurement_contract_id": measurement_contract_id,
-        "primary_repository_id": primary_repository_id,
-        "primary_scenarios": list(REQUIRED_PRIMARY_SCENARIOS),
-        "independent_repositories": sorted(independent_repositories),
+        "scenario_requirements": [
+            {
+                "scenario_id": scenario_id,
+                "required_pair_count": required_scenarios[scenario_id],
+            }
+            for scenario_id in sorted(required_scenarios)
+        ],
+        "scenario_counts": dict(sorted(actual_scenario_counts.items())),
+        "minimum_distinct_repositories": minimum_distinct_repositories,
+        "repositories": sorted(repositories),
+        "qualification_authorities": sorted(qualification_authorities),
         "paired_tasks": len(rows),
         "run_identities": len(actual_run_ids),
         "consumer_cleanup_evidence": cleanup_by_repo,
-        "final_agentscookbook_ci_evidence_id": final_ci,
-        "final_agentscookbook_ci_implementation_id": final_ci_implementation,
+        "producer_qualification_authority_id": producer_authority,
+        "producer_qualification_evidence_id": producer_evidence,
+        "producer_qualification_implementation_id": producer_implementation,
         "benchmark": benchmark,
         "authority": {
             "automatic_promotion": False,
             "empirical_evidence_is_not_a_release_verdict": True,
+            "repository_qualification_authority_is_consumer_owned": True,
         },
     }
 
@@ -338,7 +427,10 @@ def main(argv: list[str] | None = None) -> None:
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Validate the complete fail-closed Agent Economics empirical dogfood campaign."
+        description=(
+            "Validate a repository-neutral fail-closed Agent Economics "
+            "empirical campaign."
+        )
     )
     parser.add_argument("--outcomes", type=Path, required=True)
     parser.add_argument("--campaign", type=Path, required=True)
