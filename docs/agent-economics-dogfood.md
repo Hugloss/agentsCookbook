@@ -54,6 +54,22 @@ For example, a repository may bind an independent qualification authority such a
 
 The built-in `dogfood-corpus` is a reference/adversarial fixture set for developing Agent Economics. It is not the scenario authority for consumer campaigns.
 
+## Pre-admission qualification
+
+A final empirical pair must be admitted only after its non-treatment authorities are frozen and usable. Do not spend a baseline or bridge session discovering that required campaign authority was unavailable.
+
+Before either mode starts:
+
+- materialize the exact declared starting bytes and verify them independently in that session;
+- define `initial_source_id` from the shared immutable starting authority, not from a session-local extraction or traversal algorithm. For an archive-backed task, use the verified archive digest (for example `sha256:<archive-digest>`) in both modes; a derived extracted-tree digest may be retained as supplemental evidence but must not replace the shared initial-source identity;
+- freeze the task fixture/corpus, agent profile, measurement contract, and repository-owned independent qualification authority;
+- prove the independent qualification authority is obtainable in the intended execution environment, or mark the task setup incomplete before empirical admission;
+- freeze one `execution_environment_id` whose evidence covers repository/tool supply, relevant dependency availability, host permissions, network policy, and controller/runtime budgets that can affect the run. Baseline and bridge must bind the same identity;
+- for bridge mode, materialize the exact Agent Economics implementation before admission, freeze the command manifest before task evidence is gathered, and prove the declared implementation can execute the bounded bridge entry points. If the exact implementation or manifest cannot be materialized, the bridge setup is incomplete; do not simulate Agent Economics;
+- keep setup-incomplete attempts as setup evidence. They are not empirical outcomes and must never be discarded because of a later unfavorable result.
+
+Pre-admission does not require the final local qualification result: that receipt is produced by the admitted bridge run and remains mandatory for a strict pair. It only proves that the declared authorities and treatment are actually available before measurement starts.
+
 ## Per-pair strict records
 
 Every pair admitted to a final campaign must first pass:
