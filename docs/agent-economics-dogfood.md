@@ -1,27 +1,62 @@
-# Agent Economics real-agent dogfood gate
+# Agent Economics real-agent campaign gate
 
-This empirical P10/P11 closeout gate is intentionally separate from the deterministic regression suite.
+This empirical closeout gate is intentionally separate from deterministic repository qualification.
 
 ## Purpose
 
-Prove that a coding agent can use the capability bridge for local inspect → verify → repair → verify loops without using CI/CD as the repair executor. The external coding agent owns every source edit. Agent Economics owns only bounded evidence and execution of explicitly selected repository commands.
+Measure whether an external coding agent benefits from the Agent Economics capability bridge while preserving the consumer repository's own authority model.
 
-## Required paired tasks
+The external agent owns source edits. Agent Economics owns bounded evidence and execution of explicitly selected repository commands. The consumer repository owns what counts as final qualification.
 
-Run the same starting repository bytes in baseline and bridge modes for the four primary Hashmarks scenarios:
+## Repository-neutral campaign contract
 
-1. localized assertion failure;
-2. import/collection or syntax failure;
-3. affected-dependent / wrong-test-selection failure;
-4. focused PASS followed by a broader repository-gate failure.
+A campaign compares the same starting repository bytes in `baseline` and `bridge` modes.
 
-At least one additional complete pair must run against an independent repository, preferably Oh-Goon, using that repository's own declared verification authority.
+AgentsCookbook does **not** prescribe repository names, task classes, scenario names, verification commands, CI providers, or certification targets.
 
-The immutable dogfood corpus includes a dedicated `affected-dependent` fixture class so this closeout requirement is not hidden inside a generic benchmark task.
+The campaign manifest declares:
+
+- arbitrary `scenario_requirements`, each with a `scenario_id` and exact `required_pair_count`;
+- `minimum_distinct_repositories`;
+- the exact task pairs admitted to the campaign;
+- one shared measurement-contract identity;
+- per-mode session, isolation, freeze, and post-freeze oracle-access receipt identities;
+- cleanup evidence for every participating consumer repository;
+- the exact Agent Economics implementation identity;
+- producer qualification evidence for that implementation.
+
+Each outcome separately binds:
+
+- the consumer repository identity;
+- the exact starting source/defect identity;
+- the repository-owned independent qualification authority ID;
+- the repository-owned independent qualification evidence ID.
+
+This means one repository may use a hosted CI workflow while another uses a native certification command. AgentsCookbook compares evidence; it does not replace either authority.
+
+## Examples, not normative policy
+
+A Python library campaign might declare scenarios such as:
+
+- `assertion-repair`;
+- `import-failure`;
+- `affected-dependent-selection`;
+- `focused-pass-broader-gate-fail`.
+
+A native runner/release repository might instead declare scenarios such as:
+
+- `local-runtime-acceptance`;
+- `native-certification`;
+- `package-replay`;
+- `release-artifact-identity`.
+
+For example, a repository may bind an independent qualification authority such as `make local-access-runtime-acceptance` or `make certify`, plus exact candidate/archive/patch identities. Those names and semantics belong to that repository; they are not embedded in AgentsCookbook.
+
+The built-in `dogfood-corpus` is a reference/adversarial fixture set for developing Agent Economics. It is not the scenario authority for consumer campaigns.
 
 ## Per-pair strict records
 
-Exploratory records may remain partial. Every pair admitted to the final campaign must first pass:
+Every pair admitted to a final campaign must first pass:
 
 ```bash
 python -m agent_economics benchmark-outcomes \
@@ -29,13 +64,17 @@ python -m agent_economics benchmark-outcomes \
   --strict-dogfood
 ```
 
-Per-pair strict mode fails closed unless baseline and bridge bind the same non-null repository, task-fixture/corpus, initial-source, agent-profile, and execution-environment identities. The two modes must have distinct run identities. Both outcomes bind final-source and independent CI evidence and prove the oracle was opened only after the outcome was frozen. The bridge outcome additionally binds the exact Agent Economics implementation, command manifest, local qualification, and a known local-vs-CI agreement result.
+Strict mode fails closed unless baseline and bridge bind the same non-null repository, task-fixture/corpus, initial-source, agent-profile, execution-environment, and independent-qualification-authority identities.
 
-A task specification identity does **not** substitute for the initial-source identity. The latter binds the actual starting defect/repository bytes used by both modes.
+The two modes must have distinct run identities. Both outcomes bind final-source and repository-owned independent qualification evidence and prove the oracle was opened only after the outcome was frozen.
+
+The bridge outcome additionally binds the exact Agent Economics implementation, command manifest, local qualification receipt, and a known local-vs-independent-qualification agreement result.
+
+A task specification identity does **not** substitute for the initial-source identity. The latter binds the actual starting repository/defect bytes shared by both modes.
 
 ## Final campaign gate
 
-Per-pair validity is necessary but not sufficient. The complete closeout must also supply a campaign manifest and pass:
+Per-pair validity is necessary but not sufficient. The complete campaign must also pass:
 
 ```bash
 python -m agent_economics dogfood-campaign \
@@ -44,41 +83,45 @@ python -m agent_economics dogfood-campaign \
   --artifact campaign-result.json
 ```
 
-The campaign manifest is `agent-economics-dogfood-campaign` v1 and fails closed unless it binds:
+The repository-neutral campaign manifest is `agent-economics-dogfood-campaign` v2.
 
-- one exact campaign, Agent Economics implementation, corpus, and measurement-contract identity;
-- each of the four required primary scenarios **exactly once**;
-- at least one pair from a repository different from the primary repository;
-- exact campaign membership matching the outcome pairs, so unfavorable rows cannot be silently omitted;
-- globally unique baseline/bridge session/run identities;
-- globally unique baseline/bridge isolation, freeze, and post-freeze oracle-access receipt identities;
-- the same measurement-contract identity for every campaign task;
-- cleanup evidence for every participating consumer repository;
-- final agentsCookbook CI evidence bound to the exact campaign implementation identity.
+The validator fails closed unless:
 
-The campaign validator reuses strict per-pair validation first. It does not turn empirical evidence into automatic release, merge, edit, or execution authority.
+- every task uses a declared scenario;
+- observed scenario cardinality exactly matches the manifest;
+- repository diversity meets `minimum_distinct_repositories`;
+- campaign membership exactly matches the outcome pairs, so unfavorable rows cannot be silently omitted;
+- baseline/bridge run identities are globally unique;
+- isolation, freeze, and oracle-access receipt identities are globally unique;
+- every task binds the campaign measurement contract;
+- cleanup evidence covers exactly every participating consumer repository;
+- every pair binds one repository-owned independent qualification authority;
+- producer qualification evidence binds the exact Agent Economics implementation used by the campaign.
+
+The validator never converts empirical evidence into automatic release, merge, edit, execution, or certification authority.
 
 ## Measurement fairness
 
-Use the same bound measurement contract in both modes for files opened, evidence bytes, context estimate, tool calls, local commands, repair iterations, verification attempts, failed edits, and time to first correct edit. Use fresh isolated worktrees/sessions so artifacts, prior edits, or model memory cannot leak between modes. Keep host permissions and repository/tool supply equivalent; the intended treatment difference is Agent Economics use.
+Use one bound measurement contract in both modes for files opened, evidence bytes, context estimate, tool calls, local commands, repair iterations, verification attempts, failed edits, and time to first correct edit.
 
-Freeze each outcome before opening the oracle. Retain failed and unfavorable pairs rather than rerunning and discarding them. Benchmark output is measurement evidence, never an automatic promotion or release verdict.
+Use fresh isolated worktrees/sessions so artifacts, prior edits, or model memory cannot leak between modes. Keep host permissions and repository/tool supply equivalent; the intended treatment difference is Agent Economics use.
+
+Freeze each outcome before opening the oracle. Retain failed and unfavorable pairs rather than rerunning and discarding them.
 
 ## Hard rules
 
 - Repository bytes must be locally materialized to the coding agent.
-- No temporary CI workflow may be used for repair iterations.
-- The bridge must not edit source or install dependencies.
-- Focused PASS is not repository qualification.
-- Run CI only after local outcome freeze as an independent comparison.
-- Any local/CI disagreement must be recorded; unknown agreement cannot close the gate.
+- Agent Economics must not edit consumer source or install dependencies.
+- A focused PASS is not automatically repository qualification.
+- Run the repository-owned independent qualification only according to the repository's declared authority.
+- Unknown local-vs-independent-qualification agreement cannot close a strict pair.
 - Missing strict receipts make the pair incomplete.
-- Temporary `.agent-economics/` and `.agent-artifacts/` materialization must remain untracked in consumer repositories.
-- Do not add Hashmarks-specific policy or parsing to Agent Economics to make dogfood pass.
-- A campaign manifest can bind session-isolation evidence, but it cannot manufacture independent agent sessions. The producer of that evidence must actually enforce the claimed isolation.
+- Temporary Agent Economics materialization/artifacts must remain outside consumer release authority unless the consumer explicitly adopts them.
+- Do not add repository-specific parsing, paths, scenario names, commands, or acceptance semantics to AgentsCookbook merely to make one dogfood campaign pass.
+- A campaign manifest can bind session-isolation evidence, but it cannot manufacture independent agent sessions. The evidence producer must actually enforce the claimed isolation.
 
-## Current repository qualification
+## Producer qualification
 
-The permanent GitHub workflow runs compile checks plus the complete deterministic Agent Economics qualification corpus, including adversarial campaign-gate regressions. Those checks validate the bridge and closeout validator implementation but **do not substitute for real-agent campaign evidence**.
+AgentsCookbook's own deterministic workflow compiles and qualifies Agent Economics, including adversarial campaign-gate regressions. That validates the bridge/validator implementation but does **not** substitute for consumer repository evidence or real-agent campaign evidence.
 
-A session that cannot create genuinely independent agent sessions must not self-attest that model-memory isolation exists. It may prepare or validate campaign evidence, but it cannot truthfully close that empirical condition by itself.
+A session that cannot create genuinely independent agent sessions must not self-attest that model-memory isolation exists.
