@@ -24,7 +24,7 @@ class DogfoodTask:
 
 DEFAULT_TASKS = (
     ("localized-python", "assertion", "Localized Python assertion failure", "assertion_test_failure"),
-    ("syntax-import", "syntax-import", "Syntax or import failure", "syntax_compile_failure"),
+    ("syntax-import", "syntax-import", "Syntax or import failure", "syntax_compile_failure"),\n    ("affected-dependent", "verification-selection", "Wrong-test or affected-dependent repair failure", "assertion_test_failure"),
     ("lint-type", "static-analysis", "Lint or type failure", "lint_static_failure"),
     ("focused-pass-broad-fail", "verification-escalation", "Focused verification passes but broader gate fails", "assertion_test_failure"),
     ("missing-executable", "environment", "Declared executable is unavailable", "executable_missing"),
