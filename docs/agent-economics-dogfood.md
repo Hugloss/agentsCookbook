@@ -51,11 +51,10 @@ The campaign manifest is `agent-economics-dogfood-campaign` v1 and fails closed 
 - at least one pair from a repository different from the primary repository;
 - exact campaign membership matching the outcome pairs, so unfavorable rows cannot be silently omitted;
 - globally unique baseline/bridge session/run identities;
-- distinct baseline and bridge isolation-evidence identities for every pair;
-- separate freeze and post-freeze oracle-access receipt identities for every mode;
+- globally unique baseline/bridge isolation, freeze, and post-freeze oracle-access receipt identities;
 - the same measurement-contract identity for every campaign task;
 - cleanup evidence for every participating consumer repository;
-- final agentsCookbook CI evidence.
+- final agentsCookbook CI evidence bound to the exact campaign implementation identity.
 
 The campaign validator reuses strict per-pair validation first. It does not turn empirical evidence into automatic release, merge, edit, or execution authority.
 
