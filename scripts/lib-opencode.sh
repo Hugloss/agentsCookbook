@@ -45,6 +45,7 @@ atomic-operation-review
 retry-idempotency-review
 resource-lifetime-review
 failure-contract-review
+dogfood-saturation-loop
 sensitive-data-masking
 semantic-identity-invariance-review
 evidence-projection-preservation-review

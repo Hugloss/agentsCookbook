@@ -40,6 +40,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `retry-idempotency-review` — Find replay/retry paths that can repeat one-shot effects.
 - `resource-lifetime-review` — Find resources that leak, close too early, or outlive their owner.
 - `failure-contract-review` — Find failure meaning or recovery contracts that diverge across layers.
+- `dogfood-saturation-loop` — Drive one repair surface through repeated post-patch dogfood until fresh probing yields no qualifying defect.
 
 ## Data handling
 
@@ -151,5 +152,6 @@ Use the narrowest skill that owns the question:
 - `shared-state-ownership-review` asks whether mutable state is actually shared; `stale-work-race-review` asks whether superseded work can commit after newer ownership exists.
 - `call-chain-collapse-review` targets no-value hops; `dependency-surface-review` targets oversized inputs/contexts even when the call depth is reasonable.
 - `red-team-leftover-gate` reviews a supplied plan/change for material blockers; `architecture-risk-triage` routes repository hotspots to specialist architecture reviews.
+- `dogfood-saturation-loop` governs **when a repair campaign may stop and when broad validation should run**; it consumes evidence-backed defect proof from `codebase-finding-derivation` or a narrow specialist rather than promoting investigation leads itself. `repository-improvement-scout` finds leads and `verification-locality-review` selects the strongest verifier. The loop consumes repository qualification authority for closure; `baseline-self-authorization-review` owns whether the candidate improperly weakens that authority.
 
 When two skills could notice the same code, report the defect under the skill whose invariant is actually violated.
