@@ -863,6 +863,34 @@
       "kind": "positive",
       "expected": "FINDING",
       "scenario": "After repairing an omission bug, the campaign calls its next run 'fresh dogfood' but executes only the exact original regression and no adjacent or interacting behavior. It then records NO_QUALIFYING_DEFECT and claims saturation even though the repaired semantics were not challenged beyond the already-known case."
+    },
+    {
+      "id": "dogfood-saturation-loop-positive-unresolved-in-scope",
+      "skill": "dogfood-saturation-loop",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A fresh post-repair dogfood pass finds an in-scope authority defect. The team records it as unresolved evidence because fixing it requires unavailable native infrastructure, but still marks the surface SATURATED and opens the PR."
+    },
+    {
+      "id": "dogfood-saturation-loop-positive-stale-candidate-evidence",
+      "skill": "dogfood-saturation-loop",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Candidate commit A passes focused validation and fresh adversarial dogfood. A later in-scope repair creates candidate commit B. The campaign reuses A's dogfood result as proof for B, runs broad CI on B, and claims completion without dogfooding B."
+    },
+    {
+      "id": "dogfood-saturation-loop-positive-surface-saturated-final-fail",
+      "skill": "dogfood-saturation-loop",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "The selected dependency-evidence surface is genuinely saturated on the current candidate, but a required final packaging check for that same candidate is INCOMPLETE. The campaign nevertheless ends SATURATED because the packaging failure is outside the selected surface."
+    },
+    {
+      "id": "dogfood-saturation-loop-control-noninterfering-late-change",
+      "skill": "dogfood-saturation-loop",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Candidate A saturates the parser surface. A later documentation-only change creates candidate B, and repository authority explicitly proves that docs are excluded from parser/runtime semantics, so the parser dogfood evidence remains admissible. Required final qualification is then rerun and passes against candidate B."
     }
   ]
 }
