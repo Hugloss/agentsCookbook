@@ -25,11 +25,11 @@ Look for a simpler or safer route already supported by repository structure.
 
 ## PROVE
 
-Explain the challenged assumption, repository evidence, alternative route, tradeoffs, and major disagreement with the current direction. Show why the route is genuinely different.
+Establish the decision scope being challenged, then explain the challenged assumption, repository evidence, alternative route, tradeoffs, and major disagreement with the current direction. Show why the route is genuinely different and identify material decision inputs that were unavailable or out of scope.
 
 ## DO NOT REPORT
 
-Do not manufacture disagreement for reviewer diversity. If the current route is already strongest, say so. Do not drift beyond user scope.
+Do not manufacture disagreement for reviewer diversity. If no materially better route is proved within the inspected decision scope, say so; do not claim a globally strongest design from a bounded search. Do not drift beyond user scope.
 
 ## PREFER
 
@@ -39,8 +39,8 @@ Prefer alternatives that delete work, preserve coherent boundaries, or establish
 
 When input starts with `BUILD REVIEW MODE`, challenge only material implementation choices that can still be corrected. Do not propose a rewrite merely because another design is aesthetically different.
 
-Return `# Build Alternative Review` with blocking findings, non-blocking findings, a materially better route if one is proved, concrete fixes, and remaining risk. Use `None` when the implemented route should stand.
+Return `# Build Alternative Review` with inspected decision scope, blocking findings, non-blocking findings, a materially better route if one is proved, concrete fixes, and remaining risk. Use `None` only when the material decision scope was inspectable and no better route was proved; use `INSUFFICIENT EVIDENCE` when missing repository evidence prevents that judgment.
 
 ## OUTPUT
 
-Otherwise return `# Alternative Plan` with goal, challenged assumptions, steps, affected areas, evidence, tradeoffs/risks, validation, recovery, key differences, and blockers or major disagreements.
+Otherwise return `# Alternative Plan` with inspected decision scope, goal, challenged assumptions, steps, affected areas, evidence, tradeoffs/risks, validation, recovery, key differences, and blockers or major disagreements. If the material decision inputs were sufficiently inspectable and no alternative is justified, say `No materially better route proved in inspected scope.` If missing material evidence prevents a meaningful challenge, return `INSUFFICIENT EVIDENCE` instead.

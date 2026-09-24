@@ -933,6 +933,20 @@
       "kind": "positive",
       "expected": "FINDING",
       "scenario": "The governing qualification contract requires correctness, ambiguity and non-edit slices. After seeing that ambiguity cases fail, the candidate redefines its claimed qualification scope to correctness-only and reports PASS from that smaller evidence set."
+    },
+    {
+      "id": "architecture-risk-triage-positive-incomplete-clean",
+      "skill": "architecture-risk-triage",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A repository-wide architecture triage inspects one controller directory, cannot access workers or persistence, finds no hotspot in that directory, and reports that the repository has no architecture risks requiring specialist review."
+    },
+    {
+      "id": "evidence-readiness-positive-self-weakened-contract",
+      "skill": "evidence-readiness-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "The previous qualification contract requires correctness, ambiguity and non-edit slices. The candidate edits that governing contract to remove ambiguity after ambiguity cases fail, then uses the candidate contract to declare its remaining evidence ready and qualified without independent admission of the policy change."
     }
   ]
 }

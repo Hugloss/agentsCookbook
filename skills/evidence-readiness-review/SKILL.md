@@ -20,12 +20,13 @@ Hunt for:
 - shadow, canary, diagnostic, or historical rows becoming the only score-bearing evidence;
 - required task/risk/semantic slices missing while aggregate quality passes;
 - the candidate narrowing the qualification scope or required population after observing evidence;
+- the candidate modifying the governing qualification contract itself to remove a failing slice, population, threshold, or prerequisite;
 - unresolved ground truth included as if adjudicated;
 - readiness checked after scoring instead of before it.
 
 ## PROVE
 
-Establish the governing qualification contract and the evidence scope/slices it requires independently of candidate success. Then construct or identify an evidence set that lacks a required eligibility or coverage condition but still reaches pass/qualified. Identify the missing readiness predicate and the downstream claim it invalidates.
+Establish the governing qualification contract and the evidence scope/slices it requires independently of candidate success. If the candidate also changes that governing contract, use the previous authoritative contract to judge whether the mutation is admissible before the candidate contract may define readiness. Then construct or identify an evidence set that lacks a required eligibility or coverage condition but still reaches pass/qualified. Identify the missing readiness predicate and the downstream claim it invalidates.
 
 ## DO NOT REPORT
 
@@ -33,7 +34,7 @@ Do not report optional sparse diagnostics that make no qualification, certificat
 
 ## PREFER
 
-Gate scoring on authority-derived readiness: valid membership, non-empty eligible evidence, required slices, adjudicated truth, and explicit scope. Treat unknown governing scope as incomplete rather than letting the candidate choose a smaller scope that already passes.
+Gate scoring on authority-derived readiness: valid membership, non-empty eligible evidence, required slices, adjudicated truth, and explicit scope. Treat unknown governing scope as incomplete rather than letting the candidate choose a smaller scope that already passes. `baseline-self-authorization-review` owns whether a candidate mutation of the governing contract is independently admissible.
 
 ## OUTPUT
 
