@@ -43,4 +43,4 @@ Return `# Build Alternative Review` with inspected decision scope, blocking find
 
 ## OUTPUT
 
-Otherwise return `# Alternative Plan` with inspected decision scope, goal, challenged assumptions, steps, affected areas, evidence, tradeoffs/risks, validation, recovery, key differences, and blockers or major disagreements. If no alternative is justified, say `No materially better route proved in inspected scope.`
+Otherwise return `# Alternative Plan` with inspected decision scope, goal, challenged assumptions, steps, affected areas, evidence, tradeoffs/risks, validation, recovery, key differences, and blockers or major disagreements. If the material decision inputs were sufficiently inspectable and no alternative is justified, say `No materially better route proved in inspected scope.` If missing material evidence prevents a meaningful challenge, return `INSUFFICIENT EVIDENCE` instead.
