@@ -816,18 +816,53 @@
       "scenario": "Path mapping chooses the deterministic longest matching prefix, rejects .. traversal, resolves symlinks/realpath, then re-checks that the final canonical path remains beneath the declared repository root."
     },
     {
-      "id": "dogfood-saturation-loop-positive",
+      "id": "dogfood-saturation-loop-positive-no-redogfood",
       "skill": "dogfood-saturation-loop",
       "kind": "positive",
       "expected": "FINDING",
-      "scenario": "A branch reproduces and repairs three defects on one dependency-evidence surface. All three focused regressions pass, so the campaign immediately runs full CI and opens a PR. No fresh adversarial dogfood pass exercises the patched behavior or interactions between the repairs before completion is claimed."
+      "scenario": "A branch reproduces and repairs three defects on one dependency-evidence surface. All focused regressions pass, so the campaign immediately runs full CI and opens a PR. No fresh adversarial dogfood pass exercises the patched behavior or interactions between the repairs after the latest repair."
     },
     {
-      "id": "dogfood-saturation-loop-control",
+      "id": "dogfood-saturation-loop-control-saturated",
       "skill": "dogfood-saturation-loop",
       "kind": "control",
       "expected": "CLEAN",
-      "scenario": "One branch batches several independently reproduced defects, repairs them at their owning semantic boundaries, runs focused validation, then dogfoods the patched surface again with boundary and interaction variants. A second pass exposes another qualifying defect, which is repaired on the same branch. After another fresh adversarial pass yields no qualifying defect, broad CI-equivalent validation runs once and passes."
+      "scenario": "One branch batches several independently reproduced defects, repairs them at their owning semantic boundaries, runs focused validation, then dogfoods the patched surface again with relevant boundary and interaction variants. A second pass exposes another in-scope defect, which is repaired on the same branch. After another fresh adversarial pass against the latest candidate yields no qualifying in-scope defect, broad CI-equivalent validation runs and passes."
+    },
+    {
+      "id": "dogfood-saturation-loop-control-single-defect",
+      "skill": "dogfood-saturation-loop",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A campaign finds one real defect on its bounded parser surface. The defect is repaired and its focused regression passes. A fresh post-repair dogfood pass challenges the changed parser semantics with omitted, empty, and exact-bound inputs, finds no additional in-scope defect, and the campaign then proceeds to broad validation."
+    },
+    {
+      "id": "dogfood-saturation-loop-control-early-broad-unblock",
+      "skill": "dogfood-saturation-loop",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Focused local tests cannot exercise the production packaging path needed to continue dogfood. The campaign runs one broad packaging check early to establish that missing execution evidence, then resumes bounded dogfood and does not treat the early broad check as saturation or final CI."
+    },
+    {
+      "id": "dogfood-saturation-loop-positive-ci-repair-without-redogfood",
+      "skill": "dogfood-saturation-loop",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "The campaign reaches saturation and runs CI-equivalent validation. CI exposes an in-scope serialization defect, which is repaired and its focused test passes. The branch reruns CI immediately and claims completion without a fresh dogfood pass against the newly patched serialization behavior."
+    },
+    {
+      "id": "dogfood-saturation-loop-control-out-of-scope-defect",
+      "skill": "dogfood-saturation-loop",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A fresh post-repair dogfood pass exhausts the declared dependency-evidence surface and finds no new in-scope defect, but while inspecting logs it also reveals an unrelated UI rendering bug outside the campaign surface. The UI bug is preserved as separate follow-up evidence and the current campaign does not silently expand to include it."
+    },
+    {
+      "id": "dogfood-saturation-loop-positive-fake-fresh-pass",
+      "skill": "dogfood-saturation-loop",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "After repairing an omission bug, the campaign calls its next run 'fresh dogfood' but executes only the exact original regression and no adjacent or interacting behavior. It then records NO_QUALIFYING_DEFECT and claims saturation even though the repaired semantics were not challenged beyond the already-known case."
     }
   ]
 }
