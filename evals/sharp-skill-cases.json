@@ -820,28 +820,35 @@
       "skill": "dogfood-saturation-loop",
       "kind": "positive",
       "expected": "FINDING",
-      "scenario": "A branch repairs three in-scope defects and all known regressions pass. It immediately runs final CI and opens a PR. No fresh adversarial dogfood pass challenges the patched behavior after the latest repair."
+      "scenario": "A branch repairs three evidence-backed in-scope defects and all known regressions pass. It immediately runs final CI and opens a PR. No fresh adversarial dogfood pass challenges the patched behavior after the latest repair."
     },
     {
       "id": "dogfood-saturation-loop-positive-probe-contract-gamed",
       "skill": "dogfood-saturation-loop",
       "kind": "positive",
       "expected": "FINDING",
-      "scenario": "After repairing a boundary bug, the campaign runs six exploratory probes. Two difficult probes time out, so after seeing the results it declares only the four completed probes 'required', records NO_QUALIFYING_DEFECT, and claims saturation."
+      "scenario": "After repairing a boundary bug, the campaign declares six required probes. Two difficult probes time out, so after seeing the results it removes those two from the required set, records NO_QUALIFYING_DEFECT, and claims saturation."
     },
     {
-      "id": "dogfood-saturation-loop-positive-retroactive-scope-narrowing",
+      "id": "dogfood-saturation-loop-positive-scope-shrink",
       "skill": "dogfood-saturation-loop",
       "kind": "positive",
       "expected": "FINDING",
-      "scenario": "The campaign initially declares dependency admission and projection as one surface. Dogfood finds a hard projection defect. Instead of repairing it, the campaign narrows its scope so projection is now out of scope and claims saturation."
+      "scenario": "The campaign minimum scope includes dependency admission and projection. Dogfood proves a projection defect. Instead of repairing it, the campaign narrows scope to admission only and reclassifies the already-proved projection defect as unrelated follow-up work so it can claim saturation."
     },
     {
-      "id": "dogfood-saturation-loop-positive-stale-evidence",
+      "id": "dogfood-saturation-loop-positive-refuses-required-expansion",
       "skill": "dogfood-saturation-loop",
       "kind": "positive",
       "expected": "FINDING",
-      "scenario": "Candidate A passes fresh dogfood. The branch is then rebased onto a newer authoritative base that changes dependencies inside the frozen surface, but the campaign reuses A's old scope assumptions, probe evidence, and qualification authority without re-establishing them, then claims completion."
+      "scenario": "The campaign initially covers a serializer and its public API. During repair, evidence proves persisted round-trip behavior is directly affected by the same semantic change, but the campaign refuses to expand scope to persistence because it was not named at the start, then claims saturation."
+    },
+    {
+      "id": "dogfood-saturation-loop-positive-stale-authority",
+      "skill": "dogfood-saturation-loop",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Candidate A passes fresh dogfood. The branch is rebased onto a newer authoritative base that changes dependencies inside the campaign surface, but the campaign reuses A's scope assumptions, probe evidence, and qualification authority without re-establishing them, then claims completion."
     },
     {
       "id": "dogfood-saturation-loop-positive-self-weakened-final-qualification",
@@ -851,11 +858,25 @@
       "scenario": "The campaign initially establishes the repository's canonical verify-and-package workflow as final qualification. The candidate then edits that workflow to remove the package gate and validates itself against the weakened candidate workflow without independent admission against the previous authority, then ends SATURATED."
     },
     {
+      "id": "dogfood-saturation-loop-positive-upstream-workaround",
+      "skill": "dogfood-saturation-loop",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Dogfood reproduces an in-scope defect whose semantic owner is an upstream dependency. To keep the campaign on one branch, the downstream project adds a local workaround that masks the upstream defect and then claims saturation without repairing or qualifying the upstream owner."
+    },
+    {
       "id": "dogfood-saturation-loop-control-deep-saturation",
       "skill": "dogfood-saturation-loop",
       "kind": "control",
       "expected": "CLEAN",
-      "scenario": "The campaign freezes one surface and establishes repository-required final qualification first. It batches several defects, repairs them, declares relevant post-repair probes before execution, finds another in-scope defect, repairs it, and repeats. A complete fresh pass against the exact current candidate yields no qualifying defect, then repository-required final validation passes on the shipping artifact."
+      "scenario": "The campaign freezes a minimum semantic scope and establishes final qualification authority. It proves several defects, repairs them, and later evidence shows one directly affected persistence interaction, so scope expands monotonically. A fresh-pass probe contract grows by one probe before completion; already-completed probes remain valid on the same unchanged candidate, the added probe completes, no qualifying defect remains, and final validation passes."
+    },
+    {
+      "id": "dogfood-saturation-loop-control-insufficient-evidence-lead",
+      "skill": "dogfood-saturation-loop",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Dogfood notices a suspicious adjacent code path but cannot reproduce a violated behavior or prove a material consequence. codebase-finding-derivation records INSUFFICIENT EVIDENCE, so the lead is preserved for later investigation but is not treated as a qualifying defect and does not by itself block saturation."
     },
     {
       "id": "dogfood-saturation-loop-control-working-tree-identity",
@@ -865,25 +886,18 @@
       "scenario": "Repairs remain uncommitted during the deep loop. Before validation and dogfood, the campaign computes a deterministic identity over every exercised tracked, staged, untracked generated, and projected byte and records it with the evidence, so no checkpoint commit is needed."
     },
     {
-      "id": "dogfood-saturation-loop-control-provenance-noninterference",
+      "id": "dogfood-saturation-loop-control-upstream-owner",
       "skill": "dogfood-saturation-loop",
       "kind": "control",
       "expected": "CLEAN",
-      "scenario": "Source candidate C saturates the parser surface. A repository-owned deterministic build receipt binds release ZIP P to C and proves the parser bytes and semantics unchanged; required final validation passes on P. A later docs-only metadata change is also proven by repository dependency evidence not to affect parser semantics."
-    },
-    {
-      "id": "dogfood-saturation-loop-positive-initial-underscope",
-      "skill": "dogfood-saturation-loop",
-      "kind": "positive",
-      "expected": "FINDING",
-      "scenario": "A serialization defect crosses a public API and persisted representation, but the campaign freezes scope as only the first failing helper function and its unit test. It saturates that tiny scope without exercising the directly affected API or persistence interaction and claims the repair campaign complete."
+      "scenario": "Dogfood proves an in-scope defect is owned by an upstream library. The downstream campaign remains blocked while the upstream owner is repaired and qualified, then re-establishes downstream candidate evidence against the fixed upstream identity instead of adding a masking workaround."
     },
     {
       "id": "dogfood-saturation-loop-control-authoritative-empty-final-validation",
       "skill": "dogfood-saturation-loop",
       "kind": "control",
       "expected": "CLEAN",
-      "scenario": "Before the campaign begins, repository-owned policy explicitly states that this class of prompt-only change has no additional final validation beyond the required focused structural checks. The campaign completes those checks, saturates the frozen semantic surface, records the authoritative final-validation set as empty, and ends SATURATED."
+      "scenario": "Before the campaign begins, repository-owned policy explicitly states that this class of prompt-only change has no additional final validation beyond the required focused structural checks. The campaign completes those checks, saturates its semantic surface, records the authoritative final-validation set as empty, and ends SATURATED."
     }
   ]
 }
