@@ -841,14 +841,14 @@
       "skill": "dogfood-saturation-loop",
       "kind": "positive",
       "expected": "FINDING",
-      "scenario": "Candidate A passes fresh dogfood. A later in-scope repair creates candidate B with uncommitted generated changes, but the campaign reuses A's dogfood evidence and identifies B only by the old HEAD commit. It then claims completion."
+      "scenario": "Candidate A passes fresh dogfood. The branch is then rebased onto a newer authoritative base that changes dependencies inside the frozen surface, but the campaign reuses A's old scope assumptions, probe evidence, and qualification authority without re-establishing them, then claims completion."
     },
     {
-      "id": "dogfood-saturation-loop-positive-self-selected-final-qualification",
+      "id": "dogfood-saturation-loop-positive-self-weakened-final-qualification",
       "skill": "dogfood-saturation-loop",
       "kind": "positive",
       "expected": "FINDING",
-      "scenario": "The repository normally requires its canonical verify-and-package qualification before merge. The campaign instead chooses a passing focused unit command as its 'required final validation' because the canonical qualification is expensive, then ends SATURATED."
+      "scenario": "The campaign initially establishes the repository's canonical verify-and-package workflow as final qualification. The candidate then edits that workflow to remove the package gate and validates itself against the weakened candidate workflow without independent admission against the previous authority, then ends SATURATED."
     },
     {
       "id": "dogfood-saturation-loop-control-deep-saturation",
@@ -870,6 +870,20 @@
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "Source candidate C saturates the parser surface. A repository-owned deterministic build receipt binds release ZIP P to C and proves the parser bytes and semantics unchanged; required final validation passes on P. A later docs-only metadata change is also proven by repository dependency evidence not to affect parser semantics."
+    },
+    {
+      "id": "dogfood-saturation-loop-positive-initial-underscope",
+      "skill": "dogfood-saturation-loop",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A serialization defect crosses a public API and persisted representation, but the campaign freezes scope as only the first failing helper function and its unit test. It saturates that tiny scope without exercising the directly affected API or persistence interaction and claims the repair campaign complete."
+    },
+    {
+      "id": "dogfood-saturation-loop-control-authoritative-empty-final-validation",
+      "skill": "dogfood-saturation-loop",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Before the campaign begins, repository-owned policy explicitly states that this class of prompt-only change has no additional final validation beyond the required focused structural checks. The campaign completes those checks, saturates the frozen semantic surface, records the authoritative final-validation set as empty, and ends SATURATED."
     }
   ]
 }
