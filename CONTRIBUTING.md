@@ -59,7 +59,7 @@ Descriptions should target 120 characters or less and must remain within the rep
 
 ### Hard-earned skill-authoring rules
 
-Before merging a new or materially changed skill, use `skill-contract-review` and check these boundaries:
+Before merging a new or materially changed skill, apply `skill-contract-review` and check these boundaries. This is an authoring-time guardrail, not an additional mandatory reviewer in Ping-Pong/Ping-Ping or ordinary repository-review flows:
 
 - make the **clean/no-finding path as evidence-bound as the finding path**; bounded or incomplete inspection cannot justify repository-wide absence;
 - distinguish `INSUFFICIENT EVIDENCE`, unknown, skipped, truncated, or partial work from clean/success;
