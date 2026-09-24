@@ -52,7 +52,7 @@ Do not report:
 - a different writing style when the invariant, proof, false positives, and outputs are already sharp;
 - absence of runtime orchestration, persistence, retries, or state machinery from a prompt-only skill.
 
-Do not turn this review into a universal skill framework.
+Do not turn this review into a universal skill framework. Do not add it automatically to normal repository-review or Ping-Pong/Ping-Ping flows; it is an authoring-time review for skill definitions.
 
 ## PREFER
 
