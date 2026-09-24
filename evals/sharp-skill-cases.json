@@ -891,6 +891,55 @@
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "Candidate A saturates the parser surface. A later documentation-only change creates candidate B, and repository authority explicitly proves that docs are excluded from parser/runtime semantics, so the parser dogfood evidence remains admissible. Required final qualification is then rerun and passes against candidate B."
+    },
+    {
+      "id": "dogfood-saturation-loop-positive-incomplete-no-defect",
+      "skill": "dogfood-saturation-loop",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A fresh dogfood campaign declares six required probes. Four complete and find no defect, one times out, and one is skipped after the timeout. The campaign records NO_QUALIFYING_DEFECT and marks the surface saturated because no completed probe failed."
+    },
+    {
+      "id": "dogfood-saturation-loop-positive-retroactive-scope-narrowing",
+      "skill": "dogfood-saturation-loop",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "The campaign initially declares dependency evidence admission and projection as one bounded surface. Dogfood finds a hard projection defect. Rather than repair it, the campaign edits its scope description so projection is now out of scope, classifies the observed defect as follow-up work, and claims saturation."
+    },
+    {
+      "id": "dogfood-saturation-loop-positive-dirty-worktree-identity",
+      "skill": "dogfood-saturation-loop",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Dogfood and focused tests run against a working tree containing uncommitted tracked edits plus a generated contract file. The campaign records HEAD commit abc123 as the candidate identity and claims those results prove abc123, without hashing or otherwise identifying the actual exercised working-tree bytes."
+    },
+    {
+      "id": "dogfood-saturation-loop-positive-unbound-shipping-artifact",
+      "skill": "dogfood-saturation-loop",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Source candidate C is fully dogfooded and saturated. A ZIP P is then built for release with generated files and packaging transforms, but no provenance or equivalence proof binds P to C and no relevant dogfood is replayed on P. Final packaging smoke passes and the campaign claims SATURATED for P."
+    },
+    {
+      "id": "dogfood-saturation-loop-positive-context-mismatch",
+      "skill": "dogfood-saturation-loop",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Candidate C passes dogfood in a hosted simulation mode where network and process authority are stubbed. The campaign reuses that result as proof for native execution even though the repaired behavior controls real process cancellation and authority boundaries that differ materially between the two modes."
+    },
+    {
+      "id": "dogfood-saturation-loop-control-working-tree-digest",
+      "skill": "dogfood-saturation-loop",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Repairs remain uncommitted during a deep same-branch campaign. Before focused validation and dogfood, the campaign computes a deterministic identity over all exercised tracked, staged, untracked generated, and projected bytes, records that identity with the evidence, and does not require a checkpoint commit."
+    },
+    {
+      "id": "dogfood-saturation-loop-control-provenance-bound-artifact",
+      "skill": "dogfood-saturation-loop",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Source candidate C saturates the selected parser surface. The release ZIP P is produced by a repository-owned deterministic transformation whose receipt binds C to P and proves the parser bytes and semantics are unchanged. Required final validation runs against P and passes, so source dogfood remains admissible for that invariant."
     }
   ]
 }
