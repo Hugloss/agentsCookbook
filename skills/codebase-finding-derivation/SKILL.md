@@ -80,7 +80,7 @@ Prefer deletion, consolidation, clearer ownership, or a shorter authoritative pa
 
 ## OUTPUT
 
-Return `# Codebase Finding Derivation` and state the completed inspection boundary.
+Return `# Codebase Finding Derivation` and state the actual inspection boundary plus whether the requested derivation scope was complete.
 
 For each defensible finding include:
 
