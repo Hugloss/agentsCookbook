@@ -57,6 +57,21 @@ A strong skill should:
 
 Descriptions should target 120 characters or less and must remain within the repository’s 160-character validation limit.
 
+### Hard-earned skill-authoring rules
+
+Before merging a new or materially changed skill, use `skill-contract-review` and check these boundaries:
+
+- make the **clean/no-finding path as evidence-bound as the finding path**; bounded or incomplete inspection cannot justify repository-wide absence;
+- distinguish `INSUFFICIENT EVIDENCE`, unknown, skipped, truncated, or partial work from clean/success;
+- define the minimum semantic scope needed to own the question; allow evidence-backed expansion when directly affected behavior emerges, but do not shrink scope merely to discard a problem;
+- define what qualifies as a finding; investigation leads, smells, rankings, or suspicions are not defects without the skill's required proof;
+- when success depends on a baseline, policy, threshold, probe contract, or qualification oracle, establish that authority independently of candidate success and do not let the candidate silently weaken it;
+- bind source identity, provenance, environment, freshness, or representation only when those dimensions can materially change interpretation—do not cargo-cult evidence machinery into simple bounded skills;
+- keep the real semantic owner visible, including upstream ownership; do not encode local workarounds merely to keep a workflow or branch self-contained;
+- use positive/control benchmark cases to protect behavioral discrimination, adding more cases only for real ambiguity rather than a fixed quota;
+- compress repeated rules. Prompt length is not itself a defect, but repeated methodology that does not sharpen discrimination is runtime and maintenance cost.
+
+
 ## Adding a skill
 
 1. Add `skills/<skill-name>/SKILL.md`.
