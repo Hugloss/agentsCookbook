@@ -25,11 +25,11 @@ Hunt for:
 
 ## PROVE
 
-Establish the behavior obligations from the user request, repository contracts, and authoritative acceptance/qualification policy before selecting checks. Map each required invariant or user-visible behavior to the smallest decisive check. Mark commands, paths, or obligations as assumptions until verified.
+Establish the behavior obligations from the user request, repository contracts, and authoritative acceptance/qualification policy before selecting checks. If the candidate changes a governing acceptance/qualification policy, keep deriving obligations from the previous authority until that policy mutation is independently admitted. Map each required invariant or user-visible behavior to the smallest decisive check. Mark commands, paths, or obligations as assumptions until verified.
 
 ## DO NOT REPORT
 
-Do not claim proposed validation ran. Do not maximize test count. Do not add checks for behavior outside the declared obligation set merely because more testing is possible. `coverage-design-review` owns the broader question of whether the test portfolio covers real behavior.
+Do not claim proposed validation ran. Do not maximize test count. Do not add checks for behavior outside the declared obligation set merely because more testing is possible. `coverage-design-review` owns the broader question of whether the test portfolio covers real behavior; `baseline-self-authorization-review` owns whether a candidate may change its governing validation oracle.
 
 ## PREFER
 
