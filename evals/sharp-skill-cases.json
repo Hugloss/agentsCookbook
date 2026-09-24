@@ -814,6 +814,20 @@
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "Path mapping chooses the deterministic longest matching prefix, rejects .. traversal, resolves symlinks/realpath, then re-checks that the final canonical path remains beneath the declared repository root."
+    },
+    {
+      "id": "dogfood-saturation-loop-positive",
+      "skill": "dogfood-saturation-loop",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A branch reproduces and repairs three defects on one dependency-evidence surface. All three focused regressions pass, so the campaign immediately runs full CI and opens a PR. No fresh adversarial dogfood pass exercises the patched behavior or interactions between the repairs before completion is claimed."
+    },
+    {
+      "id": "dogfood-saturation-loop-control",
+      "skill": "dogfood-saturation-loop",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "One branch batches several independently reproduced defects, repairs them at their owning semantic boundaries, runs focused validation, then dogfoods the patched surface again with boundary and interaction variants. A second pass exposes another qualifying defect, which is repaired on the same branch. After another fresh adversarial pass yields no qualifying defect, broad CI-equivalent validation runs once and passes."
     }
   ]
 }
