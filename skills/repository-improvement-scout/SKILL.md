@@ -10,7 +10,7 @@ Standalone, read-only repository discovery skill for deciding what is worth inve
 
 ## INVARIANT
 
-> **Do not start with a fix. Start with a repository signal strong enough to justify a bounded investigation.**
+> **Do not start with a fix. Start with a repository signal strong enough to justify a bounded investigation, and do not turn a partial search into a repository-wide no-finding claim.**
 
 ## HUNT
 
@@ -39,6 +39,8 @@ For every investigation lead, provide:
 - **Disconfirmation check** — evidence that would show the suspected issue is actually intentional or safe;
 - **Next skill** — `codebase-finding-derivation` or the narrow specialist that should prove the issue if the lead survives.
 
+Also record the **inspection boundary** used for this scouting pass and any material areas that were skipped, truncated, unavailable, or intentionally out of scope.
+
 A lead does not need enough proof to be a finding. It needs enough evidence to justify the next inspection.
 
 ## DO NOT REPORT
@@ -53,7 +55,7 @@ Do not call these things findings by themselves:
 - code that merely differs from your preferred design;
 - speculative rewrites with no repository signal.
 
-Do not produce a generic refactor wishlist or fixed Top N list.
+Do not produce a generic refactor wishlist or fixed Top N list. Do not claim repository-wide absence of further leads from a bounded or incomplete search.
 
 ## PREFER
 
@@ -84,4 +86,9 @@ For each lead include:
 - `Disconfirmation check`
 - `Suggested next skill`
 
-End with `## Leave Alone` for suspicious-looking areas that were inspected but currently have a coherent explanation, and `## No Further Leads` when no additional evidence-backed investigation is justified.
+End with:
+- `## Inspection Boundary` — scope inspected plus skipped/unavailable areas;
+- `## Leave Alone` — suspicious-looking areas inspected and coherently explained;
+- `## No Further Leads In Inspected Scope` only when that declared bounded scope was completed.
+
+If the intended search scope was not completed, say `INSUFFICIENT EVIDENCE` instead of making a no-further-leads claim.
