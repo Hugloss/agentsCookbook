@@ -38,6 +38,7 @@ codebase-finding-derivation
 plan-contract-guard
 red-team-leftover-gate
 code-performance-optimization-audit
+skill-contract-review
 stale-work-race-review
 ui-lifecycle-race-review
 shared-state-ownership-review
