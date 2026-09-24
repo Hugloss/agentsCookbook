@@ -23,29 +23,35 @@ Hunt for premature closure when:
 - a "fresh" pass only replays already-known regressions;
 - the required probe set is chosen or reduced after results are known;
 - timeout, truncation, skipped required probes, or unknown state becomes `NO_QUALIFYING_DEFECT`;
+- the frozen scope is only the initial file/function/test rather than the repaired behavior's owning semantic boundary and directly affected interactions;
 - campaign scope is narrowed after a hard defect appears;
-- evidence comes from different bytes, representation, or materially different execution context without repository-backed equivalence;
+- evidence comes from different bytes, base authority, representation, or materially different execution context without repository-backed equivalence;
 - an unresolved in-scope defect coexists with a saturation claim;
-- required final validation is missing, self-selected, FAIL, or INCOMPLETE;
+- required final validation is missing, self-selected, self-weakened by the candidate, FAIL, or INCOMPLETE;
 - broad CI runs after each small repair even though the same surface still has unexercised interactions.
 
 ## PROVE
 
 Before reporting premature closure, establish:
 
-- **Frozen scope** — the semantic surface and inclusion/exclusion boundary fixed before substantive discovery.
-- **Qualification authority** — repository-owned policy, commands, or checks that define required final validation. Establish this before interpreting candidate success. If it cannot be determined, final status is `BLOCKED_INCOMPLETE`.
+- **Authoritative base** — the repository/base identity and governing sources from which campaign scope and qualification authority are derived.
+- **Adequate frozen scope** — the repaired behavior's owning semantic boundary plus directly affected public/runtime interfaces and repair interactions; do not define scope solely as the first failing test, function, or file.
+- **Qualification authority** — repository-owned policy, commands, or checks that define required final validation, established independently of candidate success. An authority that explicitly declares no additional final validation is a valid empty set; unknown authority is `BLOCKED_INCOMPLETE`.
 - **Current evidence identity** — exact exercised bytes plus representation and only the execution-context dimensions that materially affect interpretation.
 - **Latest repair** — the last in-scope change affecting that identity.
 - **Probe contract** — adversarial probes derived from the changed semantics and declared before the fresh pass runs.
 - **Probe completeness** — all required probes completed without unresolved timeout, truncation, skipped work, or unknown state.
 - **Freshness** — the pass challenges patched semantics or relevant adjacent/interacting cases rather than only replaying the original defect.
 - **Defect disposition** — every newly exposed in-scope qualifying defect returns to the same branch and defect queue.
-- **Final validation** — the repository-required qualification set passes against the current shipping candidate/artifact.
+- **Final validation** — the independently established repository-required qualification set passes against the current shipping candidate/artifact.
 
 The probe contract may grow when new evidence suggests another relevant attack. Do not remove a required probe after observing its result merely to obtain a clean pass.
 
 `NO_QUALIFYING_DEFECT` is admissible only from a complete fresh pass.
+
+If the authoritative base or another governing source changes materially during the campaign, re-establish affected scope, qualification authority, and probe assumptions. Evidence whose interpretation depended on the old authority is stale.
+
+If the candidate changes its own qualification workflow, threshold, baseline, allowlist, or policy, that mutation must be independently admitted against the previous governing authority before the changed authority can judge the candidate. The candidate cannot authorize itself by weakening its oracle.
 
 ## EVIDENCE BINDING
 
@@ -54,7 +60,7 @@ Use the smallest identity strong enough to prove what was exercised.
 - A commit or branch name is insufficient when staged, modified, untracked, generated, overlaid, or projected content changes behavior.
 - A deterministic working-tree/content digest is valid; do not require checkpoint commits merely to create identity.
 - When source becomes a ZIP, wheel, image, generated bundle, or installed artifact, bind source identity to artifact identity through repository-backed provenance.
-- Reuse evidence across candidate, representation, or execution-context changes only when repository-backed dependency/provenance/contract evidence proves noninterference or equivalence. Otherwise rerun the affected proof.
+- Reuse evidence across candidate, base, representation, or execution-context changes only when repository-backed dependency/provenance/contract evidence proves noninterference or equivalence. Otherwise rerun the affected proof.
 - An agent's unsupported assertion that a change "cannot matter" is not equivalence evidence.
 
 ## DO NOT REPORT
@@ -65,9 +71,10 @@ Do not report merely because:
 - focused validation is used between repair batches;
 - broad validation is deferred until the surface is saturated;
 - an early broad check is genuinely needed to unblock further dogfood;
-- a fresh pass exposes an unrelated defect outside the frozen scope and that defect is preserved separately;
+- a fresh pass exposes an unrelated defect outside the adequate frozen scope and that defect is preserved separately;
 - repairs remain uncommitted while exact exercised bytes are deterministically identified;
-- source dogfood is reused for a shipping artifact when repository-backed provenance proves the relevant semantics unchanged.
+- source dogfood is reused for a shipping artifact when repository-backed provenance proves the relevant semantics unchanged;
+- repository authority explicitly establishes that there is no additional final validation beyond the completed evidence.
 
 Do not require a fixed defect count, fixed elapsed time, or universal environment fingerprint.
 
@@ -76,9 +83,9 @@ Do not require a fixed defect count, fixed elapsed time, or universal environmen
 Run one deep same-branch campaign:
 
 ```text
-establish starting authority
--> freeze one semantic surface
--> establish repository-required final qualification
+establish authoritative base
+-> freeze adequate semantic surface
+-> establish independent repository qualification authority
 -> dogfood current behavior
 -> queue multiple reproducible in-scope defects when possible
 -> batch repairs at owning semantic boundaries
@@ -89,13 +96,15 @@ establish starting authority
 -> if a new in-scope defect appears: repair and repeat
 -> when complete fresh pass yields NO_QUALIFYING_DEFECT: surface saturated
 -> build/bind shipping representation if needed
--> run repository-required final validation
+-> run independently established final validation
 -> SATURATED
 ```
 
 If final validation exposes an in-scope defect, revoke saturation and return through repair, focused validation, a new probe contract, and fresh dogfood before final validation runs again.
 
 If an out-of-scope failure makes required final validation FAIL or INCOMPLETE, preserve the scope boundary but end `BLOCKED_INCOMPLETE`; surface saturation alone does not authorize shipping.
+
+If the base or governing authority changes materially, re-establish the affected campaign inputs before continuing.
 
 Prefer collecting several independent reproductions before expensive validation when the first defect does not block further discovery. Spend the campaign budget on second-order defects and repair interactions, not repeated proof of the same closed case.
 
@@ -104,18 +113,19 @@ Preserve observed `PASS`, `FAIL`, `INCOMPLETE`, and `NO_QUALIFYING_DEFECT` exact
 ## OUTPUT
 
 Return `# Dogfood Saturation Loop` with:
-- starting authority and frozen scope;
-- repository-required final qualification authority;
+- authoritative base and adequate frozen scope;
+- repository-required final qualification authority, including an explicit empty set when authoritative;
 - current evidence identity;
 - defect queue and repair batches;
 - focused validation;
 - declared fresh-pass probe contract and completeness;
 - new in-scope/out-of-scope defects;
+- base/authority changes and evidence invalidated, if any;
 - source-to-artifact provenance when relevant;
 - final validation;
 - unresolved evidence.
 
 End with exactly one:
-- `SATURATED` — complete fresh dogfood and all repository-required final validation pass for the current shipping candidate/artifact;
+- `SATURATED` — complete fresh dogfood and all repository-required final validation pass for the current shipping candidate/artifact, including an authoritative empty final-validation set when applicable;
 - `CONTINUE_DOGFOOD` — in-scope repair or fresh dogfood work remains and can continue;
 - `BLOCKED_INCOMPLETE` — required evidence, probe completion, qualification authority, identity, or final validation is unavailable, failing, or incomplete.
