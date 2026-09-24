@@ -10,7 +10,7 @@ Standalone, read-only discovery/router skill. It identifies where to aim deeper 
 
 ## INVARIANT
 
-> **Do not perform a vague architecture review when a sharper specialist can prove the problem.**
+> **Do not perform a vague architecture review when a sharper specialist can prove the problem, and do not infer repository-wide safety from an incomplete triage surface.**
 
 ## HUNT
 
@@ -36,14 +36,22 @@ Trace important production paths and hunt strong signals:
 
 For each hotspot provide production responsibility, concrete evidence, risk class, and the specialist skill that fits. Prefer three proven hotspots over ten speculative ones.
 
+Record the triage boundary: the production/test paths actually inspected and any material path left uninspected, unavailable, or truncated.
+
 ## DO NOT REPORT
 
-Do not deeply solve every category. Do not rank files by size or complexity aesthetics. Do not create findings merely to fill a quota.
+Do not deeply solve every category. Do not rank files by size or complexity aesthetics. Do not create findings merely to fill a quota. Do not report "no architecture risk" when only a bounded triage surface was inspected.
 
 ## PREFER
 
-Route each hotspot to the narrowest skill. Protect coherent owners and explicitly say when no specialist review is justified.
+Route each hotspot to the narrowest skill. Protect coherent owners. A clean result is only a statement about the completed triage boundary, not proof that the entire repository has no architecture risk.
 
 ## OUTPUT
 
-Return `# Architecture Risk Triage` with evidence-backed hotspots and routing. Use exact skill names and a one-sentence reason for each route.
+Return `# Architecture Risk Triage` with:
+- inspection boundary;
+- evidence-backed hotspots and exact specialist routing;
+- uninspected or unavailable paths;
+- `No routed hotspots in inspected scope` when the bounded triage completed cleanly.
+
+If the requested triage scope could not be completed, return `INSUFFICIENT EVIDENCE` rather than a clean absence claim.

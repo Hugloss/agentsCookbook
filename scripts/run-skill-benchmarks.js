@@ -9,6 +9,7 @@ const { spawnSync } = require('child_process');
 const repoRoot = path.resolve(path.dirname(fs.realpathSync(__filename)), '..');
 const defaultCorpus = path.join(repoRoot, 'evals', 'sharp-skill-cases.json');
 const specialistSections = new Set([
+  'Skill authoring',
   'Concurrency',
   'Execution integrity',
   'Evidence integrity',
