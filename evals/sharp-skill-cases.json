@@ -820,126 +820,56 @@
       "skill": "dogfood-saturation-loop",
       "kind": "positive",
       "expected": "FINDING",
-      "scenario": "A branch reproduces and repairs three defects on one dependency-evidence surface. All focused regressions pass, so the campaign immediately runs full CI and opens a PR. No fresh adversarial dogfood pass exercises the patched behavior or interactions between the repairs after the latest repair."
+      "scenario": "A branch repairs three in-scope defects and all known regressions pass. It immediately runs final CI and opens a PR. No fresh adversarial dogfood pass challenges the patched behavior after the latest repair."
     },
     {
-      "id": "dogfood-saturation-loop-control-saturated",
-      "skill": "dogfood-saturation-loop",
-      "kind": "control",
-      "expected": "CLEAN",
-      "scenario": "One branch batches several independently reproduced defects, repairs them at their owning semantic boundaries, runs focused validation, then dogfoods the patched surface again with relevant boundary and interaction variants. A second pass exposes another in-scope defect, which is repaired on the same branch. After another fresh adversarial pass against the latest candidate yields no qualifying in-scope defect, broad CI-equivalent validation runs and passes."
-    },
-    {
-      "id": "dogfood-saturation-loop-control-single-defect",
-      "skill": "dogfood-saturation-loop",
-      "kind": "control",
-      "expected": "CLEAN",
-      "scenario": "A campaign finds one real defect on its bounded parser surface. The defect is repaired and its focused regression passes. A fresh post-repair dogfood pass challenges the changed parser semantics with omitted, empty, and exact-bound inputs, finds no additional in-scope defect, and the campaign then proceeds to broad validation."
-    },
-    {
-      "id": "dogfood-saturation-loop-control-early-broad-unblock",
-      "skill": "dogfood-saturation-loop",
-      "kind": "control",
-      "expected": "CLEAN",
-      "scenario": "Focused local tests cannot exercise the production packaging path needed to continue dogfood. The campaign runs one broad packaging check early to establish that missing execution evidence, then resumes bounded dogfood and does not treat the early broad check as saturation or final CI."
-    },
-    {
-      "id": "dogfood-saturation-loop-positive-ci-repair-without-redogfood",
+      "id": "dogfood-saturation-loop-positive-probe-contract-gamed",
       "skill": "dogfood-saturation-loop",
       "kind": "positive",
       "expected": "FINDING",
-      "scenario": "The campaign reaches saturation and runs CI-equivalent validation. CI exposes an in-scope serialization defect, which is repaired and its focused test passes. The branch reruns CI immediately and claims completion without a fresh dogfood pass against the newly patched serialization behavior."
-    },
-    {
-      "id": "dogfood-saturation-loop-control-out-of-scope-defect",
-      "skill": "dogfood-saturation-loop",
-      "kind": "control",
-      "expected": "CLEAN",
-      "scenario": "A fresh post-repair dogfood pass exhausts the declared dependency-evidence surface and finds no new in-scope defect, but while inspecting logs it also reveals an unrelated UI rendering bug outside the campaign surface. The UI bug is preserved as separate follow-up evidence and the current campaign does not silently expand to include it."
-    },
-    {
-      "id": "dogfood-saturation-loop-positive-fake-fresh-pass",
-      "skill": "dogfood-saturation-loop",
-      "kind": "positive",
-      "expected": "FINDING",
-      "scenario": "After repairing an omission bug, the campaign calls its next run 'fresh dogfood' but executes only the exact original regression and no adjacent or interacting behavior. It then records NO_QUALIFYING_DEFECT and claims saturation even though the repaired semantics were not challenged beyond the already-known case."
-    },
-    {
-      "id": "dogfood-saturation-loop-positive-unresolved-in-scope",
-      "skill": "dogfood-saturation-loop",
-      "kind": "positive",
-      "expected": "FINDING",
-      "scenario": "A fresh post-repair dogfood pass finds an in-scope authority defect. The team records it as unresolved evidence because fixing it requires unavailable native infrastructure, but still marks the surface SATURATED and opens the PR."
-    },
-    {
-      "id": "dogfood-saturation-loop-positive-stale-candidate-evidence",
-      "skill": "dogfood-saturation-loop",
-      "kind": "positive",
-      "expected": "FINDING",
-      "scenario": "Candidate commit A passes focused validation and fresh adversarial dogfood. A later in-scope repair creates candidate commit B. The campaign reuses A's dogfood result as proof for B, runs broad CI on B, and claims completion without dogfooding B."
-    },
-    {
-      "id": "dogfood-saturation-loop-positive-surface-saturated-final-fail",
-      "skill": "dogfood-saturation-loop",
-      "kind": "positive",
-      "expected": "FINDING",
-      "scenario": "The selected dependency-evidence surface is genuinely saturated on the current candidate, but a required final packaging check for that same candidate is INCOMPLETE. The campaign nevertheless ends SATURATED because the packaging failure is outside the selected surface."
-    },
-    {
-      "id": "dogfood-saturation-loop-control-noninterfering-late-change",
-      "skill": "dogfood-saturation-loop",
-      "kind": "control",
-      "expected": "CLEAN",
-      "scenario": "Candidate A saturates the parser surface. A later documentation-only change creates candidate B, and repository authority explicitly proves that docs are excluded from parser/runtime semantics, so the parser dogfood evidence remains admissible. Required final qualification is then rerun and passes against candidate B."
-    },
-    {
-      "id": "dogfood-saturation-loop-positive-incomplete-no-defect",
-      "skill": "dogfood-saturation-loop",
-      "kind": "positive",
-      "expected": "FINDING",
-      "scenario": "A fresh dogfood campaign declares six required probes. Four complete and find no defect, one times out, and one is skipped after the timeout. The campaign records NO_QUALIFYING_DEFECT and marks the surface saturated because no completed probe failed."
+      "scenario": "After repairing a boundary bug, the campaign runs six exploratory probes. Two difficult probes time out, so after seeing the results it declares only the four completed probes 'required', records NO_QUALIFYING_DEFECT, and claims saturation."
     },
     {
       "id": "dogfood-saturation-loop-positive-retroactive-scope-narrowing",
       "skill": "dogfood-saturation-loop",
       "kind": "positive",
       "expected": "FINDING",
-      "scenario": "The campaign initially declares dependency evidence admission and projection as one bounded surface. Dogfood finds a hard projection defect. Rather than repair it, the campaign edits its scope description so projection is now out of scope, classifies the observed defect as follow-up work, and claims saturation."
+      "scenario": "The campaign initially declares dependency admission and projection as one surface. Dogfood finds a hard projection defect. Instead of repairing it, the campaign narrows its scope so projection is now out of scope and claims saturation."
     },
     {
-      "id": "dogfood-saturation-loop-positive-dirty-worktree-identity",
+      "id": "dogfood-saturation-loop-positive-stale-evidence",
       "skill": "dogfood-saturation-loop",
       "kind": "positive",
       "expected": "FINDING",
-      "scenario": "Dogfood and focused tests run against a working tree containing uncommitted tracked edits plus a generated contract file. The campaign records HEAD commit abc123 as the candidate identity and claims those results prove abc123, without hashing or otherwise identifying the actual exercised working-tree bytes."
+      "scenario": "Candidate A passes fresh dogfood. A later in-scope repair creates candidate B with uncommitted generated changes, but the campaign reuses A's dogfood evidence and identifies B only by the old HEAD commit. It then claims completion."
     },
     {
-      "id": "dogfood-saturation-loop-positive-unbound-shipping-artifact",
+      "id": "dogfood-saturation-loop-positive-self-selected-final-qualification",
       "skill": "dogfood-saturation-loop",
       "kind": "positive",
       "expected": "FINDING",
-      "scenario": "Source candidate C is fully dogfooded and saturated. A ZIP P is then built for release with generated files and packaging transforms, but no provenance or equivalence proof binds P to C and no relevant dogfood is replayed on P. Final packaging smoke passes and the campaign claims SATURATED for P."
+      "scenario": "The repository normally requires its canonical verify-and-package qualification before merge. The campaign instead chooses a passing focused unit command as its 'required final validation' because the canonical qualification is expensive, then ends SATURATED."
     },
     {
-      "id": "dogfood-saturation-loop-positive-context-mismatch",
-      "skill": "dogfood-saturation-loop",
-      "kind": "positive",
-      "expected": "FINDING",
-      "scenario": "Candidate C passes dogfood in a hosted simulation mode where network and process authority are stubbed. The campaign reuses that result as proof for native execution even though the repaired behavior controls real process cancellation and authority boundaries that differ materially between the two modes."
-    },
-    {
-      "id": "dogfood-saturation-loop-control-working-tree-digest",
+      "id": "dogfood-saturation-loop-control-deep-saturation",
       "skill": "dogfood-saturation-loop",
       "kind": "control",
       "expected": "CLEAN",
-      "scenario": "Repairs remain uncommitted during a deep same-branch campaign. Before focused validation and dogfood, the campaign computes a deterministic identity over all exercised tracked, staged, untracked generated, and projected bytes, records that identity with the evidence, and does not require a checkpoint commit."
+      "scenario": "The campaign freezes one surface and establishes repository-required final qualification first. It batches several defects, repairs them, declares relevant post-repair probes before execution, finds another in-scope defect, repairs it, and repeats. A complete fresh pass against the exact current candidate yields no qualifying defect, then repository-required final validation passes on the shipping artifact."
     },
     {
-      "id": "dogfood-saturation-loop-control-provenance-bound-artifact",
+      "id": "dogfood-saturation-loop-control-working-tree-identity",
       "skill": "dogfood-saturation-loop",
       "kind": "control",
       "expected": "CLEAN",
-      "scenario": "Source candidate C saturates the selected parser surface. The release ZIP P is produced by a repository-owned deterministic transformation whose receipt binds C to P and proves the parser bytes and semantics are unchanged. Required final validation runs against P and passes, so source dogfood remains admissible for that invariant."
+      "scenario": "Repairs remain uncommitted during the deep loop. Before validation and dogfood, the campaign computes a deterministic identity over every exercised tracked, staged, untracked generated, and projected byte and records it with the evidence, so no checkpoint commit is needed."
+    },
+    {
+      "id": "dogfood-saturation-loop-control-provenance-noninterference",
+      "skill": "dogfood-saturation-loop",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Source candidate C saturates the parser surface. A repository-owned deterministic build receipt binds release ZIP P to C and proves the parser bytes and semantics unchanged; required final validation passes on P. A later docs-only metadata change is also proven by repository dependency evidence not to affect parser semantics."
     }
   ]
 }
