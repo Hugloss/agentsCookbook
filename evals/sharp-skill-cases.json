@@ -898,6 +898,41 @@
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "Before the campaign begins, repository-owned policy explicitly states that this class of prompt-only change has no additional final validation beyond the required focused structural checks. The campaign completes those checks, saturates its semantic surface, records the authoritative final-validation set as empty, and ends SATURATED."
+    },
+    {
+      "id": "skill-contract-review-positive-asymmetric-clean",
+      "skill": "skill-contract-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A new repository-wide discovery skill requires a reachable production path before reporting a finding, but its OUTPUT says 'No issues found' whenever a bounded grep returns nothing. It records no inspected scope, truncation, unavailable paths, or incomplete state."
+    },
+    {
+      "id": "skill-contract-review-positive-self-authorizing",
+      "skill": "skill-contract-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A qualification skill says a candidate may choose the required test slices and pass threshold at evaluation time. The same candidate may edit those settings, rerun only the newly required checks, and declare itself qualified."
+    },
+    {
+      "id": "skill-contract-review-control-sharp-bounded",
+      "skill": "skill-contract-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A narrow retry-idempotency skill owns one duplicate-effect failure class, requires a reproduced replay path before FINDING, names safe repeatable behavior in DO NOT REPORT, and makes no repository-wide absence claim. It does not carry source digests or environment identity because the bounded review result is not reused across mutable candidates."
+    },
+    {
+      "id": "skill-contract-review-control-domain-detail",
+      "skill": "skill-contract-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A sensitive-data transformation skill is longer than most review skills because it defines masking categories, deterministic placeholder behavior, a second verification pass, fail-closed MASKING_INCOMPLETE, and a bounded transformation boundary. Its extra sections each carry unique safety semantics rather than repeating generic methodology."
+    },
+    {
+      "id": "evidence-readiness-positive-self-selected-scope",
+      "skill": "evidence-readiness-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "The governing qualification contract requires correctness, ambiguity and non-edit slices. After seeing that ambiguity cases fail, the candidate redefines its claimed qualification scope to correctness-only and reports PASS from that smaller evidence set."
     }
   ]
 }
