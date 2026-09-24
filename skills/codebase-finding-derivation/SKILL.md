@@ -10,7 +10,7 @@ Standalone, read-only evidence-derivation skill for turning inspected codebase b
 
 ## INVARIANT
 
-> **A codebase observation becomes a finding only when inspected evidence proves a real path, a violated expectation, and a material consequence.**
+> **A codebase observation becomes a finding only when inspected evidence proves a real path, a violated expectation, and a material consequence; absence of findings is claimable only inside a completed inspected scope.**
 
 ## HUNT
 
@@ -46,6 +46,8 @@ A finding needs all of these:
 
 If one of those is missing, downgrade the candidate to `INSUFFICIENT EVIDENCE` instead of inventing certainty.
 
+Also record the **inspection boundary** used for the derivation pass and any material paths, callers, evidence sources, or repository areas that were skipped, unavailable, or truncated.
+
 ## DO NOT REPORT
 
 Do not turn these into findings by themselves:
@@ -78,7 +80,7 @@ Prefer deletion, consolidation, clearer ownership, or a shorter authoritative pa
 
 ## OUTPUT
 
-Return `# Codebase Finding Derivation`.
+Return `# Codebase Finding Derivation` and state the completed inspection boundary.
 
 For each defensible finding include:
 
@@ -103,4 +105,4 @@ Then include:
 <candidates that looked suspicious but could not be proved, or None>
 ```
 
-If no defensible finding exists, say `No defensible findings.` Do not manufacture findings to fill the report.
+If no defensible finding exists after the declared inspection boundary is complete, say `No defensible findings in inspected scope.` Do not manufacture findings to fill the report. If the requested derivation scope could not be completed, return `INSUFFICIENT EVIDENCE` instead of a no-finding claim.
