@@ -152,6 +152,6 @@ Use the narrowest skill that owns the question:
 - `shared-state-ownership-review` asks whether mutable state is actually shared; `stale-work-race-review` asks whether superseded work can commit after newer ownership exists.
 - `call-chain-collapse-review` targets no-value hops; `dependency-surface-review` targets oversized inputs/contexts even when the call depth is reasonable.
 - `red-team-leftover-gate` reviews a supplied plan/change for material blockers; `architecture-risk-triage` routes repository hotspots to specialist architecture reviews.
-- `dogfood-saturation-loop` governs **when a repair campaign may stop and when broad validation should run**; `repository-improvement-scout` finds investigation leads, `codebase-finding-derivation` proves defects, and `verification-locality-review` selects the strongest verifier.
+- `dogfood-saturation-loop` governs **when a repair campaign may stop and when broad validation should run**; `repository-improvement-scout` finds investigation leads, `codebase-finding-derivation` proves defects, and `verification-locality-review` selects the strongest verifier. It consumes repository qualification authority for campaign closure; `baseline-self-authorization-review` owns whether the candidate improperly weakens that governing authority.
 
 When two skills could notice the same code, report the defect under the skill whose invariant is actually violated.
