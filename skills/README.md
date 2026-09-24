@@ -14,6 +14,10 @@ Every skill should:
 
 A strong finding normally removes a path, decision, representation, traversal, branch, wrapper, synchronization mechanism, or source of ambiguity.
 
+## Skill authoring
+
+- `skill-contract-review` — Review whether a skill owns one sharp, evidence-closed contract with non-gameable finding and clean outcomes.
+
 ## Planning and evidence
 
 - `plan-gap-scout` — Find missing implementation work without rewriting the plan.
@@ -153,5 +157,6 @@ Use the narrowest skill that owns the question:
 - `call-chain-collapse-review` targets no-value hops; `dependency-surface-review` targets oversized inputs/contexts even when the call depth is reasonable.
 - `red-team-leftover-gate` reviews a supplied plan/change for material blockers; `architecture-risk-triage` routes repository hotspots to specialist architecture reviews.
 - `dogfood-saturation-loop` governs **when a repair campaign may stop and when broad validation should run**; it consumes evidence-backed defect proof from `codebase-finding-derivation` or a narrow specialist rather than promoting investigation leads itself. `repository-improvement-scout` finds leads and `verification-locality-review` selects the strongest verifier. The loop consumes repository qualification authority for closure; `baseline-self-authorization-review` owns whether the candidate improperly weakens that authority.
+- `skill-contract-review` reviews the **skill definition itself** for sharp scope, evidence symmetry, authority, false-positive boundaries, and unnecessary prompt/workflow cost; the domain specialist still owns the target repository behavior.
 
 When two skills could notice the same code, report the defect under the skill whose invariant is actually violated.
