@@ -68,8 +68,13 @@ function merge(base, overlay) {
 
 function config() {
   const servers = {
-    hashmarks: { type: 'local', command: ['hashmarks', 'mcp'], enabled: true },
-    enola: { type: 'local', command: ['enola', 'mcp'], enabled: true },
+    hashmarks: {
+      type: 'local',
+      command: ['hashmarks', '--workspace', '.', 'mcp'],
+      cwd: '.',
+      enabled: true
+    },
+    enola: { type: 'local', command: ['enola'], enabled: true },
   };
   const base = {
     model: 'liteLLM/gemma4',
@@ -195,7 +200,12 @@ async function testSharedLifecycle() {
       assert.strictEqual(content.permission.bash, 'deny');
       assert.deepStrictEqual(
         servers.hashmarks.command,
-        ['hashmarks', 'mcp'],
+        ['hashmarks', '--workspace', '.', 'mcp'],
+      );
+      assert.strictEqual(prepared.workspace_binding.verified, true);
+      assert.strictEqual(
+        prepared.workspace_binding.method,
+        'hashmarks-explicit-workspace',
       );
       assert.ok(!Object.hasOwn(servers, 'benchmark_hashmarks'));
       if (shape === 'nested') {
@@ -208,6 +218,79 @@ async function testSharedLifecycle() {
       const { environment, ...safe } = prepared;
       assert.ok(!JSON.stringify(safe).includes('inline-secret'));
     }
+
+    const enola = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      env,
+      selectedSubject: 'enola',
+    });
+    assert.strictEqual(enola.status, 'completed', enola.reason);
+    assert.strictEqual(enola.workspace_binding.verified, true);
+    assert.strictEqual(
+      enola.workspace_binding.method,
+      'enola-default-repository-from-mcp-cwd',
+    );
+
+    const outside = runtime.verifyWorkspaceBinding(
+      {
+        mcp: {
+          hashmarks: {
+            type: 'local',
+            command: ['hashmarks', '--workspace', '/outside', 'mcp'],
+            cwd: '.',
+            enabled: true,
+          },
+          enola: {
+            type: 'local',
+            command: ['enola'],
+            cwd: '/outside',
+            enabled: true,
+          },
+        },
+      },
+      'flat',
+      'hashmarks',
+      root,
+    );
+    assert.strictEqual(outside.verified, false);
+    assert.match(outside.reason, /outside trial workspace/);
+
+    const enolaOutside = runtime.verifyWorkspaceBinding(
+      {
+        mcp: {
+          enola: {
+            type: 'local',
+            command: ['enola'],
+            cwd: '/outside',
+            enabled: true,
+          },
+        },
+      },
+      'flat',
+      'enola',
+      root,
+    );
+    assert.strictEqual(enolaOutside.verified, false);
+    assert.match(enolaOutside.reason, /outside trial workspace/);
+
+    const enolaConfigArgument = runtime.verifyWorkspaceBinding(
+      {
+        mcp: {
+          enola: {
+            type: 'local',
+            command: ['enola', '/outside/mcp-arch.yaml'],
+            cwd: '.',
+            enabled: true,
+          },
+        },
+      },
+      'flat',
+      'enola',
+      root,
+    );
+    assert.strictEqual(enolaConfigArgument.verified, false);
+    assert.match(enolaConfigArgument.reason, /cannot be proven/);
 
     const bare = runtime.prepareBenchmarkConfig({
       opencodeBin: fake, repoDir: root, env,
