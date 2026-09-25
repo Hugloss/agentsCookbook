@@ -1,8 +1,8 @@
 """Native OpenCode benchmark adapter.
 
 OpenCode owns model/provider/auth configuration. The benchmark never writes those
-settings. It only applies an in-memory tool-visibility overlay so bare/Hashmarks/Enola
-conditions remain comparable.
+settings. A shared JS runtime owns OpenCode run/session/export lifecycle. This adapter
+only owns benchmark-specific MCP gating and observation projection.
 """
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from typing import Any
 from benchmarks.adapters.runtime import observe_executable
 from benchmarks.harness.identity import canonical_json
 from benchmarks.harness.model import (
-    McpExposure,
     Observation,
     ParticipantIdentity,
     SubjectAdapter,
@@ -24,83 +23,17 @@ from benchmarks.harness.model import (
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
-_SECRET_KEYS = {
-    "api_key",
-    "apikey",
-    "authorization",
-    "cookie",
-    "credential",
-    "credentials",
-    "password",
-    "secret",
-    "token",
-}
+_RUNTIME_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "opencode-runtime.js"
 
 
-def _parse_json_object(raw: bytes, label: str) -> dict[str, Any]:
-    text = raw.decode("utf-8", errors="replace")
-    start = text.find("{")
+def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
+    start = raw.find("{")
     if start < 0:
         raise ValueError(f"{label}: missing JSON object")
-    value = json.loads(text[start:])
+    value = json.loads(raw[start:])
     if not isinstance(value, dict):
         raise ValueError(f"{label}: expected JSON object")
     return value
-
-
-def _sanitize(value: Any, *, key: str = "") -> Any:
-    normalized = key.lower().replace("-", "_")
-    if (
-        normalized in _SECRET_KEYS
-        or normalized.endswith("_api_key")
-        or normalized.endswith("_token")
-        or normalized.endswith("_secret")
-        or normalized.endswith("_password")
-    ):
-        return "<redacted>"
-    if isinstance(value, dict):
-        return {
-            str(child_key): _sanitize(child, key=str(child_key))
-            for child_key, child in sorted(
-                value.items(),
-                key=lambda item: str(item[0]),
-            )
-        }
-    if isinstance(value, list):
-        return [_sanitize(child) for child in value]
-    return value
-
-
-def _config_identity(config: dict[str, Any]) -> str:
-    return hashlib.sha256(canonical_json(_sanitize(config))).hexdigest()
-
-
-def _mcp_servers(config: dict[str, Any]) -> dict[str, Any]:
-    mcp = config.get("mcp")
-    if not isinstance(mcp, dict):
-        return {}
-    nested = mcp.get("servers")
-    if isinstance(nested, dict):
-        return nested
-    return mcp
-
-
-def _configured_model(config: dict[str, Any]) -> str | None:
-    agent = config.get("agent")
-    if isinstance(agent, dict):
-        build = agent.get("build")
-        if isinstance(build, dict):
-            model = build.get("model")
-            if isinstance(model, str) and model:
-                return model
-    model = config.get("model")
-    return model if isinstance(model, str) and model else None
-
-
-def _provider_from_model(model: str | None) -> str | None:
-    if not model or "/" not in model:
-        return None
-    return model.split("/", 1)[0]
 
 
 def _native_environment(
@@ -127,7 +60,7 @@ def _native_environment(
 
 def _runtime_overlay(
     *,
-    config: dict[str, Any],
+    mcp_shape: str,
     server_names: tuple[str, ...],
     selected_server: str | None,
 ) -> dict[str, Any]:
@@ -135,11 +68,7 @@ def _runtime_overlay(
         f"{name}_*": name == selected_server
         for name in sorted(server_names)
     }
-    native_mcp = config.get("mcp")
-    if isinstance(native_mcp, dict) and isinstance(
-        native_mcp.get("servers"),
-        dict,
-    ):
+    if mcp_shape == "nested-servers":
         mcp_overlay: dict[str, Any] = {
             "servers": {
                 name: {"disabled": name != selected_server}
@@ -154,11 +83,7 @@ def _runtime_overlay(
     return {
         "mcp": mcp_overlay,
         "tools": tools,
-        "agent": {
-            "build": {
-                "tools": tools,
-            }
-        },
+        "agent": {"build": {"tools": tools}},
     }
 
 
@@ -185,24 +110,6 @@ def _parts(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
-def _final_message(exported: dict[str, Any]) -> str | None:
-    messages = _assistant_messages(exported)
-    if not messages:
-        return None
-    parts = messages[-1].get("parts")
-    if not isinstance(parts, list):
-        return None
-    text = [
-        part.get("text")
-        for part in parts
-        if isinstance(part, dict)
-        and part.get("type") == "text"
-        and isinstance(part.get("text"), str)
-    ]
-    value = "\n".join(text).strip()
-    return value or None
-
-
 def _tool_name(part: dict[str, Any]) -> str | None:
     for key in ("tool", "toolName", "name"):
         value = part.get(key)
@@ -225,7 +132,8 @@ def _observed_model(exported: dict[str, Any]) -> tuple[str | None, str | None]:
             )
         model = info.get("model")
         if isinstance(model, str) and model:
-            return model, _provider_from_model(model)
+            provider = model.split("/", 1)[0] if "/" in model else None
+            return model, provider
     return None, None
 
 
@@ -309,6 +217,41 @@ def _metrics(
     }
 
 
+def _runtime_call(
+    context: TrialContext,
+    *,
+    args: tuple[str, ...],
+    environment: dict[str, str],
+    timeout_seconds: float,
+    max_stdout_bytes: int,
+) -> tuple[dict[str, Any] | None, Any]:
+    result = run_bounded(
+        repository_root=context.workspace,
+        argv=("node", str(_RUNTIME_SCRIPT), *args),
+        environment=environment,
+        limits=ProcessLimits(
+            timeout_seconds=timeout_seconds,
+            max_stdout_bytes=max_stdout_bytes,
+            max_stderr_bytes=2_000_000,
+        ),
+    )
+    if (
+        result.executable_missing
+        or result.timed_out
+        or result.return_code != 0
+        or result.stdout_truncated
+        or result.stderr_truncated
+    ):
+        return None, result
+    try:
+        envelope = json.loads(result.stdout.decode("utf-8", errors="strict"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, result
+    if not isinstance(envelope, dict):
+        return None, result
+    return envelope, result
+
+
 @dataclass(frozen=True)
 class OpenCodeNativeAgent:
     timeout_seconds: int = 600
@@ -324,7 +267,7 @@ class OpenCodeNativeAgent:
                 "configuration": "native-opencode",
                 "model_provider": "native-opencode",
                 "runtime_overlay": "mcp-tool-gating-only",
-                "surface": "opencode-run-export",
+                "surface": "shared-opencode-runtime-v1",
             },
         )
 
@@ -338,29 +281,27 @@ class OpenCodeNativeAgent:
             "opencode",
             environment=environment,
         )
-        result = run_bounded(
-            repository_root=context.workspace,
-            argv=("opencode", "--pure", "debug", "config"),
+        envelope, result = _runtime_call(
+            context,
+            args=("inspect-config", "--repo", str(context.workspace)),
             environment=environment,
-            limits=ProcessLimits(
-                timeout_seconds=30,
-                max_stdout_bytes=5_000_000,
-                max_stderr_bytes=1_000_000,
-            ),
+            timeout_seconds=30,
+            max_stdout_bytes=1_000_000,
         )
         if (
-            result.executable_missing
-            or result.timed_out
-            or result.return_code != 0
-            or result.stdout_truncated
-            or result.stderr_truncated
+            envelope is None
+            or envelope.get("status") != "completed"
+            or not isinstance(envelope.get("inspection"), dict)
         ):
+            reason = "shared OpenCode runtime could not resolve native config"
+            if envelope and envelope.get("parse_error"):
+                reason = str(envelope["parse_error"])
             return {}, Observation(
                 {
                     **executable.payload,
                     "available": False,
-                    "reason": "opencode native config could not be resolved",
-                    "config_process": result.metrics(),
+                    "reason": reason,
+                    "runtime_process": result.metrics(),
                     "stderr": result.stderr.decode(
                         "utf-8",
                         errors="replace",
@@ -368,19 +309,7 @@ class OpenCodeNativeAgent:
                 },
                 result.stdout.decode("utf-8", errors="replace"),
             )
-        try:
-            config = _parse_json_object(result.stdout, "opencode debug config")
-        except (ValueError, json.JSONDecodeError) as exc:
-            return {}, Observation(
-                {
-                    **executable.payload,
-                    "available": False,
-                    "reason": str(exc),
-                    "config_process": result.metrics(),
-                },
-                result.stdout.decode("utf-8", errors="replace"),
-            )
-        return config, executable
+        return dict(envelope["inspection"]), executable
 
     def _selected_server(
         self,
@@ -397,46 +326,54 @@ class OpenCodeNativeAgent:
         context: TrialContext,
         exposed_subject: SubjectAdapter | None,
     ) -> Observation:
-        config, executable = self._resolve_native(context)
-        if not config:
+        inspection, executable = self._resolve_native(context)
+        if not inspection:
             return executable
 
-        model = _configured_model(config)
-        servers = _mcp_servers(config)
+        model = inspection.get("model")
+        provider = inspection.get("provider")
+        server_rows = inspection.get("mcp_servers")
+        if not isinstance(server_rows, list):
+            server_rows = []
+        servers = {
+            str(row.get("name")): bool(row.get("enabled"))
+            for row in server_rows
+            if isinstance(row, dict) and row.get("name")
+        }
         selected = self._selected_server(context, exposed_subject)
-        selected_config = servers.get(selected) if selected else None
-        selected_ready = selected is None or (
-            isinstance(selected_config, dict)
-            and selected_config.get("enabled", True) is not False
-            and selected_config.get("disabled", False) is not True
-        )
+        selected_ready = selected is None or servers.get(selected) is True
         overlay = _runtime_overlay(
-            config=config,
+            mcp_shape=str(inspection.get("mcp_shape", "flat")),
             server_names=tuple(sorted(servers)),
             selected_server=selected,
         )
         evidence = {
-            "native_config_sha256": _config_identity(config),
+            "runtime_contract": "agents-cookbook-opencode-runtime/v1",
+            "native_config_sha256": inspection.get("config_sha256"),
             "model": model,
-            "provider": _provider_from_model(model),
+            "provider": provider,
             "native_mcp_servers": sorted(servers),
+            "mcp_shape": inspection.get("mcp_shape"),
             "selected_server": selected,
             "overlay_sha256": hashlib.sha256(
                 canonical_json(overlay)
             ).hexdigest(),
         }
-        evidence_path = context.control_root / "opencode-native-evidence.json"
-        evidence_path.write_bytes(canonical_json(evidence))
-        overlay_path = context.control_root / "opencode-native-overlay.json"
-        overlay_path.write_bytes(canonical_json(overlay))
+        (context.control_root / "opencode-native-evidence.json").write_bytes(
+            canonical_json(evidence)
+        )
+        (context.control_root / "opencode-native-overlay.json").write_bytes(
+            canonical_json(overlay)
+        )
 
         available = (
             bool(executable.payload.get("available"))
-            and model is not None
+            and isinstance(model, str)
+            and bool(model)
             and selected_ready
         )
         reason = None
-        if model is None:
+        if not isinstance(model, str) or not model:
             reason = (
                 "native OpenCode config does not resolve an explicit build model"
             )
@@ -458,7 +395,7 @@ class OpenCodeNativeAgent:
                     **evidence,
                 },
                 "model": model,
-                "provider": _provider_from_model(model),
+                "provider": provider,
                 "native_config_sha256": evidence["native_config_sha256"],
                 "native_mcp_servers": evidence["native_mcp_servers"],
                 "mcp_exposure": (
@@ -488,53 +425,6 @@ class OpenCodeNativeAgent:
         )
         return evidence, overlay
 
-    def _find_session(
-        self,
-        context: TrialContext,
-        *,
-        environment: dict[str, str],
-        title: str,
-    ) -> str | None:
-        result = run_bounded(
-            repository_root=context.workspace,
-            argv=(
-                "opencode",
-                "--pure",
-                "session",
-                "list",
-                "--format",
-                "json",
-                "--max-count",
-                "20",
-            ),
-            environment=environment,
-            limits=ProcessLimits(
-                timeout_seconds=30,
-                max_stdout_bytes=2_000_000,
-                max_stderr_bytes=500_000,
-            ),
-        )
-        if result.return_code != 0 or result.timed_out:
-            return None
-        try:
-            sessions = json.loads(
-                result.stdout.decode("utf-8", errors="replace")
-            )
-        except json.JSONDecodeError:
-            return None
-        if not isinstance(sessions, list):
-            return None
-        workspace = str(context.workspace.resolve())
-        for session in sessions:
-            if (
-                isinstance(session, dict)
-                and session.get("title") == title
-                and session.get("directory") == workspace
-                and isinstance(session.get("id"), str)
-            ):
-                return session["id"]
-        return None
-
     def run(
         self,
         context: TrialContext,
@@ -542,12 +432,12 @@ class OpenCodeNativeAgent:
         exposed_subject: SubjectAdapter | None,
     ) -> Observation:
         evidence, overlay = self._load_prepared(context)
-        config, _ = self._resolve_native(context)
+        inspection, _ = self._resolve_native(context)
         if (
-            not config
-            or _config_identity(config)
+            not inspection
+            or inspection.get("config_sha256")
             != evidence["native_config_sha256"]
-            or _configured_model(config) != evidence["model"]
+            or inspection.get("model") != evidence["model"]
         ):
             return Observation(
                 {
@@ -569,82 +459,60 @@ class OpenCodeNativeAgent:
             "agents-cookbook-benchmark:"
             + context.control_root.parent.name
         )
-        result = run_bounded(
-            repository_root=context.workspace,
-            argv=(
-                "opencode",
-                "--pure",
-                "run",
-                "--dir",
+        prompt_path = context.control_root / "opencode-prompt.txt"
+        prompt_path.write_text(prompt, encoding="utf-8")
+        envelope, result = _runtime_call(
+            context,
+            args=(
+                "run-export",
+                "--repo",
                 str(context.workspace),
                 "--agent",
                 "build",
                 "--title",
                 title,
-                "--format",
-                "json",
-                prompt,
+                "--prompt-file",
+                str(prompt_path),
             ),
             environment=environment,
-            limits=ProcessLimits(
-                timeout_seconds=self.timeout_seconds,
-                max_stdout_bytes=self.max_output_bytes,
-                max_stderr_bytes=5_000_000,
-            ),
+            timeout_seconds=self.timeout_seconds + 120,
+            max_stdout_bytes=self.max_output_bytes,
         )
-        session_id = self._find_session(
-            context,
-            environment=environment,
-            title=title,
-        )
-        exported: dict[str, Any] = {}
-        export_raw = b""
-        export_error: str | None = None
-        if session_id:
-            export = run_bounded(
-                repository_root=context.workspace,
-                argv=("opencode", "--pure", "export", session_id),
-                environment=environment,
-                limits=ProcessLimits(
-                    timeout_seconds=60,
-                    max_stdout_bytes=self.max_output_bytes,
-                    max_stderr_bytes=2_000_000,
-                ),
-            )
-            export_raw = export.stdout
-            if (
-                export.return_code == 0
-                and not export.timed_out
-                and not export.stdout_truncated
-            ):
-                try:
-                    exported = _parse_json_object(
-                        export.stdout,
-                        "opencode export",
-                    )
-                except (ValueError, json.JSONDecodeError) as exc:
-                    export_error = str(exc)
-            else:
-                export_error = "opencode export failed or exceeded bounds"
 
-            run_bounded(
-                repository_root=context.workspace,
-                argv=(
-                    "opencode",
-                    "--pure",
-                    "session",
-                    "delete",
-                    session_id,
-                ),
-                environment=environment,
-                limits=ProcessLimits(
-                    timeout_seconds=30,
-                    max_stdout_bytes=200_000,
-                    max_stderr_bytes=200_000,
-                ),
-            )
+        exported: dict[str, Any] = {}
+        export_raw = ""
+        export_error: str | None = None
+        session_id: str | None = None
+        run_evidence: dict[str, Any] | None = None
+        if envelope is None:
+            export_error = "shared OpenCode runtime failed"
         else:
-            export_error = "unable to locate OpenCode session"
+            session = envelope.get("session_id")
+            session_id = session if isinstance(session, str) else None
+            run_value = envelope.get("run")
+            run_evidence = (
+                run_value if isinstance(run_value, dict) else None
+            )
+            export_value = envelope.get("export")
+            if isinstance(export_value, dict):
+                raw = export_value.get("stdout")
+                if isinstance(raw, str):
+                    export_raw = raw
+                if export_value.get("status") == 0:
+                    try:
+                        exported = _parse_json_object(
+                            export_raw,
+                            "opencode export",
+                        )
+                    except (ValueError, json.JSONDecodeError) as exc:
+                        export_error = str(exc)
+                else:
+                    export_error = "opencode export failed"
+            else:
+                export_error = "unable to locate OpenCode session"
+            parse_error = envelope.get("export_parse_error")
+            if isinstance(parse_error, str) and parse_error:
+                export_error = parse_error
 
         selected = evidence.get("selected_server")
         server_names = tuple(evidence.get("native_mcp_servers", []))
@@ -652,7 +520,9 @@ class OpenCodeNativeAgent:
             _metrics(
                 exported,
                 mcp_servers=server_names,
-                selected_server=selected,
+                selected_server=(
+                    selected if isinstance(selected, str) else None
+                ),
             )
             if exported
             else {
@@ -662,7 +532,7 @@ class OpenCodeNativeAgent:
                 "tool_calls": 0,
                 "mcp_calls": 0,
                 "subject_mcp_calls": 0,
-                "subject_tool_configured": selected is not None,
+                "subject_tool_configured": isinstance(selected, str),
                 "subject_tool_invoked": False,
                 "mcp_result_bytes": 0,
                 "input_tokens": 0,
@@ -682,8 +552,14 @@ class OpenCodeNativeAgent:
             if exported
             else (None, None)
         )
-        final = _final_message(exported) if exported else None
-        tool_calls = int(metrics["tool_calls"])
+        final_text = (
+            envelope.get("final_text")
+            if isinstance(envelope, dict)
+            else None
+        )
+        if not isinstance(final_text, str) or not final_text:
+            final_text = None
+
         model_mismatch = (
             observed_model is not None
             and observed_model != evidence.get("model")
@@ -695,12 +571,17 @@ class OpenCodeNativeAgent:
                 "OpenCode executed model differs from admitted native config: "
                 f"{observed_model} != {evidence.get('model')}"
             )
+
+        run_status = (
+            run_evidence.get("status")
+            if isinstance(run_evidence, dict)
+            else None
+        )
         complete = (
-            result.return_code == 0
-            and not result.timed_out
-            and not result.stdout_truncated
+            envelope is not None
+            and run_status == 0
             and export_error is None
-            and final is not None
+            and final_text is not None
         )
         terminal = (
             {"type": "turn.completed"}
@@ -710,24 +591,24 @@ class OpenCodeNativeAgent:
                 "reason": export_error or "opencode run failed",
             }
         )
+        tool_calls = int(metrics["tool_calls"])
         return Observation(
             {
                 "available": not result.executable_missing,
                 "terminal_event": terminal,
                 "terminal_complete": complete,
-                "final_message": final,
+                "final_message": final_text,
                 "jsonl_parse_errors": [],
                 "subject_server": selected,
-                "tool_available": selected is not None,
+                "tool_available": isinstance(selected, str),
                 "model": observed_model or evidence.get("model"),
-                "provider": (
-                    observed_provider or evidence.get("provider")
-                ),
+                "provider": observed_provider or evidence.get("provider"),
                 "native_config_sha256": evidence.get(
                     "native_config_sha256"
                 ),
                 "native_mcp_servers": list(server_names),
                 "session_id": session_id,
+                "runtime_contract": evidence.get("runtime_contract"),
                 "budget_violation": (
                     (
                         f"tool calls {tool_calls} exceed max_tool_calls "
@@ -743,11 +624,12 @@ class OpenCodeNativeAgent:
                     )
                 ),
                 "process": result.metrics(),
+                "runtime_run": run_evidence,
                 "stderr": result.stderr.decode(
                     "utf-8",
                     errors="replace",
                 ),
             },
-            export_raw.decode("utf-8", errors="replace"),
+            export_raw,
             metrics,
         )
