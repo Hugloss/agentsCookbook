@@ -42,7 +42,9 @@
         "required": [
           "id",
           "subject",
-          "agent"
+          "agent",
+          "trials",
+          "seed"
         ],
         "properties": {
           "id": {
