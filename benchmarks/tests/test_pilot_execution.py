@@ -15,6 +15,9 @@ from benchmarks.adapters.codex import (
     parse_codex_jsonl,
     seed_codex_auth,
 )
+from benchmarks.adapters.enola import EnolaSubject
+from benchmarks.adapters.hashmarks import HashmarksSubject
+from benchmarks.adapters.registry import build_agent
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.model import (
@@ -126,6 +129,85 @@ class PilotExecutionTests(unittest.TestCase):
             {"bare-codex", "hashmarks-codex", "enola-codex"},
         )
         self.assertTrue(all(len(row["definition_id"]) == 64 for row in rows))
+
+    def test_participant_configuration_is_part_of_definition_identity(self) -> None:
+        suite = load_suite(PILOT)
+        original = next(
+            row["definition_id"]
+            for row in suite.trial_definitions()
+            if row["task_id"] == "locate-receipt-completion-owner"
+            and row["condition_id"] == "hashmarks-codex"
+        )
+        subjects = json.loads(json.dumps(suite.subjects))
+        subjects["hashmarks"]["configuration"]["timeout_seconds"] += 1
+        changed = SuiteDefinition(
+            root=suite.root,
+            experiment=suite.experiment,
+            tasks=suite.tasks,
+            subjects=subjects,
+            agents=suite.agents,
+        )
+        altered = next(
+            row["definition_id"]
+            for row in changed.trial_definitions()
+            if row["task_id"] == "locate-receipt-completion-owner"
+            and row["condition_id"] == "hashmarks-codex"
+        )
+        self.assertNotEqual(original, altered)
+
+    def test_hashmarks_adapter_uses_real_version_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            context = TrialContext(
+                workspace,
+                control,
+                isolated_environment(control),
+            )
+            unavailable = Observation({"available": False}, "")
+            with mock.patch(
+                "benchmarks.adapters.hashmarks.observe_executable",
+                return_value=unavailable,
+            ) as observed:
+                HashmarksSubject().prepare(context)
+            observed.assert_called_once_with(
+                context,
+                "hashmarks",
+                version_args=("version",),
+            )
+
+    def test_enola_adapter_writes_explicit_trial_output_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            control.mkdir()
+            context = TrialContext(workspace, control, {})
+            path = EnolaSubject()._config(context)
+            value = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(value["repo"], str(workspace))
+            self.assertEqual(value["output"]["dir"], ".benchmark-enola")
+            self.assertFalse(path.is_relative_to(workspace))
+
+    def test_agent_adapter_receives_frozen_execution_budgets(self) -> None:
+        suite = load_suite(PILOT)
+        task = suite.tasks["locate-receipt-completion-owner"]
+        agent = build_agent(suite.agents["codex"], budgets=task["budgets"])
+        self.assertEqual(
+            agent.max_output_bytes,
+            task["budgets"]["max_output_bytes"],
+        )
+        self.assertEqual(
+            agent.max_tool_calls,
+            task["budgets"]["max_tool_calls"],
+        )
+        self.assertEqual(
+            agent.timeout_seconds,
+            task["budgets"]["timeout_seconds"],
+        )
 
     def test_codex_jsonl_separates_tool_availability_from_adoption(self) -> None:
         raw = b"\n".join(
