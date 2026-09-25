@@ -3,25 +3,50 @@
 This suite measures repository-intelligence correctness and its effect on coding-agent
 work without making any evaluated product its own grading authority.
 
-The initial subjects are bare/no repository intelligence, Hashmarks, and Enola. Codex
-is the first agent adapter; a local-model adapter is the next genericity expansion
-after the executable pilot is qualified.
+Hashmarks and Enola keep their native CLI/MCP semantics. The benchmark does not ETL
+their facts into a shared repository graph. Only the experiment envelope is normalized:
+participant identity, tool exposure/adoption, execution evidence, budgets,
+contamination, independent grading, receipts, and reporting.
 
-## Pilot v1
+## pilot-v1
 
-`pilot-v1/` freezes three tasks on one exact agentsCookbook commit/tree:
+`pilot-v1/` is the first executable harness qualification. It freezes three tasks on
+one exact agentsCookbook commit/tree and compares bare, Hashmarks, and Enola using the
+Codex host-default model.
 
-- two read-only owner/localization questions with independent exact-answer oracles;
-- one injected receipt-completion defect with a pre-existing focused regression oracle.
+It remains immutable historical evidence.
 
-Across bare, Hashmarks, and Enola this yields nine paired trial definitions.
+## agent-matrix-v2
 
-The pilot measures correctness, subject availability, MCP configuration/adoption,
-command/tool calls, MCP evidence bytes, token usage, duration, contamination, and
-oracle health. Codex JSONL does not expose authoritative repository-read bytes, so the
-pilot explicitly marks that archaeology metric unavailable rather than estimating it.
+`agent-matrix-v2/` freezes a new experiment version on the merged pilot
+implementation bytes. It keeps the same three task families and expands to two agent
+runtime authorities:
 
-See `pilot-v1/README.md` for the exact replay and reporting commands.
+- Codex with explicit `gpt-5.6-sol` / high reasoning;
+- native OpenCode using the host's already configured provider/model/auth.
 
-Do not publish an overall winner score. Report per-task/per-condition evidence and
-paired assistance deltas over the same-agent bare condition.
+Each runtime runs bare, with Hashmarks, and with Enola, producing 18 frozen definitions.
+
+**Gemma is never routed through Codex.** When native OpenCode is configured to Gemma,
+the benchmark uses that native setup and observes/binds what actually ran. No
+OpenCode model/provider configuration is stored in this repository.
+
+The benchmark composes a transient MCP overlay with native OpenCode configuration,
+including any host `OPENCODE_CONFIG_CONTENT` layer. Each assisted trial binds its own
+Hashmarks or Enola MCP exposure in an isolated context; the bare trial disables native
+MCP servers. The native model, provider, and authentication stay with OpenCode.
+
+Primary interpretation is assistance gain within the same runtime/model authority.
+Cross-runtime rows are descriptive only.
+
+## Measurement boundary
+
+The suites measure correctness, subject availability, MCP configuration/adoption,
+command/tool calls, MCP evidence bytes when observable, token usage when exposed,
+duration, contamination, and oracle health.
+
+The native agent event surfaces do not authoritatively expose repository file-read
+bytes, so the suites explicitly mark that archaeology metric unavailable rather than
+estimating it.
+
+Do not publish an overall winner score.

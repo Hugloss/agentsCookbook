@@ -4,12 +4,18 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
 
 const repoRoot = path.resolve(path.dirname(fs.realpathSync(__filename)), '..');
 const linkScript = path.join(repoRoot, 'scripts', 'link-opencode-local.sh');
 const checkScript = path.join(repoRoot, 'scripts', 'check-opencode-session.sh');
 const opencodeBin = process.env.OPENCODE_BIN || 'opencode';
+const {
+  exportSession,
+  extractFinalAnswer,
+  findSessionId,
+  runCommand,
+  runSession,
+} = require('./opencode-runtime.js');
 
 const FINAL_CONTRACTS = {
   'ping-pong-plan': [
@@ -164,56 +170,8 @@ function parseArgs(argv) {
   return options;
 }
 
-function runCommand(command, args, options = {}) {
-  const result = spawnSync(command, args, {
-    cwd: options.cwd || repoRoot,
-    env: { ...process.env, ...(options.env || {}) },
-    encoding: 'utf8',
-    maxBuffer: 50 * 1024 * 1024,
-  });
-
-  return {
-    status: typeof result.status === 'number' ? result.status : 1,
-    stdout: result.stdout || '',
-    stderr: result.stderr || '',
-    error: result.error || null,
-    signal: result.signal || null,
-  };
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
-}
-
-function readJsonText(raw, label) {
-  const jsonStart = raw.indexOf('{');
-  if (jsonStart === -1) {
-    throw new Error(`${label}: missing JSON object`);
-  }
-  return JSON.parse(raw.slice(jsonStart));
-}
-
-function extractFinalAnswer(exportOutput) {
-  const data = readJsonText(exportOutput, 'opencode export');
-  const messages = Array.isArray(data.messages) ? data.messages : [];
-  const assistantMessages = messages.filter((message) => message && message.info && message.info.role === 'assistant');
-  if (assistantMessages.length === 0) {
-    throw new Error('opencode export: no assistant messages found');
-  }
-
-  const finalMessage = assistantMessages[assistantMessages.length - 1];
-  const parts = Array.isArray(finalMessage.parts) ? finalMessage.parts : [];
-  const text = parts
-    .filter((part) => part && part.type === 'text' && typeof part.text === 'string')
-    .map((part) => part.text)
-    .join('\n')
-    .trim();
-
-  return { data, text };
 }
 
 function contractCheck(agentName, text) {
@@ -225,42 +183,6 @@ function contractCheck(agentName, text) {
     missing,
     startsCorrectly,
   };
-}
-
-async function findSessionId({ homeDir, repoDir, title, startedAt }) {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    const sessionList = runCommand(opencodeBin, ['session', 'list', '--format', 'json', '--max-count', '20'], {
-      cwd: repoDir,
-      env: { HOME: homeDir },
-    });
-
-    if (sessionList.status === 0) {
-      try {
-        const sessions = JSON.parse(sessionList.stdout);
-        if (Array.isArray(sessions) && sessions.length > 0) {
-          const exactMatch = sessions.find((session) => session && session.title === title && session.directory === repoDir);
-          if (exactMatch && exactMatch.id) {
-            return exactMatch.id;
-          }
-
-          const timeMatch = sessions
-            .filter((session) => session && session.directory === repoDir && typeof session.updated === 'number' && session.updated >= startedAt)
-            .sort((a, b) => b.updated - a.updated)[0];
-          if (timeMatch && timeMatch.id) {
-            return timeMatch.id;
-          }
-        }
-      } catch {
-        // Retry until the session list is readable and includes the run we just started.
-      }
-    }
-
-    if (attempt < 11) {
-      await sleep(500);
-    }
-  }
-
-  return '';
 }
 
 function selectBenchmarks(options) {
@@ -363,14 +285,21 @@ async function main() {
     ensureDir(benchDir);
 
     const title = `agents-cookbook-bench:${benchmark.suite}:${benchmark.name}:${runId}`;
-    const runStartedAt = Date.now();
     process.stdout.write(`BENCHMARK suite=${benchmark.suite} name=${benchmark.name} agent=${benchmark.expectedSubagent ? benchmark.expectedSubagent : benchmark.expectedNoSubagent ? 'none' : 'ping-pong-plan'} status=running title=${title}\n`);
 
-    const runArgs = ['run', '--dir', options.repoDir, '--agent', benchmark.suite === 'ping-pong-plan' ? 'ping-pong-plan' : 'subagent-router', '--title', title, '--format', 'json', benchmark.prompt];
-    const runResult = runCommand(opencodeBin, runArgs, {
-      cwd: options.repoDir,
-      env: { HOME: tempHome },
+    const started = runSession({
+      opencodeBin,
+      repoDir: options.repoDir,
+      agent: benchmark.suite === 'ping-pong-plan'
+        ? 'ping-pong-plan'
+        : 'subagent-router',
+      title,
+      prompt: benchmark.prompt,
+      homeDir: tempHome,
+      pure: false,
     });
+    const runStartedAt = started.startedAt;
+    const runResult = started.command;
     fs.writeFileSync(path.join(benchDir, 'run.stdout'), runResult.stdout);
     fs.writeFileSync(path.join(benchDir, 'run.stderr'), runResult.stderr);
 
@@ -379,6 +308,7 @@ async function main() {
       repoDir: options.repoDir,
       title,
       startedAt: runStartedAt,
+      pure: false,
     });
     fs.writeFileSync(path.join(benchDir, 'session-id.txt'), `${sessionId}\n`);
 
@@ -412,9 +342,12 @@ async function main() {
     let finalText = '';
     let contract = { pass: false, missing: [], startsCorrectly: false };
     if (sessionId) {
-      const exportResult = runCommand(opencodeBin, ['export', sessionId], {
-        cwd: options.repoDir,
-        env: { HOME: tempHome },
+      const exportResult = exportSession({
+        opencodeBin,
+        repoDir: options.repoDir,
+        sessionId,
+        homeDir: tempHome,
+        pure: false,
       });
       exportStatus = exportResult.status;
       exportOutput = exportResult.stdout;

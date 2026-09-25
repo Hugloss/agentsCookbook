@@ -24,17 +24,28 @@ def _toml_string(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-def _render_config(model: str | None, exposure: McpExposure | None) -> str:
+def _render_config(
+    model: str | None,
+    exposure: McpExposure | None,
+    *,
+    reasoning_effort: str | None = None,
+) -> str:
     lines: list[str] = []
     if model:
         lines.append(f"model = {_toml_string(model)}")
+    if reasoning_effort:
+        lines.append(
+            f"model_reasoning_effort = {_toml_string(reasoning_effort)}"
+        )
     if exposure is not None:
         lines.extend(
             [
                 "",
                 f"[mcp_servers.{exposure.name}]",
                 f"command = {_toml_string(exposure.command)}",
-                "args = [" + ", ".join(_toml_string(value) for value in exposure.args) + "]",
+                "args = ["
+                + ", ".join(_toml_string(value) for value in exposure.args)
+                + "]",
                 f"cwd = {_toml_string(str(exposure.cwd))}",
                 "enabled = true",
             ]
@@ -79,13 +90,19 @@ def _metrics(
     subject_server: str | None,
 ) -> dict[str, int | float | str | bool]:
     items = _completed_items(events)
-    commands = [item for item in items if item.get("type") == "command_execution"]
+    commands = [
+        item for item in items if item.get("type") == "command_execution"
+    ]
     changes = [item for item in items if item.get("type") == "file_change"]
     mcp_calls = [item for item in items if item.get("type") == "mcp_tool_call"]
     subject_calls = [
-        item for item in mcp_calls if subject_server and item.get("server") == subject_server
+        item
+        for item in mcp_calls
+        if subject_server and item.get("server") == subject_server
     ]
-    completed = [event for event in events if event.get("type") == "turn.completed"]
+    completed = [
+        event for event in events if event.get("type") == "turn.completed"
+    ]
     usage = completed[-1].get("usage", {}) if completed else {}
     if not isinstance(usage, dict):
         usage = {}
@@ -94,7 +111,11 @@ def _metrics(
         result = item.get("result")
         if result is not None:
             result_bytes += len(
-                json.dumps(result, sort_keys=True, separators=(",", ":")).encode()
+                json.dumps(
+                    result,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
             )
     return {
         "event_count": len(events),
@@ -107,10 +128,21 @@ def _metrics(
         "subject_tool_invoked": bool(subject_calls),
         "mcp_result_bytes": result_bytes,
         "input_tokens": int(usage.get("input_tokens", 0) or 0),
-        "cached_input_tokens": int(usage.get("cached_input_tokens", 0) or 0),
+        "cached_input_tokens": int(
+            usage.get("cached_input_tokens", 0) or 0
+        ),
         "output_tokens": int(usage.get("output_tokens", 0) or 0),
-        "source_read_observability": "not-authoritatively-exposed-by-codex-jsonl",
+        "source_read_observability": (
+            "not-authoritatively-exposed-by-codex-jsonl"
+        ),
     }
+
+
+_REMOTE_AUTH_VARIABLES = (
+    "OPENAI_API_KEY",
+    "CODEX_API_KEY",
+    "CODEX_ACCESS_TOKEN",
+)
 
 
 def seed_codex_auth(
@@ -123,17 +155,18 @@ def seed_codex_auth(
     if source is not None:
         source = source.expanduser().resolve()
         if not source.is_file():
-            raise FileNotFoundError(f"Codex auth seed does not exist: {source}")
+            raise FileNotFoundError(
+                f"Codex auth seed does not exist: {source}"
+            )
         shutil.copyfile(source, target)
         try:
             target.chmod(0o600)
         except OSError:
             pass
+        for name in _REMOTE_AUTH_VARIABLES:
+            context.environment[name] = ""
         mode = "seeded-auth-file"
-    elif any(
-        os.environ.get(name)
-        for name in ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
-    ):
+    elif any(os.environ.get(name) for name in _REMOTE_AUTH_VARIABLES):
         mode = "inherited-auth-environment"
     else:
         mode = "none"
@@ -145,7 +178,8 @@ def _final_message(events: list[dict[str, Any]]) -> str | None:
     messages = [
         item.get("text")
         for item in _completed_items(events)
-        if item.get("type") == "agent_message" and isinstance(item.get("text"), str)
+        if item.get("type") == "agent_message"
+        and isinstance(item.get("text"), str)
     ]
     return messages[-1] if messages else None
 
@@ -153,6 +187,7 @@ def _final_message(events: list[dict[str, Any]]) -> str | None:
 @dataclass(frozen=True)
 class CodexAgent:
     model: str | None = None
+    reasoning_effort: str | None = None
     timeout_seconds: int = 600
     max_output_bytes: int = 50_000_000
     max_tool_calls: int | None = None
@@ -162,7 +197,11 @@ class CodexAgent:
             "codex",
             "coding_agent",
             "runtime-observed",
-            {"model": self.model or "host-default", "surface": "codex-exec-json"},
+            {
+                "model": self.model or "host-default",
+                "reasoning_effort": self.reasoning_effort,
+                "surface": "codex-exec-json",
+            },
         )
 
     def _exposure(
@@ -183,22 +222,45 @@ class CodexAgent:
         exposed_subject: SubjectAdapter | None,
     ) -> Observation:
         exposure = self._exposure(context, exposed_subject)
-        config = _render_config(self.model, exposure)
+        config = _render_config(
+            self.model,
+            exposure,
+            reasoning_effort=self.reasoning_effort,
+        )
         config_path = self._config_path(context)
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(config, encoding="utf-8")
+
         observed = observe_executable(context, "codex")
         payload = dict(observed.payload)
         payload.update(
             {
-                "config_sha256": hashlib.sha256(config.encode()).hexdigest(),
-                "mcp_exposure": exposure.semantic_identity if exposure else None,
-                "auth_mode": context.environment.get(
-                    "BENCHMARK_CODEX_AUTH_MODE", "none"
+                "config_sha256": hashlib.sha256(
+                    config.encode()
+                ).hexdigest(),
+                "mcp_exposure": (
+                    exposure.semantic_identity if exposure else None
                 ),
+                "auth_mode": context.environment.get(
+                    "BENCHMARK_CODEX_AUTH_MODE",
+                    "none",
+                ),
+                "model": self.model,
+                "reasoning_effort": self.reasoning_effort,
             }
         )
-        return Observation(payload, observed.raw, observed.measurements)
+        return Observation(
+            payload,
+            observed.raw,
+            observed.measurements,
+        )
+
+    def _exec_argv(self, prompt: str) -> tuple[str, ...]:
+        argv = ["codex", "exec", "--json", "--full-auto"]
+        if self.model:
+            argv.extend(("--model", self.model))
+        argv.append(prompt)
+        return tuple(argv)
 
     def run(
         self,
@@ -209,7 +271,7 @@ class CodexAgent:
         exposure = self._exposure(context, exposed_subject)
         result = run_bounded(
             repository_root=context.workspace,
-            argv=("codex", "exec", "--json", "--full-auto", prompt),
+            argv=self._exec_argv(prompt),
             environment=context.environment,
             limits=ProcessLimits(
                 timeout_seconds=self.timeout_seconds,
@@ -222,7 +284,8 @@ class CodexAgent:
             (
                 event
                 for event in reversed(events)
-                if event.get("type") in {"turn.completed", "turn.failed", "error"}
+                if event.get("type")
+                in {"turn.completed", "turn.failed", "error"}
             ),
             None,
         )
@@ -236,25 +299,35 @@ class CodexAgent:
             "available": not result.executable_missing,
             "terminal_event": terminal,
             "terminal_complete": bool(
-                terminal and terminal.get("type") in {"turn.completed", "turn.failed"}
+                terminal
+                and terminal.get("type")
+                in {"turn.completed", "turn.failed"}
             ),
             "final_message": _final_message(events),
             "jsonl_parse_errors": parse_errors,
             "subject_server": subject_server,
             "tool_available": exposure is not None,
+            "model": self.model,
+            "reasoning_effort": self.reasoning_effort,
             "budget_violation": (
-                f"tool calls {tool_calls} exceed max_tool_calls "
-                f"{self.max_tool_calls}"
+                (
+                    f"tool calls {tool_calls} exceed max_tool_calls "
+                    f"{self.max_tool_calls}"
+                )
                 if self.max_tool_calls is not None
                 and tool_calls > self.max_tool_calls
                 else (
-                    f"agent output exceeded max_output_bytes {self.max_output_bytes}"
+                    "agent output exceeded max_output_bytes "
+                    f"{self.max_output_bytes}"
                     if result.stdout_truncated
                     else None
                 )
             ),
             "process": result.metrics(),
-            "stderr": result.stderr.decode("utf-8", errors="replace"),
+            "stderr": result.stderr.decode(
+                "utf-8",
+                errors="replace",
+            ),
         }
         return Observation(
             payload,

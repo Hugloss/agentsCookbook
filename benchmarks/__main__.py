@@ -7,6 +7,7 @@ from pathlib import Path
 
 from benchmarks.harness.report import build_report
 from benchmarks.harness.runner import run_trial
+from benchmarks.harness.selection import SelectionError, select_definitions
 from benchmarks.harness.suite import load_suite
 
 
@@ -32,8 +33,6 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="copy only this auth.json into isolated CODEX_HOME for Codex runs",
     )
-    run.add_argument("--task")
-    run.add_argument("--condition")
 
     report = sub.add_parser("report")
     report.add_argument("--suite", type=Path, required=True)
@@ -43,6 +42,12 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="report available valid receipts without requiring every frozen definition",
     )
+
+    for command in (plan, run, report):
+        command.add_argument("--task", action="append", default=[])
+        command.add_argument("--agent", action="append", default=[])
+        command.add_argument("--subject", action="append", default=[])
+        command.add_argument("--condition")
 
     return parser
 
@@ -68,8 +73,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    try:
+        rows = select_definitions(
+            suite,
+            tasks=tuple(args.task),
+            agents=tuple(args.agent),
+            subjects=tuple(args.subject),
+            condition=args.condition,
+        )
+    except SelectionError as exc:
+        raise SystemExit(str(exc)) from exc
+
     if args.command == "plan":
-        print(json.dumps(suite.trial_definitions(), indent=2, sort_keys=True))
+        print(json.dumps(rows, indent=2, sort_keys=True))
         return 0
 
     if args.command == "report":
@@ -79,22 +95,23 @@ def main(argv: list[str] | None = None) -> int:
                     suite=suite,
                     results_root=args.results,
                     require_complete=not args.allow_incomplete,
+                    selected_definitions={row["definition_id"] for row in rows},
+                    selection={
+                        "tasks": sorted(set(args.task)),
+                        "agents": sorted(set(args.agent)),
+                        "subjects": sorted(set(args.subject)),
+                        "condition": args.condition,
+                        "bare_control_included": bool(
+                            not args.condition
+                            and any(subject != "none" for subject in args.subject)
+                        ),
+                    },
                 ),
                 indent=2,
                 sort_keys=True,
             )
         )
         return 0
-
-    rows = suite.trial_definitions()
-    if args.task:
-        rows = [row for row in rows if row["task_id"] == args.task]
-    if args.condition:
-        rows = [
-            row for row in rows if row["condition_id"] == args.condition
-        ]
-    if not rows:
-        raise SystemExit("no trials matched the requested filters")
 
     results = []
     invalid = False

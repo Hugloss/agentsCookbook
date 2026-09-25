@@ -11,14 +11,25 @@ from pathlib import Path
 from unittest import mock
 
 from benchmarks.adapters.codex import (
+    CodexAgent,
     _final_message,
     _metrics,
+    _render_config,
     parse_codex_jsonl,
     seed_codex_auth,
 )
 from benchmarks.adapters.enola import EnolaSubject
 from benchmarks.adapters.hashmarks import HashmarksSubject
-from benchmarks.adapters.registry import build_agent
+from benchmarks.adapters.opencode_native import (
+    OpenCodeNativeAgent,
+    _metrics as opencode_metrics,
+    _native_environment as opencode_native_environment,
+    _observed_model as opencode_observed_model,
+)
+from benchmarks.adapters.registry import (
+    AdapterConfigurationError,
+    build_agent,
+)
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.model import (
@@ -30,6 +41,7 @@ from benchmarks.harness.mutation import apply_mutation
 from benchmarks.harness.receipt import is_complete_receipt
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
+from benchmarks.harness.selection import SelectionError, select_definitions
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.suite import SuiteDefinition, SuiteError, load_suite
 from benchmarks.harness.workspace import isolated_environment, snapshot
@@ -37,8 +49,13 @@ from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
 PILOT = Path("benchmarks/suites/repository-intelligence/pilot-v1")
+MATRIX_V2 = Path(
+    "benchmarks/suites/repository-intelligence/agent-matrix-v2"
+)
 PINNED_COMMIT = "0841a8822f417b8fd03af61c03779df8f1cdc941"
 PINNED_TREE = "65a32888329e308615647dda194f0e36c2afe2ac"
+MATRIX_V2_COMMIT = "6ce8b0d9230dd9bc5369ddf495ad9404766fbbaf"
+MATRIX_V2_TREE = "1e253d251f8e0a874aeca0b05358b36253a714cc"
 
 
 class FakeSubject:
@@ -130,6 +147,58 @@ class PilotExecutionTests(unittest.TestCase):
             {"bare-codex", "hashmarks-codex", "enola-codex"},
         )
         self.assertTrue(all(len(row["definition_id"]) == 64 for row in rows))
+
+    def test_agent_matrix_v2_freezes_eighteen_definitions(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        self.assertEqual(len(suite.tasks), 3)
+        self.assertEqual(len(suite.subjects), 3)
+        self.assertEqual(len(suite.agents), 2)
+        rows = suite.trial_definitions()
+        self.assertEqual(len(rows), 18)
+        self.assertEqual(len({row["definition_id"] for row in rows}), 18)
+        self.assertEqual(
+            {row["condition_id"] for row in rows},
+            {
+                "bare-sol",
+                "hashmarks-sol",
+                "enola-sol",
+                "bare-opencode-native",
+                "hashmarks-opencode-native",
+                "enola-opencode-native",
+            },
+        )
+        sol = suite.agents["codex-sol"]["configuration"]
+        native = suite.agents["opencode-native"]["configuration"]
+        self.assertEqual(sol["model"], "gpt-5.6-sol")
+        self.assertEqual(sol["reasoning_effort"], "high")
+        self.assertNotIn("model", native)
+        self.assertNotIn("provider", native)
+        self.assertNotIn("api_key", native)
+        self.assertEqual(
+            suite.agents["opencode-native"]["adapter"],
+            "opencode-native",
+        )
+
+    def test_matrix_selection_includes_one_matching_bare_control(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        selected = select_definitions(
+            suite, agents=("opencode-native",), subjects=("hashmarks",)
+        )
+        self.assertEqual(len(selected), 6)
+        self.assertEqual(
+            {row["condition_id"] for row in selected},
+            {"bare-opencode-native", "hashmarks-opencode-native"},
+        )
+        both = select_definitions(
+            suite, agents=("codex-sol",), subjects=("hashmarks", "enola")
+        )
+        self.assertEqual(len(both), 9)
+        with self.assertRaises(SelectionError):
+            select_definitions(suite, agents=("unknown",))
+        with self.assertRaises(SelectionError):
+            select_definitions(
+                suite, agents=("codex-sol",), condition="bare-sol"
+            )
 
     def test_suite_loader_enforces_repo_owned_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -238,6 +307,192 @@ class PilotExecutionTests(unittest.TestCase):
             agent.timeout_seconds,
             task["budgets"]["timeout_seconds"],
         )
+
+    def test_codex_adapter_rejects_local_model_provider_config(self) -> None:
+        definition = {
+            "id": "forbidden",
+            "adapter": "codex",
+            "identity": {"id": "forbidden", "version": "1"},
+            "capabilities": [],
+            "configuration": {
+                "model": "gemma4:12b",
+                "local_provider": "ollama",
+            },
+        }
+        with self.assertRaises(AdapterConfigurationError):
+            build_agent(
+                definition,
+                budgets={"timeout_seconds": 60},
+            )
+
+    def test_codex_sol_freezes_reasoning_effort(self) -> None:
+        config = _render_config(
+            "gpt-5.6-sol",
+            None,
+            reasoning_effort="high",
+        )
+        self.assertIn('model = "gpt-5.6-sol"', config)
+        self.assertIn('model_reasoning_effort = "high"', config)
+        self.assertNotIn("oss_provider", config)
+
+    def test_opencode_native_adapter_owns_no_model_provider_config(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        task = suite.tasks["locate-receipt-completion-owner"]
+        agent = build_agent(
+            suite.agents["opencode-native"],
+            budgets=task["budgets"],
+        )
+        self.assertIsInstance(agent, OpenCodeNativeAgent)
+
+        forbidden = json.loads(
+            json.dumps(suite.agents["opencode-native"])
+        )
+        forbidden["configuration"]["model"] = "liteLLM/gemma4"
+        with self.assertRaises(AdapterConfigurationError):
+            build_agent(forbidden, budgets=task["budgets"])
+
+    def test_opencode_native_environment_preserves_native_home(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            context = TrialContext(
+                workspace,
+                control,
+                isolated_environment(control),
+            )
+            environment = opencode_native_environment(context)
+            self.assertNotIn("HOME", environment)
+            self.assertNotIn("XDG_CONFIG_HOME", environment)
+            self.assertNotIn("XDG_DATA_HOME", environment)
+            self.assertEqual(
+                environment["TMPDIR"],
+                context.environment["TMPDIR"],
+            )
+            self.assertNotIn("OPENCODE_CONFIG_CONTENT", environment)
+
+    def test_opencode_prepare_uses_shared_runtime_inspection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            context = TrialContext(
+                workspace,
+                control,
+                isolated_environment(control),
+            )
+            executable = Observation(
+                {
+                    "available": True,
+                    "version": "opencode 1",
+                    "executable_sha256": "a" * 64,
+                },
+                "opencode 1",
+            )
+            inspection = {
+                "model": "liteLLM/gemma4",
+                "provider": "liteLLM",
+                "config_sha256": "b" * 64,
+                "mcp_shape": "flat",
+                "mcp_servers": [
+                    {"name": "hashmarks", "enabled": True},
+                    {"name": "enola", "enabled": True},
+                ],
+            }
+            runtime_result = mock.Mock()
+            runtime_result.metrics.return_value = {"return_code": 0}
+            runtime_result.stderr = b""
+            runtime_result.stdout = b"{}"
+            with (
+                mock.patch(
+                    "benchmarks.adapters.opencode_native.observe_executable",
+                    return_value=executable,
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call",
+                    return_value=(
+                        {
+                            "status": "completed",
+                            "inspection": inspection,
+                            "effective_inspection": inspection,
+                            "selected_server": None,
+                            "overlay_identity": {"shape": "flat"},
+                        },
+                        runtime_result,
+                    ),
+                ) as runtime_call,
+            ):
+                prepared = OpenCodeNativeAgent().prepare(context, None)
+
+            self.assertTrue(prepared.payload["available"])
+            self.assertEqual(prepared.payload["model"], "liteLLM/gemma4")
+            self.assertEqual(
+                prepared.payload["native_config_sha256"],
+                "b" * 64,
+            )
+            runtime_call.assert_called_once()
+            self.assertEqual(
+                runtime_call.call_args.kwargs["args"],
+                (
+                    "inspect-config",
+                    "--repo",
+                    str(workspace),
+                    "--benchmark-exposure-file",
+                    str(control / "opencode-benchmark-exposure.json"),
+                ),
+            )
+
+    def test_opencode_export_observes_native_model_and_mcp_adoption(self) -> None:
+        exported = {
+            "messages": [
+                {
+                    "info": {
+                        "role": "assistant",
+                        "providerID": "liteLLM",
+                        "modelID": "gemma4",
+                        "tokens": {
+                            "input": 100,
+                            "output": 20,
+                            "cache": {"read": 5},
+                        },
+                    },
+                    "parts": [
+                        {
+                            "type": "tool",
+                            "tool": "hashmarks_find",
+                            "state": {"output": "evidence"},
+                        },
+                        {
+                            "type": "tool",
+                            "tool": "bash",
+                            "state": {"output": ""},
+                        },
+                        {
+                            "type": "text",
+                            "text": '{"path":"x","symbol":"y"}',
+                        },
+                    ],
+                }
+            ]
+        }
+        model, provider = opencode_observed_model(exported)
+        self.assertEqual(model, "liteLLM/gemma4")
+        self.assertEqual(provider, "liteLLM")
+        metrics = opencode_metrics(
+            exported,
+            mcp_servers=("hashmarks", "enola"),
+            selected_server="hashmarks",
+        )
+        self.assertEqual(metrics["mcp_calls"], 1)
+        self.assertEqual(metrics["subject_mcp_calls"], 1)
+        self.assertTrue(metrics["subject_tool_invoked"])
+        self.assertEqual(metrics["command_calls"], 1)
+        self.assertEqual(metrics["input_tokens"], 100)
+        self.assertEqual(metrics["output_tokens"], 20)
+        self.assertEqual(metrics["cached_input_tokens"], 5)
+        self.assertEqual(metrics["mcp_result_bytes"], len("evidence".encode()))
 
     def test_codex_jsonl_separates_tool_availability_from_adoption(self) -> None:
         raw = b"\n".join(
@@ -427,6 +682,217 @@ class PilotExecutionTests(unittest.TestCase):
                 0,
                 passed.stderr.decode("utf-8", errors="replace"),
             )
+
+    def test_agent_matrix_v2_mutation_is_exact_and_oracle_discriminates(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        task = suite.tasks["repair-partial-receipt-regression"]
+        self.assertEqual(task["repository"]["commit"], MATRIX_V2_COMMIT)
+        self.assertEqual(task["repository"]["tree"], MATRIX_V2_TREE)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            materialize_repository(
+                repository=task["repository"],
+                destination=workspace,
+                cache_root=root / "cache",
+                local_source=Path("."),
+            )
+            control = root / "control"
+            context = TrialContext(
+                workspace,
+                control,
+                isolated_environment(control),
+            )
+            mutation = apply_mutation(
+                context,
+                suite_root=suite.root,
+                mutation=task["mutation"],
+            )
+            self.assertEqual(
+                mutation.payload["changed_paths"],
+                ["benchmarks/harness/receipt.py"],
+            )
+
+            environment = dict(context.environment)
+            environment["PYTHONPATH"] = str(workspace)
+            failed = run_bounded(
+                repository_root=workspace,
+                argv=(
+                    sys.executable,
+                    "-m",
+                    "unittest",
+                    "benchmarks.tests.test_foundation.FoundationTests.test_partial_or_corrupt_receipt_is_not_complete",
+                ),
+                environment=environment,
+                limits=ProcessLimits(timeout_seconds=60),
+            )
+            self.assertNotEqual(failed.return_code, 0)
+
+            subprocess.run(
+                (
+                    "git",
+                    "checkout",
+                    MATRIX_V2_COMMIT,
+                    "--",
+                    "benchmarks/harness/receipt.py",
+                ),
+                cwd=workspace,
+                check=True,
+                capture_output=True,
+            )
+            passed = run_bounded(
+                repository_root=workspace,
+                argv=(
+                    sys.executable,
+                    "-m",
+                    "unittest",
+                    "benchmarks.tests.test_foundation.FoundationTests.test_partial_or_corrupt_receipt_is_not_complete",
+                ),
+                environment=environment,
+                limits=ProcessLimits(timeout_seconds=60),
+            )
+            self.assertEqual(
+                passed.return_code,
+                0,
+                passed.stderr.decode("utf-8", errors="replace"),
+            )
+
+    def test_report_keeps_cross_agent_rows_descriptive(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        task_id = "locate-receipt-completion-owner"
+        rows = {
+            (row["task_id"], row["condition_id"]): row
+            for row in suite.trial_definitions()
+        }
+        receipts = []
+        for condition_id, status, duration in (
+            ("bare-sol", "PASS", 100.0),
+            ("bare-opencode-native", "FAIL", 250.0),
+        ):
+            row = rows[(task_id, condition_id)]
+            condition = next(
+                value
+                for value in suite.experiment["conditions"]
+                if value["id"] == condition_id
+            )
+            receipts.append(
+                {
+                    "definition_id": row["definition_id"],
+                    "trial_id": (
+                        "a" * 64
+                        if condition_id == "bare-sol"
+                        else "b" * 64
+                    ),
+                    "experiment": suite.experiment,
+                    "task": suite.tasks[task_id],
+                    "condition": suite.expanded_condition(condition),
+                    "status": status,
+                    "authority": {"subject": {"available": True}},
+                    "execution": {"trial_index": 0, "seed": 5201},
+                    "measurements": {
+                        "agent": {
+                            "duration_ms": duration,
+                            "tool_calls": 1,
+                            "command_calls": 1,
+                            "mcp_calls": 0,
+                            "subject_mcp_calls": 0,
+                            "mcp_result_bytes": 0,
+                            "input_tokens": 10,
+                            "cached_input_tokens": 0,
+                            "output_tokens": 2,
+                            "subject_tool_invoked": False,
+                        }
+                    },
+                }
+            )
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+                require_complete=False,
+            )
+
+        self.assertEqual(
+            set(report["agent_profiles"]),
+            {"codex-sol", "opencode-native"},
+        )
+        observations = report["cross_agent_observations"]
+        self.assertEqual(len(observations), 1)
+        self.assertEqual(
+            set(observations[0]["agents"]),
+            {"codex-sol", "opencode-native"},
+        )
+        self.assertNotIn("winner", observations[0])
+        self.assertTrue(
+            report["authority"]["cross_agent_rows_are_descriptive"]
+        )
+
+    def test_report_selection_rejects_mixed_native_runtime_authority(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        task_id = "locate-receipt-completion-owner"
+        definitions = {
+            row["condition_id"]: row
+            for row in suite.trial_definitions()
+            if row["task_id"] == task_id
+        }
+        receipts = []
+        for condition_id, status, model, config_hash in (
+            ("bare-opencode-native", "PASS", "liteLLM/gemma4", "a" * 64),
+            ("hashmarks-opencode-native", "INVALID", "liteLLM/other", "b" * 64),
+        ):
+            condition = next(
+                row for row in suite.experiment["conditions"]
+                if row["id"] == condition_id
+            )
+            receipts.append({
+                "definition_id": definitions[condition_id]["definition_id"],
+                "trial_id": ("c" if status == "PASS" else "d") * 64,
+                "experiment": suite.experiment,
+                "task": suite.tasks[task_id],
+                "condition": suite.expanded_condition(condition),
+                "status": status,
+                "authority": {
+                    "subject": {"available": True},
+                    "agent": {"observed": {
+                        "version": "opencode 1",
+                        "executable_sha256": "e" * 64,
+                        "auth_mode": "native-opencode",
+                        "model": model,
+                        "provider": "liteLLM",
+                        "native_config_sha256": config_hash,
+                    }},
+                },
+                "execution": {"trial_index": 0, "seed": 5201},
+                "measurements": {"agent": {}},
+            })
+        with mock.patch(
+            "benchmarks.harness.report._receipts", return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+                require_complete=False,
+                selected_definitions={
+                    definitions["bare-opencode-native"]["definition_id"]
+                },
+                selection={"agents": ["opencode-native"], "subjects": ["none"]},
+            )
+            self.assertEqual(report["observed_trials"], 1)
+            self.assertEqual(report["selection"]["subjects"], ["none"])
+            with self.assertRaisesRegex(ReportError, "mixed observed runtime"):
+                build_report(
+                    suite=suite,
+                    results_root=Path("/unused"),
+                    require_complete=False,
+                    selected_definitions={
+                        row["definition_id"] for row in definitions.values()
+                    },
+                )
 
     def test_trial_lifecycle_publishes_and_reuses_verified_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import shutil
 from pathlib import Path
+from typing import Mapping
 
 from benchmarks.harness.model import Observation, TrialContext
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
@@ -23,12 +24,17 @@ def observe_executable(
     *,
     version_args: tuple[str, ...] = ("--version",),
     timeout_seconds: float = 30.0,
+    environment: Mapping[str, str] | None = None,
 ) -> Observation:
     resolved = shutil.which(command)
     result = run_bounded(
         repository_root=context.workspace,
         argv=(command, *version_args),
-        environment=context.environment,
+        environment=(
+            dict(environment)
+            if environment is not None
+            else context.environment
+        ),
         limits=ProcessLimits(
             timeout_seconds=timeout_seconds,
             max_stdout_bytes=200_000,
@@ -54,10 +60,16 @@ def observe_executable(
         {
             "available": available,
             "command": command,
-            "version": result.stdout.decode("utf-8", errors="replace").strip(),
+            "version": result.stdout.decode(
+                "utf-8",
+                errors="replace",
+            ).strip(),
             "executable_sha256": executable_sha256,
             "process": result.metrics(),
-            "stderr": result.stderr.decode("utf-8", errors="replace"),
+            "stderr": result.stderr.decode(
+                "utf-8",
+                errors="replace",
+            ),
         },
         result.stdout.decode("utf-8", errors="replace"),
         {"duration_ms": result.elapsed_ms},
