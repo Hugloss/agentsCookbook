@@ -305,10 +305,16 @@ function resolveNativeConfig({
     ['--pure', 'debug', 'config'],
     { cwd: repoDir, env },
   );
+  const commandEvidence = {
+    status: command.status,
+    stderr: command.stderr,
+    error: command.error,
+    signal: command.signal,
+  };
   if (command.status !== 0) {
     return {
       status: 'failed',
-      command,
+      command: commandEvidence,
       inspection: null,
     };
   }
@@ -319,13 +325,13 @@ function resolveNativeConfig({
     );
     return {
       status: 'completed',
-      command,
+      command: commandEvidence,
       inspection: inspectConfig(config),
     };
   } catch (error) {
     return {
       status: 'failed',
-      command,
+      command: commandEvidence,
       inspection: null,
       parse_error: String(error.message || error),
     };
