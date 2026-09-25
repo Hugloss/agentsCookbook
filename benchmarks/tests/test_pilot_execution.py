@@ -602,6 +602,8 @@ class PilotExecutionTests(unittest.TestCase):
                                     "native Hashmarks workspace resolves outside "
                                     "trial workspace: /outside"
                                 ),
+                                "reason_code":
+                                    "hashmarks-workspace-outside-trial",
                             },
                             "overlay_identity": {
                                 "shape": "flat",
