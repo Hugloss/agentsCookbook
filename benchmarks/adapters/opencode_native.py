@@ -24,15 +24,17 @@ from benchmarks.harness.model import (
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
-_SECRET_FRAGMENTS = (
-    "apikey",
+_SECRET_KEYS = {
     "api_key",
+    "apikey",
     "authorization",
+    "cookie",
     "credential",
+    "credentials",
     "password",
     "secret",
     "token",
-)
+}
 
 
 def _parse_json_object(raw: bytes, label: str) -> dict[str, Any]:
@@ -48,7 +50,13 @@ def _parse_json_object(raw: bytes, label: str) -> dict[str, Any]:
 
 def _sanitize(value: Any, *, key: str = "") -> Any:
     normalized = key.lower().replace("-", "_")
-    if any(fragment in normalized for fragment in _SECRET_FRAGMENTS):
+    if (
+        normalized in _SECRET_KEYS
+        or normalized.endswith("_api_key")
+        or normalized.endswith("_token")
+        or normalized.endswith("_secret")
+        or normalized.endswith("_password")
+    ):
         return "<redacted>"
     if isinstance(value, dict):
         return {
@@ -117,8 +125,9 @@ def _native_environment(
     return environment
 
 
-def _tool_overlay(
+def _runtime_overlay(
     *,
+    config: dict[str, Any],
     server_names: tuple[str, ...],
     selected_server: str | None,
 ) -> dict[str, Any]:
@@ -126,7 +135,24 @@ def _tool_overlay(
         f"{name}_*": name == selected_server
         for name in sorted(server_names)
     }
+    native_mcp = config.get("mcp")
+    if isinstance(native_mcp, dict) and isinstance(
+        native_mcp.get("servers"),
+        dict,
+    ):
+        mcp_overlay: dict[str, Any] = {
+            "servers": {
+                name: {"disabled": name != selected_server}
+                for name in sorted(server_names)
+            }
+        }
+    else:
+        mcp_overlay = {
+            name: {"enabled": name == selected_server}
+            for name in sorted(server_names)
+        }
     return {
+        "mcp": mcp_overlay,
         "tools": tools,
         "agent": {
             "build": {
@@ -384,7 +410,8 @@ class OpenCodeNativeAgent:
             and selected_config.get("enabled", True) is not False
             and selected_config.get("disabled", False) is not True
         )
-        overlay = _tool_overlay(
+        overlay = _runtime_overlay(
+            config=config,
             server_names=tuple(sorted(servers)),
             selected_server=selected,
         )
@@ -657,6 +684,17 @@ class OpenCodeNativeAgent:
         )
         final = _final_message(exported) if exported else None
         tool_calls = int(metrics["tool_calls"])
+        model_mismatch = (
+            observed_model is not None
+            and observed_model != evidence.get("model")
+        )
+        if observed_model is None and export_error is None:
+            export_error = "OpenCode export did not identify the executed model"
+        elif model_mismatch:
+            export_error = (
+                "OpenCode executed model differs from admitted native config: "
+                f"{observed_model} != {evidence.get('model')}"
+            )
         complete = (
             result.return_code == 0
             and not result.timed_out
