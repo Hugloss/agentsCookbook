@@ -14,42 +14,38 @@ contamination, independent grading, receipts, and reporting.
 one exact agentsCookbook commit/tree and compares bare, Hashmarks, and Enola using the
 Codex host-default model.
 
-It remains immutable historical evidence. Do not retrofit explicit model identity into
-v1.
+It remains immutable historical evidence.
 
 ## agent-matrix-v2
 
-`agent-matrix-v2/` freezes a new experiment version on the merged v1 implementation
-bytes. It keeps the same three task families and expands to two explicit model/provider
-conditions through the same Codex execution runtime:
+`agent-matrix-v2/` freezes a new experiment version on the merged pilot
+implementation bytes. It keeps the same three task families and expands to two agent
+runtime authorities:
 
-- `gpt-5.6-sol` with high reasoning effort;
-- local Ollama `gemma4:12b`.
+- Codex with explicit `gpt-5.6-sol` / high reasoning;
+- native OpenCode using the host's already configured provider/model/auth.
 
-Each model runs bare, with Hashmarks, and with Enola, producing 18 frozen definitions.
+Each runtime runs bare, with Hashmarks, and with Enola, producing 18 frozen definitions.
 
-The main comparison is assistance gain **within one model/runtime**:
+**Gemma is never routed through Codex.** When native OpenCode is configured to Gemma,
+the benchmark uses that native setup and observes/binds what actually ran. No
+OpenCode model/provider configuration is stored in this repository.
 
-- bare → Hashmarks;
-- bare → Enola.
+The benchmark adds only a transient MCP tool-gating overlay to native OpenCode so bare,
+Hashmarks, and Enola remain controlled conditions. Native MCP server definitions remain
+owned by the user's OpenCode configuration.
 
-Cross-model rows are descriptive only. They are useful for asking whether repository
-intelligence helps a smaller local model differently from a frontier hosted model, but
-hardware, inference backend, model architecture, and model size remain confounders.
-
-The local-model admission path records Ollama executable identity and a digest of the
-exact installed model descriptor. Missing local infrastructure is `INCOMPLETE`, not
-`FAIL`.
+Primary interpretation is assistance gain within the same runtime/model authority.
+Cross-runtime rows are descriptive only.
 
 ## Measurement boundary
 
 The suites measure correctness, subject availability, MCP configuration/adoption,
-command/tool calls, MCP evidence bytes, token usage, duration, contamination, and
-oracle health.
+command/tool calls, MCP evidence bytes when observable, token usage when exposed,
+duration, contamination, and oracle health.
 
-Codex JSONL does not expose authoritative repository file-read bytes, so these suites
-explicitly mark that archaeology metric unavailable rather than estimating it.
+The native agent event surfaces do not authoritatively expose repository file-read
+bytes, so the suites explicitly mark that archaeology metric unavailable rather than
+estimating it.
 
-Do not publish an overall winner score. Report per-task/per-condition evidence,
-paired assistance deltas over the same-model bare condition, and descriptive
-cross-agent observations.
+Do not publish an overall winner score.
