@@ -351,6 +351,7 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
       workspace,
       effective_cwd: workspace,
       reason: null,
+      reason_code: null,
     };
   }
 
@@ -363,6 +364,7 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
       workspace,
       effective_cwd: null,
       reason: `native MCP server ${selectedSubject} is not configured`,
+      reason_code: 'native-server-missing',
     };
   }
   if (server.type !== 'local' || !Array.isArray(server.command)) {
@@ -373,6 +375,7 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
       workspace,
       effective_cwd: null,
       reason: `native MCP server ${selectedSubject} is not a local command`,
+      reason_code: 'native-server-not-local',
     };
   }
 
@@ -394,6 +397,7 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
         workspace,
         effective_cwd: effectiveCwd,
         reason: 'native Hashmarks MCP has no explicit --workspace binding',
+        reason_code: 'hashmarks-workspace-unverifiable',
       };
     }
     return {
@@ -406,6 +410,9 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
       reason: bound === workspace
         ? null
         : `native Hashmarks workspace resolves outside trial workspace: ${bound}`,
+      reason_code: bound === workspace
+        ? null
+        : 'hashmarks-workspace-outside-trial',
     };
   }
 
@@ -421,6 +428,7 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
           'native Enola MCP passes repository/config arguments whose '
           + 'workspace binding cannot be proven without changing the definition'
         ),
+        reason_code: 'enola-workspace-unverifiable',
       };
     }
     return {
@@ -432,6 +440,9 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
       reason: effectiveCwd === workspace
         ? null
         : `native Enola MCP cwd resolves outside trial workspace: ${effectiveCwd}`,
+      reason_code: effectiveCwd === workspace
+        ? null
+        : 'enola-workspace-outside-trial',
     };
   }
 
@@ -442,6 +453,7 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
     workspace,
     effective_cwd: effectiveCwd,
     reason: `no workspace-binding verifier for native MCP subject ${selectedSubject}`,
+    reason_code: 'workspace-verifier-unavailable',
   };
 }
 
