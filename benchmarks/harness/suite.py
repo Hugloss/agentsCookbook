@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from benchmarks.harness.identity import definition_id
+from benchmarks.harness.schema_validation import (
+    SchemaValidationError,
+    validate_instance,
+)
 
 
 class SuiteError(ValueError):
@@ -26,6 +30,24 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _validate_definition(
+    value: dict[str, Any],
+    *,
+    schema_name: str,
+    source: Path,
+) -> None:
+    schema_path = (
+        Path(__file__).resolve().parents[1]
+        / "schema"
+        / f"{schema_name}.schema.json"
+    )
+    schema = _load_json(schema_path)
+    try:
+        validate_instance(value, schema)
+    except SchemaValidationError as exc:
+        raise SuiteError(f"{source}: schema validation failed: {exc}") from exc
 
 
 @dataclass(frozen=True)
@@ -73,11 +95,18 @@ class SuiteDefinition:
 
 def load_suite(root: Path) -> SuiteDefinition:
     root = root.resolve()
-    experiment = _load_json(root / "experiment.json")
+    experiment_path = root / "experiment.json"
+    experiment = _load_json(experiment_path)
+    _validate_definition(
+        experiment,
+        schema_name="experiment",
+        source=experiment_path,
+    )
 
     tasks: dict[str, dict[str, Any]] = {}
     for path in sorted((root / "tasks").glob("*.json")):
         value = _load_json(path)
+        _validate_definition(value, schema_name="task", source=path)
         task_id = str(value.get("id", ""))
         if not task_id or task_id in tasks:
             raise SuiteError(f"invalid or duplicate task id in {path}")
@@ -86,6 +115,7 @@ def load_suite(root: Path) -> SuiteDefinition:
     subjects: dict[str, dict[str, Any]] = {}
     for path in sorted((root / "subjects").glob("*.json")):
         value = _load_json(path)
+        _validate_definition(value, schema_name="subject", source=path)
         subject_id = str(value.get("id", ""))
         if not subject_id or subject_id in subjects:
             raise SuiteError(f"invalid or duplicate subject id in {path}")
@@ -94,6 +124,7 @@ def load_suite(root: Path) -> SuiteDefinition:
     agents: dict[str, dict[str, Any]] = {}
     for path in sorted((root / "agents").glob("*.json")):
         value = _load_json(path)
+        _validate_definition(value, schema_name="agent", source=path)
         agent_id = str(value.get("id", ""))
         if not agent_id or agent_id in agents:
             raise SuiteError(f"invalid or duplicate agent id in {path}")
