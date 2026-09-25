@@ -166,6 +166,14 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertIsNone(sol["local_provider"])
         self.assertEqual(local["model"], "gemma4:12b")
         self.assertEqual(local["local_provider"], "ollama")
+        self.assertEqual(
+            local["local_base_url"],
+            "http://127.0.0.1:11434/v1",
+        )
+        self.assertEqual(
+            local["ollama_host"],
+            "http://127.0.0.1:11434",
+        )
 
     def test_suite_loader_enforces_repo_owned_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -279,6 +287,8 @@ class PilotExecutionTests(unittest.TestCase):
         agent = CodexAgent(
             model="gemma4:12b",
             local_provider="ollama",
+            local_base_url="http://127.0.0.1:11434/v1",
+            ollama_host="http://127.0.0.1:11434",
         )
         self.assertEqual(
             agent._exec_argv("task"),
@@ -323,6 +333,8 @@ class PilotExecutionTests(unittest.TestCase):
             agent = CodexAgent(
                 model="gemma4:12b",
                 local_provider="ollama",
+                local_base_url="http://127.0.0.1:11434/v1",
+                ollama_host="http://127.0.0.1:11434",
             )
             available = Observation(
                 {
@@ -357,6 +369,18 @@ class PilotExecutionTests(unittest.TestCase):
             self.assertEqual(
                 prepared.payload["local_provider"],
                 "ollama",
+            )
+            self.assertEqual(
+                context.environment["CODEX_OSS_BASE_URL"],
+                "http://127.0.0.1:11434/v1",
+            )
+            self.assertEqual(
+                context.environment["OLLAMA_HOST"],
+                "http://127.0.0.1:11434",
+            )
+            self.assertEqual(
+                context.environment["NO_PROXY"],
+                "127.0.0.1,localhost",
             )
             local = prepared.payload["local_provider_observation"]
             self.assertEqual(local["model"], "gemma4:12b")
