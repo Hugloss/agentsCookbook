@@ -362,7 +362,7 @@ class PilotExecutionTests(unittest.TestCase):
             self.assertEqual(local["model"], "gemma4:12b")
             self.assertEqual(
                 local["model_descriptor_sha256"],
-                "7d04c864793ed7d22553c1dd84eec1110f87b237cf9a19af8b793295e4ceebbf",
+                "e991fcf2ebe8ced869f06d59932861a09f0d69e0079c073c26d648aee84d57f5",
             )
             self.assertEqual(observed.call_count, 2)
             bounded.assert_called_once()
@@ -584,6 +584,155 @@ class PilotExecutionTests(unittest.TestCase):
                 0,
                 passed.stderr.decode("utf-8", errors="replace"),
             )
+
+    def test_agent_matrix_v2_mutation_is_exact_and_oracle_discriminates(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        task = suite.tasks["repair-partial-receipt-regression"]
+        self.assertEqual(task["repository"]["commit"], MATRIX_V2_COMMIT)
+        self.assertEqual(task["repository"]["tree"], MATRIX_V2_TREE)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            materialize_repository(
+                repository=task["repository"],
+                destination=workspace,
+                cache_root=root / "cache",
+                local_source=Path("."),
+            )
+            control = root / "control"
+            context = TrialContext(
+                workspace,
+                control,
+                isolated_environment(control),
+            )
+            mutation = apply_mutation(
+                context,
+                suite_root=suite.root,
+                mutation=task["mutation"],
+            )
+            self.assertEqual(
+                mutation.payload["changed_paths"],
+                ["benchmarks/harness/receipt.py"],
+            )
+
+            environment = dict(context.environment)
+            environment["PYTHONPATH"] = str(workspace)
+            failed = run_bounded(
+                repository_root=workspace,
+                argv=(
+                    sys.executable,
+                    "-m",
+                    "unittest",
+                    "benchmarks.tests.test_foundation.FoundationTests.test_partial_or_corrupt_receipt_is_not_complete",
+                ),
+                environment=environment,
+                limits=ProcessLimits(timeout_seconds=60),
+            )
+            self.assertNotEqual(failed.return_code, 0)
+
+            subprocess.run(
+                (
+                    "git",
+                    "checkout",
+                    MATRIX_V2_COMMIT,
+                    "--",
+                    "benchmarks/harness/receipt.py",
+                ),
+                cwd=workspace,
+                check=True,
+                capture_output=True,
+            )
+            passed = run_bounded(
+                repository_root=workspace,
+                argv=(
+                    sys.executable,
+                    "-m",
+                    "unittest",
+                    "benchmarks.tests.test_foundation.FoundationTests.test_partial_or_corrupt_receipt_is_not_complete",
+                ),
+                environment=environment,
+                limits=ProcessLimits(timeout_seconds=60),
+            )
+            self.assertEqual(
+                passed.return_code,
+                0,
+                passed.stderr.decode("utf-8", errors="replace"),
+            )
+
+    def test_report_keeps_cross_agent_rows_descriptive(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        task_id = "locate-receipt-completion-owner"
+        rows = {
+            (row["task_id"], row["condition_id"]): row
+            for row in suite.trial_definitions()
+        }
+        receipts = []
+        for condition_id, status, duration in (
+            ("bare-sol", "PASS", 100.0),
+            ("bare-gemma4-12b", "FAIL", 250.0),
+        ):
+            row = rows[(task_id, condition_id)]
+            condition = next(
+                value
+                for value in suite.experiment["conditions"]
+                if value["id"] == condition_id
+            )
+            receipts.append(
+                {
+                    "definition_id": row["definition_id"],
+                    "trial_id": (
+                        "a" * 64
+                        if condition_id == "bare-sol"
+                        else "b" * 64
+                    ),
+                    "experiment": suite.experiment,
+                    "task": suite.tasks[task_id],
+                    "condition": suite.expanded_condition(condition),
+                    "status": status,
+                    "authority": {"subject": {"available": True}},
+                    "execution": {"trial_index": 0, "seed": 5201},
+                    "measurements": {
+                        "agent": {
+                            "duration_ms": duration,
+                            "tool_calls": 1,
+                            "command_calls": 1,
+                            "mcp_calls": 0,
+                            "subject_mcp_calls": 0,
+                            "mcp_result_bytes": 0,
+                            "input_tokens": 10,
+                            "cached_input_tokens": 0,
+                            "output_tokens": 2,
+                            "subject_tool_invoked": False,
+                        }
+                    },
+                }
+            )
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+                require_complete=False,
+            )
+
+        self.assertEqual(
+            set(report["agent_profiles"]),
+            {"codex-sol", "gemma4-12b-ollama"},
+        )
+        observations = report["cross_agent_observations"]
+        self.assertEqual(len(observations), 1)
+        self.assertEqual(
+            set(observations[0]["agents"]),
+            {"codex-sol", "gemma4-12b-ollama"},
+        )
+        self.assertNotIn("winner", observations[0])
+        self.assertTrue(
+            report["authority"]["cross_agent_rows_are_descriptive"]
+        )
 
     def test_trial_lifecycle_publishes_and_reuses_verified_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
