@@ -12,10 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from benchmarks.adapters.codex import (
-    disable_codex_remote_auth,
-    seed_codex_auth,
-)
+from benchmarks.adapters.codex import seed_codex_auth
 from benchmarks.adapters.registry import build_agent, build_oracle, build_subject
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.contamination import classify_contamination
@@ -88,7 +85,9 @@ def harness_identity(root: Path) -> dict[str, Any]:
 
 def runtime_environment_identity() -> dict[str, Any]:
     return {
-        "isolation_contract": "home-tmp-xdg-codex-home-v1",
+        "isolation_contract": (
+            "codex-isolated-or-opencode-native-config-v2"
+        ),
         "system": platform.system(),
         "machine": platform.machine(),
         "python": platform.python_version(),
@@ -118,11 +117,12 @@ def _agent_authority(agent, prepared: Observation) -> dict[str, Any]:
             "auth_mode": prepared.payload.get("auth_mode"),
             "model": prepared.payload.get("model"),
             "reasoning_effort": prepared.payload.get("reasoning_effort"),
-            "local_provider": prepared.payload.get("local_provider"),
-            "local_base_url": prepared.payload.get("local_base_url"),
-            "ollama_host": prepared.payload.get("ollama_host"),
-            "local_provider_observation": prepared.payload.get(
-                "local_provider_observation"
+            "provider": prepared.payload.get("provider"),
+            "native_config_sha256": prepared.payload.get(
+                "native_config_sha256"
+            ),
+            "native_mcp_servers": prepared.payload.get(
+                "native_mcp_servers"
             ),
         },
     }
@@ -310,14 +310,12 @@ def run_trial(
         auth_mode = (
             seed_codex_auth(context, codex_auth)
             if agent_definition["adapter"] == "codex"
-            and agent.requires_remote_auth()
-            else (
-                disable_codex_remote_auth(context)
-                if agent_definition["adapter"] == "codex"
-                else "not-applicable"
-            )
+            else "native-opencode"
+            if agent_definition["adapter"] == "opencode-native"
+            else "not-applicable"
         )
-        context.environment["BENCHMARK_CODEX_AUTH_MODE"] = auth_mode
+        if agent_definition["adapter"] == "codex":
+            context.environment["BENCHMARK_CODEX_AUTH_MODE"] = auth_mode
         oracle = build_oracle(
             task["oracle"],
             timeout_seconds=int(task["budgets"]["timeout_seconds"]),
