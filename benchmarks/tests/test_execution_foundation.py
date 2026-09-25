@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -66,6 +67,20 @@ class ExecutionFoundationTests(unittest.TestCase):
                 self.assertEqual(evidence["size"], len(str(external).encode()))
             finally:
                 external.unlink(missing_ok=True)
+
+    def test_snapshot_does_not_follow_symlinked_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            external = root.parent / (root.name + "-external-dir")
+            external.mkdir()
+            (external / "secret").write_text("secret")
+            try:
+                os.symlink(external, root / "dirlink", target_is_directory=True)
+                evidence = snapshot(root)
+                self.assertEqual(evidence["dirlink"]["kind"], "symlink")
+                self.assertNotIn("dirlink/secret", evidence)
+            finally:
+                shutil.rmtree(external, ignore_errors=True)
 
     def test_oracle_requires_positive_health(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
