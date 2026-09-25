@@ -53,7 +53,7 @@ class HashmarksSubject:
         )
 
     def prepare(self, context: TrialContext) -> Observation:
-        executable = observe_executable(context, "hashmarks")
+        executable = observe_executable(context, "hashmarks", version_args=("version",))
         if not executable.payload["available"]:
             return executable
         sync = self._run(context, (*self._base(context), "map", "sync"))
