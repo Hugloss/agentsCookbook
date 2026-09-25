@@ -326,6 +326,12 @@ class OpenCodeNativeAgent:
             selected is None or workspace_binding.get("verified") is True
         )
         overlay_identity = dict(resolved.get("overlay_identity", {}))
+        workspace_binding_identity = {
+            "verified": workspace_binding.get("verified") is True,
+            "subject": workspace_binding.get("subject"),
+            "method": workspace_binding.get("method"),
+            "reason_code": workspace_binding.get("reason_code"),
+        }
         evidence = {
             "runtime_contract": "agents-cookbook-opencode-runtime/v1",
             "native_config_sha256": inspection.get("config_sha256"),
@@ -336,7 +342,7 @@ class OpenCodeNativeAgent:
             ),
             "mcp_shape": inspection.get("mcp_shape"),
             "selected_server": selected,
-            "workspace_binding": workspace_binding,
+            "workspace_binding": workspace_binding_identity,
             "overlay_sha256": hashlib.sha256(
                 canonical_json(overlay_identity)
             ).hexdigest(),
