@@ -15,6 +15,8 @@ def _sha256(payload: bytes) -> str:
 
 
 def verify_bundle(directory: Path) -> tuple[bool, str | None]:
+    if directory.is_symlink() or not directory.is_dir():
+        return False, "result bundle is not a real directory"
     if not is_complete_receipt(directory):
         return False, "result receipt is incomplete or invalid"
     try:
@@ -46,6 +48,13 @@ def verify_bundle(directory: Path) -> tuple[bool, str | None]:
         if candidate.is_absolute() or ".." in candidate.parts:
             return False, f"artifact {name} path escapes result bundle"
         path = directory / candidate
+        if path.is_symlink():
+            return False, f"artifact {name} must not be a symlink"
+        try:
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(directory.resolve())
+        except (OSError, ValueError):
+            return False, f"artifact {name} resolves outside result bundle"
         try:
             payload = path.read_bytes()
         except OSError:
@@ -55,6 +64,20 @@ def verify_bundle(directory: Path) -> tuple[bool, str | None]:
         if evidence.get("sha256") != _sha256(payload):
             return False, f"artifact {name} checksum mismatch"
         loaded[name] = payload
+
+    declared_files = {
+        "result.json",
+        "result.sha256",
+        "completion.json",
+        *(str(value["path"]) for value in artifacts.values()),
+    }
+    actual_files = {
+        path.name
+        for path in directory.iterdir()
+        if path.is_file() or path.is_symlink()
+    }
+    if actual_files != declared_files:
+        return False, "result bundle contains undeclared or missing files"
 
     events_evidence = execution.get("events")
     if not isinstance(events_evidence, dict):
