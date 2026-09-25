@@ -195,6 +195,10 @@ function inspectConfig(config) {
   };
 }
 
+function commandPrefix(pure) {
+  return pure ? ['--pure'] : [];
+}
+
 function effectiveEnv({ homeDir, env }) {
   const result = { ...(env || {}) };
   if (homeDir) {
@@ -212,12 +216,21 @@ async function findSessionId({
   env = {},
   attempts = 12,
   delayMs = 500,
+  pure = true,
 }) {
   const commandEnv = effectiveEnv({ homeDir, env });
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const sessionList = runCommand(
       opencodeBin,
-      ['--pure', 'session', 'list', '--format', 'json', '--max-count', '20'],
+      [
+        ...commandPrefix(pure),
+        'session',
+        'list',
+        '--format',
+        'json',
+        '--max-count',
+        '20',
+      ],
       { cwd: repoDir, env: commandEnv },
     );
 
@@ -266,10 +279,11 @@ function exportSession({
   sessionId,
   homeDir = '',
   env = {},
+  pure = true,
 }) {
   return runCommand(
     opencodeBin,
-    ['--pure', 'export', sessionId],
+    [...commandPrefix(pure), 'export', sessionId],
     {
       cwd: repoDir,
       env: effectiveEnv({ homeDir, env }),
@@ -283,10 +297,11 @@ function deleteSession({
   sessionId,
   homeDir = '',
   env = {},
+  pure = true,
 }) {
   return runCommand(
     opencodeBin,
-    ['--pure', 'session', 'delete', sessionId],
+    [...commandPrefix(pure), 'session', 'delete', sessionId],
     {
       cwd: repoDir,
       env: effectiveEnv({ homeDir, env }),
@@ -299,10 +314,11 @@ function resolveNativeConfig({
   opencodeBin = process.env.OPENCODE_BIN || 'opencode',
   repoDir,
   env = {},
+  pure = true,
 }) {
   const command = runCommand(
     opencodeBin,
-    ['--pure', 'debug', 'config'],
+    [...commandPrefix(pure), 'debug', 'config'],
     { cwd: repoDir, env },
   );
   const commandEvidence = {
@@ -346,12 +362,13 @@ function runSession({
   prompt,
   homeDir = '',
   env = {},
+  pure = true,
 }) {
   const startedAt = Date.now();
   const command = runCommand(
     opencodeBin,
     [
-      '--pure',
+      ...commandPrefix(pure),
       'run',
       '--dir',
       repoDir,
@@ -379,6 +396,7 @@ async function runSessionAndExport({
   prompt,
   env = {},
   deleteAfterExport = true,
+  pure = true,
 }) {
   const started = runSession({
     opencodeBin,
@@ -387,6 +405,7 @@ async function runSessionAndExport({
     title,
     prompt,
     env,
+    pure,
   });
   const run = started.command;
 
@@ -396,6 +415,7 @@ async function runSessionAndExport({
     title,
     startedAt: started.startedAt,
     env,
+    pure,
   });
   let exported = null;
   let deleted = null;
@@ -407,6 +427,7 @@ async function runSessionAndExport({
       repoDir,
       sessionId,
       env,
+      pure,
     });
     if (exported.status === 0) {
       try {
@@ -421,6 +442,7 @@ async function runSessionAndExport({
         repoDir,
         sessionId,
         env,
+        pure,
       });
     }
   }
