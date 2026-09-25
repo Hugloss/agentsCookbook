@@ -201,6 +201,8 @@ class CodexAgent:
     model: str | None = None
     reasoning_effort: str | None = None
     local_provider: str | None = None
+    local_base_url: str | None = None
+    ollama_host: str | None = None
     timeout_seconds: int = 600
     max_output_bytes: int = 50_000_000
     max_tool_calls: int | None = None
@@ -214,6 +216,8 @@ class CodexAgent:
                 "model": self.model or "host-default",
                 "reasoning_effort": self.reasoning_effort,
                 "local_provider": self.local_provider,
+                "local_base_url": self.local_base_url,
+                "ollama_host": self.ollama_host,
                 "surface": "codex-exec-json",
             },
         )
@@ -232,6 +236,20 @@ class CodexAgent:
 
     def _config_path(self, context: TrialContext) -> Path:
         return Path(context.environment["CODEX_HOME"]) / "config.toml"
+
+    def _configure_local_environment(
+        self,
+        context: TrialContext,
+    ) -> None:
+        if self.local_provider != "ollama":
+            return
+        if not self.local_base_url or not self.ollama_host:
+            return
+        context.environment["CODEX_OSS_BASE_URL"] = self.local_base_url
+        context.environment["CODEX_OSS_PORT"] = ""
+        context.environment["OLLAMA_HOST"] = self.ollama_host
+        context.environment["NO_PROXY"] = "127.0.0.1,localhost"
+        context.environment["no_proxy"] = "127.0.0.1,localhost"
 
     def _probe_ollama(self, context: TrialContext) -> dict[str, Any]:
         if not self.model:
@@ -296,6 +314,7 @@ class CodexAgent:
         context: TrialContext,
         exposed_subject: SubjectAdapter | None,
     ) -> Observation:
+        self._configure_local_environment(context)
         exposure = self._exposure(context, exposed_subject)
         config = _render_config(
             self.model,
@@ -330,6 +349,8 @@ class CodexAgent:
                 "model": self.model,
                 "reasoning_effort": self.reasoning_effort,
                 "local_provider": self.local_provider,
+                "local_base_url": self.local_base_url,
+                "ollama_host": self.ollama_host,
                 "local_provider_observation": local,
             }
         )
@@ -402,6 +423,8 @@ class CodexAgent:
             "model": self.model,
             "reasoning_effort": self.reasoning_effort,
             "local_provider": self.local_provider,
+            "local_base_url": self.local_base_url,
+            "ollama_host": self.ollama_host,
             "budget_violation": (
                 (
                     f"tool calls {tool_calls} exceed max_tool_calls "
