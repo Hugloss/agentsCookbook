@@ -393,6 +393,8 @@ async function runSessionAndExport({
   });
   let exported = null;
   let deleted = null;
+  let finalText = null;
+  let exportParseError = null;
   if (sessionId) {
     exported = exportSession({
       opencodeBin,
@@ -400,6 +402,13 @@ async function runSessionAndExport({
       sessionId,
       env,
     });
+    if (exported.status === 0) {
+      try {
+        finalText = extractFinalAnswer(exported.stdout).text;
+      } catch (error) {
+        exportParseError = String(error.message || error);
+      }
+    }
     if (deleteAfterExport) {
       deleted = deleteSession({
         opencodeBin,
@@ -415,6 +424,8 @@ async function runSessionAndExport({
     run,
     session_id: sessionId || null,
     export: exported,
+    final_text: finalText,
+    export_parse_error: exportParseError,
     delete: deleted,
   };
 }
