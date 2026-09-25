@@ -82,8 +82,19 @@ function config() {
     mcp: process.env.FAKE_MCP_SHAPE === 'nested'
       ? { servers } : servers,
   };
-  return merge(base, process.env.OPENCODE_CONFIG_CONTENT
-    ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : {});
+  if (process.env.FAKE_UNVERIFIED_COMMAND === '1') {
+    servers.hashmarks.command = ['echo'];
+  }
+  const inline = process.env.OPENCODE_CONFIG_CONTENT
+    ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : {};
+  const resolved = merge(base, inline);
+  if (process.env.FAKE_EFFECTIVE_MCP_DRIFT === '1' &&
+      (inline.tools?.['hashmarks_*'] === true ||
+       inline.mcp?.servers?.enola?.disabled === true)) {
+    const selected = resolved.mcp.servers?.hashmarks || resolved.mcp.hashmarks;
+    selected.command = ['hashmarks', '--workspace', '/outside', 'mcp'];
+  }
+  return resolved;
 }
 
 function value(flag) {
@@ -102,7 +113,10 @@ if (command === 'mcp' && filtered[1] === 'list') {
   for (const [name, value] of Object.entries(servers)) {
     process.stdout.write(name + ': ' +
       (value.enabled === false || value.disabled === true || process.env.FAKE_MCP_DISCONNECTED === name
-        ? 'disabled' : 'connected') + '\\n');
+        ? (process.env.FAKE_MCP_STATUS || 'disabled') : 'connected') + '\\n');
+  }
+  if (process.env.FAKE_MCP_DISTRACTOR === '1') {
+    process.stdout.write('backup_hashmarks: connected\\n');
   }
   process.exit(0);
 }
@@ -307,6 +321,69 @@ async function testSharedLifecycle() {
     });
     assert.strictEqual(disconnected.status, 'failed');
     assert.match(disconnected.reason, /is not connected/);
+
+    for (const status of ['disconnected', 'not connected']) {
+      const misleading = runtime.prepareBenchmarkConfig({
+        opencodeBin: fake,
+        repoDir: root,
+        env: {
+          ...env,
+          FAKE_MCP_DISCONNECTED: 'hashmarks',
+          FAKE_MCP_STATUS: status,
+          FAKE_MCP_DISTRACTOR: '1',
+        },
+        selectedSubject: 'hashmarks',
+      });
+      assert.strictEqual(misleading.status, 'failed');
+    }
+
+    const drifted = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      env: { ...env, FAKE_EFFECTIVE_MCP_DRIFT: '1' },
+      selectedSubject: 'hashmarks',
+    });
+    assert.strictEqual(drifted.status, 'failed');
+    assert.match(drifted.reason, /effective native MCP definition changed/);
+
+    for (const command of [
+      ['hashmarks', '--workspace', '.', '--workspace', '/outside', 'mcp'],
+      ['bash', '--workspace', '.', 'mcp'],
+      ['hashmarks', '--workspace', '.', 'serve'],
+    ]) {
+      const binding = runtime.verifyWorkspaceBinding(
+        { mcp: { hashmarks: { type: 'local', command } } },
+        'flat', 'hashmarks', root,
+      );
+      assert.strictEqual(binding.verified, false, JSON.stringify(command));
+    }
+    assert.strictEqual(runtime.verifyWorkspaceBinding(
+      { mcp: { enola: { type: 'local', command: ['echo'] } } },
+      'flat', 'enola', root,
+    ).verified, false);
+
+    const unverifiedEnv = { ...env, FAKE_UNVERIFIED_COMMAND: '1' };
+    const unverified = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      env: unverifiedEnv,
+      selectedSubject: 'hashmarks',
+    });
+    assert.strictEqual(unverified.status, 'completed');
+    assert.strictEqual(unverified.workspace_binding.verified, false);
+    const promptFile = path.join(root, 'prompt.txt');
+    fs.writeFileSync(promptFile, 'hello');
+    const blockedRun = require('child_process').spawnSync(
+      process.execPath,
+      [path.join(__dirname, 'opencode-runtime.js'), 'run-export',
+        '--repo', root, '--title', 'blocked', '--prompt-file', promptFile,
+        '--benchmark-subject', 'hashmarks', '--native-config-sha256',
+        unverified.inspection.config_sha256],
+      { encoding: 'utf8', env: { ...process.env, ...unverifiedEnv, OPENCODE_BIN: fake[1] } },
+    );
+    assert.strictEqual(blockedRun.status, 0, blockedRun.stderr);
+    assert.strictEqual(JSON.parse(blockedRun.stdout).run.status, 1);
+    assert.strictEqual(fs.existsSync(statePath), false);
 
     const missing = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,

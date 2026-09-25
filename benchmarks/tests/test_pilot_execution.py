@@ -694,6 +694,49 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(metrics["cached_input_tokens"], 5)
         self.assertEqual(metrics["mcp_result_bytes"], len("evidence".encode()))
 
+    def test_opencode_code_mode_counts_child_calls_without_guessing_bytes(self) -> None:
+        exported = {"messages": [{
+            "info": {"role": "assistant"},
+            "parts": [
+                {
+                    "type": "tool", "tool": "execute",
+                    "state": {
+                        "output": "combined script output",
+                        "metadata": {"toolCalls": [
+                            {"tool": "hashmarks.find", "status": "completed"},
+                            {"tool": "tools.enola.explain", "status": "completed"},
+                        ]},
+                    },
+                },
+                {
+                    "type": "tool", "tool": "hashmarks_find",
+                    "state": {"output": "direct result"},
+                },
+            ],
+        }]}
+        metrics = opencode_metrics(
+            exported,
+            mcp_servers=("hashmarks", "enola"),
+            selected_server="hashmarks",
+        )
+        self.assertEqual(metrics["tool_calls"], 2)
+        self.assertEqual(metrics["mcp_calls"], 3)
+        self.assertEqual(metrics["subject_mcp_calls"], 2)
+        self.assertTrue(metrics["subject_tool_invoked"])
+        self.assertNotIn("mcp_result_bytes", metrics)
+
+        exported["messages"][0]["parts"][0]["state"].pop("metadata")
+        unknown = opencode_metrics(
+            exported,
+            mcp_servers=("hashmarks", "enola"),
+            selected_server="hashmarks",
+        )
+        for name in (
+            "mcp_calls", "subject_mcp_calls", "subject_tool_invoked",
+            "mcp_result_bytes",
+        ):
+            self.assertNotIn(name, unknown)
+
     def test_codex_jsonl_separates_tool_availability_from_adoption(self) -> None:
         raw = b"\n".join(
             [
@@ -1030,6 +1073,49 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertNotIn("winner", observations[0])
         self.assertTrue(
             report["authority"]["cross_agent_rows_are_descriptive"]
+        )
+
+    def test_report_excludes_unobserved_code_mode_adoption(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        condition = next(
+            row for row in suite.experiment["conditions"]
+            if row["id"] == "hashmarks-opencode-native"
+        )
+        selected = [
+            row for row in suite.trial_definitions()
+            if row["condition_id"] == condition["id"]
+        ][:2]
+        receipts = []
+        for index, row in enumerate(selected):
+            measurements = {"subject_tool_configured": True}
+            if index == 0:
+                measurements["subject_tool_invoked"] = True
+                measurements["subject_mcp_calls"] = 1
+            receipts.append({
+                "definition_id": row["definition_id"],
+                "trial_id": ("a" if index == 0 else "b") * 64,
+                "experiment": suite.experiment,
+                "task": suite.tasks[row["task_id"]],
+                "condition": suite.expanded_condition(condition),
+                "status": "PASS",
+                "authority": {"subject": {"available": True}},
+                "execution": {"trial_index": 0, "seed": row["seed"]},
+                "measurements": {"agent": measurements},
+            })
+        with mock.patch(
+            "benchmarks.harness.report._receipts", return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+                selected_definitions={row["definition_id"] for row in selected},
+            )
+        profile = report["conditions"][condition["id"]]
+        self.assertEqual(report["schema"]["version"], 3)
+        self.assertEqual(profile["subject_tool_adoption_denominator"], 1)
+        self.assertEqual(profile["subject_tool_adoption_rate"], 1.0)
+        self.assertEqual(
+            profile["metrics"]["subject_mcp_calls"]["observations"], 1,
         )
 
     def test_report_selection_rejects_mixed_native_runtime_authority(self) -> None:

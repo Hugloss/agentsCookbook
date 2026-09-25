@@ -58,22 +58,22 @@ Its workspace binding must also be positively verified before the trial is admit
 Workspace verification is intentionally conservative:
 
 - Hashmarks: the native command must resolve its explicit `--workspace` to the isolated
-  trial workspace. A native definition may use any binary path or state configuration,
-  but a workspace resolving elsewhere is not admitted.
+  trial workspace. The command must directly invoke Hashmarks, end in `mcp`, and contain
+  exactly one unambiguous workspace option. An absolute path to the Hashmarks binary
+  is accepted; wrappers and workspace paths resolving elsewhere are not admitted.
 - Enola: the standard native registration `command: ["enola"]` is verified from
   OpenCode's MCP cwd semantics: absent `cwd`, OpenCode starts the local MCP in the
-  trial workspace; relative `cwd` is resolved from that workspace. If the native
-  definition passes an Enola config/repository argument, the benchmark does not rewrite
-  or parse it heuristically and therefore treats the binding as unverified.
+  trial workspace; relative `cwd` is resolved from that workspace. An absolute path
+  to the Enola binary is accepted. Wrappers or config/repository arguments are
+  unverified because the benchmark does not rewrite or parse them heuristically.
 - Any missing, remote, unsupported, or otherwise unprovable binding produces
   `INCOMPLETE`, never product `FAIL`.
 
 Full absolute path diagnostics stay in preparation evidence, while only stable proof
 semantics are bound into execution identity so temporary workspace paths do not break
-resumability.
-If it is missing, disabled, or disconnected, the trial is not admitted. Both flat and
-nested OpenCode MCP configuration shapes are supported. The report separates campaigns
-if one agent's observed native model or configuration changes across selected receipts.
+resumability. Both flat and nested OpenCode MCP configuration shapes are supported. The
+report separates campaigns if one agent's observed native model or configuration changes
+across selected receipts.
 
 `--pure` disables external OpenCode plugins during the measurement while retaining
 native provider/model/auth configuration.
@@ -162,6 +162,11 @@ metadata records the requested filters and automatic bare control. For a diagnos
 of a partial campaign, add `--allow-incomplete`. The report contains per-condition
 profiles, per-agent profiles, paired assistance rows, and descriptive cross-agent
 observations. It never calculates an overall winner.
+
+Report schema v3 counts native Code Mode child MCP calls from OpenCode export metadata.
+When that metadata is unavailable, MCP calls and adoption are unobserved and excluded
+from the adoption denominator. Code Mode does not expose each child's result bytes, so
+those bytes are omitted rather than recorded as zero.
 
 ## Measurement boundary
 

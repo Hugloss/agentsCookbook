@@ -56,5 +56,7 @@ duration, contamination, and oracle health.
 The native agent event surfaces do not authoritatively expose repository file-read
 bytes, so the suites explicitly mark that archaeology metric unavailable rather than
 estimating it.
+OpenCode Code Mode child calls are counted from export metadata when present. Per-child
+result bytes and calls without usable metadata remain unobserved.
 
 Do not publish an overall winner score.

@@ -285,6 +285,10 @@ function verifyBenchmarkConfig(base, effective, overlay, selectedSubject) {
 
   const baseServers = mcpEntries(base, overlay.shape);
   const servers = mcpEntries(effective, overlay.shape);
+  if (canonicalJson(Object.keys(servers).sort()) !==
+      canonicalJson(Object.keys(baseServers).sort())) {
+    throw new Error('benchmark overlay changed the native MCP server set');
+  }
   for (const name of Object.keys(baseServers)) {
     const value = servers[name];
     const selected = name === selectedSubject;
@@ -303,6 +307,9 @@ function verifyBenchmarkConfig(base, effective, overlay, selectedSubject) {
       throw new Error(
         `benchmark overlay resolved unexpected MCP state for ${name}`,
       );
+    }
+    if (selected && canonicalJson(value) !== canonicalJson(baseServers[name])) {
+      throw new Error(`effective native MCP definition changed for ${name}`);
     }
   }
 
@@ -329,16 +336,23 @@ function canonicalPath(value) {
 
 function commandWorkspace(command, flag, cwd) {
   if (!Array.isArray(command)) return null;
+  const matches = [];
   for (let index = 0; index < command.length; index += 1) {
     const value = command[index];
-    if (value === flag && typeof command[index + 1] === 'string') {
-      return canonicalPath(path.resolve(cwd, command[index + 1]));
+    if (value === flag) {
+      const next = command[index + 1];
+      if (typeof next !== 'string' || !next || next.startsWith('-')) return null;
+      matches.push(next);
     }
     if (typeof value === 'string' && value.startsWith(`${flag}=`)) {
-      return canonicalPath(path.resolve(cwd, value.slice(flag.length + 1)));
+      const next = value.slice(flag.length + 1);
+      if (!next) return null;
+      matches.push(next);
     }
   }
-  return null;
+  return matches.length === 1
+    ? canonicalPath(path.resolve(cwd, matches[0]))
+    : null;
 }
 
 function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
@@ -382,8 +396,24 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
   const effectiveCwd = canonicalPath(
     server.cwd ? path.resolve(repoDir, server.cwd) : repoDir,
   );
+  const executable = typeof server.command[0] === 'string'
+    ? path.basename(server.command[0]).toLowerCase()
+    : '';
 
   if (selectedSubject === 'hashmarks') {
+    if (!['hashmarks', 'hashmarks.exe'].includes(executable) ||
+        server.command.at(-1) !== 'mcp' ||
+        server.command.slice(1, -1).includes('--')) {
+      return {
+        verified: false,
+        subject: selectedSubject,
+        method: null,
+        workspace,
+        effective_cwd: effectiveCwd,
+        reason: 'native Hashmarks MCP command form is unverified',
+        reason_code: 'hashmarks-command-unverifiable',
+      };
+    }
     const bound = commandWorkspace(
       server.command,
       '--workspace',
@@ -396,7 +426,7 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
         method: null,
         workspace,
         effective_cwd: effectiveCwd,
-        reason: 'native Hashmarks MCP has no explicit --workspace binding',
+        reason: 'native Hashmarks MCP has no unique explicit --workspace binding',
         reason_code: 'hashmarks-workspace-unverifiable',
       };
     }
@@ -417,7 +447,8 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
   }
 
   if (selectedSubject === 'enola') {
-    if (server.command.length !== 1) {
+    if (!['enola', 'enola.exe'].includes(executable) ||
+        server.command.length !== 1) {
       return {
         verified: false,
         subject: selectedSubject,
@@ -425,8 +456,8 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
         workspace,
         effective_cwd: effectiveCwd,
         reason: (
-          'native Enola MCP passes repository/config arguments whose '
-          + 'workspace binding cannot be proven without changing the definition'
+          'native Enola MCP command or repository/config arguments cannot '
+          + 'be proven workspace-bound without changing the definition'
         ),
         reason_code: 'enola-workspace-unverifiable',
       };
@@ -455,6 +486,15 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
     reason: `no workspace-binding verifier for native MCP subject ${selectedSubject}`,
     reason_code: 'workspace-verifier-unavailable',
   };
+}
+
+function connectedMcp(output, selectedSubject) {
+  return output.split(/\r?\n/).some((line) => {
+    const tokens = line.replace(/\x1b\[[0-9;]*m/g, '').trim()
+      .split(/\s+/).map((token) => token.replace(/:$/, ''));
+    const index = tokens.indexOf(selectedSubject);
+    return index >= 0 && index <= 1 && tokens[index + 1] === 'connected';
+  });
 }
 
 function commandPrefix(pure) {
@@ -669,7 +709,7 @@ function prepareBenchmarkConfig({
       selectedSubject,
     );
     const workspaceBinding = verifyWorkspaceBinding(
-      base.config,
+      effective.config,
       overlay.shape,
       selectedSubject,
       repoDir,
@@ -680,11 +720,7 @@ function prepareBenchmarkConfig({
         [...commandPrefix(pure), 'mcp', 'list'],
         { cwd: repoDir, env: commandEnv },
       );
-      const connected = connection.stdout.split(/\r?\n/).some(
-        (line) =>
-          line.includes(selectedSubject) &&
-          /connected/i.test(line),
-      );
+      const connected = connectedMcp(connection.stdout, selectedSubject);
       if (connection.status !== 0 || !connected) {
         throw new Error(
           `native OpenCode MCP connection ${selectedSubject} is not connected`,
@@ -882,6 +918,7 @@ async function main(argv) {
       });
       if (
         prepared.status !== 'completed' ||
+        prepared.workspace_binding?.verified !== true ||
         prepared.inspection.config_sha256 !==
           options['native-config-sha256']
       ) {
