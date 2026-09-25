@@ -31,10 +31,18 @@ Each runtime runs bare, with Hashmarks, and with Enola, producing 18 frozen defi
 the benchmark uses that native setup and observes/binds what actually ran. No
 OpenCode model/provider configuration is stored in this repository.
 
-The benchmark composes a transient MCP overlay with native OpenCode configuration,
-including any host `OPENCODE_CONFIG_CONTENT` layer. Each assisted trial binds its own
-Hashmarks or Enola MCP exposure in an isolated context; the bare trial disables native
-MCP servers. The native model, provider, and authentication stay with OpenCode.
+The benchmark composes only a transient enable/disable and tool-gating overlay with
+native OpenCode configuration, including any host `OPENCODE_CONFIG_CONTENT` layer.
+The bare trial disables native MCP servers; an assisted trial reuses the host's
+already-configured native `hashmarks` or `enola` server and disables the others.
+agentsCookbook does not mirror the selected server command/configuration. Model,
+provider, authentication, and subject MCP configuration stay with OpenCode.
+
+Native OpenCode assistance is admitted only when the selected server can be proven to
+target the isolated trial workspace. Hashmarks is proven from its resolved
+`--workspace`; Enola's normal no-argument registration is proven from OpenCode's MCP
+working-directory semantics. Unprovable or outside-workspace bindings remain native
+and unchanged, but the trial is recorded as `INCOMPLETE`.
 
 Primary interpretation is assistance gain within the same runtime/model authority.
 Cross-runtime rows are descriptive only.
@@ -48,5 +56,7 @@ duration, contamination, and oracle health.
 The native agent event surfaces do not authoritatively expose repository file-read
 bytes, so the suites explicitly mark that archaeology metric unavailable rather than
 estimating it.
+OpenCode Code Mode child calls are counted from export metadata when present. Per-child
+result bytes and calls without usable metadata remain unobserved.
 
 Do not publish an overall winner score.

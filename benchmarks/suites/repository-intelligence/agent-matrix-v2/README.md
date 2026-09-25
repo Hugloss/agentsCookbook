@@ -47,14 +47,33 @@ host's existing `OPENCODE_CONFIG_CONTENT` layer. Host inline settings, including
 provider, model, authentication, and permissions, remain in that runtime layer. The
 benchmark does not store the composed content or its secrets in a receipt.
 
-The bare condition disables all native MCP servers. An assisted condition also
-disables native servers, then binds one `benchmark_hashmarks` or `benchmark_enola`
-server from that trial's `McpExposure`: command, arguments, working directory, and
-isolated environment. This works without a preconfigured native subject server. The
-adapter verifies the effective configuration and selected MCP connection before
-admitting the trial. Both flat and nested OpenCode MCP configuration shapes are
-supported. The report separates campaigns if one agent's observed native model or
-configuration changes across selected receipts.
+The bare condition disables all native MCP servers. An assisted condition disables
+all non-selected native MCP servers and reuses the already configured native
+`hashmarks` or `enola` server unchanged. agentsCookbook does not supply its command,
+arguments, working directory, environment, provider settings, or credentials.
+
+The selected native server must already exist, be enabled, and connect successfully.
+Its workspace binding must also be positively verified before the trial is admitted.
+
+Workspace verification is intentionally conservative:
+
+- Hashmarks: the native command must resolve its explicit `--workspace` to the isolated
+  trial workspace. The command must directly invoke Hashmarks, end in `mcp`, and contain
+  exactly one unambiguous workspace option. An absolute path to the Hashmarks binary
+  is accepted; wrappers and workspace paths resolving elsewhere are not admitted.
+- Enola: the standard native registration `command: ["enola"]` is verified from
+  OpenCode's MCP cwd semantics: absent `cwd`, OpenCode starts the local MCP in the
+  trial workspace; relative `cwd` is resolved from that workspace. An absolute path
+  to the Enola binary is accepted. Wrappers or config/repository arguments are
+  unverified because the benchmark does not rewrite or parse them heuristically.
+- Any missing, remote, unsupported, or otherwise unprovable binding produces
+  `INCOMPLETE`, never product `FAIL`.
+
+Full absolute path diagnostics stay in preparation evidence, while only stable proof
+semantics are bound into execution identity so temporary workspace paths do not break
+resumability. Both flat and nested OpenCode MCP configuration shapes are supported. The
+report separates campaigns if one agent's observed native model or configuration changes
+across selected receipts.
 
 `--pure` disables external OpenCode plugins during the measurement while retaining
 native provider/model/auth configuration.
@@ -143,6 +162,11 @@ metadata records the requested filters and automatic bare control. For a diagnos
 of a partial campaign, add `--allow-incomplete`. The report contains per-condition
 profiles, per-agent profiles, paired assistance rows, and descriptive cross-agent
 observations. It never calculates an overall winner.
+
+Report schema v3 counts native Code Mode child MCP calls from OpenCode export metadata.
+When that metadata is unavailable, MCP calls and adoption are unobserved and excluded
+from the adoption denominator. Code Mode does not expose each child's result bytes, so
+those bytes are omitted rather than recorded as zero.
 
 ## Measurement boundary
 

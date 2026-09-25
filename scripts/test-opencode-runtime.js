@@ -68,8 +68,13 @@ function merge(base, overlay) {
 
 function config() {
   const servers = {
-    hashmarks: { type: 'local', command: ['hashmarks', 'mcp'], enabled: true },
-    enola: { type: 'local', command: ['enola', 'mcp'], enabled: true },
+    hashmarks: {
+      type: 'local',
+      command: ['hashmarks', '--workspace', '.', 'mcp'],
+      cwd: '.',
+      enabled: true
+    },
+    enola: { type: 'local', command: ['enola'], enabled: true },
   };
   const base = {
     model: 'liteLLM/gemma4',
@@ -77,8 +82,19 @@ function config() {
     mcp: process.env.FAKE_MCP_SHAPE === 'nested'
       ? { servers } : servers,
   };
-  return merge(base, process.env.OPENCODE_CONFIG_CONTENT
-    ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : {});
+  if (process.env.FAKE_UNVERIFIED_COMMAND === '1') {
+    servers.hashmarks.command = ['echo'];
+  }
+  const inline = process.env.OPENCODE_CONFIG_CONTENT
+    ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : {};
+  const resolved = merge(base, inline);
+  if (process.env.FAKE_EFFECTIVE_MCP_DRIFT === '1' &&
+      (inline.tools?.['hashmarks_*'] === true ||
+       inline.mcp?.servers?.enola?.disabled === true)) {
+    const selected = resolved.mcp.servers?.hashmarks || resolved.mcp.hashmarks;
+    selected.command = ['hashmarks', '--workspace', '/outside', 'mcp'];
+  }
+  return resolved;
 }
 
 function value(flag) {
@@ -97,7 +113,10 @@ if (command === 'mcp' && filtered[1] === 'list') {
   for (const [name, value] of Object.entries(servers)) {
     process.stdout.write(name + ': ' +
       (value.enabled === false || value.disabled === true || process.env.FAKE_MCP_DISCONNECTED === name
-        ? 'disabled' : 'connected') + '\\n');
+        ? (process.env.FAKE_MCP_STATUS || 'disabled') : 'connected') + '\\n');
+  }
+  if (process.env.FAKE_MCP_DISTRACTOR === '1') {
+    process.stdout.write('backup_hashmarks: connected\\n');
   }
   process.exit(0);
 }
@@ -180,34 +199,112 @@ async function testSharedLifecycle() {
             permission: { bash: 'deny' },
           }),
         },
-        exposure: {
-          name: 'hashmarks',
-          command: 'hashmarks',
-          args: ['--workspace', '.', 'mcp'],
-          cwd: root,
-          environment: { HOME: path.join(root, 'isolated-home') },
-        },
+        selectedSubject: 'hashmarks',
       });
       assert.strictEqual(prepared.status, 'completed', prepared.reason);
-      assert.strictEqual(prepared.selected_server, 'benchmark_hashmarks');
+      assert.strictEqual(prepared.selected_server, 'hashmarks');
       assert.strictEqual(prepared.inspection.model, 'liteLLM/gemma4');
+      assert.strictEqual(
+        prepared.overlay_identity.native_server_reused,
+        true,
+      );
       const content = JSON.parse(prepared.environment.OPENCODE_CONFIG_CONTENT);
       const servers = shape === 'nested' ? content.mcp.servers : content.mcp;
       assert.strictEqual(content.provider.liteLLM.options.apiKey, 'inline-secret');
       assert.strictEqual(content.permission.bash, 'deny');
-      assert.strictEqual(servers.hashmarks[shape === 'nested' ? 'disabled' : 'enabled'],
-        shape === 'nested' ? true : false);
-      assert.deepStrictEqual(servers.benchmark_hashmarks.command,
-        ['hashmarks', '--workspace', '.', 'mcp']);
-      assert.strictEqual(servers.benchmark_hashmarks.cwd, root);
-      assert.strictEqual(servers.benchmark_hashmarks.environment.HOME,
-        path.join(root, 'isolated-home'));
+      assert.deepStrictEqual(
+        servers.hashmarks.command,
+        ['hashmarks', '--workspace', '.', 'mcp'],
+      );
+      assert.strictEqual(prepared.workspace_binding.verified, true);
+      assert.strictEqual(
+        prepared.workspace_binding.method,
+        'hashmarks-explicit-workspace',
+      );
+      assert.ok(!Object.hasOwn(servers, 'benchmark_hashmarks'));
       if (shape === 'nested') {
-        assert.strictEqual(servers.benchmark_hashmarks.codemode, false);
+        assert.notStrictEqual(servers.hashmarks.disabled, true);
+        assert.strictEqual(servers.enola.disabled, true);
+      } else {
+        assert.notStrictEqual(servers.hashmarks.enabled, false);
+        assert.strictEqual(servers.enola.enabled, false);
       }
       const { environment, ...safe } = prepared;
       assert.ok(!JSON.stringify(safe).includes('inline-secret'));
     }
+
+    const enola = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      env,
+      selectedSubject: 'enola',
+    });
+    assert.strictEqual(enola.status, 'completed', enola.reason);
+    assert.strictEqual(enola.workspace_binding.verified, true);
+    assert.strictEqual(
+      enola.workspace_binding.method,
+      'enola-default-repository-from-mcp-cwd',
+    );
+
+    const outside = runtime.verifyWorkspaceBinding(
+      {
+        mcp: {
+          hashmarks: {
+            type: 'local',
+            command: ['hashmarks', '--workspace', '/outside', 'mcp'],
+            cwd: '.',
+            enabled: true,
+          },
+          enola: {
+            type: 'local',
+            command: ['enola'],
+            cwd: '/outside',
+            enabled: true,
+          },
+        },
+      },
+      'flat',
+      'hashmarks',
+      root,
+    );
+    assert.strictEqual(outside.verified, false);
+    assert.match(outside.reason, /outside trial workspace/);
+
+    const enolaOutside = runtime.verifyWorkspaceBinding(
+      {
+        mcp: {
+          enola: {
+            type: 'local',
+            command: ['enola'],
+            cwd: '/outside',
+            enabled: true,
+          },
+        },
+      },
+      'flat',
+      'enola',
+      root,
+    );
+    assert.strictEqual(enolaOutside.verified, false);
+    assert.match(enolaOutside.reason, /outside trial workspace/);
+
+    const enolaConfigArgument = runtime.verifyWorkspaceBinding(
+      {
+        mcp: {
+          enola: {
+            type: 'local',
+            command: ['enola', '/outside/mcp-arch.yaml'],
+            cwd: '.',
+            enabled: true,
+          },
+        },
+      },
+      'flat',
+      'enola',
+      root,
+    );
+    assert.strictEqual(enolaConfigArgument.verified, false);
+    assert.match(enolaConfigArgument.reason, /cannot be proven/);
 
     const bare = runtime.prepareBenchmarkConfig({
       opencodeBin: fake, repoDir: root, env,
@@ -219,14 +316,83 @@ async function testSharedLifecycle() {
     const disconnected = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
-      env: { ...env, FAKE_MCP_DISCONNECTED: 'benchmark_hashmarks' },
-      exposure: {
-        name: 'hashmarks', command: 'hashmarks', args: ['mcp'],
-        cwd: root, environment: {},
-      },
+      env: { ...env, FAKE_MCP_DISCONNECTED: 'hashmarks' },
+      selectedSubject: 'hashmarks',
     });
     assert.strictEqual(disconnected.status, 'failed');
     assert.match(disconnected.reason, /is not connected/);
+
+    for (const status of ['disconnected', 'not connected']) {
+      const misleading = runtime.prepareBenchmarkConfig({
+        opencodeBin: fake,
+        repoDir: root,
+        env: {
+          ...env,
+          FAKE_MCP_DISCONNECTED: 'hashmarks',
+          FAKE_MCP_STATUS: status,
+          FAKE_MCP_DISTRACTOR: '1',
+        },
+        selectedSubject: 'hashmarks',
+      });
+      assert.strictEqual(misleading.status, 'failed');
+    }
+
+    const drifted = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      env: { ...env, FAKE_EFFECTIVE_MCP_DRIFT: '1' },
+      selectedSubject: 'hashmarks',
+    });
+    assert.strictEqual(drifted.status, 'failed');
+    assert.match(drifted.reason, /effective native MCP definition changed/);
+
+    for (const command of [
+      ['hashmarks', '--workspace', '.', '--workspace', '/outside', 'mcp'],
+      ['bash', '--workspace', '.', 'mcp'],
+      ['hashmarks', '--workspace', '.', 'serve'],
+    ]) {
+      const binding = runtime.verifyWorkspaceBinding(
+        { mcp: { hashmarks: { type: 'local', command } } },
+        'flat', 'hashmarks', root,
+      );
+      assert.strictEqual(binding.verified, false, JSON.stringify(command));
+    }
+    assert.strictEqual(runtime.verifyWorkspaceBinding(
+      { mcp: { enola: { type: 'local', command: ['echo'] } } },
+      'flat', 'enola', root,
+    ).verified, false);
+
+    const unverifiedEnv = { ...env, FAKE_UNVERIFIED_COMMAND: '1' };
+    const unverified = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      env: unverifiedEnv,
+      selectedSubject: 'hashmarks',
+    });
+    assert.strictEqual(unverified.status, 'completed');
+    assert.strictEqual(unverified.workspace_binding.verified, false);
+    const promptFile = path.join(root, 'prompt.txt');
+    fs.writeFileSync(promptFile, 'hello');
+    const blockedRun = require('child_process').spawnSync(
+      process.execPath,
+      [path.join(__dirname, 'opencode-runtime.js'), 'run-export',
+        '--repo', root, '--title', 'blocked', '--prompt-file', promptFile,
+        '--benchmark-subject', 'hashmarks', '--native-config-sha256',
+        unverified.inspection.config_sha256],
+      { encoding: 'utf8', env: { ...process.env, ...unverifiedEnv, OPENCODE_BIN: fake[1] } },
+    );
+    assert.strictEqual(blockedRun.status, 0, blockedRun.stderr);
+    assert.strictEqual(JSON.parse(blockedRun.stdout).run.status, 1);
+    assert.strictEqual(fs.existsSync(statePath), false);
+
+    const missing = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      env,
+      selectedSubject: 'missing-subject',
+    });
+    assert.strictEqual(missing.status, 'failed');
+    assert.match(missing.reason, /does not define MCP server/);
 
     const result = await runtime.runSessionAndExport({
       opencodeBin: fake,

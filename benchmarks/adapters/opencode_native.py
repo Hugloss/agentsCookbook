@@ -123,15 +123,44 @@ def _metrics(
     parts = _parts(_assistant_messages(exported))
     tool_parts = [part for part in parts if part.get("type") == "tool"]
     names = [name for part in tool_parts if (name := _tool_name(part))]
-    mcp_calls = [
+    direct_mcp_calls = [
         name
         for name in names
         if any(name.startswith(f"{server}_") for server in mcp_servers)
     ]
+    nested_mcp_calls: list[str] = []
+    nested_observable = True
+    for part in tool_parts:
+        if _tool_name(part) != "execute":
+            continue
+        state = part.get("state")
+        metadata = state.get("metadata") if isinstance(state, dict) else None
+        calls = metadata.get("toolCalls") if isinstance(metadata, dict) else None
+        if not isinstance(calls, list) or any(
+            not isinstance(call, dict)
+            or not isinstance(call.get("tool"), str)
+            for call in calls
+        ):
+            nested_observable = False
+            continue
+        nested_mcp_calls.extend(call["tool"] for call in calls)
+    nested_mcp_calls = [
+        name for name in nested_mcp_calls
+        if any(
+            name.startswith(f"{server}.")
+            or name.startswith(f"tools.{server}.")
+            for server in mcp_servers
+        )
+    ]
+    mcp_calls = direct_mcp_calls + nested_mcp_calls
     subject_calls = [
         name
         for name in mcp_calls
-        if selected_server and name.startswith(f"{selected_server}_")
+        if selected_server and (
+            name.startswith(f"{selected_server}_")
+            or name.startswith(f"{selected_server}.")
+            or name.startswith(f"tools.{selected_server}.")
+        )
     ]
     command_calls = [
         name
@@ -146,7 +175,7 @@ def _metrics(
     result_bytes = 0
     for part in tool_parts:
         name = _tool_name(part)
-        if name not in mcp_calls:
+        if name not in direct_mcp_calls:
             continue
         state = part.get("state")
         output = state.get("output") if isinstance(state, dict) else None
@@ -158,16 +187,12 @@ def _metrics(
             )
             result_bytes += len(rendered.encode("utf-8"))
     input_tokens, output_tokens, cached_tokens = _token_metrics(exported)
-    return {
+    metrics: dict[str, int | float | str | bool] = {
         "event_count": len(parts),
         "command_calls": len(command_calls),
         "file_change_events": len(file_changes),
         "tool_calls": len(tool_parts),
-        "mcp_calls": len(mcp_calls),
-        "subject_mcp_calls": len(subject_calls),
         "subject_tool_configured": selected_server is not None,
-        "subject_tool_invoked": bool(subject_calls),
-        "mcp_result_bytes": result_bytes,
         "input_tokens": input_tokens,
         "cached_input_tokens": cached_tokens,
         "output_tokens": output_tokens,
@@ -175,6 +200,15 @@ def _metrics(
             "not-authoritatively-exposed-by-opencode-export"
         ),
     }
+    if nested_observable:
+        metrics.update(
+            mcp_calls=len(mcp_calls),
+            subject_mcp_calls=len(subject_calls),
+            subject_tool_invoked=bool(subject_calls),
+        )
+        if not nested_mcp_calls:
+            metrics["mcp_result_bytes"] = result_bytes
+    return metrics
 
 
 def _runtime_call(
@@ -231,10 +265,21 @@ class OpenCodeNativeAgent:
             },
         )
 
+    def _selected_subject(
+        self,
+        exposed_subject: SubjectAdapter | None,
+    ) -> str | None:
+        if exposed_subject is None:
+            return None
+        identity = exposed_subject.identity()
+        if identity.kind == "control" or identity.participant_id == "none":
+            return None
+        return identity.participant_id
+
     def _resolve_native(
         self,
         context: TrialContext,
-        exposure_file: Path,
+        selected_subject: str | None,
     ) -> tuple[dict[str, Any], Observation]:
         environment = _native_environment(context)
         executable = observe_executable(
@@ -245,8 +290,11 @@ class OpenCodeNativeAgent:
         envelope, result = _runtime_call(
             context,
             args=(
-                "inspect-config", "--repo", str(context.workspace),
-                "--benchmark-exposure-file", str(exposure_file),
+                "inspect-config",
+                "--repo",
+                str(context.workspace),
+                "--benchmark-subject",
+                selected_subject or "none",
             ),
             environment=environment,
             timeout_seconds=30,
@@ -281,21 +329,11 @@ class OpenCodeNativeAgent:
         context: TrialContext,
         exposed_subject: SubjectAdapter | None,
     ) -> Observation:
-        exposure = (
-            exposed_subject.mcp_exposure(context)
-            if exposed_subject is not None else None
+        selected_subject = self._selected_subject(exposed_subject)
+        resolved, executable = self._resolve_native(
+            context,
+            selected_subject,
         )
-        exposure_file = context.control_root / "opencode-benchmark-exposure.json"
-        exposure_file.write_bytes(canonical_json(
-            {
-                "name": exposure.name,
-                "command": exposure.command,
-                "args": list(exposure.args),
-                "cwd": str(exposure.cwd),
-                "environment": {**context.environment, **exposure.environment},
-            } if exposure else None
-        ))
-        resolved, executable = self._resolve_native(context, exposure_file)
         if not resolved:
             return executable
         inspection = resolved["inspection"]
@@ -312,9 +350,21 @@ class OpenCodeNativeAgent:
         }
         selected = resolved.get("selected_server")
         selected_ready = selected is None or servers.get(selected) is True
-        overlay_identity = {
-            **resolved.get("overlay_identity", {}),
-            "subject_exposure": exposure.semantic_identity if exposure else None,
+        workspace_binding = resolved.get("workspace_binding")
+        if not isinstance(workspace_binding, dict):
+            workspace_binding = {
+                "verified": selected is None,
+                "reason": "shared runtime emitted no workspace-binding evidence",
+            }
+        binding_verified = (
+            selected is None or workspace_binding.get("verified") is True
+        )
+        overlay_identity = dict(resolved.get("overlay_identity", {}))
+        workspace_binding_identity = {
+            "verified": workspace_binding.get("verified") is True,
+            "subject": workspace_binding.get("subject"),
+            "method": workspace_binding.get("method"),
+            "reason_code": workspace_binding.get("reason_code"),
         }
         evidence = {
             "runtime_contract": "agents-cookbook-opencode-runtime/v1",
@@ -326,6 +376,7 @@ class OpenCodeNativeAgent:
             ),
             "mcp_shape": inspection.get("mcp_shape"),
             "selected_server": selected,
+            "workspace_binding": workspace_binding_identity,
             "overlay_sha256": hashlib.sha256(
                 canonical_json(overlay_identity)
             ).hexdigest(),
@@ -338,6 +389,7 @@ class OpenCodeNativeAgent:
             and isinstance(model, str)
             and bool(model)
             and selected_ready
+            and binding_verified
         )
         reason = None
         if not isinstance(model, str) or not model:
@@ -348,6 +400,11 @@ class OpenCodeNativeAgent:
             reason = (
                 f"native OpenCode config does not expose enabled MCP server "
                 f"{selected}"
+            )
+        elif not binding_verified:
+            reason = str(
+                workspace_binding.get("reason")
+                or "native OpenCode MCP workspace binding is unverified"
             )
         return Observation(
             {
@@ -365,8 +422,13 @@ class OpenCodeNativeAgent:
                 "provider": provider,
                 "native_config_sha256": evidence["native_config_sha256"],
                 "native_mcp_servers": evidence["native_mcp_servers"],
+                "workspace_binding": workspace_binding,
                 "mcp_exposure": (
-                    {"name": selected, **overlay_identity}
+                    {
+                        "name": selected,
+                        "source": "native-opencode-config",
+                        **overlay_identity,
+                    }
                     if selected
                     else None
                 ),
@@ -413,8 +475,12 @@ class OpenCodeNativeAgent:
                 title,
                 "--prompt-file",
                 str(prompt_path),
-                "--benchmark-exposure-file",
-                str(context.control_root / "opencode-benchmark-exposure.json"),
+                "--benchmark-subject",
+                (
+                    str(evidence["selected_server"])
+                    if evidence.get("selected_server")
+                    else "none"
+                ),
                 "--native-config-sha256",
                 evidence["native_config_sha256"],
             ),
@@ -476,18 +542,7 @@ class OpenCodeNativeAgent:
             )
             if exported
             else {
-                "event_count": 0,
-                "command_calls": 0,
-                "file_change_events": 0,
-                "tool_calls": 0,
-                "mcp_calls": 0,
-                "subject_mcp_calls": 0,
                 "subject_tool_configured": isinstance(selected, str),
-                "subject_tool_invoked": False,
-                "mcp_result_bytes": 0,
-                "input_tokens": 0,
-                "cached_input_tokens": 0,
-                "output_tokens": 0,
                 "source_read_observability": (
                     "not-authoritatively-exposed-by-opencode-export"
                 ),
@@ -541,7 +596,7 @@ class OpenCodeNativeAgent:
                 "reason": export_error or "opencode run failed",
             }
         )
-        tool_calls = int(metrics["tool_calls"])
+        tool_calls = int(metrics.get("tool_calls", 0))
         return Observation(
             {
                 "available": not result.executable_missing,

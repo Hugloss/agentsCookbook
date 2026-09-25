@@ -439,8 +439,208 @@ class PilotExecutionTests(unittest.TestCase):
                     "inspect-config",
                     "--repo",
                     str(workspace),
-                    "--benchmark-exposure-file",
-                    str(control / "opencode-benchmark-exposure.json"),
+                    "--benchmark-subject",
+                    "none",
+                ),
+            )
+
+    def test_opencode_assisted_prepare_reuses_native_subject_server(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            context = TrialContext(
+                workspace,
+                control,
+                isolated_environment(control),
+            )
+            executable = Observation(
+                {
+                    "available": True,
+                    "version": "opencode 1",
+                    "executable_sha256": "a" * 64,
+                },
+                "opencode 1",
+            )
+            inspection = {
+                "model": "liteLLM/gemma4",
+                "provider": "liteLLM",
+                "config_sha256": "b" * 64,
+                "mcp_shape": "flat",
+                "mcp_servers": [
+                    {"name": "hashmarks", "enabled": True},
+                    {"name": "enola", "enabled": True},
+                ],
+            }
+            runtime_result = mock.Mock()
+            runtime_result.metrics.return_value = {"return_code": 0}
+            runtime_result.stderr = b""
+            runtime_result.stdout = b"{}"
+            subject = HashmarksSubject()
+            with (
+                mock.patch(
+                    "benchmarks.adapters.opencode_native.observe_executable",
+                    return_value=executable,
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call",
+                    return_value=(
+                        {
+                            "status": "completed",
+                            "inspection": inspection,
+                            "effective_inspection": inspection,
+                            "selected_server": "hashmarks",
+                            "workspace_binding": {
+                                "verified": True,
+                                "subject": "hashmarks",
+                                "method": "hashmarks-explicit-workspace",
+                                "workspace": str(workspace),
+                                "effective_cwd": str(workspace),
+                                "resolved_workspace": str(workspace),
+                                "reason": None,
+                            },
+                            "overlay_identity": {
+                                "shape": "flat",
+                                "selected_subject": "hashmarks",
+                                "native_server_reused": True,
+                            },
+                        },
+                        runtime_result,
+                    ),
+                ) as runtime_call,
+                mock.patch.object(
+                    HashmarksSubject,
+                    "mcp_exposure",
+                    side_effect=AssertionError(
+                        "native OpenCode must not request benchmark MCP exposure"
+                    ),
+                ),
+            ):
+                prepared = OpenCodeNativeAgent().prepare(context, subject)
+
+            self.assertTrue(prepared.payload["available"])
+            self.assertEqual(
+                prepared.payload["mcp_exposure"]["name"],
+                "hashmarks",
+            )
+            self.assertEqual(
+                prepared.payload["mcp_exposure"]["source"],
+                "native-opencode-config",
+            )
+            self.assertTrue(
+                prepared.payload["mcp_exposure"]["native_server_reused"]
+            )
+            runtime_call.assert_called_once()
+            self.assertEqual(
+                runtime_call.call_args.kwargs["args"],
+                (
+                    "inspect-config",
+                    "--repo",
+                    str(workspace),
+                    "--benchmark-subject",
+                    "hashmarks",
+                ),
+            )
+            self.assertFalse(
+                (control / "opencode-benchmark-exposure.json").exists()
+            )
+
+    def test_opencode_unverified_native_workspace_binding_is_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            context = TrialContext(
+                workspace,
+                control,
+                isolated_environment(control),
+            )
+            executable = Observation(
+                {
+                    "available": True,
+                    "version": "opencode 1",
+                    "executable_sha256": "a" * 64,
+                },
+                "opencode 1",
+            )
+            inspection = {
+                "model": "liteLLM/gemma4",
+                "provider": "liteLLM",
+                "config_sha256": "b" * 64,
+                "mcp_shape": "flat",
+                "mcp_servers": [
+                    {"name": "hashmarks", "enabled": True},
+                ],
+            }
+            runtime_result = mock.Mock()
+            runtime_result.metrics.return_value = {"return_code": 0}
+            runtime_result.stderr = b""
+            runtime_result.stdout = b"{}"
+            with (
+                mock.patch(
+                    "benchmarks.adapters.opencode_native.observe_executable",
+                    return_value=executable,
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call",
+                    return_value=(
+                        {
+                            "status": "completed",
+                            "inspection": inspection,
+                            "effective_inspection": inspection,
+                            "selected_server": "hashmarks",
+                            "workspace_binding": {
+                                "verified": False,
+                                "subject": "hashmarks",
+                                "method": "hashmarks-explicit-workspace",
+                                "workspace": str(workspace),
+                                "effective_cwd": "/outside",
+                                "resolved_workspace": "/outside",
+                                "reason": (
+                                    "native Hashmarks workspace resolves outside "
+                                    "trial workspace: /outside"
+                                ),
+                                "reason_code":
+                                    "hashmarks-workspace-outside-trial",
+                            },
+                            "overlay_identity": {
+                                "shape": "flat",
+                                "selected_subject": "hashmarks",
+                                "native_server_reused": True,
+                            },
+                        },
+                        runtime_result,
+                    ),
+                ),
+            ):
+                prepared = OpenCodeNativeAgent().prepare(
+                    context,
+                    HashmarksSubject(),
+                )
+
+            self.assertFalse(prepared.payload["available"])
+            self.assertFalse(
+                prepared.payload["workspace_binding"]["verified"]
+            )
+            self.assertIn(
+                "outside trial workspace",
+                prepared.payload["reason"],
+            )
+            self.assertEqual(
+                prepared.payload["observed_identity"]["workspace_binding"],
+                {
+                    "verified": False,
+                    "subject": "hashmarks",
+                    "method": "hashmarks-explicit-workspace",
+                    "reason_code": "hashmarks-workspace-outside-trial",
+                },
+            )
+            self.assertNotIn(
+                "/outside",
+                json.dumps(
+                    prepared.payload["observed_identity"]["workspace_binding"]
                 ),
             )
 
@@ -493,6 +693,49 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(metrics["output_tokens"], 20)
         self.assertEqual(metrics["cached_input_tokens"], 5)
         self.assertEqual(metrics["mcp_result_bytes"], len("evidence".encode()))
+
+    def test_opencode_code_mode_counts_child_calls_without_guessing_bytes(self) -> None:
+        exported = {"messages": [{
+            "info": {"role": "assistant"},
+            "parts": [
+                {
+                    "type": "tool", "tool": "execute",
+                    "state": {
+                        "output": "combined script output",
+                        "metadata": {"toolCalls": [
+                            {"tool": "hashmarks.find", "status": "completed"},
+                            {"tool": "tools.enola.explain", "status": "completed"},
+                        ]},
+                    },
+                },
+                {
+                    "type": "tool", "tool": "hashmarks_find",
+                    "state": {"output": "direct result"},
+                },
+            ],
+        }]}
+        metrics = opencode_metrics(
+            exported,
+            mcp_servers=("hashmarks", "enola"),
+            selected_server="hashmarks",
+        )
+        self.assertEqual(metrics["tool_calls"], 2)
+        self.assertEqual(metrics["mcp_calls"], 3)
+        self.assertEqual(metrics["subject_mcp_calls"], 2)
+        self.assertTrue(metrics["subject_tool_invoked"])
+        self.assertNotIn("mcp_result_bytes", metrics)
+
+        exported["messages"][0]["parts"][0]["state"].pop("metadata")
+        unknown = opencode_metrics(
+            exported,
+            mcp_servers=("hashmarks", "enola"),
+            selected_server="hashmarks",
+        )
+        for name in (
+            "mcp_calls", "subject_mcp_calls", "subject_tool_invoked",
+            "mcp_result_bytes",
+        ):
+            self.assertNotIn(name, unknown)
 
     def test_codex_jsonl_separates_tool_availability_from_adoption(self) -> None:
         raw = b"\n".join(
@@ -830,6 +1073,49 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertNotIn("winner", observations[0])
         self.assertTrue(
             report["authority"]["cross_agent_rows_are_descriptive"]
+        )
+
+    def test_report_excludes_unobserved_code_mode_adoption(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        condition = next(
+            row for row in suite.experiment["conditions"]
+            if row["id"] == "hashmarks-opencode-native"
+        )
+        selected = [
+            row for row in suite.trial_definitions()
+            if row["condition_id"] == condition["id"]
+        ][:2]
+        receipts = []
+        for index, row in enumerate(selected):
+            measurements = {"subject_tool_configured": True}
+            if index == 0:
+                measurements["subject_tool_invoked"] = True
+                measurements["subject_mcp_calls"] = 1
+            receipts.append({
+                "definition_id": row["definition_id"],
+                "trial_id": ("a" if index == 0 else "b") * 64,
+                "experiment": suite.experiment,
+                "task": suite.tasks[row["task_id"]],
+                "condition": suite.expanded_condition(condition),
+                "status": "PASS",
+                "authority": {"subject": {"available": True}},
+                "execution": {"trial_index": 0, "seed": row["seed"]},
+                "measurements": {"agent": measurements},
+            })
+        with mock.patch(
+            "benchmarks.harness.report._receipts", return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+                selected_definitions={row["definition_id"] for row in selected},
+            )
+        profile = report["conditions"][condition["id"]]
+        self.assertEqual(report["schema"]["version"], 3)
+        self.assertEqual(profile["subject_tool_adoption_denominator"], 1)
+        self.assertEqual(profile["subject_tool_adoption_rate"], 1.0)
+        self.assertEqual(
+            profile["metrics"]["subject_mcp_calls"]["observations"], 1,
         )
 
     def test_report_selection_rejects_mixed_native_runtime_authority(self) -> None:

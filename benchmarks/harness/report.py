@@ -102,6 +102,12 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
         .get("agent", {})
         .get("subject_tool_configured")
         is True
+        and isinstance(
+            row.get("measurements", {})
+            .get("agent", {})
+            .get("subject_tool_invoked"),
+            bool,
+        )
     ]
     invoked = [
         row
@@ -397,7 +403,7 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 2,
+            "version": 3,
         },
         "suite": suite.experiment["suite"],
         "experiment": {

@@ -411,7 +411,12 @@ def run_trial(
             reason = "subject unavailable or preparation failed"
         elif not agent_authority["available"]:
             status = TrialStatus.INCOMPLETE
-            reason = "agent unavailable or preparation failed"
+            prepare_reason = agent_prepare.payload.get("reason")
+            reason = (
+                str(prepare_reason)
+                if isinstance(prepare_reason, str) and prepare_reason
+                else "agent unavailable or preparation failed"
+            )
         elif not oracle_authority["healthy"]:
             status = TrialStatus.INVALID
             reason = "independent oracle healthcheck failed"
@@ -419,7 +424,9 @@ def run_trial(
             emit(
                 "agent.started",
                 {
-                    "tool_available": subject.mcp_exposure(context) is not None,
+                    "tool_available": (
+                        agent_prepare.payload.get("mcp_exposure") is not None
+                    ),
                     "mode": task["mode"],
                 },
             )
