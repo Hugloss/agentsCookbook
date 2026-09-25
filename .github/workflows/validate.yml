@@ -85,28 +85,44 @@ jobs:
           print(f"validated {len(paths)} benchmark schemas")
           PY
 
-      - name: Validate frozen repository-intelligence pilot
+      - name: Validate frozen repository-intelligence suites
         run: |
           python -m benchmarks validate-suite \
             --suite benchmarks/suites/repository-intelligence/pilot-v1
           python -m benchmarks plan \
             --suite benchmarks/suites/repository-intelligence/pilot-v1 \
             > "$RUNNER_TEMP/repository-intelligence-pilot-plan.json"
+
+          python -m benchmarks validate-suite \
+            --suite benchmarks/suites/repository-intelligence/agent-matrix-v2
+          python -m benchmarks plan \
+            --suite benchmarks/suites/repository-intelligence/agent-matrix-v2 \
+            > "$RUNNER_TEMP/repository-intelligence-agent-matrix-v2-plan.json"
+
           python - <<'PY'
           import json
           import os
           from pathlib import Path
 
-          plan = json.loads(
-              (
-                  Path(os.environ["RUNNER_TEMP"])
-                  / "repository-intelligence-pilot-plan.json"
-              ).read_text(encoding="utf-8")
-          )
-          if len(plan) != 9:
-              raise SystemExit(f"expected 9 frozen pilot trials, got {len(plan)}")
-          if len({row["definition_id"] for row in plan}) != 9:
-              raise SystemExit("pilot definition identities are not unique")
+          root = Path(os.environ["RUNNER_TEMP"])
+          expected = {
+              "repository-intelligence-pilot-plan.json": 9,
+              "repository-intelligence-agent-matrix-v2-plan.json": 18,
+          }
+          for filename, expected_count in expected.items():
+              plan = json.loads(
+                  (root / filename).read_text(encoding="utf-8")
+              )
+              if len(plan) != expected_count:
+                  raise SystemExit(
+                      f"{filename}: expected {expected_count} frozen trials, "
+                      f"got {len(plan)}"
+                  )
+              identities = {row["definition_id"] for row in plan}
+              if len(identities) != expected_count:
+                  raise SystemExit(
+                      f"{filename}: definition identities are not unique"
+                  )
           PY
 
       - name: Benchmark foundation and pilot regressions
