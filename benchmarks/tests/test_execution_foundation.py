@@ -1,33 +1,179 @@
 from __future__ import annotations
-import subprocess, tempfile, unittest
+
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
 from pathlib import Path
+
 from benchmarks.adapters.oracles import CommandOracle
-from benchmarks.harness.campaign import TrialSpec,pending
-from benchmarks.harness.workspace import snapshot,diff_snapshots,materialize_git
+from benchmarks.harness.campaign import TrialSpec, pending
+from benchmarks.harness.events import EventStreamError, append_event, seal_events
+from benchmarks.harness.model import Observation, TrialContext
+from benchmarks.harness.receipt import write_receipt
+from benchmarks.harness.workspace import (
+    diff_snapshots,
+    isolated_environment,
+    materialize_git,
+    snapshot,
+)
+
+
+def _context(root: Path) -> TrialContext:
+    workspace = root / "workspace"
+    workspace.mkdir()
+    environment = isolated_environment(root / "isolation")
+    return TrialContext(workspace=workspace, environment=environment)
+
+
+def _spec() -> TrialSpec:
+    return TrialSpec(
+        experiment={"id": "e", "version": 1},
+        task={"id": "t", "version": 1},
+        condition={"id": "c"},
+        trial=0,
+        seed=1,
+        subject_identity={"id": "none", "version": "1"},
+        agent_identity={"id": "agent", "version": "1"},
+        oracle_identity={"id": "oracle", "version": "1"},
+        harness_identity={"commit": "abc"},
+        environment_identity={"id": "env"},
+    )
+
 
 class ExecutionFoundationTests(unittest.TestCase):
-    def test_snapshot_detects_ignored_path_side_effect(self):
+    def test_snapshot_detects_ignored_path_side_effect(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp); (root/".ignored").mkdir(); before=snapshot(root)
-            (root/".ignored"/"side-effect").write_text("x")
-            self.assertEqual(diff_snapshots(before,snapshot(root))["added"],[".ignored/side-effect"])
-    def test_oracle_requires_positive_health(self):
+            root = Path(tmp)
+            (root / ".ignored").mkdir()
+            before = snapshot(root)
+            (root / ".ignored" / "side-effect").write_text("x")
+            self.assertEqual(
+                diff_snapshots(before, snapshot(root))["added"],
+                [".ignored/side-effect"],
+            )
+
+    def test_snapshot_hashes_symlink_identity_not_external_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            oracle=CommandOracle("o","1",("sh","-c","exit 7"),("sh","-c","exit 0"))
-            self.assertFalse(oracle.healthcheck(tmp).payload["healthy"])
-    def test_materialization_binds_exact_commit(self):
+            root = Path(tmp)
+            external = root.parent / (root.name + "-external")
+            external.write_text("secret")
+            try:
+                os.symlink(external, root / "link")
+                evidence = snapshot(root)["link"]
+                self.assertEqual(evidence["kind"], "symlink")
+                self.assertEqual(evidence["size"], len(str(external).encode()))
+            finally:
+                external.unlink(missing_ok=True)
+
+    def test_oracle_requires_positive_health(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp); source=root/"source"; source.mkdir()
-            subprocess.run(("git","init"),cwd=source,check=True,capture_output=True)
-            subprocess.run(("git","config","user.email","bench@example.invalid"),cwd=source,check=True)
-            subprocess.run(("git","config","user.name","Bench"),cwd=source,check=True)
-            (source/"a").write_text("a"); subprocess.run(("git","add","a"),cwd=source,check=True)
-            subprocess.run(("git","commit","-m","a"),cwd=source,check=True,capture_output=True)
-            sha=subprocess.run(("git","rev-parse","HEAD"),cwd=source,check=True,capture_output=True,text=True).stdout.strip()
-            self.assertEqual(materialize_git(source=source,commit=sha,destination=root/"trial"),sha)
-    def test_completed_receipt_is_not_pending(self):
+            context = _context(Path(tmp))
+            oracle = CommandOracle(
+                "o",
+                "1",
+                (sys.executable, "-c", "raise SystemExit(7)"),
+                (sys.executable, "-c", "raise SystemExit(0)"),
+            )
+            self.assertFalse(oracle.healthcheck(context).payload["healthy"])
+
+    def test_oracle_receives_canonical_observation_input(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            s=TrialSpec({"id":"e"},{"id":"t"},{"id":"c"},0,1); root=Path(tmp); (root/s.id).mkdir()
-            self.assertEqual(pending([s],root),[s]); (root/s.id/"result.json").write_text("{}")
-            self.assertEqual(pending([s],root),[])
-if __name__=="__main__": unittest.main()
+            context = _context(Path(tmp))
+            script = (
+                "import json,os; "
+                "d=json.load(open(os.environ['BENCHMARK_OBSERVATION_PATH'])); "
+                "raise SystemExit(0 if d['raw']=='answer' else 9)"
+            )
+            oracle = CommandOracle(
+                "o",
+                "1",
+                (sys.executable, "-c", "raise SystemExit(0)"),
+                (sys.executable, "-c", script),
+            )
+            graded = oracle.grade(context, Observation({}, "answer"))
+            self.assertTrue(graded.payload["passed"])
+
+    def test_materialization_binds_exact_commit_and_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source.mkdir()
+            subprocess.run(("git", "init"), cwd=source, check=True, capture_output=True)
+            subprocess.run(
+                ("git", "config", "user.email", "bench@example.invalid"),
+                cwd=source,
+                check=True,
+            )
+            subprocess.run(
+                ("git", "config", "user.name", "Bench"),
+                cwd=source,
+                check=True,
+            )
+            (source / "a").write_text("a")
+            subprocess.run(("git", "add", "a"), cwd=source, check=True)
+            subprocess.run(
+                ("git", "commit", "-m", "a"),
+                cwd=source,
+                check=True,
+                capture_output=True,
+            )
+            sha = subprocess.run(
+                ("git", "rev-parse", "HEAD"),
+                cwd=source,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            tree = subprocess.run(
+                ("git", "rev-parse", "HEAD^{tree}"),
+                cwd=source,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            self.assertEqual(
+                materialize_git(
+                    source=source,
+                    commit=sha,
+                    expected_tree=tree,
+                    destination=root / "trial",
+                ),
+                sha,
+            )
+
+    def test_partial_receipt_remains_pending(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = _spec()
+            root = Path(tmp)
+            trial = root / spec.id
+            trial.mkdir()
+            (trial / "result.json").write_text("{}\n")
+            self.assertEqual(pending([spec], root), [spec])
+
+    def test_verified_receipt_is_not_pending(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            spec = _spec()
+            root = Path(tmp)
+            write_receipt(root / spec.id, {"status": "PASS"})
+            self.assertEqual(pending([spec], root), [])
+
+    def test_event_stream_seals_identity_and_rejects_late_append(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.jsonl"
+            append_event(path, trial_id="trial", sequence=0, kind="started", payload={})
+            evidence = seal_events(path, trial_id="trial")
+            self.assertEqual(evidence["event_count"], 1)
+            with self.assertRaises(EventStreamError):
+                append_event(
+                    path,
+                    trial_id="trial",
+                    sequence=1,
+                    kind="late",
+                    payload={},
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()
