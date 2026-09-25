@@ -14,6 +14,7 @@ from typing import Any
 
 from benchmarks.adapters.codex import seed_codex_auth
 from benchmarks.adapters.registry import build_agent, build_oracle, build_subject
+from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.events import append_event, seal_events
 from benchmarks.harness.identity import canonical_json, definition_id, execution_id
@@ -139,13 +140,13 @@ def _publish_bundle(
 ) -> Path:
     results_root.mkdir(parents=True, exist_ok=True)
     final_dir = results_root / trial_id
-    if is_complete_receipt(final_dir):
-        return final_dir
     if final_dir.exists():
+        valid, reason = verify_bundle(final_dir)
+        if valid:
+            return final_dir
         raise TrialRunnerError(
-            f"incomplete published trial directory requires manual inspection: {final_dir}"
+            f"published trial bundle is invalid: {final_dir}: {reason}"
         )
-
     bundle = Path(
         tempfile.mkdtemp(prefix=f".{trial_id}.bundle-", dir=results_root)
     )
@@ -163,6 +164,11 @@ def _publish_bundle(
         }
         write_receipt(bundle, receipt)
         os.rename(bundle, final_dir)
+        valid, reason = verify_bundle(final_dir)
+        if not valid:
+            raise TrialRunnerError(
+                f"published trial bundle failed verification: {reason}"
+            )
         try:
             fd = os.open(results_root, os.O_RDONLY)
             try:
@@ -300,7 +306,13 @@ def run_trial(
             mutation_identity=mutation_authority,
         )
         final_dir = results_root / trial_id
-        if is_complete_receipt(final_dir):
+        if final_dir.exists():
+            valid, invalid_reason = verify_bundle(final_dir)
+            if not valid:
+                raise TrialRunnerError(
+                    f"existing trial bundle is invalid: {final_dir}: "
+                    f"{invalid_reason}"
+                )
             existing = json.loads(
                 (final_dir / "result.json").read_text(encoding="utf-8")
             )
