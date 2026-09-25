@@ -7,7 +7,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-from benchmarks.harness.receipt import is_complete_receipt
+from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.suite import SuiteDefinition
 
 
@@ -33,8 +33,13 @@ def _receipts(results_root: Path) -> list[dict[str, Any]]:
     if not results_root.exists():
         return rows
     for directory in sorted(path for path in results_root.iterdir() if path.is_dir()):
-        if directory.name.startswith(".") or not is_complete_receipt(directory):
+        if directory.name.startswith("."):
             continue
+        valid, reason = verify_bundle(directory)
+        if not valid:
+            raise ReportError(
+                f"invalid published result bundle {directory}: {reason}"
+            )
         try:
             value = json.loads(
                 (directory / "result.json").read_text(encoding="utf-8")
