@@ -8,7 +8,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest import mock
 
 from benchmarks.adapters.codex import (
@@ -16,13 +15,24 @@ from benchmarks.adapters.codex import (
     _final_message,
     _metrics,
     _render_config,
-    disable_codex_remote_auth,
     parse_codex_jsonl,
     seed_codex_auth,
 )
 from benchmarks.adapters.enola import EnolaSubject
 from benchmarks.adapters.hashmarks import HashmarksSubject
-from benchmarks.adapters.registry import build_agent
+from benchmarks.adapters.opencode_native import (
+    OpenCodeNativeAgent,
+    _config_identity as opencode_config_identity,
+    _configured_model as opencode_configured_model,
+    _metrics as opencode_metrics,
+    _native_environment as opencode_native_environment,
+    _observed_model as opencode_observed_model,
+    _tool_overlay as opencode_tool_overlay,
+)
+from benchmarks.adapters.registry import (
+    AdapterConfigurationError,
+    build_agent,
+)
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.model import (
@@ -154,25 +164,21 @@ class PilotExecutionTests(unittest.TestCase):
                 "bare-sol",
                 "hashmarks-sol",
                 "enola-sol",
-                "bare-gemma4-12b",
-                "hashmarks-gemma4-12b",
-                "enola-gemma4-12b",
+                "bare-opencode-native",
+                "hashmarks-opencode-native",
+                "enola-opencode-native",
             },
         )
         sol = suite.agents["codex-sol"]["configuration"]
-        local = suite.agents["gemma4-12b-ollama"]["configuration"]
+        native = suite.agents["opencode-native"]["configuration"]
         self.assertEqual(sol["model"], "gpt-5.6-sol")
         self.assertEqual(sol["reasoning_effort"], "high")
-        self.assertIsNone(sol["local_provider"])
-        self.assertEqual(local["model"], "gemma4:12b")
-        self.assertEqual(local["local_provider"], "ollama")
+        self.assertNotIn("model", native)
+        self.assertNotIn("provider", native)
+        self.assertNotIn("api_key", native)
         self.assertEqual(
-            local["local_base_url"],
-            "http://127.0.0.1:11434/v1",
-        )
-        self.assertEqual(
-            local["ollama_host"],
-            "http://127.0.0.1:11434",
+            suite.agents["opencode-native"]["adapter"],
+            "opencode-native",
         )
 
     def test_suite_loader_enforces_repo_owned_schema(self) -> None:
@@ -283,35 +289,22 @@ class PilotExecutionTests(unittest.TestCase):
             task["budgets"]["timeout_seconds"],
         )
 
-    def test_codex_local_provider_uses_same_exec_runtime(self) -> None:
-        agent = CodexAgent(
-            model="gemma4:12b",
-            local_provider="ollama",
-            local_base_url="http://127.0.0.1:11434/v1",
-            ollama_host="http://127.0.0.1:11434",
-        )
-        self.assertEqual(
-            agent._exec_argv("task"),
-            (
-                "codex",
-                "exec",
-                "--json",
-                "--full-auto",
-                "--model",
-                "gemma4:12b",
-                "--oss",
-                "--local-provider",
-                "ollama",
-                "task",
-            ),
-        )
-        config = _render_config(
-            "gemma4:12b",
-            None,
-            local_provider="ollama",
-        )
-        self.assertIn('model = "gemma4:12b"', config)
-        self.assertIn('oss_provider = "ollama"', config)
+    def test_codex_adapter_rejects_local_model_provider_config(self) -> None:
+        definition = {
+            "id": "forbidden",
+            "adapter": "codex",
+            "identity": {"id": "forbidden", "version": "1"},
+            "capabilities": [],
+            "configuration": {
+                "model": "gemma4:12b",
+                "local_provider": "ollama",
+            },
+        }
+        with self.assertRaises(AdapterConfigurationError):
+            build_agent(
+                definition,
+                budgets={"timeout_seconds": 60},
+            )
 
     def test_codex_sol_freezes_reasoning_effort(self) -> None:
         config = _render_config(
@@ -321,104 +314,154 @@ class PilotExecutionTests(unittest.TestCase):
         )
         self.assertIn('model = "gpt-5.6-sol"', config)
         self.assertIn('model_reasoning_effort = "high"', config)
+        self.assertNotIn("oss_provider", config)
 
-    def test_local_ollama_admission_binds_model_descriptor(self) -> None:
+    def test_opencode_native_adapter_owns_no_model_provider_config(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        task = suite.tasks["locate-receipt-completion-owner"]
+        agent = build_agent(
+            suite.agents["opencode-native"],
+            budgets=task["budgets"],
+        )
+        self.assertIsInstance(agent, OpenCodeNativeAgent)
+
+        forbidden = json.loads(
+            json.dumps(suite.agents["opencode-native"])
+        )
+        forbidden["configuration"]["model"] = "liteLLM/gemma4"
+        with self.assertRaises(AdapterConfigurationError):
+            build_agent(forbidden, budgets=task["budgets"])
+
+    def test_opencode_native_environment_preserves_native_home(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workspace = root / "workspace"
             workspace.mkdir()
             control = root / "control"
-            environment = isolated_environment(control)
-            context = TrialContext(workspace, control, environment)
-            agent = CodexAgent(
-                model="gemma4:12b",
-                local_provider="ollama",
-                local_base_url="http://127.0.0.1:11434/v1",
-                ollama_host="http://127.0.0.1:11434",
+            context = TrialContext(
+                workspace,
+                control,
+                isolated_environment(control),
             )
-            available = Observation(
-                {
-                    "available": True,
-                    "version": "runtime 1",
-                    "executable_sha256": "a" * 64,
-                },
-                "runtime 1",
+            overlay = opencode_tool_overlay(
+                server_names=("enola", "hashmarks", "other"),
+                selected_server="hashmarks",
             )
-            process = SimpleNamespace(
-                executable_missing=False,
-                timed_out=False,
-                return_code=0,
-                stdout=b"gemma4:12b descriptor",
-                stderr=b"",
-                stdout_truncated=False,
-                stderr_truncated=False,
-                metrics=lambda: {"return_code": 0},
+            environment = opencode_native_environment(
+                context,
+                overlay=overlay,
             )
-            with (
-                mock.patch(
-                    "benchmarks.adapters.codex.observe_executable",
-                    return_value=available,
-                ) as observed,
-                mock.patch(
-                    "benchmarks.adapters.codex.run_bounded",
-                    return_value=process,
-                ) as bounded,
-            ):
-                prepared = agent.prepare(context, None)
-            self.assertTrue(prepared.payload["available"])
+            self.assertNotIn("HOME", environment)
+            self.assertNotIn("XDG_CONFIG_HOME", environment)
+            self.assertNotIn("XDG_DATA_HOME", environment)
             self.assertEqual(
-                prepared.payload["local_provider"],
-                "ollama",
+                environment["TMPDIR"],
+                context.environment["TMPDIR"],
             )
             self.assertEqual(
-                context.environment["CODEX_OSS_BASE_URL"],
-                "http://127.0.0.1:11434/v1",
-            )
-            self.assertEqual(
-                context.environment["OLLAMA_HOST"],
-                "http://127.0.0.1:11434",
-            )
-            self.assertEqual(
-                context.environment["NO_PROXY"],
-                "127.0.0.1,localhost",
-            )
-            local = prepared.payload["local_provider_observation"]
-            self.assertEqual(local["model"], "gemma4:12b")
-            self.assertEqual(
-                local["model_descriptor_sha256"],
-                "e991fcf2ebe8ced869f06d59932861a09f0d69e0079c073c26d648aee84d57f5",
-            )
-            self.assertEqual(observed.call_count, 2)
-            bounded.assert_called_once()
-            self.assertEqual(
-                bounded.call_args.kwargs["argv"],
-                ("ollama", "show", "gemma4:12b"),
+                json.loads(environment["OPENCODE_CONFIG_CONTENT"]),
+                overlay,
             )
 
-    def test_local_model_disables_remote_codex_credentials(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            workspace = root / "workspace"
-            workspace.mkdir()
-            control = root / "control"
-            environment = isolated_environment(control)
-            context = TrialContext(workspace, control, environment)
-            with mock.patch.dict(
-                os.environ,
+    def test_opencode_runtime_overlay_only_gates_native_mcp_tools(self) -> None:
+        overlay = opencode_tool_overlay(
+            server_names=("enola", "hashmarks", "jira"),
+            selected_server="hashmarks",
+        )
+        self.assertEqual(
+            overlay["tools"],
+            {
+                "enola_*": False,
+                "hashmarks_*": True,
+                "jira_*": False,
+            },
+        )
+        self.assertEqual(
+            overlay["agent"]["build"]["tools"],
+            overlay["tools"],
+        )
+        encoded = json.dumps(overlay)
+        self.assertNotIn('"model"', encoded)
+        self.assertNotIn('"provider"', encoded)
+
+    def test_opencode_native_config_identity_redacts_credentials(self) -> None:
+        first = {
+            "model": "liteLLM/gemma4",
+            "provider": {
+                "liteLLM": {
+                    "options": {
+                        "apiKey": "secret-one",
+                        "baseURL": "http://127.0.0.1:4000/v1",
+                    }
+                }
+            },
+        }
+        second = json.loads(json.dumps(first))
+        second["provider"]["liteLLM"]["options"]["apiKey"] = (
+            "secret-two"
+        )
+        self.assertEqual(
+            opencode_config_identity(first),
+            opencode_config_identity(second),
+        )
+        second["model"] = "liteLLM/other"
+        self.assertNotEqual(
+            opencode_config_identity(first),
+            opencode_config_identity(second),
+        )
+        self.assertEqual(
+            opencode_configured_model(first),
+            "liteLLM/gemma4",
+        )
+
+    def test_opencode_export_observes_native_model_and_mcp_adoption(self) -> None:
+        exported = {
+            "messages": [
                 {
-                    "OPENAI_API_KEY": "ambient-openai",
-                    "CODEX_API_KEY": "ambient-codex",
-                    "CODEX_ACCESS_TOKEN": "ambient-token",
-                },
-            ):
-                mode = disable_codex_remote_auth(context)
-            self.assertEqual(mode, "disabled-local-provider")
-            for name in (
-                "OPENAI_API_KEY",
-                "CODEX_API_KEY",
-                "CODEX_ACCESS_TOKEN",
-            ):
-                self.assertEqual(context.environment[name], "")
+                    "info": {
+                        "role": "assistant",
+                        "providerID": "liteLLM",
+                        "modelID": "gemma4",
+                        "tokens": {
+                            "input": 100,
+                            "output": 20,
+                            "cache": {"read": 5},
+                        },
+                    },
+                    "parts": [
+                        {
+                            "type": "tool",
+                            "tool": "hashmarks_find",
+                            "state": {"output": "evidence"},
+                        },
+                        {
+                            "type": "tool",
+                            "tool": "bash",
+                            "state": {"output": ""},
+                        },
+                        {
+                            "type": "text",
+                            "text": '{"path":"x","symbol":"y"}',
+                        },
+                    ],
+                }
+            ]
+        }
+        model, provider = opencode_observed_model(exported)
+        self.assertEqual(model, "liteLLM/gemma4")
+        self.assertEqual(provider, "liteLLM")
+        metrics = opencode_metrics(
+            exported,
+            mcp_servers=("hashmarks", "enola"),
+            selected_server="hashmarks",
+        )
+        self.assertEqual(metrics["mcp_calls"], 1)
+        self.assertEqual(metrics["subject_mcp_calls"], 1)
+        self.assertTrue(metrics["subject_tool_invoked"])
+        self.assertEqual(metrics["command_calls"], 1)
+        self.assertEqual(metrics["input_tokens"], 100)
+        self.assertEqual(metrics["output_tokens"], 20)
+        self.assertEqual(metrics["cached_input_tokens"], 5)
 
     def test_codex_jsonl_separates_tool_availability_from_adoption(self) -> None:
         raw = b"\n".join(
@@ -694,7 +737,7 @@ class PilotExecutionTests(unittest.TestCase):
         receipts = []
         for condition_id, status, duration in (
             ("bare-sol", "PASS", 100.0),
-            ("bare-gemma4-12b", "FAIL", 250.0),
+            ("bare-opencode-native", "FAIL", 250.0),
         ):
             row = rows[(task_id, condition_id)]
             condition = next(
@@ -745,13 +788,13 @@ class PilotExecutionTests(unittest.TestCase):
 
         self.assertEqual(
             set(report["agent_profiles"]),
-            {"codex-sol", "gemma4-12b-ollama"},
+            {"codex-sol", "opencode-native"},
         )
         observations = report["cross_agent_observations"]
         self.assertEqual(len(observations), 1)
         self.assertEqual(
             set(observations[0]["agents"]),
-            {"codex-sol", "gemma4-12b-ollama"},
+            {"codex-sol", "opencode-native"},
         )
         self.assertNotIn("winner", observations[0])
         self.assertTrue(
