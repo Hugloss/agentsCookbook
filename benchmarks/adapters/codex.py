@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -109,6 +111,34 @@ def _metrics(
     }
 
 
+def seed_codex_auth(
+    context: TrialContext,
+    source: Path | None,
+) -> str:
+    codex_home = Path(context.environment["CODEX_HOME"])
+    codex_home.mkdir(parents=True, exist_ok=True)
+    target = codex_home / "auth.json"
+    if source is not None:
+        source = source.expanduser().resolve()
+        if not source.is_file():
+            raise FileNotFoundError(f"Codex auth seed does not exist: {source}")
+        shutil.copyfile(source, target)
+        try:
+            target.chmod(0o600)
+        except OSError:
+            pass
+        mode = "seeded-auth-file"
+    elif any(
+        os.environ.get(name)
+        for name in ("OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN")
+    ):
+        mode = "inherited-auth-environment"
+    else:
+        mode = "none"
+    context.environment["BENCHMARK_CODEX_AUTH_MODE"] = mode
+    return mode
+
+
 def _final_message(events: list[dict[str, Any]]) -> str | None:
     messages = [
         item.get("text")
@@ -159,6 +189,9 @@ class CodexAgent:
             {
                 "config_sha256": hashlib.sha256(config.encode()).hexdigest(),
                 "mcp_exposure": exposure.semantic_identity if exposure else None,
+                "auth_mode": context.environment.get(
+                    "BENCHMARK_CODEX_AUTH_MODE", "none"
+                ),
             }
         )
         return Observation(payload, observed.raw, observed.measurements)
