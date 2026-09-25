@@ -15,6 +15,7 @@ from benchmarks.adapters.codex import (
     parse_codex_jsonl,
     seed_codex_auth,
 )
+from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.model import (
     Observation,
@@ -23,6 +24,7 @@ from benchmarks.harness.model import (
 )
 from benchmarks.harness.mutation import apply_mutation
 from benchmarks.harness.receipt import is_complete_receipt
+from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.suite import SuiteDefinition, load_suite
@@ -186,6 +188,8 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(metrics["subject_mcp_calls"], 1)
         self.assertTrue(metrics["subject_tool_invoked"])
         self.assertEqual(metrics["command_calls"], 1)
+        self.assertEqual(metrics["tool_calls"], 2)
+        self.assertTrue(metrics["subject_tool_configured"])
         self.assertEqual(metrics["input_tokens"], 100)
         self.assertEqual(
             _final_message(events),
@@ -468,6 +472,114 @@ class PilotExecutionTests(unittest.TestCase):
             self.assertEqual(second.trial_id, first.trial_id)
             self.assertTrue(second.reused)
             self.assertEqual(second.status, "PASS")
+
+            report = build_report(
+                suite=suite,
+                results_root=root / "results",
+            )
+            self.assertEqual(report["observed_trials"], 1)
+            self.assertEqual(report["status_counts"], {"PASS": 1})
+            self.assertFalse(report["authority"]["ranking_performed"])
+            valid, reason = verify_bundle(first.result_dir)
+            self.assertTrue(valid, reason)
+
+            (first.result_dir / "undeclared.txt").write_text("tamper")
+            valid, reason = verify_bundle(first.result_dir)
+            self.assertFalse(valid)
+            self.assertIn("undeclared", reason or "")
+            with self.assertRaises(ReportError):
+                build_report(
+                    suite=suite,
+                    results_root=root / "results",
+                )
+
+    def test_report_rejects_multiple_executions_for_one_definition(self) -> None:
+        experiment = {
+            "id": "report",
+            "version": 1,
+            "suite": "fake",
+            "tasks": ["task"],
+            "conditions": [
+                {
+                    "id": "bare",
+                    "subject": "none",
+                    "agent": "agent",
+                    "trials": 1,
+                    "seed": 7,
+                }
+            ],
+            "scoring": {"id": "s", "version": 1, "metrics": ["task_success"]},
+        }
+        task = {
+            "id": "task",
+            "version": 1,
+            "repository": {
+                "url": "https://example.invalid/repo.git",
+                "commit": "1" * 40,
+                "tree": "2" * 40,
+            },
+            "prompt": "x",
+            "mode": "read_only",
+            "mutation": None,
+            "oracle": {
+                "adapter": "expected-json",
+                "identity": {"id": "o", "version": "1"},
+                "configuration": {"expected": {"ok": True}},
+            },
+            "budgets": {"timeout_seconds": 1},
+            "contamination": {
+                "allowed_change_globs": [],
+                "allowed_generated_globs": [],
+            },
+        }
+        suite = SuiteDefinition(
+            root=Path("."),
+            experiment=experiment,
+            tasks={"task": task},
+            subjects={
+                "none": {
+                    "id": "none",
+                    "kind": "control",
+                    "adapter": "none",
+                    "identity": {"id": "none", "version": "1"},
+                    "capabilities": [],
+                    "configuration": {},
+                }
+            },
+            agents={
+                "agent": {
+                    "id": "agent",
+                    "adapter": "fake",
+                    "identity": {"id": "agent", "version": "1"},
+                    "capabilities": [],
+                    "configuration": {},
+                }
+            },
+        )
+        definition = suite.trial_definitions()[0]["definition_id"]
+        expanded = suite.expanded_condition(experiment["conditions"][0])
+        base = {
+            "definition_id": definition,
+            "experiment": experiment,
+            "task": task,
+            "condition": expanded,
+            "status": "PASS",
+            "authority": {"subject": {"available": True}},
+            "execution": {"trial_index": 0, "seed": 7},
+            "measurements": {"agent": {}},
+        }
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=[
+                {**base, "trial_id": "a" * 64},
+                {**base, "trial_id": "b" * 64},
+            ],
+        ):
+            with self.assertRaises(ReportError):
+                build_report(
+                    suite=suite,
+                    results_root=Path("/unused"),
+                )
 
 
 if __name__ == "__main__":
