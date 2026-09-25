@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -74,9 +75,18 @@ def seal_events(
         "event_count": len(events),
         "events_sha256": hashlib.sha256(raw).hexdigest(),
     }
-    fd = os.open(seal, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
-    with os.fdopen(fd, "wb") as stream:
-        stream.write(canonical_json(evidence))
-        stream.flush()
-        os.fsync(stream.fileno())
+    payload = canonical_json(evidence)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{seal.name}.", dir=seal.parent)
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if seal.exists():
+            raise EventStreamError(f"event stream already sealed: {path}")
+        os.replace(tmp, seal)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return evidence
