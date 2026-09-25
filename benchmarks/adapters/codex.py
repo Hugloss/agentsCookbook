@@ -29,7 +29,6 @@ def _render_config(
     exposure: McpExposure | None,
     *,
     reasoning_effort: str | None = None,
-    local_provider: str | None = None,
 ) -> str:
     lines: list[str] = []
     if model:
@@ -38,8 +37,6 @@ def _render_config(
         lines.append(
             f"model_reasoning_effort = {_toml_string(reasoning_effort)}"
         )
-    if local_provider:
-        lines.append(f"oss_provider = {_toml_string(local_provider)}")
     if exposure is not None:
         lines.extend(
             [
@@ -148,15 +145,6 @@ _REMOTE_AUTH_VARIABLES = (
 )
 
 
-def disable_codex_remote_auth(context: TrialContext) -> str:
-    for name in _REMOTE_AUTH_VARIABLES:
-        context.environment[name] = ""
-    context.environment["BENCHMARK_CODEX_AUTH_MODE"] = (
-        "disabled-local-provider"
-    )
-    return "disabled-local-provider"
-
-
 def seed_codex_auth(
     context: TrialContext,
     source: Path | None,
@@ -200,9 +188,6 @@ def _final_message(events: list[dict[str, Any]]) -> str | None:
 class CodexAgent:
     model: str | None = None
     reasoning_effort: str | None = None
-    local_provider: str | None = None
-    local_base_url: str | None = None
-    ollama_host: str | None = None
     timeout_seconds: int = 600
     max_output_bytes: int = 50_000_000
     max_tool_calls: int | None = None
@@ -215,15 +200,9 @@ class CodexAgent:
             {
                 "model": self.model or "host-default",
                 "reasoning_effort": self.reasoning_effort,
-                "local_provider": self.local_provider,
-                "local_base_url": self.local_base_url,
-                "ollama_host": self.ollama_host,
                 "surface": "codex-exec-json",
             },
         )
-
-    def requires_remote_auth(self) -> bool:
-        return self.local_provider is None
 
     def _exposure(
         self,
@@ -237,105 +216,25 @@ class CodexAgent:
     def _config_path(self, context: TrialContext) -> Path:
         return Path(context.environment["CODEX_HOME"]) / "config.toml"
 
-    def _configure_local_environment(
-        self,
-        context: TrialContext,
-    ) -> None:
-        if self.local_provider != "ollama":
-            return
-        if not self.local_base_url or not self.ollama_host:
-            return
-        context.environment["CODEX_OSS_BASE_URL"] = self.local_base_url
-        context.environment["CODEX_OSS_PORT"] = ""
-        context.environment["OLLAMA_HOST"] = self.ollama_host
-        context.environment["NO_PROXY"] = "127.0.0.1,localhost"
-        context.environment["no_proxy"] = "127.0.0.1,localhost"
-
-    def _probe_ollama(self, context: TrialContext) -> dict[str, Any]:
-        if not self.model:
-            return {
-                "available": False,
-                "reason": "local Ollama condition requires an explicit model",
-            }
-
-        executable = observe_executable(context, "ollama")
-        show = run_bounded(
-            repository_root=context.workspace,
-            argv=("ollama", "show", self.model),
-            environment=context.environment,
-            limits=ProcessLimits(
-                timeout_seconds=30,
-                max_stdout_bytes=2_000_000,
-                max_stderr_bytes=500_000,
-            ),
-        )
-        available = (
-            bool(executable.payload.get("available"))
-            and not show.executable_missing
-            and not show.timed_out
-            and show.return_code == 0
-            and not show.stdout_truncated
-            and not show.stderr_truncated
-        )
-        descriptor_sha256 = (
-            hashlib.sha256(show.stdout).hexdigest()
-            if available
-            else None
-        )
-        return {
-            "available": available,
-            "provider": "ollama",
-            "provider_version": executable.payload.get("version"),
-            "provider_executable_sha256": executable.payload.get(
-                "executable_sha256"
-            ),
-            "model": self.model,
-            "model_descriptor_sha256": descriptor_sha256,
-            "show_process": show.metrics(),
-            "stderr": show.stderr.decode("utf-8", errors="replace"),
-        }
-
-    def _local_provider_observation(
-        self,
-        context: TrialContext,
-    ) -> dict[str, Any] | None:
-        if self.local_provider is None:
-            return None
-        if self.local_provider == "ollama":
-            return self._probe_ollama(context)
-        return {
-            "available": False,
-            "provider": self.local_provider,
-            "reason": "benchmark adapter does not implement provider admission",
-        }
-
     def prepare(
         self,
         context: TrialContext,
         exposed_subject: SubjectAdapter | None,
     ) -> Observation:
-        self._configure_local_environment(context)
         exposure = self._exposure(context, exposed_subject)
         config = _render_config(
             self.model,
             exposure,
             reasoning_effort=self.reasoning_effort,
-            local_provider=self.local_provider,
         )
         config_path = self._config_path(context)
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(config, encoding="utf-8")
 
         observed = observe_executable(context, "codex")
-        local = self._local_provider_observation(context)
-        available = bool(observed.payload.get("available"))
-        if local is not None:
-            available = available and bool(local.get("available"))
-
         payload = dict(observed.payload)
         payload.update(
             {
-                "available": available,
                 "config_sha256": hashlib.sha256(
                     config.encode()
                 ).hexdigest(),
@@ -348,10 +247,6 @@ class CodexAgent:
                 ),
                 "model": self.model,
                 "reasoning_effort": self.reasoning_effort,
-                "local_provider": self.local_provider,
-                "local_base_url": self.local_base_url,
-                "ollama_host": self.ollama_host,
-                "local_provider_observation": local,
             }
         )
         return Observation(
@@ -364,14 +259,6 @@ class CodexAgent:
         argv = ["codex", "exec", "--json", "--full-auto"]
         if self.model:
             argv.extend(("--model", self.model))
-        if self.local_provider:
-            argv.extend(
-                (
-                    "--oss",
-                    "--local-provider",
-                    self.local_provider,
-                )
-            )
         argv.append(prompt)
         return tuple(argv)
 
@@ -422,9 +309,6 @@ class CodexAgent:
             "tool_available": exposure is not None,
             "model": self.model,
             "reasoning_effort": self.reasoning_effort,
-            "local_provider": self.local_provider,
-            "local_base_url": self.local_base_url,
-            "ollama_host": self.ollama_host,
             "budget_violation": (
                 (
                     f"tool calls {tool_calls} exceed max_tool_calls "
