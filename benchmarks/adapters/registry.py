@@ -1,6 +1,7 @@
 """Adapter registry for frozen benchmark definitions."""
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from benchmarks.adapters.codex import CodexAgent
@@ -76,11 +77,14 @@ def build_oracle(definition: dict[str, Any], *, timeout_seconds: int):
             raise AdapterConfigurationError(
                 "command oracle requires non-empty health_argv and grade_argv"
             )
+        expand = lambda values: tuple(
+            sys.executable if value == "{python}" else value for value in values
+        )
         return CommandOracle(
             str(identity["id"]),
             str(identity["version"]),
-            tuple(health),
-            tuple(grade),
+            expand(health),
+            expand(grade),
             timeout_seconds=min(
                 int(config.get("timeout_seconds", timeout_seconds)),
                 timeout_seconds,
