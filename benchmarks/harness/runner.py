@@ -113,6 +113,12 @@ def _agent_authority(agent, prepared: Observation) -> dict[str, Any]:
             "executable_sha256": prepared.payload.get("executable_sha256"),
             "mcp_exposure": prepared.payload.get("mcp_exposure"),
             "auth_mode": prepared.payload.get("auth_mode"),
+            "model": prepared.payload.get("model"),
+            "reasoning_effort": prepared.payload.get("reasoning_effort"),
+            "local_provider": prepared.payload.get("local_provider"),
+            "local_provider_observation": prepared.payload.get(
+                "local_provider_observation"
+            ),
         },
     }
 
@@ -292,15 +298,21 @@ def run_trial(
 
         subject = build_subject(suite.subjects[str(condition["subject"])])
         agent_definition = suite.agents[str(condition["agent"])]
-        auth_mode = (
-            seed_codex_auth(context, codex_auth)
-            if agent_definition["adapter"] == "codex"
-            else "not-applicable"
-        )
         agent = build_agent(
             agent_definition,
             budgets=task["budgets"],
         )
+        auth_mode = (
+            seed_codex_auth(context, codex_auth)
+            if agent_definition["adapter"] == "codex"
+            and agent.requires_remote_auth()
+            else (
+                "not-required-local-provider"
+                if agent_definition["adapter"] == "codex"
+                else "not-applicable"
+            )
+        )
+        context.environment["BENCHMARK_CODEX_AUTH_MODE"] = auth_mode
         oracle = build_oracle(
             task["oracle"],
             timeout_seconds=int(task["budgets"]["timeout_seconds"]),
