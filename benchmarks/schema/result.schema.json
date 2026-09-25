@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "result.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "trial_id",
+    "experiment",
+    "task",
+    "condition",
+    "status",
+    "authority",
+    "execution",
+    "measurements"
+  ],
+  "properties": {
+    "trial_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "experiment": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "status": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "INCOMPLETE",
+        "INVALID",
+        "CONTAMINATED",
+        "NO_QUALIFYING_DEFECT"
+      ]
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "measurements": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}
