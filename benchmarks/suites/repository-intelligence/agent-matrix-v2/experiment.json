@@ -30,23 +30,23 @@
       "seed": 5201
     },
     {
-      "id": "bare-gemma4-12b",
+      "id": "bare-opencode-native",
       "subject": "none",
-      "agent": "gemma4-12b-ollama",
+      "agent": "opencode-native",
       "trials": 1,
       "seed": 5201
     },
     {
-      "id": "hashmarks-gemma4-12b",
+      "id": "hashmarks-opencode-native",
       "subject": "hashmarks",
-      "agent": "gemma4-12b-ollama",
+      "agent": "opencode-native",
       "trials": 1,
       "seed": 5201
     },
     {
-      "id": "enola-gemma4-12b",
+      "id": "enola-opencode-native",
       "subject": "enola",
-      "agent": "gemma4-12b-ollama",
+      "agent": "opencode-native",
       "trials": 1,
       "seed": 5201
     }
