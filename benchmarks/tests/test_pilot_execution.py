@@ -439,9 +439,102 @@ class PilotExecutionTests(unittest.TestCase):
                     "inspect-config",
                     "--repo",
                     str(workspace),
-                    "--benchmark-exposure-file",
-                    str(control / "opencode-benchmark-exposure.json"),
+                    "--benchmark-subject",
+                    "none",
                 ),
+            )
+
+    def test_opencode_assisted_prepare_reuses_native_subject_server(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            context = TrialContext(
+                workspace,
+                control,
+                isolated_environment(control),
+            )
+            executable = Observation(
+                {
+                    "available": True,
+                    "version": "opencode 1",
+                    "executable_sha256": "a" * 64,
+                },
+                "opencode 1",
+            )
+            inspection = {
+                "model": "liteLLM/gemma4",
+                "provider": "liteLLM",
+                "config_sha256": "b" * 64,
+                "mcp_shape": "flat",
+                "mcp_servers": [
+                    {"name": "hashmarks", "enabled": True},
+                    {"name": "enola", "enabled": True},
+                ],
+            }
+            runtime_result = mock.Mock()
+            runtime_result.metrics.return_value = {"return_code": 0}
+            runtime_result.stderr = b""
+            runtime_result.stdout = b"{}"
+            subject = HashmarksSubject()
+            with (
+                mock.patch(
+                    "benchmarks.adapters.opencode_native.observe_executable",
+                    return_value=executable,
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call",
+                    return_value=(
+                        {
+                            "status": "completed",
+                            "inspection": inspection,
+                            "effective_inspection": inspection,
+                            "selected_server": "hashmarks",
+                            "overlay_identity": {
+                                "shape": "flat",
+                                "selected_subject": "hashmarks",
+                                "native_server_reused": True,
+                            },
+                        },
+                        runtime_result,
+                    ),
+                ) as runtime_call,
+                mock.patch.object(
+                    subject,
+                    "mcp_exposure",
+                    side_effect=AssertionError(
+                        "native OpenCode must not request benchmark MCP exposure"
+                    ),
+                ),
+            ):
+                prepared = OpenCodeNativeAgent().prepare(context, subject)
+
+            self.assertTrue(prepared.payload["available"])
+            self.assertEqual(
+                prepared.payload["mcp_exposure"]["name"],
+                "hashmarks",
+            )
+            self.assertEqual(
+                prepared.payload["mcp_exposure"]["source"],
+                "native-opencode-config",
+            )
+            self.assertTrue(
+                prepared.payload["mcp_exposure"]["native_server_reused"]
+            )
+            runtime_call.assert_called_once()
+            self.assertEqual(
+                runtime_call.call_args.kwargs["args"],
+                (
+                    "inspect-config",
+                    "--repo",
+                    str(workspace),
+                    "--benchmark-subject",
+                    "hashmarks",
+                ),
+            )
+            self.assertFalse(
+                (control / "opencode-benchmark-exposure.json").exists()
             )
 
     def test_opencode_export_observes_native_model_and_mcp_adoption(self) -> None:
