@@ -501,7 +501,7 @@ class PilotExecutionTests(unittest.TestCase):
                     ),
                 ) as runtime_call,
                 mock.patch.object(
-                    subject,
+                    HashmarksSubject,
                     "mcp_exposure",
                     side_effect=AssertionError(
                         "native OpenCode must not request benchmark MCP exposure"
