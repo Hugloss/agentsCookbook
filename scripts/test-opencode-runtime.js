@@ -180,30 +180,30 @@ async function testSharedLifecycle() {
             permission: { bash: 'deny' },
           }),
         },
-        exposure: {
-          name: 'hashmarks',
-          command: 'hashmarks',
-          args: ['--workspace', '.', 'mcp'],
-          cwd: root,
-          environment: { HOME: path.join(root, 'isolated-home') },
-        },
+        selectedSubject: 'hashmarks',
       });
       assert.strictEqual(prepared.status, 'completed', prepared.reason);
-      assert.strictEqual(prepared.selected_server, 'benchmark_hashmarks');
+      assert.strictEqual(prepared.selected_server, 'hashmarks');
       assert.strictEqual(prepared.inspection.model, 'liteLLM/gemma4');
+      assert.strictEqual(
+        prepared.overlay_identity.native_server_reused,
+        true,
+      );
       const content = JSON.parse(prepared.environment.OPENCODE_CONFIG_CONTENT);
       const servers = shape === 'nested' ? content.mcp.servers : content.mcp;
       assert.strictEqual(content.provider.liteLLM.options.apiKey, 'inline-secret');
       assert.strictEqual(content.permission.bash, 'deny');
-      assert.strictEqual(servers.hashmarks[shape === 'nested' ? 'disabled' : 'enabled'],
-        shape === 'nested' ? true : false);
-      assert.deepStrictEqual(servers.benchmark_hashmarks.command,
-        ['hashmarks', '--workspace', '.', 'mcp']);
-      assert.strictEqual(servers.benchmark_hashmarks.cwd, root);
-      assert.strictEqual(servers.benchmark_hashmarks.environment.HOME,
-        path.join(root, 'isolated-home'));
+      assert.deepStrictEqual(
+        servers.hashmarks.command,
+        ['hashmarks', 'mcp'],
+      );
+      assert.ok(!Object.hasOwn(servers, 'benchmark_hashmarks'));
       if (shape === 'nested') {
-        assert.strictEqual(servers.benchmark_hashmarks.codemode, false);
+        assert.notStrictEqual(servers.hashmarks.disabled, true);
+        assert.strictEqual(servers.enola.disabled, true);
+      } else {
+        assert.notStrictEqual(servers.hashmarks.enabled, false);
+        assert.strictEqual(servers.enola.enabled, false);
       }
       const { environment, ...safe } = prepared;
       assert.ok(!JSON.stringify(safe).includes('inline-secret'));
@@ -219,14 +219,20 @@ async function testSharedLifecycle() {
     const disconnected = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
-      env: { ...env, FAKE_MCP_DISCONNECTED: 'benchmark_hashmarks' },
-      exposure: {
-        name: 'hashmarks', command: 'hashmarks', args: ['mcp'],
-        cwd: root, environment: {},
-      },
+      env: { ...env, FAKE_MCP_DISCONNECTED: 'hashmarks' },
+      selectedSubject: 'hashmarks',
     });
     assert.strictEqual(disconnected.status, 'failed');
     assert.match(disconnected.reason, /is not connected/);
+
+    const missing = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      env,
+      selectedSubject: 'missing-subject',
+    });
+    assert.strictEqual(missing.status, 'failed');
+    assert.match(missing.reason, /does not define MCP server/);
 
     const result = await runtime.runSessionAndExport({
       opencodeBin: fake,
