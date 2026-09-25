@@ -332,17 +332,17 @@ function resolveNativeConfig({
   }
 }
 
-async function runSessionAndExport({
+function runSession({
   opencodeBin = process.env.OPENCODE_BIN || 'opencode',
   repoDir,
   agent = 'build',
   title,
   prompt,
+  homeDir = '',
   env = {},
-  deleteAfterExport = true,
 }) {
   const startedAt = Date.now();
-  const run = runCommand(
+  const command = runCommand(
     opencodeBin,
     [
       '--pure',
@@ -357,14 +357,38 @@ async function runSessionAndExport({
       'json',
       prompt,
     ],
-    { cwd: repoDir, env },
+    {
+      cwd: repoDir,
+      env: effectiveEnv({ homeDir, env }),
+    },
   );
+  return { startedAt, command };
+}
+
+async function runSessionAndExport({
+  opencodeBin = process.env.OPENCODE_BIN || 'opencode',
+  repoDir,
+  agent = 'build',
+  title,
+  prompt,
+  env = {},
+  deleteAfterExport = true,
+}) {
+  const started = runSession({
+    opencodeBin,
+    repoDir,
+    agent,
+    title,
+    prompt,
+    env,
+  });
+  const run = started.command;
 
   const sessionId = await findSessionId({
     opencodeBin,
     repoDir,
     title,
-    startedAt,
+    startedAt: started.startedAt,
     env,
   });
   let exported = null;
@@ -468,6 +492,7 @@ module.exports = {
   readJsonText,
   resolveNativeConfig,
   runCommand,
+  runSession,
   runSessionAndExport,
   sanitize,
 };
