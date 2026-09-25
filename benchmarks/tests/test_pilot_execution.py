@@ -22,8 +22,6 @@ from benchmarks.adapters.enola import EnolaSubject
 from benchmarks.adapters.hashmarks import HashmarksSubject
 from benchmarks.adapters.opencode_native import (
     OpenCodeNativeAgent,
-    _config_identity as opencode_config_identity,
-    _configured_model as opencode_configured_model,
     _metrics as opencode_metrics,
     _native_environment as opencode_native_environment,
     _observed_model as opencode_observed_model,
@@ -344,13 +342,7 @@ class PilotExecutionTests(unittest.TestCase):
                 isolated_environment(control),
             )
             overlay = opencode_runtime_overlay(
-                config={
-                    "mcp": {
-                        "enola": {"type": "local"},
-                        "hashmarks": {"type": "local"},
-                        "other": {"type": "local"},
-                    }
-                },
+                mcp_shape="flat",
                 server_names=("enola", "hashmarks", "other"),
                 selected_server="hashmarks",
             )
@@ -372,13 +364,7 @@ class PilotExecutionTests(unittest.TestCase):
 
     def test_opencode_runtime_overlay_only_gates_native_mcp_tools(self) -> None:
         overlay = opencode_runtime_overlay(
-            config={
-                "mcp": {
-                    "enola": {"type": "local"},
-                    "hashmarks": {"type": "local"},
-                    "jira": {"type": "local"},
-                }
-            },
+            mcp_shape="flat",
             server_names=("enola", "hashmarks", "jira"),
             selected_server="hashmarks",
         )
@@ -406,35 +392,72 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertNotIn('"model"', encoded)
         self.assertNotIn('"provider"', encoded)
 
-    def test_opencode_native_config_identity_redacts_credentials(self) -> None:
-        first = {
-            "model": "liteLLM/gemma4",
-            "provider": {
-                "liteLLM": {
-                    "options": {
-                        "apiKey": "secret-one",
-                        "baseURL": "http://127.0.0.1:4000/v1",
-                    }
-                }
-            },
-        }
-        second = json.loads(json.dumps(first))
-        second["provider"]["liteLLM"]["options"]["apiKey"] = (
-            "secret-two"
-        )
-        self.assertEqual(
-            opencode_config_identity(first),
-            opencode_config_identity(second),
-        )
-        second["model"] = "liteLLM/other"
-        self.assertNotEqual(
-            opencode_config_identity(first),
-            opencode_config_identity(second),
-        )
-        self.assertEqual(
-            opencode_configured_model(first),
-            "liteLLM/gemma4",
-        )
+    def test_opencode_prepare_uses_shared_runtime_inspection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            context = TrialContext(
+                workspace,
+                control,
+                isolated_environment(control),
+            )
+            executable = Observation(
+                {
+                    "available": True,
+                    "version": "opencode 1",
+                    "executable_sha256": "a" * 64,
+                },
+                "opencode 1",
+            )
+            inspection = {
+                "model": "liteLLM/gemma4",
+                "provider": "liteLLM",
+                "config_sha256": "b" * 64,
+                "mcp_shape": "flat",
+                "mcp_servers": [
+                    {"name": "hashmarks", "enabled": True},
+                    {"name": "enola", "enabled": True},
+                ],
+            }
+            runtime_result = mock.Mock()
+            runtime_result.metrics.return_value = {"return_code": 0}
+            runtime_result.stderr = b""
+            runtime_result.stdout = b"{}"
+            with (
+                mock.patch(
+                    "benchmarks.adapters.opencode_native.observe_executable",
+                    return_value=executable,
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call",
+                    return_value=(
+                        {
+                            "status": "completed",
+                            "inspection": inspection,
+                        },
+                        runtime_result,
+                    ),
+                ) as runtime_call,
+            ):
+                prepared = OpenCodeNativeAgent().prepare(context, None)
+
+            self.assertTrue(prepared.payload["available"])
+            self.assertEqual(prepared.payload["model"], "liteLLM/gemma4")
+            self.assertEqual(
+                prepared.payload["native_config_sha256"],
+                "b" * 64,
+            )
+            runtime_call.assert_called_once()
+            self.assertEqual(
+                runtime_call.call_args.kwargs["args"],
+                (
+                    "inspect-config",
+                    "--repo",
+                    str(workspace),
+                ),
+            )
 
     def test_opencode_export_observes_native_model_and_mcp_adoption(self) -> None:
         exported = {
