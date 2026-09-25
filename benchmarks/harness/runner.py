@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from benchmarks.adapters.codex import seed_codex_auth
 from benchmarks.adapters.registry import build_agent, build_oracle, build_subject
 from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.events import append_event, seal_events
@@ -106,6 +107,7 @@ def _agent_authority(agent, prepared: Observation) -> dict[str, Any]:
             "version": prepared.payload.get("version"),
             "executable_sha256": prepared.payload.get("executable_sha256"),
             "mcp_exposure": prepared.payload.get("mcp_exposure"),
+            "auth_mode": prepared.payload.get("auth_mode"),
         },
     }
 
@@ -205,6 +207,7 @@ def run_trial(
     results_root: Path,
     work_root: Path,
     local_source: Path | None = None,
+    codex_auth: Path | None = None,
 ) -> TrialRunResult:
     task = suite.tasks[task_id]
     condition = next(
@@ -261,6 +264,7 @@ def run_trial(
         admitted_state = snapshot(workspace)
 
         subject = build_subject(suite.subjects[str(condition["subject"])])
+        auth_mode = seed_codex_auth(context, codex_auth)
         agent = build_agent(
             suite.agents[str(condition["agent"])],
             timeout_seconds=int(task["budgets"]["timeout_seconds"]),
@@ -327,7 +331,10 @@ def run_trial(
         )
         emit("trial.mutation", mutation.payload)
         emit("subject.prepared", subject_prepare.payload)
-        emit("agent.prepared", agent_prepare.payload)
+        emit(
+            "agent.prepared",
+            {**agent_prepare.payload, "auth_mode": auth_mode},
+        )
         emit("oracle.health", oracle_health.payload)
 
         agent_observation = Observation(
