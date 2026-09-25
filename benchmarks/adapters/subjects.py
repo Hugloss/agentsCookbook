@@ -3,9 +3,8 @@ from __future__ import annotations
 
 import shlex
 from dataclasses import dataclass
-from pathlib import Path
 
-from benchmarks.harness.model import Observation, ParticipantIdentity
+from benchmarks.harness.model import Observation, ParticipantIdentity, TrialContext
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
@@ -37,16 +36,20 @@ class NoneSubject:
     def identity(self) -> ParticipantIdentity:
         return ParticipantIdentity("none", "control", "1")
 
-    def prepare(self, workspace: str) -> Observation:
+    def prepare(self, context: TrialContext) -> Observation:
         return Observation({"available": False, "observed": True}, "")
 
-    def query(self, workspace: str, prompt: str) -> Observation:
+    def query(self, context: TrialContext, prompt: str) -> Observation:
         return Observation({"available": False, "invoked": False}, "")
 
-    def post_change(self, workspace: str, changed_paths: tuple[str, ...]) -> Observation:
+    def post_change(
+        self,
+        context: TrialContext,
+        changed_paths: tuple[str, ...],
+    ) -> Observation:
         return Observation({"available": False}, "")
 
-    def cleanup(self, workspace: str) -> Observation:
+    def cleanup(self, context: TrialContext) -> Observation:
         return Observation({}, "")
 
 
@@ -66,10 +69,11 @@ class CommandSubject:
             {"identity_argv": self.identity_argv, "query_argv": self.query_argv},
         )
 
-    def _run(self, workspace: str, argv: tuple[str, ...]):
+    def _run(self, context: TrialContext, argv: tuple[str, ...]):
         return run_bounded(
-            repository_root=Path(workspace),
+            repository_root=context.workspace,
             argv=argv,
+            environment=context.environment,
             limits=ProcessLimits(
                 timeout_seconds=self.timeout_seconds,
                 max_stdout_bytes=5_000_000,
@@ -77,8 +81,8 @@ class CommandSubject:
             ),
         )
 
-    def prepare(self, workspace: str) -> Observation:
-        result = self._run(workspace, self.identity_argv)
+    def prepare(self, context: TrialContext) -> Observation:
+        result = self._run(context, self.identity_argv)
         payload, measurements = _observe(result)
         payload.update(
             {
@@ -95,17 +99,21 @@ class CommandSubject:
         )
         return Observation(payload, _text(result.stdout), measurements)
 
-    def query(self, workspace: str, prompt: str) -> Observation:
+    def query(self, context: TrialContext, prompt: str) -> Observation:
         argv = tuple(part.replace("{prompt}", prompt) for part in self.query_argv)
-        result = self._run(workspace, argv)
+        result = self._run(context, argv)
         payload, measurements = _observe(result)
         payload.update({"available": not result.executable_missing, "invoked": True})
         return Observation(payload, _text(result.stdout), measurements)
 
-    def post_change(self, workspace: str, changed_paths: tuple[str, ...]) -> Observation:
+    def post_change(
+        self,
+        context: TrialContext,
+        changed_paths: tuple[str, ...],
+    ) -> Observation:
         return Observation({"changed_paths": list(changed_paths)}, "")
 
-    def cleanup(self, workspace: str) -> Observation:
+    def cleanup(self, context: TrialContext) -> Observation:
         return Observation({}, "")
 
 
