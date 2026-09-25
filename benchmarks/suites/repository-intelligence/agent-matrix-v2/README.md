@@ -53,6 +53,24 @@ all non-selected native MCP servers and reuses the already configured native
 arguments, working directory, environment, provider settings, or credentials.
 
 The selected native server must already exist, be enabled, and connect successfully.
+Its workspace binding must also be positively verified before the trial is admitted.
+
+Workspace verification is intentionally conservative:
+
+- Hashmarks: the native command must resolve its explicit `--workspace` to the isolated
+  trial workspace. A native definition may use any binary path or state configuration,
+  but a workspace resolving elsewhere is not admitted.
+- Enola: the standard native registration `command: ["enola"]` is verified from
+  OpenCode's MCP cwd semantics: absent `cwd`, OpenCode starts the local MCP in the
+  trial workspace; relative `cwd` is resolved from that workspace. If the native
+  definition passes an Enola config/repository argument, the benchmark does not rewrite
+  or parse it heuristically and therefore treats the binding as unverified.
+- Any missing, remote, unsupported, or otherwise unprovable binding produces
+  `INCOMPLETE`, never product `FAIL`.
+
+Full absolute path diagnostics stay in preparation evidence, while only stable proof
+semantics are bound into execution identity so temporary workspace paths do not break
+resumability.
 If it is missing, disabled, or disconnected, the trial is not admitted. Both flat and
 nested OpenCode MCP configuration shapes are supported. The report separates campaigns
 if one agent's observed native model or configuration changes across selected receipts.
