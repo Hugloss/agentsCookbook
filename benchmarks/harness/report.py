@@ -19,6 +19,7 @@ _VALID_OUTCOMES = {"PASS", "FAIL", "NO_QUALIFYING_DEFECT"}
 _NUMERIC_AGENT_METRICS = (
     "duration_ms",
     "command_calls",
+    "tool_calls",
     "mcp_calls",
     "subject_mcp_calls",
     "mcp_result_bytes",
