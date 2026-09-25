@@ -316,6 +316,15 @@ class OpenCodeNativeAgent:
         }
         selected = resolved.get("selected_server")
         selected_ready = selected is None or servers.get(selected) is True
+        workspace_binding = resolved.get("workspace_binding")
+        if not isinstance(workspace_binding, dict):
+            workspace_binding = {
+                "verified": selected is None,
+                "reason": "shared runtime emitted no workspace-binding evidence",
+            }
+        binding_verified = (
+            selected is None or workspace_binding.get("verified") is True
+        )
         overlay_identity = dict(resolved.get("overlay_identity", {}))
         evidence = {
             "runtime_contract": "agents-cookbook-opencode-runtime/v1",
@@ -327,6 +336,7 @@ class OpenCodeNativeAgent:
             ),
             "mcp_shape": inspection.get("mcp_shape"),
             "selected_server": selected,
+            "workspace_binding": workspace_binding,
             "overlay_sha256": hashlib.sha256(
                 canonical_json(overlay_identity)
             ).hexdigest(),
@@ -339,6 +349,7 @@ class OpenCodeNativeAgent:
             and isinstance(model, str)
             and bool(model)
             and selected_ready
+            and binding_verified
         )
         reason = None
         if not isinstance(model, str) or not model:
@@ -349,6 +360,11 @@ class OpenCodeNativeAgent:
             reason = (
                 f"native OpenCode config does not expose enabled MCP server "
                 f"{selected}"
+            )
+        elif not binding_verified:
+            reason = str(
+                workspace_binding.get("reason")
+                or "native OpenCode MCP workspace binding is unverified"
             )
         return Observation(
             {
@@ -366,6 +382,7 @@ class OpenCodeNativeAgent:
                 "provider": provider,
                 "native_config_sha256": evidence["native_config_sha256"],
                 "native_mcp_servers": evidence["native_mcp_servers"],
+                "workspace_binding": workspace_binding,
                 "mcp_exposure": (
                     {
                         "name": selected,
