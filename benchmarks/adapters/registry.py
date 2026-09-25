@@ -38,8 +38,26 @@ def build_agent(definition: dict[str, Any], *, budgets: dict[str, Any]):
         model = config.get("model")
         if model is not None and not isinstance(model, str):
             raise AdapterConfigurationError("codex model must be a string or null")
+        reasoning_effort = config.get("reasoning_effort")
+        if reasoning_effort is not None and not isinstance(
+            reasoning_effort, str
+        ):
+            raise AdapterConfigurationError(
+                "codex reasoning_effort must be a string or null"
+            )
+        local_provider = config.get("local_provider")
+        if local_provider is not None and local_provider not in {"ollama"}:
+            raise AdapterConfigurationError(
+                "benchmark Codex local_provider currently supports only ollama"
+            )
+        if local_provider is not None and model is None:
+            raise AdapterConfigurationError(
+                "local Codex provider requires an explicit model"
+            )
         return CodexAgent(
             model=model,
+            reasoning_effort=reasoning_effort,
+            local_provider=local_provider,
             timeout_seconds=min(
                 int(config.get("timeout_seconds", budgets["timeout_seconds"])),
                 int(budgets["timeout_seconds"]),
