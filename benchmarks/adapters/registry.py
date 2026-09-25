@@ -54,10 +54,23 @@ def build_agent(definition: dict[str, Any], *, budgets: dict[str, Any]):
             raise AdapterConfigurationError(
                 "local Codex provider requires an explicit model"
             )
+        local_base_url = config.get("local_base_url")
+        ollama_host = config.get("ollama_host")
+        if local_provider == "ollama":
+            if not isinstance(local_base_url, str) or not local_base_url:
+                raise AdapterConfigurationError(
+                    "ollama condition requires local_base_url"
+                )
+            if not isinstance(ollama_host, str) or not ollama_host:
+                raise AdapterConfigurationError(
+                    "ollama condition requires ollama_host"
+                )
         return CodexAgent(
             model=model,
             reasoning_effort=reasoning_effort,
             local_provider=local_provider,
+            local_base_url=local_base_url,
+            ollama_host=ollama_host,
             timeout_seconds=min(
                 int(config.get("timeout_seconds", budgets["timeout_seconds"])),
                 int(budgets["timeout_seconds"]),
