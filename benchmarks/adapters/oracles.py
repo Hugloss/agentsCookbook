@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from benchmarks.harness.identity import canonical_json
-from benchmarks.harness.model import Observation, ParticipantIdentity
+from benchmarks.harness.model import Observation, ParticipantIdentity, TrialContext
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
@@ -32,15 +32,18 @@ class CommandOracle:
 
     def _run(
         self,
-        workspace: str,
+        context: TrialContext,
         argv: tuple[str, ...],
         *,
         environment: dict[str, str] | None = None,
     ):
+        effective_environment = dict(context.environment)
+        if environment:
+            effective_environment.update(environment)
         return run_bounded(
-            repository_root=Path(workspace),
+            repository_root=context.workspace,
             argv=argv,
-            environment=environment,
+            environment=effective_environment,
             limits=ProcessLimits(
                 timeout_seconds=self.timeout_seconds,
                 max_stdout_bytes=5_000_000,
@@ -48,8 +51,8 @@ class CommandOracle:
             ),
         )
 
-    def healthcheck(self, workspace: str) -> Observation:
-        result = self._run(workspace, self.health_argv)
+    def healthcheck(self, context: TrialContext) -> Observation:
+        result = self._run(context, self.health_argv)
         healthy = (
             not result.executable_missing
             and not result.timed_out
@@ -67,8 +70,11 @@ class CommandOracle:
             {"duration_ms": result.elapsed_ms},
         )
 
-    def grade(self, workspace: str, observation: Observation) -> Observation:
-        with tempfile.TemporaryDirectory(prefix="benchmark-oracle-") as tmp:
+    def grade(self, context: TrialContext, observation: Observation) -> Observation:
+        with tempfile.TemporaryDirectory(
+            prefix="benchmark-oracle-",
+            dir=context.environment.get("TMPDIR"),
+        ) as tmp:
             observation_path = Path(tmp) / "observation.json"
             observation_path.write_bytes(
                 canonical_json(
@@ -80,7 +86,7 @@ class CommandOracle:
                 )
             )
             result = self._run(
-                workspace,
+                context,
                 self.grade_argv,
                 environment={"BENCHMARK_OBSERVATION_PATH": str(observation_path)},
             )
