@@ -7,6 +7,7 @@ from typing import Any
 from benchmarks.adapters.codex import CodexAgent
 from benchmarks.adapters.enola import EnolaSubject
 from benchmarks.adapters.hashmarks import HashmarksSubject
+from benchmarks.adapters.opencode_native import OpenCodeNativeAgent
 from benchmarks.adapters.oracles import CommandOracle, ExpectedJsonOracle
 from benchmarks.adapters.subjects import NoneSubject
 
@@ -34,54 +35,79 @@ def build_subject(definition: dict[str, Any]):
 def build_agent(definition: dict[str, Any], *, budgets: dict[str, Any]):
     adapter = definition["adapter"]
     config = definition.get("configuration", {})
+    timeout_seconds = min(
+        int(config.get("timeout_seconds", budgets["timeout_seconds"])),
+        int(budgets["timeout_seconds"]),
+    )
+    max_output_bytes = int(
+        budgets.get("max_output_bytes", 50_000_000)
+    )
+    max_tool_calls = (
+        int(budgets["max_tool_calls"])
+        if "max_tool_calls" in budgets
+        else None
+    )
+
     if adapter == "codex":
         model = config.get("model")
         if model is not None and not isinstance(model, str):
-            raise AdapterConfigurationError("codex model must be a string or null")
+            raise AdapterConfigurationError(
+                "codex model must be a string or null"
+            )
         reasoning_effort = config.get("reasoning_effort")
         if reasoning_effort is not None and not isinstance(
-            reasoning_effort, str
+            reasoning_effort,
+            str,
         ):
             raise AdapterConfigurationError(
                 "codex reasoning_effort must be a string or null"
             )
-        local_provider = config.get("local_provider")
-        if local_provider is not None and local_provider not in {"ollama"}:
-            raise AdapterConfigurationError(
-                "benchmark Codex local_provider currently supports only ollama"
+        unexpected = {
+            key
+            for key in (
+                "local_provider",
+                "local_base_url",
+                "ollama_host",
             )
-        if local_provider is not None and model is None:
+            if config.get(key) is not None
+        }
+        if unexpected:
             raise AdapterConfigurationError(
-                "local Codex provider requires an explicit model"
+                "Codex benchmark adapter does not run local models: "
+                + ", ".join(sorted(unexpected))
             )
-        local_base_url = config.get("local_base_url")
-        ollama_host = config.get("ollama_host")
-        if local_provider == "ollama":
-            if not isinstance(local_base_url, str) or not local_base_url:
-                raise AdapterConfigurationError(
-                    "ollama condition requires local_base_url"
-                )
-            if not isinstance(ollama_host, str) or not ollama_host:
-                raise AdapterConfigurationError(
-                    "ollama condition requires ollama_host"
-                )
         return CodexAgent(
             model=model,
             reasoning_effort=reasoning_effort,
-            local_provider=local_provider,
-            local_base_url=local_base_url,
-            ollama_host=ollama_host,
-            timeout_seconds=min(
-                int(config.get("timeout_seconds", budgets["timeout_seconds"])),
-                int(budgets["timeout_seconds"]),
-            ),
-            max_output_bytes=int(budgets.get("max_output_bytes", 50_000_000)),
-            max_tool_calls=(
-                int(budgets["max_tool_calls"])
-                if "max_tool_calls" in budgets
-                else None
-            ),
+            timeout_seconds=timeout_seconds,
+            max_output_bytes=max_output_bytes,
+            max_tool_calls=max_tool_calls,
         )
+
+    if adapter == "opencode-native":
+        forbidden = {
+            key
+            for key in (
+                "model",
+                "provider",
+                "local_provider",
+                "base_url",
+                "api_key",
+            )
+            if key in config
+        }
+        if forbidden:
+            raise AdapterConfigurationError(
+                "native OpenCode model/provider/auth belong to the "
+                "installed OpenCode config, not the benchmark: "
+                + ", ".join(sorted(forbidden))
+            )
+        return OpenCodeNativeAgent(
+            timeout_seconds=timeout_seconds,
+            max_output_bytes=max_output_bytes,
+            max_tool_calls=max_tool_calls,
+        )
+
     raise AdapterConfigurationError(f"unknown agent adapter: {adapter}")
 
 
@@ -115,7 +141,8 @@ def build_oracle(definition: dict[str, Any], *, timeout_seconds: int):
                 "command oracle requires non-empty health_argv and grade_argv"
             )
         expand = lambda values: tuple(
-            sys.executable if value == "{python}" else value for value in values
+            sys.executable if value == "{python}" else value
+            for value in values
         )
         return CommandOracle(
             str(identity["id"]),
