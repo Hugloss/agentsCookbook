@@ -44,7 +44,11 @@ class ExpectedJsonOracle:
         final_message = observation.payload.get("final_message")
         if not isinstance(final_message, str):
             return Observation(
-                {"passed": False, "reason": "agent final_message is missing"},
+                {
+                    "passed": False,
+                    "valid": True,
+                    "reason": "agent final_message is missing",
+                },
                 "",
             )
         try:
@@ -53,6 +57,7 @@ class ExpectedJsonOracle:
             return Observation(
                 {
                     "passed": False,
+                    "valid": True,
                     "reason": f"agent final_message is not JSON: {exc.msg}",
                     "actual_text": final_message,
                 },
@@ -62,6 +67,7 @@ class ExpectedJsonOracle:
         return Observation(
             {
                 "passed": passed,
+                "valid": True,
                 "expected": self.expected,
                 "actual": actual,
                 "reason": None if passed else "JSON answer differs from frozen oracle",
@@ -146,16 +152,18 @@ class CommandOracle:
                 self.grade_argv,
                 environment={"BENCHMARK_OBSERVATION_PATH": str(observation_path)},
             )
-        passed = (
+        valid = (
             not result.executable_missing
             and not result.timed_out
-            and result.return_code == 0
             and not result.stdout_truncated
             and not result.stderr_truncated
+            and result.return_code is not None
         )
+        passed = valid and result.return_code == 0
         return Observation(
             {
                 "passed": passed,
+                "valid": valid,
                 "process": result.metrics(),
                 "stderr": _text(result.stderr),
             },
