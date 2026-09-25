@@ -71,11 +71,7 @@ def verify_bundle(directory: Path) -> tuple[bool, str | None]:
         "completion.json",
         *(str(value["path"]) for value in artifacts.values()),
     }
-    actual_files = {
-        path.name
-        for path in directory.iterdir()
-        if path.is_file() or path.is_symlink()
-    }
+    actual_files = {path.name for path in directory.iterdir()}
     if actual_files != declared_files:
         return False, "result bundle contains undeclared or missing files"
 
