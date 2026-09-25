@@ -16,6 +16,21 @@ def _hash_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _record_symlink(
+    out: dict[str, dict[str, object]],
+    *,
+    root: Path,
+    path: Path,
+) -> None:
+    relative = path.relative_to(root).as_posix()
+    payload = os.readlink(path).encode()
+    out[relative] = {
+        "kind": "symlink",
+        "size": len(payload),
+        "sha256": _hash_bytes(payload),
+    }
+
+
 def snapshot(
     root: Path,
     *,
@@ -26,38 +41,62 @@ def snapshot(
     root = root.resolve()
     out: dict[str, dict[str, object]] = {}
     total = 0
-    for path in sorted(root.rglob("*")):
-        relative = path.relative_to(root)
-        if ".git" in relative.parts:
-            continue
-        key = relative.as_posix()
-        if path.is_symlink():
-            payload = os.readlink(path).encode()
-            out[key] = {
-                "kind": "symlink",
-                "size": len(payload),
-                "sha256": _hash_bytes(payload),
-            }
-        elif path.is_file():
-            size = path.stat().st_size
-            if size > max_file_bytes:
-                raise WorkspaceError(f"workspace file exceeds configured bound: {key}")
-            total += size
-            if total > max_total_bytes:
-                raise WorkspaceError("workspace exceeds configured cumulative byte bound")
-            digest = hashlib.sha256()
-            with path.open("rb") as stream:
-                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                    digest.update(chunk)
-            out[key] = {"kind": "file", "size": size, "sha256": digest.hexdigest()}
-        else:
-            continue
+
+    for current, directories, files in os.walk(root, followlinks=False):
+        current_path = Path(current)
+        if current_path == root:
+            directories[:] = [name for name in directories if name != ".git"]
+
+        retained_directories: list[str] = []
+        for name in sorted(directories):
+            path = current_path / name
+            if path.is_symlink():
+                _record_symlink(out, root=root, path=path)
+            else:
+                retained_directories.append(name)
+        directories[:] = retained_directories
+
+        for name in sorted(files):
+            path = current_path / name
+            relative = path.relative_to(root).as_posix()
+            if path.is_symlink():
+                _record_symlink(out, root=root, path=path)
+            else:
+                size = path.stat().st_size
+                if size > max_file_bytes:
+                    raise WorkspaceError(
+                        f"workspace file exceeds configured bound: {relative}"
+                    )
+                total += size
+                if total > max_total_bytes:
+                    raise WorkspaceError(
+                        "workspace exceeds configured cumulative byte bound"
+                    )
+                digest = hashlib.sha256()
+                with path.open("rb") as stream:
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                out[relative] = {
+                    "kind": "file",
+                    "size": size,
+                    "sha256": digest.hexdigest(),
+                }
+
+            if len(out) > max_paths:
+                raise WorkspaceError("workspace path count exceeds configured bound")
+
         if len(out) > max_paths:
             raise WorkspaceError("workspace path count exceeds configured bound")
-    return out
+
+    return dict(sorted(out.items()))
 
 
-def _run_git(repository_root: Path, argv: tuple[str, ...], *, timeout: float = 120.0) -> bytes:
+def _run_git(
+    repository_root: Path,
+    argv: tuple[str, ...],
+    *,
+    timeout: float = 120.0,
+) -> bytes:
     result = run_bounded(
         repository_root=repository_root,
         argv=argv,
@@ -70,7 +109,9 @@ def _run_git(repository_root: Path, argv: tuple[str, ...], *, timeout: float = 1
     if result.executable_missing:
         raise WorkspaceError("git executable unavailable")
     if result.timed_out or result.stdout_truncated or result.stderr_truncated:
-        raise WorkspaceError(f"bounded git command did not complete cleanly: {' '.join(argv)}")
+        raise WorkspaceError(
+            f"bounded git command did not complete cleanly: {' '.join(argv)}"
+        )
     if result.return_code != 0:
         raise WorkspaceError(
             f"git command failed ({result.return_code}): {' '.join(argv)}: "
@@ -96,9 +137,15 @@ def materialize_git(
     _run_git(destination, ("git", "checkout", "--detach", commit))
     actual = _run_git(destination, ("git", "rev-parse", "HEAD")).decode().strip()
     if actual != commit:
-        raise WorkspaceError(f"workspace authority mismatch: expected {commit}, got {actual}")
+        raise WorkspaceError(
+            f"workspace authority mismatch: expected {commit}, got {actual}"
+        )
     if expected_tree is not None:
-        actual_tree = _run_git(destination, ("git", "rev-parse", "HEAD^{tree}")).decode().strip()
+        actual_tree = (
+            _run_git(destination, ("git", "rev-parse", "HEAD^{tree}"))
+            .decode()
+            .strip()
+        )
         if actual_tree != expected_tree:
             raise WorkspaceError(
                 f"workspace tree mismatch: expected {expected_tree}, got {actual_tree}"
