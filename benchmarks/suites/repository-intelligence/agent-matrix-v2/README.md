@@ -2,70 +2,72 @@
 
 This experiment extends pilot-v1 without modifying it.
 
-It freezes the same three task families against newer exact agentsCookbook source:
+It freezes the same three task families against exact agentsCookbook source:
 
 - commit: `6ce8b0d9230dd9bc5369ddf495ad9404766fbbaf`
 - tree: `1e253d251f8e0a874aeca0b05358b36253a714cc`
 
-The matrix is three repository-intelligence conditions by two explicit
-model/provider conditions:
+The matrix is three repository-intelligence conditions by two agent runtimes:
 
 - bare, Hashmarks, Enola;
-- Codex runtime + `gpt-5.6-sol` + high reasoning effort;
-- the same Codex runtime + Ollama `gemma4:12b`.
+- Codex with frozen `gpt-5.6-sol` + high reasoning effort;
+- **native OpenCode**, using the model/provider/auth already configured on the host.
 
 That produces exactly 18 frozen definitions.
 
+## Hard boundary: Gemma never runs through Codex
+
+The benchmark has no Codex local-provider/Gemma condition. Codex is used for Codex.
+Local models such as Gemma are exercised through the user's already-working OpenCode
+installation.
+
+The OpenCode agent definition intentionally contains no model, provider, base URL, or
+credential configuration. Those remain native OpenCode authority.
+
+If native OpenCode currently resolves to Gemma, the run records that observed
+provider/model. If native OpenCode later resolves to another model/config, that changes
+execution identity instead of silently reusing the earlier result.
+
+## Native OpenCode behavior
+
+OpenCode inherits the user's real HOME/XDG configuration and credentials. The
+benchmark does **not** copy or recreate its provider/model configuration.
+
+Before admission the adapter runs native `opencode --pure debug config` and records:
+
+- OpenCode executable/version identity;
+- the resolved build-agent/default model;
+- provider inferred from that model;
+- a SHA-256 of the effective configuration after recursively redacting credential-like
+  values;
+- the names of configured native MCP servers.
+
+For comparison control, the benchmark adds only an in-memory
+`OPENCODE_CONFIG_CONTENT` tool overlay. It never contains model/provider/auth fields.
+It disables all discovered native MCP tool prefixes except the subject selected by the
+condition:
+
+- bare: all discovered MCP tools disabled;
+- Hashmarks: only `hashmarks_*` enabled;
+- Enola: only `enola_*` enabled.
+
+The selected Hashmarks/Enola MCP server must already exist and be enabled in native
+OpenCode configuration. The benchmark does not duplicate its command/configuration.
+
+`--pure` disables external OpenCode plugins during the measurement while retaining
+native provider/model/auth configuration.
+
 ## Interpretation
 
-Using the same Codex execution runtime keeps shell, workspace editing, MCP wiring,
-JSONL event collection, budgets, contamination semantics, and receipt handling
-constant. The local condition changes model/provider rather than introducing a second
-coding-agent harness.
+Primary comparisons remain assistance gain inside one runtime/model authority:
 
-The primary comparison is paired assistance within one model/runtime:
+- Codex bare -> Codex + Hashmarks / Enola;
+- native OpenCode bare -> native OpenCode + Hashmarks / Enola.
 
-- bare -> Hashmarks;
-- bare -> Enola.
+Cross-runtime rows are descriptive only. They do not produce a winner ranking.
 
-Cross-model rows are descriptive only. They answer questions such as whether
-repository intelligence changes the behavior of a local model differently from the
-hosted Sol model. They are not a winner ranking: hardware, inference backend, model
-architecture, and model size remain confounders.
-
-The shared seed is a benchmark identity/pairing input. It does not claim that either
-model's sampler is seedable.
-
-## Local-model authority
-
-The Gemma condition is admitted only when:
-
-- `codex` is available;
-- `ollama` is available;
-- `ollama show gemma4:12b` succeeds.
-
-The receipt binds the observed Codex and Ollama executable identities plus a SHA-256
-of the installed model descriptor. If the `gemma4:12b` tag points to different local
-bytes/configuration later, it produces a different execution identity. A results
-directory containing two executions of one frozen definition is rejected by reporting
-instead of silently combining them.
-
-Remote Codex credentials are explicitly blanked for the local-provider condition.
-Missing Ollama, missing Gemma, provider startup failures, and model/provider transport
-failures remain `INCOMPLETE`, not task `FAIL`.
-
-## Hosted-model authority
-
-The Sol condition freezes:
-
-- model: `gpt-5.6-sol`;
-- reasoning effort: `high`;
-- provider: hosted/default Codex provider path.
-
-Its Codex state lives under an isolated `CODEX_HOME`. Authentication can be supplied
-with a credential-only `auth.json` seed or with an already exported supported
-credential environment variable. Credential contents are never written to benchmark
-receipts.
+The shared seed is experiment identity/pairing evidence; it is not a claim that either
+model sampler is seedable.
 
 ## Validate
 
@@ -95,11 +97,10 @@ python -m benchmarks run \
   --codex-auth "$HOME/.codex/auth.json"
 ```
 
-The same command runs both model/provider conditions. The auth seed is used only for
-hosted Codex conditions; local Ollama conditions explicitly disable remote Codex
-credentials.
+The Codex auth seed is used only by Codex conditions. OpenCode conditions use the
+already-working native OpenCode configuration/authentication.
 
-A local-only diagnostic can be narrowed without changing the frozen experiment:
+A native OpenCode diagnostic can be narrowed without changing the frozen experiment:
 
 ```bash
 python -m benchmarks run \
@@ -108,7 +109,7 @@ python -m benchmarks run \
   --cache "$root/cache" \
   --work "$root/work" \
   --results "$root/results" \
-  --condition hashmarks-gemma4-12b
+  --condition hashmarks-opencode-native
 ```
 
 ## Report
@@ -119,17 +120,15 @@ python -m benchmarks report \
   --results "$root/results"
 ```
 
-The report contains:
-
-- per-condition outcome/economics profiles;
-- per-agent/model profiles;
-- paired bare -> Hashmarks/Enola assistance rows within one model;
-- descriptive side-by-side cross-agent observations.
-
-It does not calculate an overall winner.
+The report contains per-condition profiles, per-agent profiles, paired assistance rows,
+and descriptive cross-agent observations. It never calculates an overall winner.
 
 ## Measurement boundary
 
-Codex JSONL exposes commands, MCP calls/results, file changes, token usage, and
-duration. It does not authoritatively expose repository file-read bytes, so v2 does
-not manufacture or enforce an archaeology-byte metric.
+Codex JSONL and OpenCode session export expose different native event shapes. Both are
+projected only into the generic experiment metrics needed for comparison: task outcome,
+tool/MCP adoption, token counts when available, output evidence, duration, and
+contamination.
+
+Neither surface authoritatively exposes repository file-read bytes, so v2 does not
+manufacture an archaeology-byte metric.
