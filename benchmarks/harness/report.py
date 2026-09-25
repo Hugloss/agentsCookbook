@@ -75,7 +75,7 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     tool_available = [
         row
         for row in valid
-        if row.get("execution", {}).get("agent_terminal") is not None
+        if row.get("authority", {}).get("subject", {}).get("available") is True
         and row.get("condition", {})
         .get("subject_definition", {})
         .get("adapter")
