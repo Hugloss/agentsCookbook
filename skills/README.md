@@ -96,6 +96,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 
 - `single-observation-review` — Find one logical operation observing the same input world twice.
 - `call-chain-collapse-review` — Find forwarding layers that add no meaningful guarantee.
+- `native-tool-authority-review` — Find repository layers that recreate semantics already owned by native tools.
 - `alternate-path-removal-review` — Find obsolete architecture paths beside a canonical one.
 - `hidden-side-effect-review` — Find externally visible effects hidden behind misleading boundaries.
 - `dependency-surface-review` — Find APIs and contexts that expose far more state than behavior needs.
@@ -154,7 +155,7 @@ Use the narrowest skill that owns the question:
 - `explicit-target-resolution-review` owns preservation of uniquely resolved request targets; `authority-escalation-review` owns any stronger authority later minted from those targets without proof.
 - `verification-locality-review` asks which existing evidence best verifies the target behavior; `coverage-design-review` asks what behavior is not proved at all.
 - `shared-state-ownership-review` asks whether mutable state is actually shared; `stale-work-race-review` asks whether superseded work can commit after newer ownership exists.
-- `call-chain-collapse-review` targets no-value hops; `dependency-surface-review` targets oversized inputs/contexts even when the call depth is reasonable.
+- `call-chain-collapse-review` targets no-value hops regardless of tool ownership; `native-tool-authority-review` targets wrappers or layers that recreate semantics already owned by an external/native tool. `dependency-surface-review` targets oversized inputs/contexts even when the call depth is reasonable.
 - `red-team-leftover-gate` reviews a supplied plan/change for material blockers; `architecture-risk-triage` routes repository hotspots to specialist architecture reviews.
 - `dogfood-saturation-loop` governs **when a repair campaign may stop and when broad validation should run**; it consumes evidence-backed defect proof from `codebase-finding-derivation` or a narrow specialist rather than promoting investigation leads itself. `repository-improvement-scout` finds leads and `verification-locality-review` selects the strongest verifier. The loop consumes repository qualification authority for closure; `baseline-self-authorization-review` owns whether the candidate improperly weakens that authority.
 - `skill-contract-review` reviews the **skill definition itself** for sharp scope, evidence symmetry, authority, false-positive boundaries, and unnecessary prompt/workflow cost; the domain specialist still owns the target repository behavior.
