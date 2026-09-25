@@ -119,6 +119,8 @@ def _agent_authority(agent, prepared: Observation) -> dict[str, Any]:
             "model": prepared.payload.get("model"),
             "reasoning_effort": prepared.payload.get("reasoning_effort"),
             "local_provider": prepared.payload.get("local_provider"),
+            "local_base_url": prepared.payload.get("local_base_url"),
+            "ollama_host": prepared.payload.get("ollama_host"),
             "local_provider_observation": prepared.payload.get(
                 "local_provider_observation"
             ),
