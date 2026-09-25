@@ -56,26 +56,49 @@ const filtered = args[0] === '--pure' ? args.slice(1) : args;
 const command = filtered[0];
 const statePath = process.env.FAKE_OPENCODE_STATE;
 
+function merge(base, overlay) {
+  const result = { ...base };
+  for (const [key, value] of Object.entries(overlay)) {
+    result[key] = value && typeof value === 'object' && !Array.isArray(value) &&
+      result[key] && typeof result[key] === 'object' && !Array.isArray(result[key])
+      ? merge(result[key], value) : value;
+  }
+  return result;
+}
+
+function config() {
+  const servers = {
+    hashmarks: { type: 'local', command: ['hashmarks', 'mcp'], enabled: true },
+    enola: { type: 'local', command: ['enola', 'mcp'], enabled: true },
+  };
+  const base = {
+    model: 'liteLLM/gemma4',
+    provider: { liteLLM: { options: { apiKey: 'must-not-leak' } } },
+    mcp: process.env.FAKE_MCP_SHAPE === 'nested'
+      ? { servers } : servers,
+  };
+  return merge(base, process.env.OPENCODE_CONFIG_CONTENT
+    ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : {});
+}
+
 function value(flag) {
   const index = filtered.indexOf(flag);
   return index >= 0 ? filtered[index + 1] : '';
 }
 
 if (command === 'debug' && filtered[1] === 'config') {
-  process.stdout.write(JSON.stringify({
-    model: 'liteLLM/gemma4',
-    provider: {
-      liteLLM: {
-        options: {
-          apiKey: 'must-not-leak',
-          baseURL: 'http://127.0.0.1:4000/v1'
-        }
-      }
-    },
-    mcp: {
-      hashmarks: { type: 'local', enabled: true }
-    }
-  }));
+  process.stdout.write(JSON.stringify(config()));
+  process.exit(0);
+}
+
+if (command === 'mcp' && filtered[1] === 'list') {
+  const resolved = config();
+  const servers = resolved.mcp.servers || resolved.mcp;
+  for (const [name, value] of Object.entries(servers)) {
+    process.stdout.write(name + ': ' +
+      (value.enabled === false || value.disabled === true || process.env.FAKE_MCP_DISCONNECTED === name
+        ? 'disabled' : 'connected') + '\\n');
+  }
   process.exit(0);
 }
 
@@ -131,7 +154,7 @@ async function testSharedLifecycle() {
     path.join(os.tmpdir(), 'agents-cookbook-opencode-runtime-'),
   );
   try {
-    const fake = writeFakeOpenCode(root);
+    const fake = [process.execPath, writeFakeOpenCode(root)];
     const statePath = path.join(root, 'state.json');
     const env = { FAKE_OPENCODE_STATE: statePath };
 
@@ -140,9 +163,70 @@ async function testSharedLifecycle() {
       repoDir: root,
       env,
     });
-    assert.strictEqual(resolved.status, 'completed');
+    assert.strictEqual(resolved.status, 'completed', JSON.stringify(resolved));
     assert.strictEqual(resolved.inspection.model, 'liteLLM/gemma4');
     assert.ok(!JSON.stringify(resolved).includes('must-not-leak'));
+
+    for (const shape of ['flat', 'nested']) {
+      const prepared = runtime.prepareBenchmarkConfig({
+        opencodeBin: fake,
+        repoDir: root,
+        env: {
+          ...env,
+          FAKE_MCP_SHAPE: shape,
+          OPENCODE_CONFIG_CONTENT: JSON.stringify({
+            agent: { build: { model: 'liteLLM/gemma4' } },
+            provider: { liteLLM: { options: { apiKey: 'inline-secret' } } },
+            permission: { bash: 'deny' },
+          }),
+        },
+        exposure: {
+          name: 'hashmarks',
+          command: 'hashmarks',
+          args: ['--workspace', '.', 'mcp'],
+          cwd: root,
+          environment: { HOME: path.join(root, 'isolated-home') },
+        },
+      });
+      assert.strictEqual(prepared.status, 'completed', prepared.reason);
+      assert.strictEqual(prepared.selected_server, 'benchmark_hashmarks');
+      assert.strictEqual(prepared.inspection.model, 'liteLLM/gemma4');
+      const content = JSON.parse(prepared.environment.OPENCODE_CONFIG_CONTENT);
+      const servers = shape === 'nested' ? content.mcp.servers : content.mcp;
+      assert.strictEqual(content.provider.liteLLM.options.apiKey, 'inline-secret');
+      assert.strictEqual(content.permission.bash, 'deny');
+      assert.strictEqual(servers.hashmarks[shape === 'nested' ? 'disabled' : 'enabled'],
+        shape === 'nested' ? true : false);
+      assert.deepStrictEqual(servers.benchmark_hashmarks.command,
+        ['hashmarks', '--workspace', '.', 'mcp']);
+      assert.strictEqual(servers.benchmark_hashmarks.cwd, root);
+      assert.strictEqual(servers.benchmark_hashmarks.environment.HOME,
+        path.join(root, 'isolated-home'));
+      if (shape === 'nested') {
+        assert.strictEqual(servers.benchmark_hashmarks.codemode, false);
+      }
+      const { environment, ...safe } = prepared;
+      assert.ok(!JSON.stringify(safe).includes('inline-secret'));
+    }
+
+    const bare = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake, repoDir: root, env,
+    });
+    assert.strictEqual(bare.status, 'completed', bare.reason);
+    assert.strictEqual(bare.selected_server, null);
+    assert.strictEqual(JSON.parse(bare.environment.OPENCODE_CONFIG_CONTENT).mcp.hashmarks.enabled, false);
+
+    const disconnected = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      env: { ...env, FAKE_MCP_DISCONNECTED: 'benchmark_hashmarks' },
+      exposure: {
+        name: 'hashmarks', command: 'hashmarks', args: ['mcp'],
+        cwd: root, environment: {},
+      },
+    });
+    assert.strictEqual(disconnected.status, 'failed');
+    assert.match(disconnected.reason, /is not connected/);
 
     const result = await runtime.runSessionAndExport({
       opencodeBin: fake,

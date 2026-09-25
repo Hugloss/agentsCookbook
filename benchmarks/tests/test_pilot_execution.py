@@ -25,7 +25,6 @@ from benchmarks.adapters.opencode_native import (
     _metrics as opencode_metrics,
     _native_environment as opencode_native_environment,
     _observed_model as opencode_observed_model,
-    _runtime_overlay as opencode_runtime_overlay,
 )
 from benchmarks.adapters.registry import (
     AdapterConfigurationError,
@@ -42,6 +41,7 @@ from benchmarks.harness.mutation import apply_mutation
 from benchmarks.harness.receipt import is_complete_receipt
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
+from benchmarks.harness.selection import SelectionError, select_definitions
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.suite import SuiteDefinition, SuiteError, load_suite
 from benchmarks.harness.workspace import isolated_environment, snapshot
@@ -178,6 +178,27 @@ class PilotExecutionTests(unittest.TestCase):
             suite.agents["opencode-native"]["adapter"],
             "opencode-native",
         )
+
+    def test_matrix_selection_includes_one_matching_bare_control(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        selected = select_definitions(
+            suite, agents=("opencode-native",), subjects=("hashmarks",)
+        )
+        self.assertEqual(len(selected), 6)
+        self.assertEqual(
+            {row["condition_id"] for row in selected},
+            {"bare-opencode-native", "hashmarks-opencode-native"},
+        )
+        both = select_definitions(
+            suite, agents=("codex-sol",), subjects=("hashmarks", "enola")
+        )
+        self.assertEqual(len(both), 9)
+        with self.assertRaises(SelectionError):
+            select_definitions(suite, agents=("unknown",))
+        with self.assertRaises(SelectionError):
+            select_definitions(
+                suite, agents=("codex-sol",), condition="bare-sol"
+            )
 
     def test_suite_loader_enforces_repo_owned_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -341,15 +362,7 @@ class PilotExecutionTests(unittest.TestCase):
                 control,
                 isolated_environment(control),
             )
-            overlay = opencode_runtime_overlay(
-                mcp_shape="flat",
-                server_names=("enola", "hashmarks", "other"),
-                selected_server="hashmarks",
-            )
-            environment = opencode_native_environment(
-                context,
-                overlay=overlay,
-            )
+            environment = opencode_native_environment(context)
             self.assertNotIn("HOME", environment)
             self.assertNotIn("XDG_CONFIG_HOME", environment)
             self.assertNotIn("XDG_DATA_HOME", environment)
@@ -357,40 +370,7 @@ class PilotExecutionTests(unittest.TestCase):
                 environment["TMPDIR"],
                 context.environment["TMPDIR"],
             )
-            self.assertEqual(
-                json.loads(environment["OPENCODE_CONFIG_CONTENT"]),
-                overlay,
-            )
-
-    def test_opencode_runtime_overlay_only_gates_native_mcp_tools(self) -> None:
-        overlay = opencode_runtime_overlay(
-            mcp_shape="flat",
-            server_names=("enola", "hashmarks", "jira"),
-            selected_server="hashmarks",
-        )
-        self.assertEqual(
-            overlay["tools"],
-            {
-                "enola_*": False,
-                "hashmarks_*": True,
-                "jira_*": False,
-            },
-        )
-        self.assertEqual(
-            overlay["agent"]["build"]["tools"],
-            overlay["tools"],
-        )
-        self.assertEqual(
-            overlay["mcp"],
-            {
-                "enola": {"enabled": False},
-                "hashmarks": {"enabled": True},
-                "jira": {"enabled": False},
-            },
-        )
-        encoded = json.dumps(overlay)
-        self.assertNotIn('"model"', encoded)
-        self.assertNotIn('"provider"', encoded)
+            self.assertNotIn("OPENCODE_CONFIG_CONTENT", environment)
 
     def test_opencode_prepare_uses_shared_runtime_inspection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -436,6 +416,9 @@ class PilotExecutionTests(unittest.TestCase):
                         {
                             "status": "completed",
                             "inspection": inspection,
+                            "effective_inspection": inspection,
+                            "selected_server": None,
+                            "overlay_identity": {"shape": "flat"},
                         },
                         runtime_result,
                     ),
@@ -456,6 +439,8 @@ class PilotExecutionTests(unittest.TestCase):
                     "inspect-config",
                     "--repo",
                     str(workspace),
+                    "--benchmark-exposure-file",
+                    str(control / "opencode-benchmark-exposure.json"),
                 ),
             )
 
@@ -507,6 +492,7 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(metrics["input_tokens"], 100)
         self.assertEqual(metrics["output_tokens"], 20)
         self.assertEqual(metrics["cached_input_tokens"], 5)
+        self.assertEqual(metrics["mcp_result_bytes"], len("evidence".encode()))
 
     def test_codex_jsonl_separates_tool_availability_from_adoption(self) -> None:
         raw = b"\n".join(
@@ -845,6 +831,68 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertTrue(
             report["authority"]["cross_agent_rows_are_descriptive"]
         )
+
+    def test_report_selection_rejects_mixed_native_runtime_authority(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        task_id = "locate-receipt-completion-owner"
+        definitions = {
+            row["condition_id"]: row
+            for row in suite.trial_definitions()
+            if row["task_id"] == task_id
+        }
+        receipts = []
+        for condition_id, status, model, config_hash in (
+            ("bare-opencode-native", "PASS", "liteLLM/gemma4", "a" * 64),
+            ("hashmarks-opencode-native", "INVALID", "liteLLM/other", "b" * 64),
+        ):
+            condition = next(
+                row for row in suite.experiment["conditions"]
+                if row["id"] == condition_id
+            )
+            receipts.append({
+                "definition_id": definitions[condition_id]["definition_id"],
+                "trial_id": ("c" if status == "PASS" else "d") * 64,
+                "experiment": suite.experiment,
+                "task": suite.tasks[task_id],
+                "condition": suite.expanded_condition(condition),
+                "status": status,
+                "authority": {
+                    "subject": {"available": True},
+                    "agent": {"observed": {
+                        "version": "opencode 1",
+                        "executable_sha256": "e" * 64,
+                        "auth_mode": "native-opencode",
+                        "model": model,
+                        "provider": "liteLLM",
+                        "native_config_sha256": config_hash,
+                    }},
+                },
+                "execution": {"trial_index": 0, "seed": 5201},
+                "measurements": {"agent": {}},
+            })
+        with mock.patch(
+            "benchmarks.harness.report._receipts", return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+                require_complete=False,
+                selected_definitions={
+                    definitions["bare-opencode-native"]["definition_id"]
+                },
+                selection={"agents": ["opencode-native"], "subjects": ["none"]},
+            )
+            self.assertEqual(report["observed_trials"], 1)
+            self.assertEqual(report["selection"]["subjects"], ["none"])
+            with self.assertRaisesRegex(ReportError, "mixed observed runtime"):
+                build_report(
+                    suite=suite,
+                    results_root=Path("/unused"),
+                    require_complete=False,
+                    selected_definitions={
+                        row["definition_id"] for row in definitions.values()
+                    },
+                )
 
     def test_trial_lifecycle_publishes_and_reuses_verified_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

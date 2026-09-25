@@ -42,17 +42,19 @@ Before admission the adapter runs native `opencode --pure debug config` and reco
   values;
 - the names of configured native MCP servers.
 
-For comparison control, the benchmark adds only an in-memory
-`OPENCODE_CONFIG_CONTENT` tool overlay. It never contains model/provider/auth fields.
-It disables all discovered native MCP tool prefixes except the subject selected by the
-condition:
+For comparison control, the benchmark composes an in-memory MCP overlay with the
+host's existing `OPENCODE_CONFIG_CONTENT` layer. Host inline settings, including
+provider, model, authentication, and permissions, remain in that runtime layer. The
+benchmark does not store the composed content or its secrets in a receipt.
 
-- bare: all discovered MCP tools disabled;
-- Hashmarks: only `hashmarks_*` enabled;
-- Enola: only `enola_*` enabled.
-
-The selected Hashmarks/Enola MCP server must already exist and be enabled in native
-OpenCode configuration. The benchmark does not duplicate its command/configuration.
+The bare condition disables all native MCP servers. An assisted condition also
+disables native servers, then binds one `benchmark_hashmarks` or `benchmark_enola`
+server from that trial's `McpExposure`: command, arguments, working directory, and
+isolated environment. This works without a preconfigured native subject server. The
+adapter verifies the effective configuration and selected MCP connection before
+admitting the trial. Both flat and nested OpenCode MCP configuration shapes are
+supported. The report separates campaigns if one agent's observed native model or
+configuration changes across selected receipts.
 
 `--pure` disables external OpenCode plugins during the measurement while retaining
 native provider/model/auth configuration.
@@ -77,9 +79,18 @@ python -m benchmarks validate-suite \
 
 python -m benchmarks plan \
   --suite benchmarks/suites/repository-intelligence/agent-matrix-v2
+
+python -m benchmarks plan \
+  --suite benchmarks/suites/repository-intelligence/agent-matrix-v2 \
+  --agent opencode-native --subject hashmarks
 ```
 
-The plan must contain exactly 18 unique definition identities.
+The full plan contains exactly 18 unique definition identities. The selected plan
+contains six: three Hashmarks trials and their three matching bare controls.
+`--task`, `--agent`, and `--subject` can be repeated on plan, run, and report.
+Selecting one or more assisted subjects automatically includes bare controls for
+the selected agent and tasks. `--condition` selects one exact condition and cannot
+be combined with `--agent` or `--subject`.
 
 ## Run
 
@@ -100,7 +111,8 @@ python -m benchmarks run \
 The Codex auth seed is used only by Codex conditions. OpenCode conditions use the
 already-working native OpenCode configuration/authentication.
 
-A native OpenCode diagnostic can be narrowed without changing the frozen experiment:
+A native OpenCode Hashmarks comparison can be run without changing the frozen
+experiment:
 
 ```bash
 python -m benchmarks run \
@@ -109,19 +121,28 @@ python -m benchmarks run \
   --cache "$root/cache" \
   --work "$root/work" \
   --results "$root/results" \
-  --condition hashmarks-opencode-native
+  --agent opencode-native \
+  --subject hashmarks
 ```
+
+For an isolated diagnostic of only one condition, use
+`--condition hashmarks-opencode-native` instead.
 
 ## Report
 
 ```bash
 python -m benchmarks report \
   --suite benchmarks/suites/repository-intelligence/agent-matrix-v2 \
-  --results "$root/results"
+  --results "$root/results" \
+  --agent opencode-native --subject hashmarks
 ```
 
-The report contains per-condition profiles, per-agent profiles, paired assistance rows,
-and descriptive cross-agent observations. It never calculates an overall winner.
+Use the same selectors for run and report. The report requires all selected frozen
+definitions by default and ignores other valid definitions in the suite. Its selection
+metadata records the requested filters and automatic bare control. For a diagnostic
+of a partial campaign, add `--allow-incomplete`. The report contains per-condition
+profiles, per-agent profiles, paired assistance rows, and descriptive cross-agent
+observations. It never calculates an overall winner.
 
 ## Measurement boundary
 

@@ -36,11 +36,7 @@ def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
     return value
 
 
-def _native_environment(
-    context: TrialContext,
-    *,
-    overlay: dict[str, Any] | None = None,
-) -> dict[str, str]:
+def _native_environment(context: TrialContext) -> dict[str, str]:
     environment = {
         "OPENCODE_DISABLE_AUTOUPDATE": "1",
         "OPENCODE_DISABLE_PRUNE": "1",
@@ -49,42 +45,7 @@ def _native_environment(
         "TMP": context.environment["TMP"],
         "TEMP": context.environment["TEMP"],
     }
-    if overlay is not None:
-        environment["OPENCODE_CONFIG_CONTENT"] = json.dumps(
-            overlay,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
     return environment
-
-
-def _runtime_overlay(
-    *,
-    mcp_shape: str,
-    server_names: tuple[str, ...],
-    selected_server: str | None,
-) -> dict[str, Any]:
-    tools = {
-        f"{name}_*": name == selected_server
-        for name in sorted(server_names)
-    }
-    if mcp_shape == "nested-servers":
-        mcp_overlay: dict[str, Any] = {
-            "servers": {
-                name: {"disabled": name != selected_server}
-                for name in sorted(server_names)
-            }
-        }
-    else:
-        mcp_overlay = {
-            name: {"enabled": name == selected_server}
-            for name in sorted(server_names)
-        }
-    return {
-        "mcp": mcp_overlay,
-        "tools": tools,
-        "agent": {"build": {"tools": tools}},
-    }
 
 
 def _assistant_messages(exported: dict[str, Any]) -> list[dict[str, Any]]:
@@ -188,15 +149,14 @@ def _metrics(
         if name not in mcp_calls:
             continue
         state = part.get("state")
-        if state is not None:
-            result_bytes += len(
-                json.dumps(
-                    state,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    default=str,
-                ).encode()
+        output = state.get("output") if isinstance(state, dict) else None
+        if output is not None:
+            rendered = (
+                output if isinstance(output, str) else json.dumps(
+                    output, sort_keys=True, separators=(",", ":"), default=str,
+                )
             )
+            result_bytes += len(rendered.encode("utf-8"))
     input_tokens, output_tokens, cached_tokens = _token_metrics(exported)
     return {
         "event_count": len(parts),
@@ -274,6 +234,7 @@ class OpenCodeNativeAgent:
     def _resolve_native(
         self,
         context: TrialContext,
+        exposure_file: Path,
     ) -> tuple[dict[str, Any], Observation]:
         environment = _native_environment(context)
         executable = observe_executable(
@@ -283,7 +244,10 @@ class OpenCodeNativeAgent:
         )
         envelope, result = _runtime_call(
             context,
-            args=("inspect-config", "--repo", str(context.workspace)),
+            args=(
+                "inspect-config", "--repo", str(context.workspace),
+                "--benchmark-exposure-file", str(exposure_file),
+            ),
             environment=environment,
             timeout_seconds=30,
             max_stdout_bytes=1_000_000,
@@ -292,10 +256,11 @@ class OpenCodeNativeAgent:
             envelope is None
             or envelope.get("status") != "completed"
             or not isinstance(envelope.get("inspection"), dict)
+            or not isinstance(envelope.get("effective_inspection"), dict)
         ):
             reason = "shared OpenCode runtime could not resolve native config"
-            if envelope and envelope.get("parse_error"):
-                reason = str(envelope["parse_error"])
+            if envelope and (envelope.get("reason") or envelope.get("parse_error")):
+                reason = str(envelope.get("reason") or envelope["parse_error"])
             return {}, Observation(
                 {
                     **executable.payload,
@@ -309,30 +274,35 @@ class OpenCodeNativeAgent:
                 },
                 result.stdout.decode("utf-8", errors="replace"),
             )
-        return dict(envelope["inspection"]), executable
-
-    def _selected_server(
-        self,
-        context: TrialContext,
-        subject: SubjectAdapter | None,
-    ) -> str | None:
-        if subject is None:
-            return None
-        exposure = subject.mcp_exposure(context)
-        return exposure.name if exposure is not None else None
+        return dict(envelope), executable
 
     def prepare(
         self,
         context: TrialContext,
         exposed_subject: SubjectAdapter | None,
     ) -> Observation:
-        inspection, executable = self._resolve_native(context)
-        if not inspection:
+        exposure = (
+            exposed_subject.mcp_exposure(context)
+            if exposed_subject is not None else None
+        )
+        exposure_file = context.control_root / "opencode-benchmark-exposure.json"
+        exposure_file.write_bytes(canonical_json(
+            {
+                "name": exposure.name,
+                "command": exposure.command,
+                "args": list(exposure.args),
+                "cwd": str(exposure.cwd),
+                "environment": {**context.environment, **exposure.environment},
+            } if exposure else None
+        ))
+        resolved, executable = self._resolve_native(context, exposure_file)
+        if not resolved:
             return executable
-
+        inspection = resolved["inspection"]
+        effective = resolved["effective_inspection"]
         model = inspection.get("model")
         provider = inspection.get("provider")
-        server_rows = inspection.get("mcp_servers")
+        server_rows = effective.get("mcp_servers")
         if not isinstance(server_rows, list):
             server_rows = []
         servers = {
@@ -340,32 +310,29 @@ class OpenCodeNativeAgent:
             for row in server_rows
             if isinstance(row, dict) and row.get("name")
         }
-        selected = self._selected_server(context, exposed_subject)
+        selected = resolved.get("selected_server")
         selected_ready = selected is None or servers.get(selected) is True
-        overlay = _runtime_overlay(
-            mcp_shape=str(inspection.get("mcp_shape", "flat")),
-            server_names=tuple(sorted(servers)),
-            selected_server=selected,
-        )
+        overlay_identity = {
+            **resolved.get("overlay_identity", {}),
+            "subject_exposure": exposure.semantic_identity if exposure else None,
+        }
         evidence = {
             "runtime_contract": "agents-cookbook-opencode-runtime/v1",
             "native_config_sha256": inspection.get("config_sha256"),
             "model": model,
             "provider": provider,
-            "native_mcp_servers": sorted(servers),
+            "native_mcp_servers": sorted(
+                row["name"] for row in inspection.get("mcp_servers", [])
+            ),
             "mcp_shape": inspection.get("mcp_shape"),
             "selected_server": selected,
             "overlay_sha256": hashlib.sha256(
-                canonical_json(overlay)
+                canonical_json(overlay_identity)
             ).hexdigest(),
         }
         (context.control_root / "opencode-native-evidence.json").write_bytes(
             canonical_json(evidence)
         )
-        (context.control_root / "opencode-native-overlay.json").write_bytes(
-            canonical_json(overlay)
-        )
-
         available = (
             bool(executable.payload.get("available"))
             and isinstance(model, str)
@@ -399,7 +366,7 @@ class OpenCodeNativeAgent:
                 "native_config_sha256": evidence["native_config_sha256"],
                 "native_mcp_servers": evidence["native_mcp_servers"],
                 "mcp_exposure": (
-                    {"name": selected, "source": "native-opencode-config"}
+                    {"name": selected, **overlay_identity}
                     if selected
                     else None
                 ),
@@ -412,18 +379,13 @@ class OpenCodeNativeAgent:
     def _load_prepared(
         self,
         context: TrialContext,
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+    ) -> dict[str, Any]:
         evidence = json.loads(
             (
                 context.control_root / "opencode-native-evidence.json"
             ).read_text(encoding="utf-8")
         )
-        overlay = json.loads(
-            (
-                context.control_root / "opencode-native-overlay.json"
-            ).read_text(encoding="utf-8")
-        )
-        return evidence, overlay
+        return evidence
 
     def run(
         self,
@@ -431,30 +393,8 @@ class OpenCodeNativeAgent:
         prompt: str,
         exposed_subject: SubjectAdapter | None,
     ) -> Observation:
-        evidence, overlay = self._load_prepared(context)
-        inspection, _ = self._resolve_native(context)
-        if (
-            not inspection
-            or inspection.get("config_sha256")
-            != evidence["native_config_sha256"]
-            or inspection.get("model") != evidence["model"]
-        ):
-            return Observation(
-                {
-                    "available": True,
-                    "terminal_event": {
-                        "type": "turn.failed",
-                        "reason": "native OpenCode config changed after admission",
-                    },
-                    "terminal_complete": False,
-                    "final_message": None,
-                    "jsonl_parse_errors": [],
-                    "process": {},
-                },
-                "",
-            )
-
-        environment = _native_environment(context, overlay=overlay)
+        evidence = self._load_prepared(context)
+        environment = _native_environment(context)
         title = (
             "agents-cookbook-benchmark:"
             + context.control_root.parent.name
@@ -473,6 +413,10 @@ class OpenCodeNativeAgent:
                 title,
                 "--prompt-file",
                 str(prompt_path),
+                "--benchmark-exposure-file",
+                str(context.control_root / "opencode-benchmark-exposure.json"),
+                "--native-config-sha256",
+                evidence["native_config_sha256"],
             ),
             environment=environment,
             timeout_seconds=self.timeout_seconds + 120,
@@ -493,6 +437,9 @@ class OpenCodeNativeAgent:
             run_evidence = (
                 run_value if isinstance(run_value, dict) else None
             )
+            runtime_error = envelope.get("error")
+            if isinstance(runtime_error, str) and runtime_error:
+                export_error = runtime_error
             export_value = envelope.get("export")
             if isinstance(export_value, dict):
                 raw = export_value.get("stdout")
@@ -508,7 +455,7 @@ class OpenCodeNativeAgent:
                         export_error = str(exc)
                 else:
                     export_error = "opencode export failed"
-            else:
+            elif export_error is None:
                 export_error = "unable to locate OpenCode session"
             parse_error = envelope.get("export_parse_error")
             if isinstance(parse_error, str) and parse_error:
@@ -516,10 +463,13 @@ class OpenCodeNativeAgent:
 
         selected = evidence.get("selected_server")
         server_names = tuple(evidence.get("native_mcp_servers", []))
+        metric_server_names = server_names + (
+            (selected,) if isinstance(selected, str) else ()
+        )
         metrics = (
             _metrics(
                 exported,
-                mcp_servers=server_names,
+                mcp_servers=metric_server_names,
                 selected_server=(
                     selected if isinstance(selected, str) else None
                 ),

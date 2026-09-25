@@ -20,7 +20,9 @@ const SECRET_KEYS = new Set([
 ]);
 
 function runCommand(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  const executable = Array.isArray(command) ? command[0] : command;
+  const argv = Array.isArray(command) ? [...command.slice(1), ...args] : args;
+  const result = spawnSync(executable, argv, {
     cwd: options.cwd || process.cwd(),
     env: { ...process.env, ...(options.env || {}) },
     encoding: 'utf8',
@@ -28,7 +30,7 @@ function runCommand(command, args, options = {}) {
   });
 
   return {
-    status: typeof result.status === 'number' ? result.status : 1,
+    status: result.error ? 1 : typeof result.status === 'number' ? result.status : 1,
     stdout: result.stdout || '',
     stderr: result.stderr || '',
     error: result.error ? String(result.error.message || result.error) : null,
@@ -195,6 +197,121 @@ function inspectConfig(config) {
   };
 }
 
+function mergeObjects(base, overlay) {
+  const result = { ...base };
+  for (const [key, value] of Object.entries(overlay)) {
+    if (
+      value && typeof value === 'object' && !Array.isArray(value) &&
+      result[key] && typeof result[key] === 'object' && !Array.isArray(result[key])
+    ) {
+      result[key] = mergeObjects(result[key], value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+function inlineConfig(env) {
+  const raw = env.OPENCODE_CONFIG_CONTENT;
+  if (!raw) return {};
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('OPENCODE_CONFIG_CONTENT is not valid JSON');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('OPENCODE_CONFIG_CONTENT must be a JSON object');
+  }
+  return parsed;
+}
+
+function mcpEntries(config, shape) {
+  const mcp = config.mcp || {};
+  return shape === 'nested-servers' ? (mcp.servers || {}) : mcp;
+}
+
+function benchmarkOverlay(config, exposure) {
+  const inspected = inspectMcp(config);
+  const nested = inspected.shape === 'nested-servers';
+  const source = mcpEntries(config, inspected.shape);
+  const servers = {};
+  const tools = {};
+  for (const [name, value] of Object.entries(source)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    servers[name] = nested
+      ? { ...value, disabled: true }
+      : { ...value, enabled: false };
+    tools[`${name}_*`] = false;
+  }
+  const selected = exposure ? `benchmark_${exposure.name}` : null;
+  if (selected) {
+    if (Object.hasOwn(servers, selected)) {
+      throw new Error(`native MCP server name conflicts with ${selected}`);
+    }
+    servers[selected] = {
+      type: 'local',
+      command: [exposure.command, ...exposure.args],
+      cwd: exposure.cwd,
+      environment: exposure.environment || {},
+      ...(nested ? { disabled: false, codemode: false } : { enabled: true }),
+    };
+    tools[`${selected}_*`] = true;
+  }
+  return {
+    selected,
+    shape: inspected.shape,
+    config: {
+      mcp: nested ? { servers } : servers,
+      ...(nested ? {} : {
+        tools,
+        agent: { build: { tools } },
+      }),
+    },
+  };
+}
+
+function verifyBenchmarkConfig(base, effective, overlay, exposure) {
+  const original = inspectConfig(base);
+  const resolved = inspectConfig(effective);
+  if (original.model !== resolved.model || original.provider !== resolved.provider) {
+    throw new Error('benchmark overlay changed native OpenCode model/provider');
+  }
+  const servers = mcpEntries(effective, overlay.shape);
+  for (const name of Object.keys(mcpEntries(base, overlay.shape))) {
+    const value = servers[name];
+    if (!value || (overlay.shape === 'nested-servers'
+      ? value.disabled !== true
+      : value.enabled !== false)) {
+      throw new Error(`benchmark overlay did not disable MCP server ${name}`);
+    }
+  }
+  if (exposure) {
+    const value = servers[overlay.selected];
+    if (!value || value.type !== 'local' ||
+        JSON.stringify(value.command) !== JSON.stringify([exposure.command, ...exposure.args]) ||
+        path.resolve(value.cwd || '') !== path.resolve(exposure.cwd) ||
+        Object.entries(exposure.environment || {}).some(
+          ([key, expected]) => !value.environment || value.environment[key] !== expected,
+        ) ||
+        (overlay.shape === 'nested-servers' && value.codemode !== false) ||
+        (overlay.shape === 'nested-servers' ? value.disabled === true : value.enabled === false)) {
+      throw new Error(`benchmark MCP binding did not resolve for ${exposure.name}`);
+    }
+  }
+  if (overlay.shape === 'flat') {
+    const tools = effective.tools || {};
+    const buildTools = ((effective.agent || {}).build || {}).tools || {};
+    for (const [name, expected] of Object.entries(overlay.config.tools)) {
+      if (tools[name] !== expected || buildTools[name] !== expected) {
+        throw new Error(`benchmark MCP tool gate did not resolve for ${name}`);
+      }
+    }
+  }
+  return resolved;
+}
+
 function commandPrefix(pure) {
   return pure ? ['--pure'] : [];
 }
@@ -316,6 +433,17 @@ function resolveNativeConfig({
   env = {},
   pure = true,
 }) {
+  const resolved = readNativeConfig({ opencodeBin, repoDir, env, pure });
+  const { config, ...safe } = resolved;
+  return safe;
+}
+
+function readNativeConfig({
+  opencodeBin = process.env.OPENCODE_BIN || 'opencode',
+  repoDir,
+  env = {},
+  pure = true,
+}) {
   const command = runCommand(
     opencodeBin,
     [...commandPrefix(pure), 'debug', 'config'],
@@ -332,6 +460,7 @@ function resolveNativeConfig({
       status: 'failed',
       command: commandEvidence,
       inspection: null,
+      config: null,
     };
   }
   try {
@@ -343,13 +472,74 @@ function resolveNativeConfig({
       status: 'completed',
       command: commandEvidence,
       inspection: inspectConfig(config),
+      config,
     };
   } catch (error) {
     return {
       status: 'failed',
       command: commandEvidence,
       inspection: null,
+      config: null,
       parse_error: String(error.message || error),
+    };
+  }
+}
+
+function prepareBenchmarkConfig({
+  opencodeBin = process.env.OPENCODE_BIN || 'opencode',
+  repoDir,
+  env = process.env,
+  exposure = null,
+  pure = true,
+  probe = true,
+}) {
+  const base = readNativeConfig({ opencodeBin, repoDir, env, pure });
+  if (base.status !== 'completed') {
+    return { status: 'failed', reason: 'native OpenCode config could not be resolved', inspection: base.inspection };
+  }
+  try {
+    const overlay = benchmarkOverlay(base.config, exposure);
+    const content = mergeObjects(inlineConfig(env), overlay.config);
+    const commandEnv = {
+      ...env,
+      OPENCODE_CONFIG_CONTENT: JSON.stringify(content),
+    };
+    const effective = readNativeConfig({ opencodeBin, repoDir, env: commandEnv, pure });
+    if (effective.status !== 'completed') {
+      throw new Error('OpenCode rejected the composed benchmark configuration');
+    }
+    const effectiveInspection = verifyBenchmarkConfig(
+      base.config, effective.config, overlay, exposure,
+    );
+    if (probe && exposure) {
+      const connection = runCommand(
+        opencodeBin, [...commandPrefix(pure), 'mcp', 'list'],
+        { cwd: repoDir, env: commandEnv },
+      );
+      const connected = connection.stdout.split(/\r?\n/).some(
+        (line) => line.includes(overlay.selected) && /connected/i.test(line),
+      );
+      if (connection.status !== 0 || !connected) {
+        throw new Error(`OpenCode MCP connection ${overlay.selected} is not connected`);
+      }
+    }
+    return {
+      status: 'completed',
+      inspection: base.inspection,
+      effective_inspection: effectiveInspection,
+      selected_server: overlay.selected,
+      overlay_identity: {
+        shape: overlay.shape,
+        selected_subject: exposure ? exposure.name : null,
+        isolated_subject: !!exposure,
+      },
+      environment: commandEnv,
+    };
+  } catch (error) {
+    return {
+      status: 'failed',
+      reason: String(error.message || error),
+      inspection: base.inspection,
     };
   }
 }
@@ -484,11 +674,17 @@ function parseCli(argv) {
 async function main(argv) {
   const { command, options } = parseCli(argv);
   const repoDir = path.resolve(options.repo || process.cwd());
+  const exposure = options['benchmark-exposure-file']
+    ? JSON.parse(fs.readFileSync(path.resolve(options['benchmark-exposure-file']), 'utf8'))
+    : null;
   if (command === 'inspect-config') {
-    const result = resolveNativeConfig({ repoDir, env: process.env });
+    const result = options['benchmark-exposure-file']
+      ? prepareBenchmarkConfig({ repoDir, env: process.env, exposure })
+      : resolveNativeConfig({ repoDir, env: process.env });
+    const { environment, ...safe } = result;
     process.stdout.write(`${JSON.stringify({
       schema: RUNTIME_SCHEMA,
-      ...result,
+      ...safe,
     })}\n`);
     return;
   }
@@ -503,12 +699,28 @@ async function main(argv) {
       path.resolve(options['prompt-file']),
       'utf8',
     );
+    let env = process.env;
+    if (options['benchmark-exposure-file']) {
+      const prepared = prepareBenchmarkConfig({
+        repoDir, env: process.env, exposure,
+      });
+      if (prepared.status !== 'completed' ||
+          prepared.inspection.config_sha256 !== options['native-config-sha256']) {
+        process.stdout.write(`${JSON.stringify({
+          schema: RUNTIME_SCHEMA,
+          run: { status: 1 },
+          error: prepared.reason || 'native OpenCode config changed after admission',
+        })}\n`);
+        return;
+      }
+      env = prepared.environment;
+    }
     const result = await runSessionAndExport({
       repoDir,
       title: options.title,
       agent: options.agent || 'build',
       prompt,
-      env: process.env,
+      env,
       deleteAfterExport: options['keep-session'] !== 'true',
     });
     process.stdout.write(`${JSON.stringify(result)}\n`);
@@ -527,6 +739,10 @@ module.exports = {
   extractFinalAnswer,
   findSessionId,
   inspectConfig,
+  inlineConfig,
+  mergeObjects,
+  benchmarkOverlay,
+  prepareBenchmarkConfig,
   providerFromModel,
   readJsonText,
   resolveNativeConfig,

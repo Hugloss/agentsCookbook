@@ -162,6 +162,48 @@ def _subject_id(receipt: dict[str, Any]) -> str:
     return value
 
 
+def _comparison_identity(receipt: dict[str, Any]) -> dict[str, Any]:
+    """Runtime authority shared by conditions; trial MCP wiring is excluded."""
+    agent = receipt.get("authority", {}).get("agent", {})
+    observed = agent.get("observed", {})
+    if not isinstance(observed, dict):
+        observed = {}
+    adapter = receipt["condition"]["agent_definition"]["adapter"]
+    common = {
+        "adapter": adapter,
+        "version": observed.get("version"),
+        "executable_sha256": observed.get("executable_sha256"),
+        "auth_mode": observed.get("auth_mode"),
+        "model": observed.get("model"),
+    }
+    if adapter == "opencode-native":
+        common.update(
+            provider=observed.get("provider"),
+            native_config_sha256=observed.get("native_config_sha256"),
+        )
+    elif adapter == "codex":
+        common["reasoning_effort"] = observed.get("reasoning_effort")
+    return common
+
+
+def _check_comparable_agents(receipts: list[dict[str, Any]]) -> None:
+    identities: dict[str, dict[str, Any]] = {}
+    for receipt in receipts:
+        agent = _agent_id(receipt)
+        identity = _comparison_identity(receipt)
+        if not any(
+            identity.get(key) is not None
+            for key in ("version", "executable_sha256", "model", "native_config_sha256")
+        ):
+            continue
+        prior = identities.setdefault(agent, identity)
+        if prior != identity:
+            raise ReportError(
+                f"mixed observed runtime authority for agent {agent}; "
+                "use separate result campaigns"
+            )
+
+
 def _pair_key(receipt: dict[str, Any]) -> tuple[str, str, int, int]:
     condition = receipt["condition"]
     execution = receipt["execution"]
@@ -295,21 +337,36 @@ def build_report(
     suite: SuiteDefinition,
     results_root: Path,
     require_complete: bool = True,
+    selected_definitions: set[str] | None = None,
+    selection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     receipts = _receipts(results_root)
-    expected = {
+    all_expected = {
         str(row["definition_id"]): row for row in suite.trial_definitions()
     }
+    expected = (
+        all_expected
+        if selected_definitions is None
+        else {
+            key: row for key, row in all_expected.items()
+            if key in selected_definitions
+        }
+    )
+    if selected_definitions is not None and set(expected) != selected_definitions:
+        raise ReportError("report selection contains definitions outside frozen suite")
     by_definition: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for receipt in receipts:
         definition = receipt.get("definition_id")
         if not isinstance(definition, str):
             raise ReportError("receipt has no definition_id")
-        if definition not in expected:
+        if definition not in all_expected:
             raise ReportError(
                 f"results contain execution outside frozen suite: {definition}"
             )
-        by_definition[definition].append(receipt)
+        if definition in expected:
+            by_definition[definition].append(receipt)
+
+    receipts = [row for rows in by_definition.values() for row in rows]
 
     duplicates = {
         definition: values
@@ -328,6 +385,8 @@ def build_report(
             f"campaign is incomplete: {len(missing)} frozen definition(s) missing"
         )
 
+    _check_comparable_agents(receipts)
+
     by_condition: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_agent: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for receipt in receipts:
@@ -338,12 +397,16 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 1,
+            "version": 2,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
             "id": suite.experiment["id"],
             "version": suite.experiment["version"],
+        },
+        "selection": selection or {
+            "tasks": [], "agents": [], "subjects": [],
+            "condition": None, "bare_control_included": False,
         },
         "expected_trials": len(expected),
         "observed_trials": len(receipts),
