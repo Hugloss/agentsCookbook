@@ -17,10 +17,10 @@ from benchmarks.adapters.registry import build_agent, build_oracle, build_subjec
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.events import append_event, seal_events
-from benchmarks.harness.identity import canonical_json, definition_id, execution_id
+from benchmarks.harness.identity import definition_id, execution_id
 from benchmarks.harness.model import Observation, TrialContext, TrialStatus
 from benchmarks.harness.mutation import apply_mutation
-from benchmarks.harness.receipt import is_complete_receipt, write_receipt
+from benchmarks.harness.receipt import write_receipt
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.suite import SuiteDefinition
 from benchmarks.harness.workspace import isolated_environment, snapshot
@@ -166,6 +166,7 @@ def _publish_bundle(
         os.rename(bundle, final_dir)
         valid, reason = verify_bundle(final_dir)
         if not valid:
+            shutil.rmtree(final_dir, ignore_errors=True)
             raise TrialRunnerError(
                 f"published trial bundle failed verification: {reason}"
             )
