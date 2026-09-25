@@ -16,6 +16,8 @@
     "model": "gemma4:12b",
     "reasoning_effort": null,
     "local_provider": "ollama",
-    "timeout_seconds": 600
+    "timeout_seconds": 600,
+    "local_base_url": "http://127.0.0.1:11434/v1",
+    "ollama_host": "http://127.0.0.1:11434"
   }
 }
