@@ -100,6 +100,7 @@ def _metrics(
         "event_count": len(events),
         "command_calls": len(commands),
         "file_change_events": len(changes),
+        "tool_calls": len(commands) + len(changes) + len(mcp_calls),
         "mcp_calls": len(mcp_calls),
         "subject_mcp_calls": len(subject_calls),
         "subject_tool_configured": subject_server is not None,
@@ -153,6 +154,8 @@ def _final_message(events: list[dict[str, Any]]) -> str | None:
 class CodexAgent:
     model: str | None = None
     timeout_seconds: int = 600
+    max_output_bytes: int = 50_000_000
+    max_tool_calls: int | None = None
 
     def identity(self) -> ParticipantIdentity:
         return ParticipantIdentity(
@@ -210,7 +213,7 @@ class CodexAgent:
             environment=context.environment,
             limits=ProcessLimits(
                 timeout_seconds=self.timeout_seconds,
-                max_stdout_bytes=50_000_000,
+                max_stdout_bytes=self.max_output_bytes,
                 max_stderr_bytes=5_000_000,
             ),
         )
@@ -228,6 +231,7 @@ class CodexAgent:
         metrics["duration_ms"] = result.elapsed_ms
         metrics["stdout_bytes"] = len(result.stdout)
         metrics["stderr_bytes"] = len(result.stderr)
+        tool_calls = int(metrics["tool_calls"])
         payload = {
             "available": not result.executable_missing,
             "terminal_event": terminal,
@@ -238,6 +242,17 @@ class CodexAgent:
             "jsonl_parse_errors": parse_errors,
             "subject_server": subject_server,
             "tool_available": exposure is not None,
+            "budget_violation": (
+                f"tool calls {tool_calls} exceed max_tool_calls "
+                f"{self.max_tool_calls}"
+                if self.max_tool_calls is not None
+                and tool_calls > self.max_tool_calls
+                else (
+                    f"agent output exceeded max_output_bytes {self.max_output_bytes}"
+                    if result.stdout_truncated
+                    else None
+                )
+            ),
             "process": result.metrics(),
             "stderr": result.stderr.decode("utf-8", errors="replace"),
         }
