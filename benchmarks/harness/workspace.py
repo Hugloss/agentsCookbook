@@ -160,7 +160,8 @@ def isolated_environment(root: Path) -> dict[str, str]:
     config = root / "_environment" / "xdg-config"
     cache = root / "_environment" / "xdg-cache"
     state = root / "_environment" / "xdg-state"
-    for directory in (home, tmp, config, cache, state):
+    codex_home = root / "_environment" / "codex-home"
+    for directory in (home, tmp, config, cache, state, codex_home):
         directory.mkdir(parents=True, exist_ok=False)
     return {
         "HOME": str(home),
@@ -170,6 +171,8 @@ def isolated_environment(root: Path) -> dict[str, str]:
         "XDG_CONFIG_HOME": str(config),
         "XDG_CACHE_HOME": str(cache),
         "XDG_STATE_HOME": str(state),
+        "CODEX_HOME": str(codex_home),
+        "ENOLA_NO_UPDATE_CHECK": "1",
     }
 
 
