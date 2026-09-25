@@ -105,24 +105,15 @@ def _agent_authority(agent, prepared: Observation) -> dict[str, Any]:
         "observed": {
             "version": prepared.payload.get("version"),
             "executable_sha256": prepared.payload.get("executable_sha256"),
-            "config_sha256": prepared.payload.get("config_sha256"),
             "mcp_exposure": prepared.payload.get("mcp_exposure"),
         },
     }
 
 
 def _oracle_authority(oracle, health: Observation) -> dict[str, Any]:
-    process = health.payload.get("process")
-    observed = None
-    if isinstance(process, dict):
-        observed = {
-            "command_identity": process.get("command_identity"),
-            "environment_identity": process.get("environment_identity"),
-        }
     return {
         "declared": _declared(oracle.identity()),
         "healthy": bool(health.payload.get("healthy")),
-        "observed": observed,
     }
 
 
@@ -170,6 +161,14 @@ def _publish_bundle(
         }
         write_receipt(bundle, receipt)
         os.rename(bundle, final_dir)
+        try:
+            fd = os.open(results_root, os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        except OSError:
+            pass
     except BaseException:
         shutil.rmtree(bundle, ignore_errors=True)
         raise
@@ -385,11 +384,15 @@ def run_trial(
                         "measurements": grade.measurements,
                     },
                 )
-                status = (
-                    TrialStatus.PASS
-                    if grade.payload.get("passed") is True
-                    else TrialStatus.FAIL
-                )
+                if grade.payload.get("valid") is False:
+                    status = TrialStatus.INVALID
+                    reason = "independent oracle could not complete grading"
+                else:
+                    status = (
+                        TrialStatus.PASS
+                        if grade.payload.get("passed") is True
+                        else TrialStatus.FAIL
+                    )
 
         observed_state = snapshot(workspace)
         contamination_config = task["contamination"]
