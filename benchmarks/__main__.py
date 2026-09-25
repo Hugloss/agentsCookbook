@@ -5,6 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
+from benchmarks.harness.report import build_report
 from benchmarks.harness.runner import run_trial
 from benchmarks.harness.suite import load_suite
 
@@ -34,6 +35,15 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--task")
     run.add_argument("--condition")
 
+    report = sub.add_parser("report")
+    report.add_argument("--suite", type=Path, required=True)
+    report.add_argument("--results", type=Path, required=True)
+    report.add_argument(
+        "--allow-incomplete",
+        action="store_true",
+        help="report available valid receipts without requiring every frozen definition",
+    )
+
     return parser
 
 
@@ -60,6 +70,20 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "plan":
         print(json.dumps(suite.trial_definitions(), indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "report":
+        print(
+            json.dumps(
+                build_report(
+                    suite=suite,
+                    results_root=args.results,
+                    require_complete=not args.allow_incomplete,
+                ),
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return 0
 
     rows = suite.trial_definitions()
