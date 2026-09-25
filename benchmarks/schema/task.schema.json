@@ -8,6 +8,7 @@
     "version",
     "repository",
     "prompt",
+    "mutation",
     "oracle",
     "budgets"
   ],
