@@ -8,11 +8,15 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from benchmarks.adapters.codex import (
+    CodexAgent,
     _final_message,
     _metrics,
+    _render_config,
+    disable_codex_remote_auth,
     parse_codex_jsonl,
     seed_codex_auth,
 )
@@ -37,8 +41,13 @@ from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
 PILOT = Path("benchmarks/suites/repository-intelligence/pilot-v1")
+MATRIX_V2 = Path(
+    "benchmarks/suites/repository-intelligence/agent-matrix-v2"
+)
 PINNED_COMMIT = "0841a8822f417b8fd03af61c03779df8f1cdc941"
 PINNED_TREE = "65a32888329e308615647dda194f0e36c2afe2ac"
+MATRIX_V2_COMMIT = "6ce8b0d9230dd9bc5369ddf495ad9404766fbbaf"
+MATRIX_V2_TREE = "1e253d251f8e0a874aeca0b05358b36253a714cc"
 
 
 class FakeSubject:
@@ -130,6 +139,33 @@ class PilotExecutionTests(unittest.TestCase):
             {"bare-codex", "hashmarks-codex", "enola-codex"},
         )
         self.assertTrue(all(len(row["definition_id"]) == 64 for row in rows))
+
+    def test_agent_matrix_v2_freezes_eighteen_definitions(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        self.assertEqual(len(suite.tasks), 3)
+        self.assertEqual(len(suite.subjects), 3)
+        self.assertEqual(len(suite.agents), 2)
+        rows = suite.trial_definitions()
+        self.assertEqual(len(rows), 18)
+        self.assertEqual(len({row["definition_id"] for row in rows}), 18)
+        self.assertEqual(
+            {row["condition_id"] for row in rows},
+            {
+                "bare-sol",
+                "hashmarks-sol",
+                "enola-sol",
+                "bare-gemma4-12b",
+                "hashmarks-gemma4-12b",
+                "enola-gemma4-12b",
+            },
+        )
+        sol = suite.agents["codex-sol"]["configuration"]
+        local = suite.agents["gemma4-12b-ollama"]["configuration"]
+        self.assertEqual(sol["model"], "gpt-5.6-sol")
+        self.assertEqual(sol["reasoning_effort"], "high")
+        self.assertIsNone(sol["local_provider"])
+        self.assertEqual(local["model"], "gemma4:12b")
+        self.assertEqual(local["local_provider"], "ollama")
 
     def test_suite_loader_enforces_repo_owned_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -238,6 +274,127 @@ class PilotExecutionTests(unittest.TestCase):
             agent.timeout_seconds,
             task["budgets"]["timeout_seconds"],
         )
+
+    def test_codex_local_provider_uses_same_exec_runtime(self) -> None:
+        agent = CodexAgent(
+            model="gemma4:12b",
+            local_provider="ollama",
+        )
+        self.assertEqual(
+            agent._exec_argv("task"),
+            (
+                "codex",
+                "exec",
+                "--json",
+                "--full-auto",
+                "--model",
+                "gemma4:12b",
+                "--oss",
+                "--local-provider",
+                "ollama",
+                "task",
+            ),
+        )
+        config = _render_config(
+            "gemma4:12b",
+            None,
+            local_provider="ollama",
+        )
+        self.assertIn('model = "gemma4:12b"', config)
+        self.assertIn('oss_provider = "ollama"', config)
+
+    def test_codex_sol_freezes_reasoning_effort(self) -> None:
+        config = _render_config(
+            "gpt-5.6-sol",
+            None,
+            reasoning_effort="high",
+        )
+        self.assertIn('model = "gpt-5.6-sol"', config)
+        self.assertIn('model_reasoning_effort = "high"', config)
+
+    def test_local_ollama_admission_binds_model_descriptor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            environment = isolated_environment(control)
+            context = TrialContext(workspace, control, environment)
+            agent = CodexAgent(
+                model="gemma4:12b",
+                local_provider="ollama",
+            )
+            available = Observation(
+                {
+                    "available": True,
+                    "version": "runtime 1",
+                    "executable_sha256": "a" * 64,
+                },
+                "runtime 1",
+            )
+            process = SimpleNamespace(
+                executable_missing=False,
+                timed_out=False,
+                return_code=0,
+                stdout=b"gemma4:12b descriptor",
+                stderr=b"",
+                stdout_truncated=False,
+                stderr_truncated=False,
+                metrics=lambda: {"return_code": 0},
+            )
+            with (
+                mock.patch(
+                    "benchmarks.adapters.codex.observe_executable",
+                    return_value=available,
+                ) as observed,
+                mock.patch(
+                    "benchmarks.adapters.codex.run_bounded",
+                    return_value=process,
+                ) as bounded,
+            ):
+                prepared = agent.prepare(context, None)
+            self.assertTrue(prepared.payload["available"])
+            self.assertEqual(
+                prepared.payload["local_provider"],
+                "ollama",
+            )
+            local = prepared.payload["local_provider_observation"]
+            self.assertEqual(local["model"], "gemma4:12b")
+            self.assertEqual(
+                local["model_descriptor_sha256"],
+                "7d04c864793ed7d22553c1dd84eec1110f87b237cf9a19af8b793295e4ceebbf",
+            )
+            self.assertEqual(observed.call_count, 2)
+            bounded.assert_called_once()
+            self.assertEqual(
+                bounded.call_args.kwargs["argv"],
+                ("ollama", "show", "gemma4:12b"),
+            )
+
+    def test_local_model_disables_remote_codex_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            environment = isolated_environment(control)
+            context = TrialContext(workspace, control, environment)
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "OPENAI_API_KEY": "ambient-openai",
+                    "CODEX_API_KEY": "ambient-codex",
+                    "CODEX_ACCESS_TOKEN": "ambient-token",
+                },
+            ):
+                mode = disable_codex_remote_auth(context)
+            self.assertEqual(mode, "disabled-local-provider")
+            for name in (
+                "OPENAI_API_KEY",
+                "CODEX_API_KEY",
+                "CODEX_ACCESS_TOKEN",
+            ):
+                self.assertEqual(context.environment[name], "")
 
     def test_codex_jsonl_separates_tool_availability_from_adoption(self) -> None:
         raw = b"\n".join(
