@@ -318,6 +318,133 @@ function verifyBenchmarkConfig(base, effective, overlay, selectedSubject) {
   return resolved;
 }
 
+function canonicalPath(value) {
+  const resolved = path.resolve(value);
+  try {
+    return fs.realpathSync.native(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+function commandWorkspace(command, flag, cwd) {
+  if (!Array.isArray(command)) return null;
+  for (let index = 0; index < command.length; index += 1) {
+    const value = command[index];
+    if (value === flag && typeof command[index + 1] === 'string') {
+      return canonicalPath(path.resolve(cwd, command[index + 1]));
+    }
+    if (typeof value === 'string' && value.startsWith(`${flag}=`)) {
+      return canonicalPath(path.resolve(cwd, value.slice(flag.length + 1)));
+    }
+  }
+  return null;
+}
+
+function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
+  const workspace = canonicalPath(repoDir);
+  if (!selectedSubject) {
+    return {
+      verified: true,
+      subject: null,
+      method: 'bare-no-subject',
+      workspace,
+      effective_cwd: workspace,
+      reason: null,
+    };
+  }
+
+  const server = mcpEntries(config, shape)[selectedSubject];
+  if (!server || typeof server !== 'object' || Array.isArray(server)) {
+    return {
+      verified: false,
+      subject: selectedSubject,
+      method: null,
+      workspace,
+      effective_cwd: null,
+      reason: `native MCP server ${selectedSubject} is not configured`,
+    };
+  }
+  if (server.type !== 'local' || !Array.isArray(server.command)) {
+    return {
+      verified: false,
+      subject: selectedSubject,
+      method: null,
+      workspace,
+      effective_cwd: null,
+      reason: `native MCP server ${selectedSubject} is not a local command`,
+    };
+  }
+
+  const effectiveCwd = canonicalPath(
+    server.cwd ? path.resolve(repoDir, server.cwd) : repoDir,
+  );
+
+  if (selectedSubject === 'hashmarks') {
+    const bound = commandWorkspace(
+      server.command,
+      '--workspace',
+      effectiveCwd,
+    );
+    if (!bound) {
+      return {
+        verified: false,
+        subject: selectedSubject,
+        method: null,
+        workspace,
+        effective_cwd: effectiveCwd,
+        reason: 'native Hashmarks MCP has no explicit --workspace binding',
+      };
+    }
+    return {
+      verified: bound === workspace,
+      subject: selectedSubject,
+      method: 'hashmarks-explicit-workspace',
+      workspace,
+      effective_cwd: effectiveCwd,
+      resolved_workspace: bound,
+      reason: bound === workspace
+        ? null
+        : `native Hashmarks workspace resolves outside trial workspace: ${bound}`,
+    };
+  }
+
+  if (selectedSubject === 'enola') {
+    if (server.command.length !== 1) {
+      return {
+        verified: false,
+        subject: selectedSubject,
+        method: null,
+        workspace,
+        effective_cwd: effectiveCwd,
+        reason: (
+          'native Enola MCP passes repository/config arguments whose '
+          + 'workspace binding cannot be proven without changing the definition'
+        ),
+      };
+    }
+    return {
+      verified: effectiveCwd === workspace,
+      subject: selectedSubject,
+      method: 'enola-default-repository-from-mcp-cwd',
+      workspace,
+      effective_cwd: effectiveCwd,
+      reason: effectiveCwd === workspace
+        ? null
+        : `native Enola MCP cwd resolves outside trial workspace: ${effectiveCwd}`,
+    };
+  }
+
+  return {
+    verified: false,
+    subject: selectedSubject,
+    method: null,
+    workspace,
+    effective_cwd: effectiveCwd,
+    reason: `no workspace-binding verifier for native MCP subject ${selectedSubject}`,
+  };
+}
+
 function commandPrefix(pure) {
   return pure ? ['--pure'] : [];
 }
@@ -529,7 +656,13 @@ function prepareBenchmarkConfig({
       overlay,
       selectedSubject,
     );
-    if (probe && selectedSubject) {
+    const workspaceBinding = verifyWorkspaceBinding(
+      base.config,
+      overlay.shape,
+      selectedSubject,
+      repoDir,
+    );
+    if (probe && selectedSubject && workspaceBinding.verified) {
       const connection = runCommand(
         opencodeBin,
         [...commandPrefix(pure), 'mcp', 'list'],
@@ -551,6 +684,7 @@ function prepareBenchmarkConfig({
       inspection: base.inspection,
       effective_inspection: effectiveInspection,
       selected_server: overlay.selected,
+      workspace_binding: workspaceBinding,
       overlay_identity: {
         shape: overlay.shape,
         selected_subject: selectedSubject,
@@ -783,6 +917,7 @@ module.exports = {
   runSession,
   runSessionAndExport,
   sanitize,
+  verifyWorkspaceBinding,
 };
 
 if (require.main === module) {
