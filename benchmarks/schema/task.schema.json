@@ -8,9 +8,11 @@
     "version",
     "repository",
     "prompt",
+    "mode",
     "mutation",
     "oracle",
-    "budgets"
+    "budgets",
+    "contamination"
   ],
   "properties": {
     "id": {
@@ -62,7 +64,9 @@
           "additionalProperties": false,
           "required": [
             "id",
-            "sha256"
+            "artifact",
+            "sha256",
+            "changed_paths"
           ],
           "properties": {
             "id": {
@@ -76,6 +80,15 @@
             "sha256": {
               "type": "string",
               "pattern": "^[0-9a-f]{64}$"
+            },
+            "changed_paths": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         }
@@ -86,7 +99,8 @@
       "additionalProperties": false,
       "required": [
         "adapter",
-        "identity"
+        "identity",
+        "configuration"
       ],
       "properties": {
         "adapter": {
@@ -110,6 +124,10 @@
               "minLength": 1
             }
           }
+        },
+        "configuration": {
+          "type": "object",
+          "additionalProperties": true
         }
       }
     },
@@ -135,6 +153,38 @@
         "max_output_bytes": {
           "type": "integer",
           "minimum": 1
+        }
+      }
+    },
+    "mode": {
+      "enum": [
+        "read_only",
+        "edit"
+      ]
+    },
+    "contamination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed_change_globs",
+        "allowed_generated_globs"
+      ],
+      "properties": {
+        "allowed_change_globs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "allowed_generated_globs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     }
