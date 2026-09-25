@@ -38,6 +38,12 @@ already-configured native `hashmarks` or `enola` server and disables the others.
 agentsCookbook does not mirror the selected server command/configuration. Model,
 provider, authentication, and subject MCP configuration stay with OpenCode.
 
+Native OpenCode assistance is admitted only when the selected server can be proven to
+target the isolated trial workspace. Hashmarks is proven from its resolved
+`--workspace`; Enola's normal no-argument registration is proven from OpenCode's MCP
+working-directory semantics. Unprovable or outside-workspace bindings remain native
+and unchanged, but the trial is recorded as `INCOMPLETE`.
+
 Primary interpretation is assistance gain within the same runtime/model authority.
 Cross-runtime rows are descriptive only.
 
