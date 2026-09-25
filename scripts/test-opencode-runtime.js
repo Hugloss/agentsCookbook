@@ -84,7 +84,8 @@ if (command === 'run') {
     id: 'ses_test',
     title: value('--title'),
     directory: value('--dir'),
-    updated: Date.now()
+    updated: Date.now(),
+    pure: args[0] === '--pure'
   };
   fs.writeFileSync(statePath, JSON.stringify(state));
   process.stdout.write('{"type":"run"}\\n');
@@ -157,6 +158,20 @@ async function testSharedLifecycle() {
     assert.strictEqual(result.final_text, 'done');
     assert.strictEqual(result.export_parse_error, null);
     assert.strictEqual(result.delete.status, 0);
+
+    const legacy = runtime.runSession({
+      opencodeBin: fake,
+      repoDir: root,
+      title: 'legacy-mode',
+      prompt: 'legacy',
+      env,
+      pure: false,
+    });
+    assert.strictEqual(legacy.command.status, 0);
+    const legacyState = JSON.parse(
+      fs.readFileSync(statePath, 'utf8'),
+    );
+    assert.strictEqual(legacyState.pure, false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
