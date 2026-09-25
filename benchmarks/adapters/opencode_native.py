@@ -231,10 +231,21 @@ class OpenCodeNativeAgent:
             },
         )
 
+    def _selected_subject(
+        self,
+        exposed_subject: SubjectAdapter | None,
+    ) -> str | None:
+        if exposed_subject is None:
+            return None
+        identity = exposed_subject.identity()
+        if identity.kind == "control" or identity.participant_id == "none":
+            return None
+        return identity.participant_id
+
     def _resolve_native(
         self,
         context: TrialContext,
-        exposure_file: Path,
+        selected_subject: str | None,
     ) -> tuple[dict[str, Any], Observation]:
         environment = _native_environment(context)
         executable = observe_executable(
@@ -245,8 +256,11 @@ class OpenCodeNativeAgent:
         envelope, result = _runtime_call(
             context,
             args=(
-                "inspect-config", "--repo", str(context.workspace),
-                "--benchmark-exposure-file", str(exposure_file),
+                "inspect-config",
+                "--repo",
+                str(context.workspace),
+                "--benchmark-subject",
+                selected_subject or "none",
             ),
             environment=environment,
             timeout_seconds=30,
@@ -281,21 +295,11 @@ class OpenCodeNativeAgent:
         context: TrialContext,
         exposed_subject: SubjectAdapter | None,
     ) -> Observation:
-        exposure = (
-            exposed_subject.mcp_exposure(context)
-            if exposed_subject is not None else None
+        selected_subject = self._selected_subject(exposed_subject)
+        resolved, executable = self._resolve_native(
+            context,
+            selected_subject,
         )
-        exposure_file = context.control_root / "opencode-benchmark-exposure.json"
-        exposure_file.write_bytes(canonical_json(
-            {
-                "name": exposure.name,
-                "command": exposure.command,
-                "args": list(exposure.args),
-                "cwd": str(exposure.cwd),
-                "environment": {**context.environment, **exposure.environment},
-            } if exposure else None
-        ))
-        resolved, executable = self._resolve_native(context, exposure_file)
         if not resolved:
             return executable
         inspection = resolved["inspection"]
@@ -312,10 +316,7 @@ class OpenCodeNativeAgent:
         }
         selected = resolved.get("selected_server")
         selected_ready = selected is None or servers.get(selected) is True
-        overlay_identity = {
-            **resolved.get("overlay_identity", {}),
-            "subject_exposure": exposure.semantic_identity if exposure else None,
-        }
+        overlay_identity = dict(resolved.get("overlay_identity", {}))
         evidence = {
             "runtime_contract": "agents-cookbook-opencode-runtime/v1",
             "native_config_sha256": inspection.get("config_sha256"),
@@ -366,7 +367,11 @@ class OpenCodeNativeAgent:
                 "native_config_sha256": evidence["native_config_sha256"],
                 "native_mcp_servers": evidence["native_mcp_servers"],
                 "mcp_exposure": (
-                    {"name": selected, **overlay_identity}
+                    {
+                        "name": selected,
+                        "source": "native-opencode-config",
+                        **overlay_identity,
+                    }
                     if selected
                     else None
                 ),
@@ -413,8 +418,12 @@ class OpenCodeNativeAgent:
                 title,
                 "--prompt-file",
                 str(prompt_path),
-                "--benchmark-exposure-file",
-                str(context.control_root / "opencode-benchmark-exposure.json"),
+                "--benchmark-subject",
+                (
+                    str(evidence["selected_server"])
+                    if evidence.get("selected_server")
+                    else "none"
+                ),
                 "--native-config-sha256",
                 evidence["native_config_sha256"],
             ),
