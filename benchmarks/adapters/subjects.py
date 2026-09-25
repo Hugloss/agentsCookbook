@@ -4,7 +4,12 @@ from __future__ import annotations
 import shlex
 from dataclasses import dataclass
 
-from benchmarks.harness.model import Observation, ParticipantIdentity, TrialContext
+from benchmarks.harness.model import (
+    McpExposure,
+    Observation,
+    ParticipantIdentity,
+    TrialContext,
+)
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
@@ -37,7 +42,7 @@ class NoneSubject:
         return ParticipantIdentity("none", "control", "1")
 
     def prepare(self, context: TrialContext) -> Observation:
-        return Observation({"available": False, "observed": True}, "")
+        return Observation({"available": True, "observed": True}, "")
 
     def query(self, context: TrialContext, prompt: str) -> Observation:
         return Observation({"available": False, "invoked": False}, "")
@@ -47,10 +52,16 @@ class NoneSubject:
         context: TrialContext,
         changed_paths: tuple[str, ...],
     ) -> Observation:
-        return Observation({"available": False}, "")
+        return Observation({"available": True}, "")
 
     def cleanup(self, context: TrialContext) -> Observation:
         return Observation({}, "")
+
+    def mcp_exposure(self, context: TrialContext) -> McpExposure | None:
+        return None
+
+    def generated_globs(self) -> tuple[str, ...]:
+        return ()
 
 
 @dataclass(frozen=True)
@@ -115,6 +126,12 @@ class CommandSubject:
 
     def cleanup(self, context: TrialContext) -> Observation:
         return Observation({}, "")
+
+    def mcp_exposure(self, context: TrialContext) -> McpExposure | None:
+        return None
+
+    def generated_globs(self) -> tuple[str, ...]:
+        return ()
 
 
 def command_from_string(
