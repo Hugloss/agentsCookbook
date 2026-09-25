@@ -31,7 +31,7 @@ def build_subject(definition: dict[str, Any]):
     raise AdapterConfigurationError(f"unknown subject adapter: {adapter}")
 
 
-def build_agent(definition: dict[str, Any], *, timeout_seconds: int):
+def build_agent(definition: dict[str, Any], *, budgets: dict[str, Any]):
     adapter = definition["adapter"]
     config = definition.get("configuration", {})
     if adapter == "codex":
@@ -41,8 +41,14 @@ def build_agent(definition: dict[str, Any], *, timeout_seconds: int):
         return CodexAgent(
             model=model,
             timeout_seconds=min(
-                int(config.get("timeout_seconds", timeout_seconds)),
-                timeout_seconds,
+                int(config.get("timeout_seconds", budgets["timeout_seconds"])),
+                int(budgets["timeout_seconds"]),
+            ),
+            max_output_bytes=int(budgets.get("max_output_bytes", 50_000_000)),
+            max_tool_calls=(
+                int(budgets["max_tool_calls"])
+                if "max_tool_calls" in budgets
+                else None
             ),
         )
     raise AdapterConfigurationError(f"unknown agent adapter: {adapter}")
