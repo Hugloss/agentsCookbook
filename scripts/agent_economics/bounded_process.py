@@ -246,6 +246,11 @@ def run_bounded(
         timer.cancel()
         for thread in threads:
             thread.join(timeout=1.0)
+        for stream in (process.stdout, process.stderr):
+            try:
+                stream.close()
+            except OSError:
+                pass
     sig = -return_code if return_code < 0 else None
     return ProcessResult(
         argv=tuple(argv), cwd=cwd_relative, command_identity=command_identity,

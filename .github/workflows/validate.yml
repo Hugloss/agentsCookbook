@@ -56,6 +56,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Python 3.11
         uses: actions/setup-python@v5
@@ -83,7 +85,31 @@ jobs:
           print(f"validated {len(paths)} benchmark schemas")
           PY
 
-      - name: Benchmark foundation regressions
+      - name: Validate frozen repository-intelligence pilot
+        run: |
+          python -m benchmarks validate-suite \
+            --suite benchmarks/suites/repository-intelligence/pilot-v1
+          python -m benchmarks plan \
+            --suite benchmarks/suites/repository-intelligence/pilot-v1 \
+            > "$RUNNER_TEMP/repository-intelligence-pilot-plan.json"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          plan = json.loads(
+              (
+                  Path(os.environ["RUNNER_TEMP"])
+                  / "repository-intelligence-pilot-plan.json"
+              ).read_text(encoding="utf-8")
+          )
+          if len(plan) != 9:
+              raise SystemExit(f"expected 9 frozen pilot trials, got {len(plan)}")
+          if len({row["definition_id"] for row in plan}) != 9:
+              raise SystemExit("pilot definition identities are not unique")
+          PY
+
+      - name: Benchmark foundation and pilot regressions
         run: python -m unittest discover -s benchmarks/tests -v
 
   agent-economics:

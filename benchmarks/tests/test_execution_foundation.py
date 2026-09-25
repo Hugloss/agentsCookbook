@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import gc
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import warnings
 from pathlib import Path
 
 from benchmarks.adapters.oracles import CommandOracle
@@ -19,13 +21,19 @@ from benchmarks.harness.workspace import (
     materialize_git,
     snapshot,
 )
+from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
 def _context(root: Path) -> TrialContext:
     workspace = root / "workspace"
     workspace.mkdir()
-    environment = isolated_environment(root / "isolation")
-    return TrialContext(workspace=workspace, environment=environment)
+    control_root = root / "isolation"
+    environment = isolated_environment(control_root)
+    return TrialContext(
+        workspace=workspace,
+        control_root=control_root,
+        environment=environment,
+    )
 
 
 def _spec() -> TrialSpec:
@@ -81,6 +89,26 @@ class ExecutionFoundationTests(unittest.TestCase):
                 self.assertNotIn("dirlink/secret", evidence)
             finally:
                 shutil.rmtree(external, ignore_errors=True)
+
+    def test_bounded_process_closes_capture_streams(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with warnings.catch_warnings(record=True) as seen:
+                warnings.simplefilter("always", ResourceWarning)
+                for _ in range(3):
+                    result = run_bounded(
+                        repository_root=root,
+                        argv=(sys.executable, "-c", "print('ok')"),
+                        limits=ProcessLimits(timeout_seconds=10),
+                    )
+                    self.assertEqual(result.return_code, 0)
+                gc.collect()
+            resource_warnings = [
+                warning
+                for warning in seen
+                if issubclass(warning.category, ResourceWarning)
+            ]
+            self.assertEqual(resource_warnings, [])
 
     def test_oracle_requires_positive_health(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

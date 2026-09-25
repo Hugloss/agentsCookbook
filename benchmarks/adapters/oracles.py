@@ -1,9 +1,11 @@
-"""Independent bounded command oracle with positive health and answer input."""
+"""Independent deterministic benchmark oracles."""
 from __future__ import annotations
 
+import json
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from benchmarks.harness.identity import canonical_json
 from benchmarks.harness.model import Observation, ParticipantIdentity, TrialContext
@@ -12,6 +14,66 @@ from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 def _text(payload: bytes) -> str:
     return payload.decode("utf-8", errors="replace")
+
+
+@dataclass(frozen=True)
+class ExpectedJsonOracle:
+    participant_id: str
+    version: str
+    expected: dict[str, Any]
+
+    def identity(self) -> ParticipantIdentity:
+        return ParticipantIdentity(
+            self.participant_id,
+            "oracle",
+            self.version,
+            {"kind": "expected-json", "expected": self.expected},
+        )
+
+    def healthcheck(self, context: TrialContext) -> Observation:
+        try:
+            canonical_json(self.expected)
+        except (TypeError, ValueError) as exc:
+            return Observation(
+                {"healthy": False, "reason": f"invalid expected JSON: {exc}"},
+                "",
+            )
+        return Observation({"healthy": True}, "")
+
+    def grade(self, context: TrialContext, observation: Observation) -> Observation:
+        final_message = observation.payload.get("final_message")
+        if not isinstance(final_message, str):
+            return Observation(
+                {
+                    "passed": False,
+                    "valid": True,
+                    "reason": "agent final_message is missing",
+                },
+                "",
+            )
+        try:
+            actual = json.loads(final_message)
+        except json.JSONDecodeError as exc:
+            return Observation(
+                {
+                    "passed": False,
+                    "valid": True,
+                    "reason": f"agent final_message is not JSON: {exc.msg}",
+                    "actual_text": final_message,
+                },
+                "",
+            )
+        passed = actual == self.expected
+        return Observation(
+            {
+                "passed": passed,
+                "valid": True,
+                "expected": self.expected,
+                "actual": actual,
+                "reason": None if passed else "JSON answer differs from frozen oracle",
+            },
+            json.dumps(actual, sort_keys=True),
+        )
 
 
 @dataclass(frozen=True)
@@ -90,16 +152,18 @@ class CommandOracle:
                 self.grade_argv,
                 environment={"BENCHMARK_OBSERVATION_PATH": str(observation_path)},
             )
-        passed = (
+        valid = (
             not result.executable_missing
             and not result.timed_out
-            and result.return_code == 0
             and not result.stdout_truncated
             and not result.stderr_truncated
+            and result.return_code is not None
         )
+        passed = valid and result.return_code == 0
         return Observation(
             {
                 "passed": passed,
+                "valid": valid,
                 "process": result.metrics(),
                 "stderr": _text(result.stderr),
             },
