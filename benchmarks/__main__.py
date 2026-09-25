@@ -26,6 +26,11 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--work", type=Path, required=True)
     run.add_argument("--harness-root", type=Path, default=Path("."))
     run.add_argument("--source", type=Path)
+    run.add_argument(
+        "--codex-auth",
+        type=Path,
+        help="copy only this auth.json into isolated CODEX_HOME for Codex runs",
+    )
     run.add_argument("--task")
     run.add_argument("--condition")
 
@@ -80,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
             results_root=args.results,
             work_root=args.work,
             local_source=args.source,
+            codex_auth=args.codex_auth,
         )
         results.append(
             {
