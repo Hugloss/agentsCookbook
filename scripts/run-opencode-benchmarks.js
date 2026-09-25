@@ -296,6 +296,7 @@ async function main() {
       title,
       prompt: benchmark.prompt,
       homeDir: tempHome,
+      pure: false,
     });
     const runStartedAt = started.startedAt;
     const runResult = started.command;
@@ -307,6 +308,7 @@ async function main() {
       repoDir: options.repoDir,
       title,
       startedAt: runStartedAt,
+      pure: false,
     });
     fs.writeFileSync(path.join(benchDir, 'session-id.txt'), `${sessionId}\n`);
 
@@ -345,6 +347,7 @@ async function main() {
         repoDir: options.repoDir,
         sessionId,
         homeDir: tempHome,
+        pure: false,
       });
       exportStatus = exportResult.status;
       exportOutput = exportResult.stdout;
