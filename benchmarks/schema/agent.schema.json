@@ -7,7 +7,8 @@
     "id",
     "adapter",
     "identity",
-    "capabilities"
+    "capabilities",
+    "configuration"
   ],
   "properties": {
     "id": {
@@ -43,6 +44,10 @@
         "type": "string",
         "minLength": 1
       }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": true
     }
   }
 }
