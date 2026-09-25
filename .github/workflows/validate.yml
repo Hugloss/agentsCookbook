@@ -50,6 +50,42 @@ jobs:
             bash -n "$script"
           done
 
+  benchmarks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile benchmark framework
+        run: python -m compileall -q benchmarks
+
+      - name: Validate benchmark schema JSON
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          paths = sorted(Path("benchmarks/schema").glob("*.json"))
+          if not paths:
+              raise SystemExit("no benchmark schemas found")
+          for path in paths:
+              value = json.loads(path.read_text(encoding="utf-8"))
+              if value.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
+                  raise SystemExit(f"{path}: unexpected or missing JSON Schema draft")
+              if not value.get("$id"):
+                  raise SystemExit(f"{path}: missing $id")
+          print(f"validated {len(paths)} benchmark schemas")
+          PY
+
+      - name: Benchmark foundation regressions
+        run: python -m unittest discover -s benchmarks/tests -v
+
   agent-economics:
     runs-on: ubuntu-latest
     timeout-minutes: 20
