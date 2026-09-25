@@ -1,9 +1,27 @@
-# Repository Intelligence — suite v1
+# Repository Intelligence
 
-Measure repository-intelligence correctness and its effect on coding-agent work without making an evaluated product the grading authority.
+This suite measures repository-intelligence correctness and its effect on coding-agent
+work without making any evaluated product its own grading authority.
 
-Initial conditions: bare/no repository intelligence, Hashmarks, Enola. Initial agent: Codex. A local-model adapter (Gemma family or another local model) is the first genericity expansion after replay semantics are proven.
+The initial subjects are bare/no repository intelligence, Hashmarks, and Enola. Codex
+is the first agent adapter; a local-model adapter is the next genericity expansion
+after the executable pilot is qualified.
 
-The pilot will freeze three tasks and one known mutation on one pinned public repository. Measure correctness plus archaeology, tool availability/adoption, calls, evidence bytes, wall time, and oracle health.
+## Pilot v1
 
-Do not publish an overall winner score. Report per-family results and assistance gain over the same agent's bare condition.
+`pilot-v1/` freezes three tasks on one exact agentsCookbook commit/tree:
+
+- two read-only owner/localization questions with independent exact-answer oracles;
+- one injected receipt-completion defect with a pre-existing focused regression oracle.
+
+Across bare, Hashmarks, and Enola this yields nine paired trial definitions.
+
+The pilot measures correctness, subject availability, MCP configuration/adoption,
+command/tool calls, MCP evidence bytes, token usage, duration, contamination, and
+oracle health. Codex JSONL does not expose authoritative repository-read bytes, so the
+pilot explicitly marks that archaeology metric unavailable rather than estimating it.
+
+See `pilot-v1/README.md` for the exact replay and reporting commands.
+
+Do not publish an overall winner score. Report per-task/per-condition evidence and
+paired assistance deltas over the same-agent bare condition.
