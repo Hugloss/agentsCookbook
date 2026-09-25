@@ -102,6 +102,7 @@ def _metrics(
         "file_change_events": len(changes),
         "mcp_calls": len(mcp_calls),
         "subject_mcp_calls": len(subject_calls),
+        "subject_tool_configured": subject_server is not None,
         "subject_tool_invoked": bool(subject_calls),
         "mcp_result_bytes": result_bytes,
         "input_tokens": int(usage.get("input_tokens", 0) or 0),
