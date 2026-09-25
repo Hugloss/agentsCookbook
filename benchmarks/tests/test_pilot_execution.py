@@ -628,7 +628,18 @@ class PilotExecutionTests(unittest.TestCase):
             )
             self.assertEqual(
                 prepared.payload["observed_identity"]["workspace_binding"],
-                prepared.payload["workspace_binding"],
+                {
+                    "verified": False,
+                    "subject": "hashmarks",
+                    "method": "hashmarks-explicit-workspace",
+                    "reason_code": "hashmarks-workspace-outside-trial",
+                },
+            )
+            self.assertNotIn(
+                "/outside",
+                json.dumps(
+                    prepared.payload["observed_identity"]["workspace_binding"]
+                ),
             )
 
     def test_opencode_export_observes_native_model_and_mcp_adoption(self) -> None:
