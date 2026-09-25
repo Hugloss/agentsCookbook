@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -30,7 +31,7 @@ from benchmarks.harness.receipt import is_complete_receipt
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
 from benchmarks.harness.source import materialize_repository
-from benchmarks.harness.suite import SuiteDefinition, load_suite
+from benchmarks.harness.suite import SuiteDefinition, SuiteError, load_suite
 from benchmarks.harness.workspace import isolated_environment, snapshot
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
@@ -129,6 +130,35 @@ class PilotExecutionTests(unittest.TestCase):
             {"bare-codex", "hashmarks-codex", "enola-codex"},
         )
         self.assertTrue(all(len(row["definition_id"]) == 64 for row in rows))
+
+    def test_suite_loader_enforces_repo_owned_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            copied = Path(tmp) / "pilot"
+            shutil.copytree(PILOT, copied)
+
+            task_path = copied / "tasks" / "locate-receipt-completion-owner.json"
+            task = json.loads(task_path.read_text(encoding="utf-8"))
+            task.pop("mode")
+            task_path.write_text(
+                json.dumps(task, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(SuiteError):
+                load_suite(copied)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            copied = Path(tmp) / "pilot"
+            shutil.copytree(PILOT, copied)
+
+            subject_path = copied / "subjects" / "none.json"
+            subject = json.loads(subject_path.read_text(encoding="utf-8"))
+            subject["unexpected"] = True
+            subject_path.write_text(
+                json.dumps(subject, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(SuiteError):
+                load_suite(copied)
 
     def test_participant_configuration_is_part_of_definition_identity(self) -> None:
         suite = load_suite(PILOT)
@@ -574,6 +604,123 @@ class PilotExecutionTests(unittest.TestCase):
                     suite=suite,
                     results_root=root / "results",
                 )
+
+    def test_report_economics_keep_invalid_trial_costs(self) -> None:
+        experiment = {
+            "id": "economics",
+            "version": 1,
+            "suite": "fake",
+            "tasks": ["task"],
+            "conditions": [
+                {
+                    "id": "bare",
+                    "subject": "none",
+                    "agent": "agent",
+                    "trials": 1,
+                    "seed": 7,
+                }
+            ],
+            "scoring": {"id": "s", "version": 1, "metrics": ["task_success"]},
+        }
+        task = {
+            "id": "task",
+            "version": 1,
+            "repository": {
+                "url": "https://example.invalid/repo.git",
+                "commit": "1" * 40,
+                "tree": "2" * 40,
+            },
+            "prompt": "x",
+            "mode": "read_only",
+            "mutation": None,
+            "oracle": {
+                "adapter": "expected-json",
+                "identity": {"id": "o", "version": "1"},
+                "configuration": {"expected": {"ok": True}},
+            },
+            "budgets": {"timeout_seconds": 1},
+            "contamination": {
+                "allowed_change_globs": [],
+                "allowed_generated_globs": [],
+            },
+        }
+        suite = SuiteDefinition(
+            root=Path("."),
+            experiment=experiment,
+            tasks={"task": task},
+            subjects={
+                "none": {
+                    "id": "none",
+                    "kind": "control",
+                    "adapter": "none",
+                    "identity": {"id": "none", "version": "1"},
+                    "capabilities": [],
+                    "configuration": {},
+                }
+            },
+            agents={
+                "agent": {
+                    "id": "agent",
+                    "adapter": "fake",
+                    "identity": {"id": "agent", "version": "1"},
+                    "capabilities": [],
+                    "configuration": {},
+                }
+            },
+        )
+        definition = suite.trial_definitions()[0]["definition_id"]
+        receipt = {
+            "definition_id": definition,
+            "trial_id": "a" * 64,
+            "experiment": experiment,
+            "task": task,
+            "condition": suite.expanded_condition(experiment["conditions"][0]),
+            "status": "INVALID",
+            "authority": {"subject": {"available": True}},
+            "execution": {"trial_index": 0, "seed": 7},
+            "measurements": {
+                "agent": {
+                    "duration_ms": 1200.0,
+                    "tool_calls": 4,
+                    "command_calls": 3,
+                    "mcp_calls": 1,
+                    "subject_mcp_calls": 0,
+                    "mcp_result_bytes": 32,
+                    "input_tokens": 500,
+                    "cached_input_tokens": 100,
+                    "output_tokens": 20,
+                    "source_read_observability":
+                        "not-authoritatively-exposed-by-codex-jsonl",
+                }
+            },
+        }
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=[receipt],
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+            )
+
+        condition = report["conditions"]["bare"]
+        self.assertEqual(condition["valid_outcomes"], 0)
+        self.assertIsNone(condition["task_success_rate"])
+        self.assertEqual(
+            condition["metrics"]["duration_ms"]["total"],
+            1200.0,
+        )
+        self.assertEqual(
+            condition["metrics"]["tool_calls"]["total"],
+            4,
+        )
+        self.assertEqual(
+            condition["valid_outcome_metrics"]["duration_ms"]["observations"],
+            0,
+        )
+        self.assertTrue(
+            report["authority"]["economics_include_invalid_and_incomplete_trials"]
+        )
 
     def test_report_rejects_multiple_executions_for_one_definition(self) -> None:
         experiment = {
