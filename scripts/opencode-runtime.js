@@ -232,35 +232,39 @@ function mcpEntries(config, shape) {
   return shape === 'nested-servers' ? (mcp.servers || {}) : mcp;
 }
 
-function benchmarkOverlay(config, exposure) {
+function benchmarkOverlay(config, selectedSubject) {
   const inspected = inspectMcp(config);
   const nested = inspected.shape === 'nested-servers';
   const source = mcpEntries(config, inspected.shape);
   const servers = {};
   const tools = {};
+
+  if (selectedSubject && !Object.hasOwn(source, selectedSubject)) {
+    throw new Error(
+      `native OpenCode config does not define MCP server ${selectedSubject}`,
+    );
+  }
+
   for (const [name, value] of Object.entries(source)) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-    servers[name] = nested
-      ? { ...value, disabled: true }
-      : { ...value, enabled: false };
-    tools[`${name}_*`] = false;
-  }
-  const selected = exposure ? `benchmark_${exposure.name}` : null;
-  if (selected) {
-    if (Object.hasOwn(servers, selected)) {
-      throw new Error(`native MCP server name conflicts with ${selected}`);
+    const selected = selectedSubject === name;
+    const nativeEnabled =
+      value.enabled !== false && value.disabled !== true;
+    if (selected && !nativeEnabled) {
+      throw new Error(
+        `native OpenCode MCP server ${name} is disabled`,
+      );
     }
-    servers[selected] = {
-      type: 'local',
-      command: [exposure.command, ...exposure.args],
-      cwd: exposure.cwd,
-      environment: exposure.environment || {},
-      ...(nested ? { disabled: false, codemode: false } : { enabled: true }),
-    };
-    tools[`${selected}_*`] = true;
+    servers[name] = selected
+      ? { ...value }
+      : nested
+        ? { ...value, disabled: true }
+        : { ...value, enabled: false };
+    tools[`${name}_*`] = selected;
   }
+
   return {
-    selected,
+    selected: selectedSubject || null,
     shape: inspected.shape,
     config: {
       mcp: nested ? { servers } : servers,
@@ -272,34 +276,36 @@ function benchmarkOverlay(config, exposure) {
   };
 }
 
-function verifyBenchmarkConfig(base, effective, overlay, exposure) {
+function verifyBenchmarkConfig(base, effective, overlay, selectedSubject) {
   const original = inspectConfig(base);
   const resolved = inspectConfig(effective);
   if (original.model !== resolved.model || original.provider !== resolved.provider) {
     throw new Error('benchmark overlay changed native OpenCode model/provider');
   }
+
+  const baseServers = mcpEntries(base, overlay.shape);
   const servers = mcpEntries(effective, overlay.shape);
-  for (const name of Object.keys(mcpEntries(base, overlay.shape))) {
+  for (const name of Object.keys(baseServers)) {
     const value = servers[name];
-    if (!value || (overlay.shape === 'nested-servers'
-      ? value.disabled !== true
-      : value.enabled !== false)) {
-      throw new Error(`benchmark overlay did not disable MCP server ${name}`);
+    const selected = name === selectedSubject;
+    if (!value) {
+      throw new Error(`benchmark overlay removed native MCP server ${name}`);
+    }
+    if (
+      selected
+        ? (overlay.shape === 'nested-servers'
+          ? value.disabled === true
+          : value.enabled === false)
+        : (overlay.shape === 'nested-servers'
+          ? value.disabled !== true
+          : value.enabled !== false)
+    ) {
+      throw new Error(
+        `benchmark overlay resolved unexpected MCP state for ${name}`,
+      );
     }
   }
-  if (exposure) {
-    const value = servers[overlay.selected];
-    if (!value || value.type !== 'local' ||
-        JSON.stringify(value.command) !== JSON.stringify([exposure.command, ...exposure.args]) ||
-        path.resolve(value.cwd || '') !== path.resolve(exposure.cwd) ||
-        Object.entries(exposure.environment || {}).some(
-          ([key, expected]) => !value.environment || value.environment[key] !== expected,
-        ) ||
-        (overlay.shape === 'nested-servers' && value.codemode !== false) ||
-        (overlay.shape === 'nested-servers' ? value.disabled === true : value.enabled === false)) {
-      throw new Error(`benchmark MCP binding did not resolve for ${exposure.name}`);
-    }
-  }
+
   if (overlay.shape === 'flat') {
     const tools = effective.tools || {};
     const buildTools = ((effective.agent || {}).build || {}).tools || {};
@@ -489,38 +495,55 @@ function prepareBenchmarkConfig({
   opencodeBin = process.env.OPENCODE_BIN || 'opencode',
   repoDir,
   env = process.env,
-  exposure = null,
+  selectedSubject = null,
   pure = true,
   probe = true,
 }) {
   const base = readNativeConfig({ opencodeBin, repoDir, env, pure });
   if (base.status !== 'completed') {
-    return { status: 'failed', reason: 'native OpenCode config could not be resolved', inspection: base.inspection };
+    return {
+      status: 'failed',
+      reason: 'native OpenCode config could not be resolved',
+      inspection: base.inspection,
+    };
   }
   try {
-    const overlay = benchmarkOverlay(base.config, exposure);
+    const overlay = benchmarkOverlay(base.config, selectedSubject);
     const content = mergeObjects(inlineConfig(env), overlay.config);
     const commandEnv = {
       ...env,
       OPENCODE_CONFIG_CONTENT: JSON.stringify(content),
     };
-    const effective = readNativeConfig({ opencodeBin, repoDir, env: commandEnv, pure });
+    const effective = readNativeConfig({
+      opencodeBin,
+      repoDir,
+      env: commandEnv,
+      pure,
+    });
     if (effective.status !== 'completed') {
       throw new Error('OpenCode rejected the composed benchmark configuration');
     }
     const effectiveInspection = verifyBenchmarkConfig(
-      base.config, effective.config, overlay, exposure,
+      base.config,
+      effective.config,
+      overlay,
+      selectedSubject,
     );
-    if (probe && exposure) {
+    if (probe && selectedSubject) {
       const connection = runCommand(
-        opencodeBin, [...commandPrefix(pure), 'mcp', 'list'],
+        opencodeBin,
+        [...commandPrefix(pure), 'mcp', 'list'],
         { cwd: repoDir, env: commandEnv },
       );
       const connected = connection.stdout.split(/\r?\n/).some(
-        (line) => line.includes(overlay.selected) && /connected/i.test(line),
+        (line) =>
+          line.includes(selectedSubject) &&
+          /connected/i.test(line),
       );
       if (connection.status !== 0 || !connected) {
-        throw new Error(`OpenCode MCP connection ${overlay.selected} is not connected`);
+        throw new Error(
+          `native OpenCode MCP connection ${selectedSubject} is not connected`,
+        );
       }
     }
     return {
@@ -530,8 +553,8 @@ function prepareBenchmarkConfig({
       selected_server: overlay.selected,
       overlay_identity: {
         shape: overlay.shape,
-        selected_subject: exposure ? exposure.name : null,
-        isolated_subject: !!exposure,
+        selected_subject: selectedSubject,
+        native_server_reused: selectedSubject !== null,
       },
       environment: commandEnv,
     };
@@ -674,12 +697,17 @@ function parseCli(argv) {
 async function main(argv) {
   const { command, options } = parseCli(argv);
   const repoDir = path.resolve(options.repo || process.cwd());
-  const exposure = options['benchmark-exposure-file']
-    ? JSON.parse(fs.readFileSync(path.resolve(options['benchmark-exposure-file']), 'utf8'))
+  const benchmarkMode = Object.hasOwn(options, 'benchmark-subject');
+  const selectedSubject = benchmarkMode && options['benchmark-subject'] !== 'none'
+    ? options['benchmark-subject']
     : null;
   if (command === 'inspect-config') {
-    const result = options['benchmark-exposure-file']
-      ? prepareBenchmarkConfig({ repoDir, env: process.env, exposure })
+    const result = benchmarkMode
+      ? prepareBenchmarkConfig({
+        repoDir,
+        env: process.env,
+        selectedSubject,
+      })
       : resolveNativeConfig({ repoDir, env: process.env });
     const { environment, ...safe } = result;
     process.stdout.write(`${JSON.stringify({
@@ -700,12 +728,17 @@ async function main(argv) {
       'utf8',
     );
     let env = process.env;
-    if (options['benchmark-exposure-file']) {
+    if (benchmarkMode) {
       const prepared = prepareBenchmarkConfig({
-        repoDir, env: process.env, exposure,
+        repoDir,
+        env: process.env,
+        selectedSubject,
       });
-      if (prepared.status !== 'completed' ||
-          prepared.inspection.config_sha256 !== options['native-config-sha256']) {
+      if (
+        prepared.status !== 'completed' ||
+        prepared.inspection.config_sha256 !==
+          options['native-config-sha256']
+      ) {
         process.stdout.write(`${JSON.stringify({
           schema: RUNTIME_SCHEMA,
           run: { status: 1 },
