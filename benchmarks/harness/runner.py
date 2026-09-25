@@ -264,9 +264,14 @@ def run_trial(
         admitted_state = snapshot(workspace)
 
         subject = build_subject(suite.subjects[str(condition["subject"])])
-        auth_mode = seed_codex_auth(context, codex_auth)
+        agent_definition = suite.agents[str(condition["agent"])]
+        auth_mode = (
+            seed_codex_auth(context, codex_auth)
+            if agent_definition["adapter"] == "codex"
+            else "not-applicable"
+        )
         agent = build_agent(
-            suite.agents[str(condition["agent"])],
+            agent_definition,
             timeout_seconds=int(task["budgets"]["timeout_seconds"]),
         )
         oracle = build_oracle(
