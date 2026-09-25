@@ -140,10 +140,32 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _agent_id(receipt: dict[str, Any]) -> str:
+    value = (
+        receipt.get("condition", {})
+        .get("agent_definition", {})
+        .get("id")
+    )
+    if not isinstance(value, str) or not value:
+        raise ReportError("receipt has no frozen agent id")
+    return value
+
+
+def _subject_id(receipt: dict[str, Any]) -> str:
+    value = (
+        receipt.get("condition", {})
+        .get("subject_definition", {})
+        .get("id")
+    )
+    if not isinstance(value, str) or not value:
+        raise ReportError("receipt has no frozen subject id")
+    return value
+
+
 def _pair_key(receipt: dict[str, Any]) -> tuple[str, str, int, int]:
     condition = receipt["condition"]
     execution = receipt["execution"]
-    agent_id = str(condition["agent_definition"]["id"])
+    agent_id = _agent_id(receipt)
     return (
         _task_id(receipt),
         agent_id,
@@ -215,6 +237,59 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
 
 
+def _cross_agent_observations(
+    receipts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[
+        tuple[str, str, int, int],
+        dict[str, dict[str, Any]],
+    ] = defaultdict(dict)
+    for receipt in receipts:
+        if receipt.get("status") not in _VALID_OUTCOMES:
+            continue
+        execution = receipt["execution"]
+        key = (
+            _task_id(receipt),
+            _subject_id(receipt),
+            int(execution["trial_index"]),
+            int(execution["seed"]),
+        )
+        agent = _agent_id(receipt)
+        if agent in grouped[key]:
+            raise ReportError(
+                f"multiple executions for cross-agent observation {key} / {agent}"
+            )
+        grouped[key][agent] = {
+            "status": receipt["status"],
+            "duration_ms": _agent_metric(receipt, "duration_ms"),
+            "tool_calls": _agent_metric(receipt, "tool_calls"),
+            "mcp_calls": _agent_metric(receipt, "mcp_calls"),
+            "subject_mcp_calls": _agent_metric(
+                receipt,
+                "subject_mcp_calls",
+            ),
+            "input_tokens": _agent_metric(receipt, "input_tokens"),
+            "output_tokens": _agent_metric(receipt, "output_tokens"),
+            "subject_tool_invoked": (
+                receipt.get("measurements", {})
+                .get("agent", {})
+                .get("subject_tool_invoked")
+            ),
+        }
+
+    return [
+        {
+            "task_id": key[0],
+            "subject_id": key[1],
+            "trial_index": key[2],
+            "seed": key[3],
+            "agents": dict(sorted(agents.items())),
+        }
+        for key, agents in sorted(grouped.items())
+        if len(agents) > 1
+    ]
+
+
 def build_report(
     *,
     suite: SuiteDefinition,
@@ -254,8 +329,10 @@ def build_report(
         )
 
     by_condition: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_agent: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for receipt in receipts:
         by_condition[_condition_id(receipt)].append(receipt)
+        by_agent[_agent_id(receipt)].append(receipt)
 
     statuses = Counter(str(row.get("status")) for row in receipts)
     return {
@@ -277,6 +354,11 @@ def build_report(
             for condition, rows in sorted(by_condition.items())
         },
         "paired_assistance": _paired_assistance(receipts),
+        "agent_profiles": {
+            agent: _aggregate_condition(rows)
+            for agent, rows in sorted(by_agent.items())
+        },
+        "cross_agent_observations": _cross_agent_observations(receipts),
         "authority": {
             "overall_winner": None,
             "ranking_performed": False,
@@ -284,5 +366,6 @@ def build_report(
             "invalid_outcomes_excluded_from_success_rates": True,
             "economics_include_invalid_and_incomplete_trials": True,
             "paired_assistance_scope": "valid-outcomes-only",
+            "cross_agent_rows_are_descriptive": True,
         },
     }
