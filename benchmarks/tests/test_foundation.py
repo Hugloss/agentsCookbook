@@ -65,6 +65,23 @@ class FoundationTests(unittest.TestCase):
             (root / "result.sha256").write_text("0" * 64 + "  result.json\n")
             self.assertFalse(is_complete_receipt(root))
 
+    def test_matching_partial_receipt_can_resume_finalization(self) -> None:
+        from benchmarks.harness.identity import canonical_json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            receipt = {"status": TrialStatus.PASS.value}
+            (root / "result.json").write_bytes(canonical_json(receipt))
+            write_receipt(root, receipt)
+            self.assertTrue(is_complete_receipt(root))
+
+    def test_conflicting_partial_receipt_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "result.json").write_text('{"status":"FAIL"}\n', encoding="utf-8")
+            with self.assertRaises(ReceiptExistsError):
+                write_receipt(root, {"status": TrialStatus.PASS.value})
+
     def test_non_product_failure_states_exist(self) -> None:
         self.assertEqual(TrialStatus.INCOMPLETE.value, "INCOMPLETE")
         self.assertEqual(TrialStatus.INVALID.value, "INVALID")
