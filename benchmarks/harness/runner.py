@@ -12,7 +12,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from benchmarks.adapters.codex import seed_codex_auth
+from benchmarks.adapters.codex import (
+    disable_codex_remote_auth,
+    seed_codex_auth,
+)
 from benchmarks.adapters.registry import build_agent, build_oracle, build_subject
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.contamination import classify_contamination
@@ -307,7 +310,7 @@ def run_trial(
             if agent_definition["adapter"] == "codex"
             and agent.requires_remote_auth()
             else (
-                "not-required-local-provider"
+                disable_codex_remote_auth(context)
                 if agent_definition["adapter"] == "codex"
                 else "not-applicable"
             )
