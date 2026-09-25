@@ -76,10 +76,10 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
         row
         for row in valid
         if row.get("authority", {}).get("subject", {}).get("available") is True
-        and row.get("condition", {})
-        .get("subject_definition", {})
-        .get("adapter")
-        != "none"
+        and row.get("measurements", {})
+        .get("agent", {})
+        .get("subject_tool_configured")
+        is True
     ]
     invoked = [
         row
