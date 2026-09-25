@@ -21,6 +21,10 @@ from benchmarks.harness.identity import definition_id, execution_id
 from benchmarks.harness.model import Observation, TrialContext, TrialStatus
 from benchmarks.harness.mutation import apply_mutation
 from benchmarks.harness.receipt import write_receipt
+from benchmarks.harness.schema_validation import (
+    SchemaValidationError,
+    validate_instance,
+)
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.suite import SuiteDefinition
 from benchmarks.harness.workspace import isolated_environment, snapshot
@@ -120,6 +124,21 @@ def _oracle_authority(oracle, health: Observation) -> dict[str, Any]:
     }
 
 
+def _validate_result_receipt(receipt: dict[str, Any]) -> None:
+    schema_path = (
+        Path(__file__).resolve().parents[1]
+        / "schema"
+        / "result.schema.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    try:
+        validate_instance(receipt, schema)
+    except (OSError, json.JSONDecodeError, SchemaValidationError) as exc:
+        raise TrialRunnerError(
+            f"generated result receipt violates result schema: {exc}"
+        ) from exc
+
+
 def _artifact(path: Path) -> dict[str, Any]:
     payload = path.read_bytes()
     return {
@@ -162,6 +181,7 @@ def _publish_bundle(
             "events_seal": _artifact(bundle / "events.jsonl.seal.json"),
             "agent_trace": _artifact(bundle / "agent-trace.jsonl"),
         }
+        _validate_result_receipt(receipt)
         write_receipt(bundle, receipt)
         os.rename(bundle, final_dir)
         valid, reason = verify_bundle(final_dir)
@@ -422,6 +442,13 @@ def run_trial(
                         if grade.payload.get("passed") is True
                         else TrialStatus.FAIL
                     )
+                    if status is TrialStatus.FAIL:
+                        grade_reason = grade.payload.get("reason")
+                        reason = (
+                            str(grade_reason)
+                            if grade_reason
+                            else "independent oracle rejected outcome"
+                        )
 
         observed_state = snapshot(workspace)
         contamination_config = task["contamination"]
