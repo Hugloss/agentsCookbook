@@ -34,19 +34,41 @@ class Observation:
 @dataclass(frozen=True)
 class TrialContext:
     workspace: Path
+    control_root: Path
     environment: dict[str, str]
+
+
+@dataclass(frozen=True)
+class McpExposure:
+    name: str
+    command: str
+    args: tuple[str, ...]
+    cwd: Path
+    semantic_identity: dict[str, Any]
+    environment: dict[str, str] = field(default_factory=dict)
 
 
 class SubjectAdapter(Protocol):
     def identity(self) -> ParticipantIdentity: ...
     def prepare(self, context: TrialContext) -> Observation: ...
     def query(self, context: TrialContext, prompt: str) -> Observation: ...
-    def post_change(self, context: TrialContext, changed_paths: tuple[str, ...]) -> Observation: ...
+    def post_change(
+        self,
+        context: TrialContext,
+        changed_paths: tuple[str, ...],
+    ) -> Observation: ...
     def cleanup(self, context: TrialContext) -> Observation: ...
+    def mcp_exposure(self, context: TrialContext) -> McpExposure | None: ...
+    def generated_globs(self) -> tuple[str, ...]: ...
 
 
 class AgentAdapter(Protocol):
     def identity(self) -> ParticipantIdentity: ...
+    def prepare(
+        self,
+        context: TrialContext,
+        exposed_subject: SubjectAdapter | None,
+    ) -> Observation: ...
     def run(
         self,
         context: TrialContext,
