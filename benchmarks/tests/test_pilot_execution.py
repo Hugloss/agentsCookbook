@@ -491,6 +491,15 @@ class PilotExecutionTests(unittest.TestCase):
                             "inspection": inspection,
                             "effective_inspection": inspection,
                             "selected_server": "hashmarks",
+                            "workspace_binding": {
+                                "verified": True,
+                                "subject": "hashmarks",
+                                "method": "hashmarks-explicit-workspace",
+                                "workspace": str(workspace),
+                                "effective_cwd": str(workspace),
+                                "resolved_workspace": str(workspace),
+                                "reason": None,
+                            },
                             "overlay_identity": {
                                 "shape": "flat",
                                 "selected_subject": "hashmarks",
@@ -535,6 +544,91 @@ class PilotExecutionTests(unittest.TestCase):
             )
             self.assertFalse(
                 (control / "opencode-benchmark-exposure.json").exists()
+            )
+
+    def test_opencode_unverified_native_workspace_binding_is_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            context = TrialContext(
+                workspace,
+                control,
+                isolated_environment(control),
+            )
+            executable = Observation(
+                {
+                    "available": True,
+                    "version": "opencode 1",
+                    "executable_sha256": "a" * 64,
+                },
+                "opencode 1",
+            )
+            inspection = {
+                "model": "liteLLM/gemma4",
+                "provider": "liteLLM",
+                "config_sha256": "b" * 64,
+                "mcp_shape": "flat",
+                "mcp_servers": [
+                    {"name": "hashmarks", "enabled": True},
+                ],
+            }
+            runtime_result = mock.Mock()
+            runtime_result.metrics.return_value = {"return_code": 0}
+            runtime_result.stderr = b""
+            runtime_result.stdout = b"{}"
+            with (
+                mock.patch(
+                    "benchmarks.adapters.opencode_native.observe_executable",
+                    return_value=executable,
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call",
+                    return_value=(
+                        {
+                            "status": "completed",
+                            "inspection": inspection,
+                            "effective_inspection": inspection,
+                            "selected_server": "hashmarks",
+                            "workspace_binding": {
+                                "verified": False,
+                                "subject": "hashmarks",
+                                "method": "hashmarks-explicit-workspace",
+                                "workspace": str(workspace),
+                                "effective_cwd": "/outside",
+                                "resolved_workspace": "/outside",
+                                "reason": (
+                                    "native Hashmarks workspace resolves outside "
+                                    "trial workspace: /outside"
+                                ),
+                            },
+                            "overlay_identity": {
+                                "shape": "flat",
+                                "selected_subject": "hashmarks",
+                                "native_server_reused": True,
+                            },
+                        },
+                        runtime_result,
+                    ),
+                ),
+            ):
+                prepared = OpenCodeNativeAgent().prepare(
+                    context,
+                    HashmarksSubject(),
+                )
+
+            self.assertFalse(prepared.payload["available"])
+            self.assertFalse(
+                prepared.payload["workspace_binding"]["verified"]
+            )
+            self.assertIn(
+                "outside trial workspace",
+                prepared.payload["reason"],
+            )
+            self.assertEqual(
+                prepared.payload["observed_identity"]["workspace_binding"],
+                prepared.payload["workspace_binding"],
             )
 
     def test_opencode_export_observes_native_model_and_mcp_adoption(self) -> None:
