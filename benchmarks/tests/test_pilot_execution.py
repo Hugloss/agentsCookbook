@@ -27,7 +27,7 @@ from benchmarks.adapters.opencode_native import (
     _metrics as opencode_metrics,
     _native_environment as opencode_native_environment,
     _observed_model as opencode_observed_model,
-    _tool_overlay as opencode_tool_overlay,
+    _runtime_overlay as opencode_runtime_overlay,
 )
 from benchmarks.adapters.registry import (
     AdapterConfigurationError,
@@ -343,7 +343,14 @@ class PilotExecutionTests(unittest.TestCase):
                 control,
                 isolated_environment(control),
             )
-            overlay = opencode_tool_overlay(
+            overlay = opencode_runtime_overlay(
+                config={
+                    "mcp": {
+                        "enola": {"type": "local"},
+                        "hashmarks": {"type": "local"},
+                        "other": {"type": "local"},
+                    }
+                },
                 server_names=("enola", "hashmarks", "other"),
                 selected_server="hashmarks",
             )
@@ -364,7 +371,14 @@ class PilotExecutionTests(unittest.TestCase):
             )
 
     def test_opencode_runtime_overlay_only_gates_native_mcp_tools(self) -> None:
-        overlay = opencode_tool_overlay(
+        overlay = opencode_runtime_overlay(
+            config={
+                "mcp": {
+                    "enola": {"type": "local"},
+                    "hashmarks": {"type": "local"},
+                    "jira": {"type": "local"},
+                }
+            },
             server_names=("enola", "hashmarks", "jira"),
             selected_server="hashmarks",
         )
@@ -379,6 +393,14 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(
             overlay["agent"]["build"]["tools"],
             overlay["tools"],
+        )
+        self.assertEqual(
+            overlay["mcp"],
+            {
+                "enola": {"enabled": False},
+                "hashmarks": {"enabled": True},
+                "jira": {"enabled": False},
+            },
         )
         encoded = json.dumps(overlay)
         self.assertNotIn('"model"', encoded)
