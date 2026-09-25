@@ -74,13 +74,29 @@ def _agent_metric(receipt: dict[str, Any], name: str) -> int | float | None:
     return value
 
 
+def _metric_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
+    metrics: dict[str, Any] = {}
+    for name in _NUMERIC_AGENT_METRICS:
+        values = [
+            value
+            for row in receipts
+            if (value := _agent_metric(row, name)) is not None
+        ]
+        metrics[name] = {
+            "observations": len(values),
+            "mean": mean(values) if values else None,
+            "total": sum(values) if values else None,
+        }
+    return metrics
+
+
 def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     statuses = Counter(str(row.get("status")) for row in receipts)
     valid = [row for row in receipts if row.get("status") in _VALID_OUTCOMES]
     passed = [row for row in valid if row.get("status") == "PASS"]
     tool_available = [
         row
-        for row in valid
+        for row in receipts
         if row.get("authority", {}).get("subject", {}).get("available") is True
         and row.get("measurements", {})
         .get("agent", {})
@@ -95,18 +111,20 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
         .get("subject_tool_invoked")
         is True
     ]
-    metrics: dict[str, Any] = {}
-    for name in _NUMERIC_AGENT_METRICS:
-        values = [
+    observability = sorted(
+        {
             value
-            for row in valid
-            if (value := _agent_metric(row, name)) is not None
-        ]
-        metrics[name] = {
-            "observations": len(values),
-            "mean": mean(values) if values else None,
-            "total": sum(values) if values else None,
+            for row in receipts
+            if isinstance(
+                (
+                    value := row.get("measurements", {})
+                    .get("agent", {})
+                    .get("source_read_observability")
+                ),
+                str,
+            )
         }
+    )
     return {
         "trials": len(receipts),
         "valid_outcomes": len(valid),
@@ -115,7 +133,10 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
         "subject_tool_adoption_rate": (
             len(invoked) / len(tool_available) if tool_available else None
         ),
-        "metrics": metrics,
+        "subject_tool_adoption_denominator": len(tool_available),
+        "source_read_observability": observability,
+        "metrics": _metric_summary(receipts),
+        "valid_outcome_metrics": _metric_summary(valid),
     }
 
 
@@ -261,5 +282,7 @@ def build_report(
             "ranking_performed": False,
             "mixed_execution_definitions_rejected": True,
             "invalid_outcomes_excluded_from_success_rates": True,
+            "economics_include_invalid_and_incomplete_trials": True,
+            "paired_assistance_scope": "valid-outcomes-only",
         },
     }
