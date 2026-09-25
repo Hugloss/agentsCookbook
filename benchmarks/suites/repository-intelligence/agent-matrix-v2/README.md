@@ -47,14 +47,15 @@ host's existing `OPENCODE_CONFIG_CONTENT` layer. Host inline settings, including
 provider, model, authentication, and permissions, remain in that runtime layer. The
 benchmark does not store the composed content or its secrets in a receipt.
 
-The bare condition disables all native MCP servers. An assisted condition also
-disables native servers, then binds one `benchmark_hashmarks` or `benchmark_enola`
-server from that trial's `McpExposure`: command, arguments, working directory, and
-isolated environment. This works without a preconfigured native subject server. The
-adapter verifies the effective configuration and selected MCP connection before
-admitting the trial. Both flat and nested OpenCode MCP configuration shapes are
-supported. The report separates campaigns if one agent's observed native model or
-configuration changes across selected receipts.
+The bare condition disables all native MCP servers. An assisted condition disables
+all non-selected native MCP servers and reuses the already configured native
+`hashmarks` or `enola` server unchanged. agentsCookbook does not supply its command,
+arguments, working directory, environment, provider settings, or credentials.
+
+The selected native server must already exist, be enabled, and connect successfully.
+If it is missing, disabled, or disconnected, the trial is not admitted. Both flat and
+nested OpenCode MCP configuration shapes are supported. The report separates campaigns
+if one agent's observed native model or configuration changes across selected receipts.
 
 `--pure` disables external OpenCode plugins during the measurement while retaining
 native provider/model/auth configuration.
