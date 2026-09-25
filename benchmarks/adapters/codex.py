@@ -141,6 +141,22 @@ def _metrics(
     }
 
 
+_REMOTE_AUTH_VARIABLES = (
+    "OPENAI_API_KEY",
+    "CODEX_API_KEY",
+    "CODEX_ACCESS_TOKEN",
+)
+
+
+def disable_codex_remote_auth(context: TrialContext) -> str:
+    for name in _REMOTE_AUTH_VARIABLES:
+        context.environment[name] = ""
+    context.environment["BENCHMARK_CODEX_AUTH_MODE"] = (
+        "disabled-local-provider"
+    )
+    return "disabled-local-provider"
+
+
 def seed_codex_auth(
     context: TrialContext,
     source: Path | None,
@@ -159,15 +175,10 @@ def seed_codex_auth(
             target.chmod(0o600)
         except OSError:
             pass
+        for name in _REMOTE_AUTH_VARIABLES:
+            context.environment[name] = ""
         mode = "seeded-auth-file"
-    elif any(
-        os.environ.get(name)
-        for name in (
-            "OPENAI_API_KEY",
-            "CODEX_API_KEY",
-            "CODEX_ACCESS_TOKEN",
-        )
-    ):
+    elif any(os.environ.get(name) for name in _REMOTE_AUTH_VARIABLES):
         mode = "inherited-auth-environment"
     else:
         mode = "none"
