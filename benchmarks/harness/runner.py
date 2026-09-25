@@ -278,7 +278,7 @@ def run_trial(
         )
         agent = build_agent(
             agent_definition,
-            timeout_seconds=int(task["budgets"]["timeout_seconds"]),
+            budgets=task["budgets"],
         )
         oracle = build_oracle(
             task["oracle"],
@@ -395,8 +395,12 @@ def run_trial(
                     "measurements": agent_observation.measurements,
                 },
             )
+            budget_violation = agent_observation.payload.get("budget_violation")
             agent_reason = _reason_for_agent(agent_observation)
-            if agent_reason is not None:
+            if isinstance(budget_violation, str) and budget_violation:
+                status = TrialStatus.INVALID
+                reason = budget_violation
+            elif agent_reason is not None:
                 status = TrialStatus.INCOMPLETE
                 reason = agent_reason
             else:
