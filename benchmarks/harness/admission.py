@@ -226,6 +226,9 @@ def admit_trial(
         seed=seed,
     )
 
+    harness_authority = harness_identity(harness_root)
+    environment_authority = runtime_environment_identity()
+
     work_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
         prefix=f"{definition[:12]}-",
@@ -271,9 +274,6 @@ def admit_trial(
             task["oracle"],
             timeout_seconds=int(task["budgets"]["timeout_seconds"]),
         )
-
-        harness_authority = harness_identity(harness_root)
-        environment_authority = runtime_environment_identity()
 
         subject_prepare = subject.prepare(context)
         agent_prepare = agent.prepare(context, subject)
