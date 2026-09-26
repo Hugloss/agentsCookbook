@@ -961,6 +961,20 @@
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "A repository launches native kubectl through a thin execution boundary that only binds an already-selected kubeconfig and cwd, applies a timeout and process-tree cancellation, captures stdout/stderr/exit status with provenance, and projects PASS/FAIL/INCOMPLETE. It does not reconstruct rollout, health, retry, selection, or Kubernetes state semantics."
+    },
+    {
+      "id": "same-pr-adversarial-repair-loop-positive",
+      "skill": "same-pr-adversarial-repair-loop",
+      "kind": "positive",
+      "expected": "ATTACK_AGAIN",
+      "scenario": "A PR repairs a reproduced retained-evidence validation defect and its focused regression passes. CI is green, but no post-repair mutation, composition, identity, completeness, or cross-surface attack has run against the repaired head. The next action is being chosen."
+    },
+    {
+      "id": "same-pr-adversarial-repair-loop-control",
+      "skill": "same-pr-adversarial-repair-loop",
+      "kind": "control",
+      "expected": "BLOCKED_INCOMPLETE",
+      "scenario": "During a same-PR dogfood campaign, the next reproduced defect is proven to belong to a separately versioned upstream repository. Repairing it locally would require a downstream workaround that duplicates upstream semantics. Determine whether to keep patching the current PR."
     }
   ]
 }
