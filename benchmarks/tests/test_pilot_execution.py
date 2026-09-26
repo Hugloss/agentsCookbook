@@ -7,7 +7,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from benchmarks.adapters.codex import (
@@ -31,6 +33,11 @@ from benchmarks.adapters.registry import (
     build_agent,
 )
 from benchmarks.harness.bundle import verify_bundle
+from benchmarks.harness.campaign import (
+    CampaignError,
+    campaign_status,
+    resolve_campaign_paths,
+)
 from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.model import (
     Observation,
@@ -38,6 +45,7 @@ from benchmarks.harness.model import (
     TrialContext,
 )
 from benchmarks.harness.mutation import apply_mutation
+from benchmarks.harness.preflight import preflight_trial
 from benchmarks.harness.receipt import is_complete_receipt
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
@@ -1180,6 +1188,157 @@ class PilotExecutionTests(unittest.TestCase):
                     },
                 )
 
+    def test_campaign_root_derives_paths_without_manifest_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "campaign"
+            paths = resolve_campaign_paths(
+                root=root,
+                cache=None,
+                work=None,
+                results=None,
+                need_execution=True,
+            )
+            self.assertEqual(paths.root, root.resolve())
+            self.assertEqual(paths.cache, root.resolve() / "cache")
+            self.assertEqual(paths.work, root.resolve() / "work")
+            self.assertEqual(paths.results, root.resolve() / "results")
+
+            with self.assertRaises(CampaignError):
+                resolve_campaign_paths(
+                    root=root,
+                    cache=root / "other-cache",
+                    work=None,
+                    results=None,
+                    need_execution=True,
+                )
+
+    def test_campaign_status_separates_receipts_from_qualification(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        selected = [
+            row
+            for row in suite.trial_definitions()
+            if row["condition_id"] == "bare-opencode-native"
+        ][:2]
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            first_dir = results / ("a" * 64)
+            second_dir = results / ("b" * 64)
+            first_dir.mkdir()
+            second_dir.mkdir()
+            (first_dir / "result.json").write_text(
+                json.dumps(
+                    {
+                        "definition_id": selected[0]["definition_id"],
+                        "trial_id": "a" * 64,
+                        "status": "PASS",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (second_dir / "result.json").write_text(
+                json.dumps(
+                    {
+                        "definition_id": selected[1]["definition_id"],
+                        "trial_id": "b" * 64,
+                        "status": "INCOMPLETE",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch(
+                "benchmarks.harness.campaign.verify_bundle",
+                return_value=(True, None),
+            ):
+                status = campaign_status(
+                    suite=suite,
+                    results_root=results,
+                    selected_definitions={
+                        str(row["definition_id"]) for row in selected
+                    },
+                )
+
+            self.assertTrue(status["complete"])
+            self.assertFalse(status["qualified"])
+            self.assertEqual(status["unresolved_outcome_trials"], 1)
+            self.assertEqual(
+                status["outcomes"],
+                {"INCOMPLETE": 1, "PASS": 1},
+            )
+
+    def test_preflight_reuses_shared_admission_and_rejects_recorded_incomplete(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        row = next(
+            value
+            for value in suite.trial_definitions()
+            if value["condition_id"] == "bare-opencode-native"
+        )
+        admission = SimpleNamespace(
+            definition_id=str(row["definition_id"]),
+            trial_id="c" * 64,
+            task=suite.tasks[str(row["task_id"])],
+            context=SimpleNamespace(workspace=Path("/workspace")),
+            admitted_state={},
+            subject=FakeSubject(),
+            subject_authority={"available": True},
+            agent_authority={"available": True},
+            oracle_authority={"healthy": True},
+            agent_prepare=Observation(
+                {
+                    "model": "native/model",
+                    "provider": "native",
+                },
+                "",
+            ),
+            initial_outcome=lambda: (None, None),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            result_dir = results / admission.trial_id
+            result_dir.mkdir()
+            (result_dir / "result.json").write_text(
+                json.dumps({"status": "INCOMPLETE"}),
+                encoding="utf-8",
+            )
+            with (
+                mock.patch(
+                    "benchmarks.harness.preflight.admit_trial",
+                    return_value=nullcontext(admission),
+                ),
+                mock.patch(
+                    "benchmarks.harness.preflight.snapshot",
+                    return_value={},
+                ),
+                mock.patch(
+                    "benchmarks.harness.preflight.classify_contamination",
+                    return_value={
+                        "contaminated": False,
+                        "diff": {
+                            "added": [],
+                            "removed": [],
+                            "changed": [],
+                        },
+                    },
+                ),
+                mock.patch(
+                    "benchmarks.harness.preflight.verify_bundle",
+                    return_value=(True, None),
+                ),
+            ):
+                result = preflight_trial(
+                    suite=suite,
+                    task_id=str(row["task_id"]),
+                    condition_id=str(row["condition_id"]),
+                    trial_index=int(row["trial"]),
+                    harness_root=Path("."),
+                    cache_root=Path(tmp) / "cache",
+                    work_root=Path(tmp) / "work",
+                    results_root=results,
+                )
+
+        self.assertEqual(result.status, "RECORDED_INCOMPLETE")
+        self.assertEqual(result.existing_result_status, "INCOMPLETE")
+        self.assertIn("new campaign root", result.reason or "")
+
     def test_trial_lifecycle_publishes_and_reuses_verified_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1289,19 +1448,19 @@ class PilotExecutionTests(unittest.TestCase):
 
             patches = (
                 mock.patch(
-                    "benchmarks.harness.runner.build_subject",
+                    "benchmarks.harness.admission.build_subject",
                     return_value=FakeSubject(),
                 ),
                 mock.patch(
-                    "benchmarks.harness.runner.build_agent",
+                    "benchmarks.harness.admission.build_agent",
                     return_value=FakeAgent(),
                 ),
                 mock.patch(
-                    "benchmarks.harness.runner.build_oracle",
+                    "benchmarks.harness.admission.build_oracle",
                     return_value=FakeOracle(),
                 ),
                 mock.patch(
-                    "benchmarks.harness.runner.harness_identity",
+                    "benchmarks.harness.admission.harness_identity",
                     return_value={
                         "repository": "fixture",
                         "commit": "1" * 40,
