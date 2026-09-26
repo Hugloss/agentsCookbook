@@ -325,6 +325,81 @@ function verifyBenchmarkConfig(base, effective, overlay, selectedSubject) {
   return resolved;
 }
 
+function sha256File(filePath) {
+  return crypto.createHash('sha256')
+    .update(fs.readFileSync(filePath))
+    .digest('hex');
+}
+
+function resolveExecutable(command, cwd, env) {
+  if (typeof command !== 'string' || !command) return null;
+  const hasSeparator = command.includes('/') || command.includes('\\');
+  const candidates = [];
+  if (path.isAbsolute(command)) {
+    candidates.push(command);
+  } else if (hasSeparator) {
+    candidates.push(path.resolve(cwd, command));
+  } else {
+    const searchPath = (env && env.PATH) || process.env.PATH || '';
+    for (const directory of searchPath.split(path.delimiter)) {
+      if (directory) candidates.push(path.join(directory, command));
+    }
+  }
+  for (const candidate of candidates) {
+    try {
+      const resolved = fs.realpathSync.native(candidate);
+      if (fs.statSync(resolved).isFile()) return resolved;
+    } catch {
+      // Keep searching PATH candidates.
+    }
+  }
+  return null;
+}
+
+function nativeSubjectExecutableIdentity(
+  config,
+  shape,
+  selectedSubject,
+  repoDir,
+  env,
+) {
+  if (!selectedSubject) return null;
+  const server = mcpEntries(config, shape)[selectedSubject];
+  if (!server || !Array.isArray(server.command) || !server.command[0]) {
+    return {
+      verified: false,
+      subject: selectedSubject,
+      command: null,
+      executable_sha256: null,
+      reason_code: 'native-subject-executable-unresolved',
+    };
+  }
+  const effectiveCwd = canonicalPath(
+    server.cwd ? path.resolve(repoDir, server.cwd) : repoDir,
+  );
+  const resolved = resolveExecutable(
+    server.command[0],
+    effectiveCwd,
+    env,
+  );
+  if (!resolved) {
+    return {
+      verified: false,
+      subject: selectedSubject,
+      command: path.basename(String(server.command[0])),
+      executable_sha256: null,
+      reason_code: 'native-subject-executable-unresolved',
+    };
+  }
+  return {
+    verified: true,
+    subject: selectedSubject,
+    command: path.basename(resolved),
+    executable_sha256: sha256File(resolved),
+    reason_code: null,
+  };
+}
+
 function canonicalPath(value) {
   const resolved = path.resolve(value);
   try {
@@ -714,6 +789,21 @@ function prepareBenchmarkConfig({
       selectedSubject,
       repoDir,
     );
+    const subjectExecutable = nativeSubjectExecutableIdentity(
+      effective.config,
+      overlay.shape,
+      selectedSubject,
+      repoDir,
+      commandEnv,
+    );
+    if (
+      selectedSubject &&
+      (!subjectExecutable || subjectExecutable.verified !== true)
+    ) {
+      throw new Error(
+        `native OpenCode MCP executable for ${selectedSubject} cannot be identified`,
+      );
+    }
     if (probe && selectedSubject && workspaceBinding.verified) {
       const connection = runCommand(
         opencodeBin,
@@ -733,6 +823,7 @@ function prepareBenchmarkConfig({
       effective_inspection: effectiveInspection,
       selected_server: overlay.selected,
       workspace_binding: workspaceBinding,
+      native_subject_identity: subjectExecutable,
       overlay_identity: {
         shape: overlay.shape,
         selected_subject: selectedSubject,
@@ -967,6 +1058,7 @@ module.exports = {
   runSessionAndExport,
   sanitize,
   verifyWorkspaceBinding,
+  nativeSubjectExecutableIdentity,
 };
 
 if (require.main === module) {
