@@ -180,6 +180,13 @@ class FakeNativeAgent(FakeAgent):
                 "model": "native/model",
                 "provider": "native",
                 "native_config_sha256": "d" * 64,
+                "native_subject_identity": {
+                    "verified": True,
+                    "subject": "native-subject",
+                    "command": "native-subject",
+                    "executable_sha256": "c" * 64,
+                    "reason_code": None,
+                },
                 "mcp_exposure": {
                     "name": "native-subject",
                     "source": "native-agent-config",
@@ -565,6 +572,13 @@ class PilotExecutionTests(unittest.TestCase):
                             "inspection": inspection,
                             "effective_inspection": inspection,
                             "selected_server": "hashmarks",
+                            "native_subject_identity": {
+                                "verified": True,
+                                "subject": "hashmarks",
+                                "command": "hashmarks",
+                                "executable_sha256": "c" * 64,
+                                "reason_code": None,
+                            },
                             "workspace_binding": {
                                 "verified": True,
                                 "subject": "hashmarks",
@@ -665,6 +679,13 @@ class PilotExecutionTests(unittest.TestCase):
                             "inspection": inspection,
                             "effective_inspection": inspection,
                             "selected_server": "hashmarks",
+                            "native_subject_identity": {
+                                "verified": True,
+                                "subject": "hashmarks",
+                                "command": "hashmarks",
+                                "executable_sha256": "c" * 64,
+                                "reason_code": None,
+                            },
                             "workspace_binding": {
                                 "verified": False,
                                 "subject": "hashmarks",
