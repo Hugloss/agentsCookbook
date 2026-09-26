@@ -427,7 +427,7 @@ def build_report(
             f"campaign is incomplete: {len(missing)} frozen definition(s) missing"
         )
 
-    _check_comparable_agents(receipts)
+    validate_comparability(receipts)
 
     by_condition: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_agent: dict[str, list[dict[str, Any]]] = defaultdict(list)
