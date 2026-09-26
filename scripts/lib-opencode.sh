@@ -85,6 +85,7 @@ improvement-claim-remeasurement-review
 single-observation-review
 call-chain-collapse-review
 native-tool-authority-review
+entrypoint-authority-review
 alternate-path-removal-review
 hidden-side-effect-review
 dependency-surface-review

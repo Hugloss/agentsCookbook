@@ -975,6 +975,27 @@
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "During an adversarial repair campaign over a release-candidate directory, the next reproduced defect is proven to belong to a separately versioned upstream repository. Repairing it locally would require a downstream workaround that duplicates upstream semantics. Determine whether to keep patching the current candidate."
+    },
+    {
+      "id": "entrypoint-authority-review-positive-duplicate-launch-defaults",
+      "skill": "entrypoint-authority-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A benchmark can be started through Make, a Python launcher, and CI. Make hard-codes budget 1200 and one output path, the Python launcher defaults budget 1000 and another path, and CI copies a third full command line. All three claim to run the same benchmark and operators must remember which settings are authoritative."
+    },
+    {
+      "id": "entrypoint-authority-review-control-thin-aliases",
+      "skill": "entrypoint-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A benchmark supports `make benchmark` and a direct `uv run` command. Both select the same checked-in named profile, which alone owns budget, corpus, mode, and output path, then invoke the same existing benchmark implementation. Make adds no independent defaults."
+    },
+    {
+      "id": "entrypoint-authority-review-control-ci-boundary",
+      "skill": "entrypoint-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Local Make and CI both select the same checked-in benchmark profile and execution owner. CI additionally binds its own job timeout, credentials, sandbox, and artifact upload because those are CI-host responsibilities; it does not redefine benchmark budget, corpus, mode, or output semantics."
     }
   ]
 }
