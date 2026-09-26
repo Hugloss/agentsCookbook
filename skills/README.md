@@ -45,7 +45,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `resource-lifetime-review` — Find resources that leak, close too early, or outlive their owner.
 - `failure-contract-review` — Find failure meaning or recovery contracts that diverge across layers.
 - `dogfood-saturation-loop` — Drive one repair surface through repeated post-patch dogfood until fresh probing yields no qualifying defect.
-- `same-pr-adversarial-repair-loop` — Feed reproduced defects back into one campaign PR and repeatedly attack the newest repaired head before saturation.
+- `adversarial-repair-campaign` — Feed reproduced defects back into one mutable campaign candidate and repeatedly attack each repaired candidate before saturation.
 
 ## Data handling
 
@@ -121,7 +121,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 
 Use the narrowest skill that owns the question:
 
-- `same-pr-adversarial-repair-loop` owns **feeding reproduced defects back into one current campaign PR and attacking each repaired head again**; `dogfood-saturation-loop` owns **the evidence-closed decision that the campaign is saturated and finally qualified**.
+- `adversarial-repair-campaign` owns **feeding reproduced defects back into one mutable campaign candidate and attacking each repaired candidate again**; `dogfood-saturation-loop` owns **the evidence-closed decision that the campaign is saturated and finally qualified**.
 - `repository-improvement-scout` asks **what repository signals are worth investigating next**; `codebase-finding-derivation` asks **whether one investigated signal is proven enough to become a finding**; `architecture-risk-triage` asks **which narrow specialist should inspect an evidence-backed architecture hotspot**.
 - `codebase-finding-derivation` asks **whether inspected code evidence justifies a finding at all**; `fact-grounding-auditor` asks **whether an existing repository-specific claim is supported**.
 - `coverage-design-review` asks **what real behavior is not proved**; `test-contract-coupling-review` asks **what tests freeze private implementation**.
