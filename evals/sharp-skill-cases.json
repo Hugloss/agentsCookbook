@@ -947,6 +947,20 @@
       "kind": "positive",
       "expected": "FINDING",
       "scenario": "The previous qualification contract requires correctness, ambiguity and non-edit slices. The candidate edits that governing contract to remove ambiguity after ambiguity cases fail, then uses the candidate contract to declare its remaining evidence ready and qualified without independent admission of the policy change."
+    },
+    {
+      "id": "native-tool-authority-review-positive-shadow-resolver",
+      "skill": "native-tool-authority-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A repository wraps native uv lock authoring in a helper that first runs uv lock, then independently parses dependency metadata, maintains its own retry/cache state, rewrites the lock on selected failures, and reports its synthetic convergence result as dependency truth. No repository-specific policy requires those duplicated resolution semantics."
+    },
+    {
+      "id": "native-tool-authority-review-control-isolation-evidence-boundary",
+      "skill": "native-tool-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A repository launches native kubectl through a thin execution boundary that only binds an already-selected kubeconfig and cwd, applies a timeout and process-tree cancellation, captures stdout/stderr/exit status with provenance, and projects PASS/FAIL/INCOMPLETE. It does not reconstruct rollout, health, retry, selection, or Kubernetes state semantics."
     }
   ]
 }
