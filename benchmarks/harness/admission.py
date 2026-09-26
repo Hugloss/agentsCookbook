@@ -12,7 +12,12 @@ from typing import Any, Iterator
 from benchmarks.adapters.codex import seed_codex_auth
 from benchmarks.adapters.registry import build_agent, build_oracle, build_subject
 from benchmarks.harness.identity import definition_id, execution_id
-from benchmarks.harness.model import Observation, TrialContext, TrialStatus
+from benchmarks.harness.model import (
+    Observation,
+    SubjectLifecycleMode,
+    TrialContext,
+    TrialStatus,
+)
 from benchmarks.harness.mutation import apply_mutation
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.suite import SuiteDefinition
@@ -48,6 +53,31 @@ class TrialAdmission:
     environment_authority: dict[str, Any]
     mutation_authority: Any
     auth_mode: str
+    subject_lifecycle_mode: SubjectLifecycleMode
+
+    def generated_globs(self) -> tuple[str, ...]:
+        if self.subject_lifecycle_mode is SubjectLifecycleMode.ADAPTER:
+            return self.subject.generated_globs()
+        return ()
+
+    def post_change(
+        self,
+        changed_paths: tuple[str, ...],
+    ) -> Observation:
+        if self.subject_lifecycle_mode is SubjectLifecycleMode.ADAPTER:
+            return self.subject.post_change(self.context, changed_paths)
+        return Observation(
+            {
+                "changed_paths": list(changed_paths),
+                "lifecycle_owner": "agent-native",
+            },
+            "",
+        )
+
+    def cleanup_subject(self) -> Observation:
+        if self.subject_lifecycle_mode is SubjectLifecycleMode.ADAPTER:
+            return self.subject.cleanup(self.context)
+        return Observation({"lifecycle_owner": "agent-native"}, "")
 
     @property
     def trial_id(self) -> str:
@@ -148,6 +178,59 @@ def _subject_authority(subject, prepared: Observation) -> dict[str, Any]:
         "available": bool(prepared.payload.get("available")),
         "observed": prepared.payload.get("observed_identity"),
     }
+
+
+def _native_subject_preparation(
+    subject,
+    agent_prepare: Observation,
+) -> Observation:
+    identity = subject.identity()
+    if identity.kind == "control" or identity.participant_id == "none":
+        return Observation(
+            {
+                "available": True,
+                "lifecycle_owner": "agent-native",
+                "observed_identity": {
+                    "source": "agent-native-control",
+                },
+            },
+            "",
+        )
+
+    observed = agent_prepare.payload.get("observed_identity")
+    stable_binding = (
+        observed.get("workspace_binding")
+        if isinstance(observed, dict)
+        else None
+    )
+    exposure = agent_prepare.payload.get("mcp_exposure")
+    available = (
+        bool(agent_prepare.payload.get("available"))
+        and isinstance(exposure, dict)
+        and exposure.get("name") == identity.participant_id
+    )
+    return Observation(
+        {
+            "available": available,
+            "reason": (
+                None
+                if available
+                else agent_prepare.payload.get("reason")
+                or "native agent subject admission failed"
+            ),
+            "lifecycle_owner": "agent-native",
+            "observed_identity": {
+                "source": "native-agent-runtime",
+                "subject": identity.participant_id,
+                "mcp_exposure": exposure,
+                "native_config_sha256": agent_prepare.payload.get(
+                    "native_config_sha256"
+                ),
+                "workspace_binding": stable_binding,
+            },
+        },
+        "",
+    )
 
 
 def _agent_authority(agent, prepared: Observation) -> dict[str, Any]:
@@ -275,8 +358,20 @@ def admit_trial(
             timeout_seconds=int(task["budgets"]["timeout_seconds"]),
         )
 
-        subject_prepare = subject.prepare(context)
-        agent_prepare = agent.prepare(context, subject)
+        lifecycle_mode = agent.subject_lifecycle_mode()
+        if lifecycle_mode is SubjectLifecycleMode.ADAPTER:
+            subject_prepare = subject.prepare(context)
+            agent_prepare = agent.prepare(context, subject)
+        elif lifecycle_mode is SubjectLifecycleMode.AGENT_NATIVE:
+            agent_prepare = agent.prepare(context, subject)
+            subject_prepare = _native_subject_preparation(
+                subject,
+                agent_prepare,
+            )
+        else:
+            raise TrialAdmissionError(
+                f"unsupported subject lifecycle mode: {lifecycle_mode}"
+            )
         oracle_health = oracle.healthcheck(context)
 
         yield TrialAdmission(
@@ -302,4 +397,5 @@ def admit_trial(
             environment_authority=environment_authority,
             mutation_authority=mutation.payload.get("identity"),
             auth_mode=auth_mode,
+            subject_lifecycle_mode=lifecycle_mode,
         )
