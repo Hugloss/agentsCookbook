@@ -271,6 +271,10 @@ def admit_trial(
             task["oracle"],
             timeout_seconds=int(task["budgets"]["timeout_seconds"]),
         )
+
+        harness_authority = harness_identity(harness_root)
+        environment_authority = runtime_environment_identity()
+
         subject_prepare = subject.prepare(context)
         agent_prepare = agent.prepare(context, subject)
         oracle_health = oracle.healthcheck(context)
@@ -294,8 +298,8 @@ def admit_trial(
             subject_authority=_subject_authority(subject, subject_prepare),
             agent_authority=_agent_authority(agent, agent_prepare),
             oracle_authority=_oracle_authority(oracle, oracle_health),
-            harness_authority=harness_identity(harness_root),
-            environment_authority=runtime_environment_identity(),
+            harness_authority=harness_authority,
+            environment_authority=environment_authority,
             mutation_authority=mutation.payload.get("identity"),
             auth_mode=auth_mode,
         )
