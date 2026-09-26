@@ -43,6 +43,7 @@ from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.model import (
     Observation,
     ParticipantIdentity,
+    SubjectLifecycleMode,
     TrialContext,
 )
 from benchmarks.harness.mutation import apply_mutation
@@ -98,6 +99,9 @@ class FakeSubject:
 
 
 class FakeAgent:
+    def subject_lifecycle_mode(self) -> SubjectLifecycleMode:
+        return SubjectLifecycleMode.ADAPTER
+
     def identity(self) -> ParticipantIdentity:
         return ParticipantIdentity("fake-agent", "coding_agent", "1")
 
