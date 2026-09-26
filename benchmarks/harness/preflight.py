@@ -159,10 +159,21 @@ def preflight_trial(
                         (result_dir / "result.json").read_text(encoding="utf-8")
                     )
                     existing_status = str(existing.get("status"))
-                    if status is None:
+                    if status is not None:
+                        status_name = status.value
+                    elif existing_status in {
+                        "PASS",
+                        "FAIL",
+                        "NO_QUALIFYING_DEFECT",
+                    }:
                         status_name = "COMPLETE"
                     else:
-                        status_name = status.value
+                        status_name = f"RECORDED_{existing_status}"
+                        reason = (
+                            "existing immutable receipt is not a valid "
+                            "experimental outcome; use a new campaign root "
+                            "after correcting the underlying condition"
+                        )
                     return PreflightResult(
                         definition_id=admission.definition_id,
                         trial_id=admission.trial_id,
