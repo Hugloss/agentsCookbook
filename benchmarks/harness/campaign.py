@@ -10,6 +10,7 @@ from typing import Any
 from .bundle import verify_bundle
 from .identity import definition_id, execution_id
 from .receipt import is_complete_receipt
+from .report import ReportError, validate_comparability
 from .suite import SuiteDefinition
 
 
@@ -203,6 +204,17 @@ def campaign_status(
             }
         )
 
+    completed_receipts = [
+        values[0]
+        for values in receipts.values()
+        if len(values) == 1
+    ]
+    comparability_error = None
+    try:
+        validate_comparability(completed_receipts)
+    except ReportError as exc:
+        comparability_error = str(exc)
+
     valid_outcomes = {"PASS", "FAIL", "NO_QUALIFYING_DEFECT"}
     unresolved_outcomes = sum(
         count
@@ -228,8 +240,10 @@ def campaign_status(
             and not corrupt
             and state_counts["CONFLICT"] == 0
             and unresolved_outcomes == 0
+            and comparability_error is None
         ),
         "unresolved_outcome_trials": unresolved_outcomes,
+        "comparability_error": comparability_error,
         "rows": sorted(
             rows,
             key=lambda value: (
