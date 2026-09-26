@@ -306,7 +306,7 @@ def run_trial(
             allowed_generated = tuple(
                 sorted(
                     set(contamination_config["allowed_generated_globs"])
-                    | set(subject.generated_globs())
+                    | set(admission.generated_globs())
                 )
             )
             contamination = classify_contamination(
@@ -330,7 +330,7 @@ def run_trial(
                 )
             )
             if changed_paths:
-                post_change = subject.post_change(context, changed_paths)
+                post_change = admission.post_change(changed_paths)
                 emit(
                     "subject.post_change",
                     {
@@ -338,7 +338,7 @@ def run_trial(
                         "measurements": post_change.measurements,
                     },
                 )
-            cleanup = subject.cleanup(context)
+            cleanup = admission.cleanup_subject()
             emit("subject.cleanup", cleanup.payload)
 
             event_evidence = seal_events(event_path, trial_id=trial_id)
