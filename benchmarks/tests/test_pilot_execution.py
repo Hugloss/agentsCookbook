@@ -136,6 +136,67 @@ class FakeAgent:
         )
 
 
+class FakeNativeSubject:
+    def identity(self) -> ParticipantIdentity:
+        return ParticipantIdentity(
+            "native-subject",
+            "repository_intelligence",
+            "1",
+        )
+
+    def prepare(self, context: TrialContext) -> Observation:
+        raise AssertionError("agent-native subject prepare must not run")
+
+    def query(self, context: TrialContext, prompt: str) -> Observation:
+        raise AssertionError("agent-native direct query must not run")
+
+    def post_change(
+        self,
+        context: TrialContext,
+        changed_paths: tuple[str, ...],
+    ) -> Observation:
+        raise AssertionError("agent-native post_change must not run")
+
+    def cleanup(self, context: TrialContext) -> Observation:
+        raise AssertionError("agent-native cleanup must not run")
+
+    def mcp_exposure(self, context: TrialContext):
+        raise AssertionError("agent-native MCP exposure must stay native")
+
+    def generated_globs(self) -> tuple[str, ...]:
+        raise AssertionError("agent-native generated globs must stay native")
+
+
+class FakeNativeAgent(FakeAgent):
+    def subject_lifecycle_mode(self) -> SubjectLifecycleMode:
+        return SubjectLifecycleMode.AGENT_NATIVE
+
+    def prepare(self, context: TrialContext, exposed_subject) -> Observation:
+        return Observation(
+            {
+                "available": True,
+                "version": "native-agent 1",
+                "executable_sha256": "e" * 64,
+                "model": "native/model",
+                "provider": "native",
+                "native_config_sha256": "d" * 64,
+                "mcp_exposure": {
+                    "name": "native-subject",
+                    "source": "native-agent-config",
+                },
+                "observed_identity": {
+                    "workspace_binding": {
+                        "verified": True,
+                        "subject": "native-subject",
+                        "method": "test-native-binding",
+                        "reason_code": None,
+                    }
+                },
+            },
+            "",
+        )
+
+
 class FakeOracle:
     def identity(self) -> ParticipantIdentity:
         return ParticipantIdentity("fake-oracle", "oracle", "1")
@@ -1225,6 +1286,91 @@ class PilotExecutionTests(unittest.TestCase):
                     ):
                         self.fail("admission should not yield")
             materialize.assert_not_called()
+
+    def test_agent_native_lifecycle_never_calls_standalone_subject_lifecycle(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        row = next(
+            value
+            for value in suite.trial_definitions()
+            if value["condition_id"] == "hashmarks-opencode-native"
+        )
+        mutation = Observation({"identity": None}, "")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            def materialize(**kwargs):
+                kwargs["destination"].mkdir(parents=True)
+
+            with (
+                mock.patch(
+                    "benchmarks.harness.admission.harness_identity",
+                    return_value={
+                        "repository": "fixture",
+                        "commit": "1" * 40,
+                        "tree": "2" * 40,
+                        "contract": "test",
+                    },
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission.materialize_repository",
+                    side_effect=materialize,
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission.apply_mutation",
+                    return_value=mutation,
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission.snapshot",
+                    return_value={},
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission.build_subject",
+                    return_value=FakeNativeSubject(),
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission.build_agent",
+                    return_value=FakeNativeAgent(),
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission.build_oracle",
+                    return_value=FakeOracle(),
+                ),
+            ):
+                with admit_trial(
+                    suite=suite,
+                    task_id=str(row["task_id"]),
+                    condition_id=str(row["condition_id"]),
+                    trial_index=int(row["trial"]),
+                    harness_root=Path("."),
+                    cache_root=root / "cache",
+                    work_root=root / "work",
+                ) as admission:
+                    self.assertEqual(
+                        admission.subject_lifecycle_mode,
+                        SubjectLifecycleMode.AGENT_NATIVE,
+                    )
+                    self.assertTrue(
+                        admission.subject_prepare.payload["available"]
+                    )
+                    self.assertEqual(
+                        admission.subject_prepare.payload[
+                            "lifecycle_owner"
+                        ],
+                        "agent-native",
+                    )
+                    self.assertEqual(admission.generated_globs(), ())
+                    self.assertEqual(
+                        admission.post_change(("x.py",)).payload[
+                            "lifecycle_owner"
+                        ],
+                        "agent-native",
+                    )
+                    self.assertEqual(
+                        admission.cleanup_subject().payload[
+                            "lifecycle_owner"
+                        ],
+                        "agent-native",
+                    )
 
     def test_campaign_root_derives_paths_without_manifest_authority(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
