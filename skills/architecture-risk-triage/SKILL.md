@@ -30,6 +30,7 @@ Trace important production paths and hunt strong signals:
 - obsolete alternate paths;
 - hidden side effects;
 - oversized dependency surfaces;
+- repository wrappers that recreate resolution, cache, retry, lifecycle, rollout, or other semantics already owned by a native/external tool;
 - slow, complex, nondeterministic, or implementation-coupled tests.
 
 ## PROVE
@@ -44,7 +45,7 @@ Do not deeply solve every category. Do not rank files by size or complexity aest
 
 ## PREFER
 
-Route each hotspot to the narrowest skill. Protect coherent owners. A clean result is only a statement about the completed triage boundary, not proof that the entire repository has no architecture risk.
+Route each hotspot to the narrowest skill. Route shadow native/external-tool semantics to `native-tool-authority-review`; use `call-chain-collapse-review` only when the defect is no-value indirection rather than duplicated tool semantics. Protect coherent owners. A clean result is only a statement about the completed triage boundary, not proof that the entire repository has no architecture risk.
 
 ## OUTPUT
 
