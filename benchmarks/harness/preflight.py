@@ -101,7 +101,7 @@ def preflight_trial(
             allowed_generated = tuple(
                 sorted(
                     set(contamination_config["allowed_generated_globs"])
-                    | set(admission.subject.generated_globs())
+                    | set(admission.generated_globs())
                 )
             )
             contamination = classify_contamination(
@@ -116,7 +116,7 @@ def preflight_trial(
                 status = TrialStatus.CONTAMINATED
                 reason = "preflight changed workspace outside frozen allowances"
 
-            cleanup = admission.subject.cleanup(admission.context)
+            cleanup = admission.cleanup_subject()
             cleanup_process = cleanup.payload.get("process")
             if (
                 isinstance(cleanup_process, dict)
