@@ -1651,6 +1651,8 @@ class PilotExecutionTests(unittest.TestCase):
                 "",
             ),
             initial_outcome=lambda: (None, None),
+            generated_globs=lambda: (),
+            cleanup_subject=lambda: Observation({}, ""),
         )
         with tempfile.TemporaryDirectory() as tmp:
             results = Path(tmp)
