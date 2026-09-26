@@ -253,6 +253,26 @@ async function testSharedLifecycle() {
       assert.ok(!JSON.stringify(safe).includes('inline-secret'));
     }
 
+    const firstHashmarksIdentity = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      env,
+      selectedSubject: 'hashmarks',
+    }).native_subject_identity;
+    fs.appendFileSync(path.join(root, 'hashmarks'), '# changed\n', 'utf8');
+    const secondHashmarksIdentity = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      env,
+      selectedSubject: 'hashmarks',
+    }).native_subject_identity;
+    assert.strictEqual(firstHashmarksIdentity.verified, true);
+    assert.strictEqual(secondHashmarksIdentity.verified, true);
+    assert.notStrictEqual(
+      firstHashmarksIdentity.executable_sha256,
+      secondHashmarksIdentity.executable_sha256,
+    );
+
     const enola = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
