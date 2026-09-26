@@ -204,10 +204,18 @@ def _native_subject_preparation(
         else None
     )
     exposure = agent_prepare.payload.get("mcp_exposure")
+    native_identity = agent_prepare.payload.get("native_subject_identity")
+    native_identity_verified = (
+        isinstance(native_identity, dict)
+        and native_identity.get("verified") is True
+        and native_identity.get("subject") == identity.participant_id
+        and isinstance(native_identity.get("executable_sha256"), str)
+    )
     available = (
         bool(agent_prepare.payload.get("available"))
         and isinstance(exposure, dict)
         and exposure.get("name") == identity.participant_id
+        and native_identity_verified
     )
     return Observation(
         {
@@ -226,6 +234,7 @@ def _native_subject_preparation(
                 "native_config_sha256": agent_prepare.payload.get(
                     "native_config_sha256"
                 ),
+                "native_subject_identity": native_identity,
                 "workspace_binding": stable_binding,
             },
         },
