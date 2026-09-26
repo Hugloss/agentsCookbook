@@ -367,6 +367,17 @@ class OpenCodeNativeAgent:
         native_subject_identity = resolved.get("native_subject_identity")
         if not isinstance(native_subject_identity, dict):
             native_subject_identity = None
+        native_identity_verified = (
+            selected is None
+            or (
+                isinstance(native_subject_identity, dict)
+                and native_subject_identity.get("verified") is True
+                and isinstance(
+                    native_subject_identity.get("executable_sha256"),
+                    str,
+                )
+            )
+        )
         workspace_binding_identity = {
             "verified": workspace_binding.get("verified") is True,
             "subject": workspace_binding.get("subject"),
@@ -398,6 +409,7 @@ class OpenCodeNativeAgent:
             and bool(model)
             and selected_ready
             and binding_verified
+            and native_identity_verified
         )
         reason = None
         if not isinstance(model, str) or not model:
@@ -413,6 +425,10 @@ class OpenCodeNativeAgent:
             reason = str(
                 workspace_binding.get("reason")
                 or "native OpenCode MCP workspace binding is unverified"
+            )
+        elif not native_identity_verified:
+            reason = (
+                "native OpenCode MCP executable identity is unverified"
             )
         return Observation(
             {
