@@ -6,6 +6,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 . "$script_dir/lib-opencode.sh"
 repo_root="$(ac_repo_root_from_script "${BASH_SOURCE[0]}")"
 agent_src_dir="$(ac_agent_source_dir "$repo_root")"; skill_src_dir="$(ac_skill_source_dir "$repo_root")"
+AC_SKILL_NAMES="$(ac_skill_names "$repo_root")"
 opencode_adapter="$(ac_opencode_artifact_adapter "$repo_root")"; pi_adapter="$(ac_pi_artifact_adapter "$repo_root")"
 failures=0
 pass() { printf 'CHECK name=%s status=pass %s\n' "$1" "${2:-}"; }
