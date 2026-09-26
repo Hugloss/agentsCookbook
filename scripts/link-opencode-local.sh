@@ -37,6 +37,7 @@ if [ -n "$shared_skill_dir_arg" ]; then shared_skill_dir="$(ac_absolute_path "$s
 
 agent_src_dir="$(ac_agent_source_dir "$repo_root")"
 skill_src_dir="$(ac_skill_source_dir "$repo_root")"
+AC_SKILL_NAMES="$(ac_skill_names "$repo_root")"
 opencode_adapter="$(ac_opencode_artifact_adapter "$repo_root")"
 pi_adapter="$(ac_pi_artifact_adapter "$repo_root")"
 pi_adapter_dir="$(dirname -- "$pi_adapter")"
