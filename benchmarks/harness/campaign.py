@@ -203,6 +203,13 @@ def campaign_status(
             }
         )
 
+    valid_outcomes = {"PASS", "FAIL", "NO_QUALIFYING_DEFECT"}
+    unresolved_outcomes = sum(
+        count
+        for outcome, count in outcome_counts.items()
+        if outcome not in valid_outcomes
+    )
+
     return {
         "expected_trials": len(definitions),
         "complete_trials": state_counts["COMPLETE"],
@@ -216,6 +223,13 @@ def campaign_status(
             and not corrupt
             and state_counts["CONFLICT"] == 0
         ),
+        "qualified": (
+            state_counts["COMPLETE"] == len(definitions)
+            and not corrupt
+            and state_counts["CONFLICT"] == 0
+            and unresolved_outcomes == 0
+        ),
+        "unresolved_outcome_trials": unresolved_outcomes,
         "rows": sorted(
             rows,
             key=lambda value: (
