@@ -301,7 +301,7 @@ def run_trial(
                                 else "independent oracle rejected outcome"
                             )
 
-            observed_state = snapshot(workspace)
+            observed_state = snapshot(context.workspace)
             contamination_config = task["contamination"]
             allowed_generated = tuple(
                 sorted(
