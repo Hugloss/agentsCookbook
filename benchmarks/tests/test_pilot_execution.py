@@ -1275,6 +1275,115 @@ class PilotExecutionTests(unittest.TestCase):
                     },
                 )
 
+    def test_report_and_status_reject_mixed_subject_authority(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        condition = next(
+            row
+            for row in suite.experiment["conditions"]
+            if row["id"] == "hashmarks-opencode-native"
+        )
+        selected = [
+            row
+            for row in suite.trial_definitions()
+            if row["condition_id"] == condition["id"]
+        ][:2]
+        receipts = []
+        for index, row in enumerate(selected):
+            receipts.append(
+                {
+                    "definition_id": row["definition_id"],
+                    "trial_id": ("f" if index == 0 else "e") * 64,
+                    "experiment": suite.experiment,
+                    "task": suite.tasks[row["task_id"]],
+                    "condition": suite.expanded_condition(condition),
+                    "status": "PASS",
+                    "authority": {
+                        "subject": {
+                            "available": True,
+                            "declared": {
+                                "participant_id": "hashmarks",
+                                "kind": "repository_intelligence",
+                                "version": "runtime-observed",
+                                "provenance": {},
+                            },
+                            "observed": {
+                                "source": "native-agent-runtime",
+                                "subject": "hashmarks",
+                                "native_subject_identity": {
+                                    "verified": True,
+                                    "subject": "hashmarks",
+                                    "command": "hashmarks",
+                                    "executable_sha256": (
+                                        ("1" if index == 0 else "2") * 64
+                                    ),
+                                    "reason_code": None,
+                                },
+                            },
+                        },
+                        "agent": {
+                            "observed": {
+                                "version": "opencode 1",
+                                "executable_sha256": "a" * 64,
+                                "auth_mode": "native-opencode",
+                                "model": "liteLLM/gemma4",
+                                "provider": "liteLLM",
+                                "native_config_sha256": "b" * 64,
+                            }
+                        },
+                    },
+                    "execution": {
+                        "trial_index": int(row["trial"]),
+                        "seed": int(row["seed"]),
+                    },
+                    "measurements": {"agent": {}},
+                }
+            )
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            with self.assertRaisesRegex(
+                ReportError,
+                "mixed observed subject authority",
+            ):
+                build_report(
+                    suite=suite,
+                    results_root=Path("/unused"),
+                    selected_definitions={
+                        row["definition_id"] for row in selected
+                    },
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            by_directory = {}
+            for receipt in receipts:
+                directory = results / receipt["trial_id"]
+                directory.mkdir()
+                (directory / "result.json").write_text(
+                    json.dumps(receipt),
+                    encoding="utf-8",
+                )
+                by_directory[directory] = receipt
+            with mock.patch(
+                "benchmarks.harness.campaign.verify_bundle",
+                return_value=(True, None),
+            ):
+                status = campaign_status(
+                    suite=suite,
+                    results_root=results,
+                    selected_definitions={
+                        row["definition_id"] for row in selected
+                    },
+                )
+        self.assertTrue(status["complete"])
+        self.assertFalse(status["qualified"])
+        self.assertIn(
+            "mixed observed subject authority",
+            status["comparability_error"] or "",
+        )
+
     def test_admission_proves_harness_before_materialization(self) -> None:
         suite = load_suite(MATRIX_V2)
         row = next(
