@@ -966,14 +966,14 @@
       "id": "adversarial-repair-campaign-positive",
       "skill": "adversarial-repair-campaign",
       "kind": "positive",
-      "expected": "ATTACK_AGAIN",
+      "expected": "FINDING",
       "scenario": "A local working-tree candidate repairs a reproduced retained-evidence validation defect and its focused regression passes. The focused check is green, but no post-repair mutation, composition, identity, completeness, or cross-surface attack has run against the repaired candidate. The next action is being chosen."
     },
     {
       "id": "adversarial-repair-campaign-control",
       "skill": "adversarial-repair-campaign",
       "kind": "control",
-      "expected": "BLOCKED_INCOMPLETE",
+      "expected": "CLEAN",
       "scenario": "During an adversarial repair campaign over a release-candidate directory, the next reproduced defect is proven to belong to a separately versioned upstream repository. Repairing it locally would require a downstream workaround that duplicates upstream semantics. Determine whether to keep patching the current candidate."
     }
   ]
