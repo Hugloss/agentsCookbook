@@ -121,6 +121,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 
 Use the narrowest skill that owns the question:
 
+- `same-pr-adversarial-repair-loop` owns **feeding reproduced defects back into one current campaign PR and attacking each repaired head again**; `dogfood-saturation-loop` owns **the evidence-closed decision that the campaign is saturated and finally qualified**.
 - `repository-improvement-scout` asks **what repository signals are worth investigating next**; `codebase-finding-derivation` asks **whether one investigated signal is proven enough to become a finding**; `architecture-risk-triage` asks **which narrow specialist should inspect an evidence-backed architecture hotspot**.
 - `codebase-finding-derivation` asks **whether inspected code evidence justifies a finding at all**; `fact-grounding-auditor` asks **whether an existing repository-specific claim is supported**.
 - `coverage-design-review` asks **what real behavior is not proved**; `test-contract-coupling-review` asks **what tests freeze private implementation**.
