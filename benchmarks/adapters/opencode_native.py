@@ -364,6 +364,9 @@ class OpenCodeNativeAgent:
             selected is None or workspace_binding.get("verified") is True
         )
         overlay_identity = dict(resolved.get("overlay_identity", {}))
+        native_subject_identity = resolved.get("native_subject_identity")
+        if not isinstance(native_subject_identity, dict):
+            native_subject_identity = None
         workspace_binding_identity = {
             "verified": workspace_binding.get("verified") is True,
             "subject": workspace_binding.get("subject"),
@@ -381,6 +384,7 @@ class OpenCodeNativeAgent:
             "mcp_shape": inspection.get("mcp_shape"),
             "selected_server": selected,
             "workspace_binding": workspace_binding_identity,
+            "native_subject_identity": native_subject_identity,
             "overlay_sha256": hashlib.sha256(
                 canonical_json(overlay_identity)
             ).hexdigest(),
@@ -427,6 +431,7 @@ class OpenCodeNativeAgent:
                 "native_config_sha256": evidence["native_config_sha256"],
                 "native_mcp_servers": evidence["native_mcp_servers"],
                 "workspace_binding": workspace_binding,
+                "native_subject_identity": native_subject_identity,
                 "mcp_exposure": (
                     {
                         "name": selected,
