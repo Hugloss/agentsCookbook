@@ -224,7 +224,7 @@ def _check_comparable_subjects(receipts: list[dict[str, Any]]) -> None:
 
 
 def validate_comparability(receipts: list[dict[str, Any]]) -> None:
-    validate_comparability(receipts)
+    _check_comparable_agents(receipts)
     _check_comparable_subjects(receipts)
 
 
