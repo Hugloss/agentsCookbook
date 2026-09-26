@@ -18,6 +18,7 @@ from benchmarks.harness.model import (
     Observation,
     ParticipantIdentity,
     SubjectAdapter,
+    SubjectLifecycleMode,
     TrialContext,
 )
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
@@ -251,6 +252,9 @@ class OpenCodeNativeAgent:
     timeout_seconds: int = 600
     max_output_bytes: int = 50_000_000
     max_tool_calls: int | None = None
+
+    def subject_lifecycle_mode(self) -> SubjectLifecycleMode:
+        return SubjectLifecycleMode.AGENT_NATIVE
 
     def identity(self) -> ParticipantIdentity:
         return ParticipantIdentity(
