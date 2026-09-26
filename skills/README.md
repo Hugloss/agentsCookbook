@@ -45,6 +45,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `resource-lifetime-review` — Find resources that leak, close too early, or outlive their owner.
 - `failure-contract-review` — Find failure meaning or recovery contracts that diverge across layers.
 - `dogfood-saturation-loop` — Drive one repair surface through repeated post-patch dogfood until fresh probing yields no qualifying defect.
+- `same-pr-adversarial-repair-loop` — Feed reproduced defects back into one campaign PR and repeatedly attack the newest repaired head before saturation.
 
 ## Data handling
 
