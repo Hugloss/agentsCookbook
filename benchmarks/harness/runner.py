@@ -247,23 +247,9 @@ def run_trial(
                 "",
                 {},
             )
-            reason: str | None = None
+            status, reason = admission.initial_outcome()
 
-            if not subject_authority["available"]:
-                status = TrialStatus.INCOMPLETE
-                reason = "subject unavailable or preparation failed"
-            elif not agent_authority["available"]:
-                status = TrialStatus.INCOMPLETE
-                prepare_reason = agent_prepare.payload.get("reason")
-                reason = (
-                    str(prepare_reason)
-                    if isinstance(prepare_reason, str) and prepare_reason
-                    else "agent unavailable or preparation failed"
-                )
-            elif not oracle_authority["healthy"]:
-                status = TrialStatus.INVALID
-                reason = "independent oracle healthcheck failed"
-            else:
+            if status is None:
                 emit(
                     "agent.started",
                     {
