@@ -192,6 +192,42 @@ def _comparison_identity(receipt: dict[str, Any]) -> dict[str, Any]:
     return common
 
 
+def _subject_comparison_identity(
+    receipt: dict[str, Any],
+) -> dict[str, Any] | None:
+    if _subject_id(receipt) == "none":
+        return None
+    subject = receipt.get("authority", {}).get("subject", {})
+    observed = subject.get("observed")
+    if not isinstance(observed, dict):
+        observed = {"value": observed}
+    return {
+        "declared": subject.get("declared"),
+        "observed": observed,
+    }
+
+
+def _check_comparable_subjects(receipts: list[dict[str, Any]]) -> None:
+    identities: dict[tuple[str, str], dict[str, Any]] = {}
+    for receipt in receipts:
+        identity = _subject_comparison_identity(receipt)
+        if identity is None:
+            continue
+        key = (_agent_id(receipt), _subject_id(receipt))
+        prior = identities.setdefault(key, identity)
+        if prior != identity:
+            raise ReportError(
+                "mixed observed subject authority for "
+                f"agent {key[0]} / subject {key[1]}; "
+                "use separate result campaigns"
+            )
+
+
+def validate_comparability(receipts: list[dict[str, Any]]) -> None:
+    _check_comparable_agents(receipts)
+    _check_comparable_subjects(receipts)
+
+
 def _check_comparable_agents(receipts: list[dict[str, Any]]) -> None:
     identities: dict[str, dict[str, Any]] = {}
     for receipt in receipts:
@@ -391,7 +427,7 @@ def build_report(
             f"campaign is incomplete: {len(missing)} frozen definition(s) missing"
         )
 
-    _check_comparable_agents(receipts)
+    validate_comparability(receipts)
 
     by_condition: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_agent: dict[str, list[dict[str, Any]]] = defaultdict(list)

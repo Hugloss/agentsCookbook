@@ -7,7 +7,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from benchmarks.adapters.codex import (
@@ -30,14 +32,22 @@ from benchmarks.adapters.registry import (
     AdapterConfigurationError,
     build_agent,
 )
+from benchmarks.harness.admission import TrialAdmissionError, admit_trial
 from benchmarks.harness.bundle import verify_bundle
+from benchmarks.harness.campaign import (
+    CampaignError,
+    campaign_status,
+    resolve_campaign_paths,
+)
 from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.model import (
     Observation,
     ParticipantIdentity,
+    SubjectLifecycleMode,
     TrialContext,
 )
 from benchmarks.harness.mutation import apply_mutation
+from benchmarks.harness.preflight import preflight_trial
 from benchmarks.harness.receipt import is_complete_receipt
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
@@ -89,6 +99,9 @@ class FakeSubject:
 
 
 class FakeAgent:
+    def subject_lifecycle_mode(self) -> SubjectLifecycleMode:
+        return SubjectLifecycleMode.ADAPTER
+
     def identity(self) -> ParticipantIdentity:
         return ParticipantIdentity("fake-agent", "coding_agent", "1")
 
@@ -120,6 +133,74 @@ class FakeAgent:
             },
             '{"type":"turn.completed"}\n',
             {"duration_ms": 1.0, "mcp_calls": 0},
+        )
+
+
+class FakeNativeSubject:
+    def identity(self) -> ParticipantIdentity:
+        return ParticipantIdentity(
+            "native-subject",
+            "repository_intelligence",
+            "1",
+        )
+
+    def prepare(self, context: TrialContext) -> Observation:
+        raise AssertionError("agent-native subject prepare must not run")
+
+    def query(self, context: TrialContext, prompt: str) -> Observation:
+        raise AssertionError("agent-native direct query must not run")
+
+    def post_change(
+        self,
+        context: TrialContext,
+        changed_paths: tuple[str, ...],
+    ) -> Observation:
+        raise AssertionError("agent-native post_change must not run")
+
+    def cleanup(self, context: TrialContext) -> Observation:
+        raise AssertionError("agent-native cleanup must not run")
+
+    def mcp_exposure(self, context: TrialContext):
+        raise AssertionError("agent-native MCP exposure must stay native")
+
+    def generated_globs(self) -> tuple[str, ...]:
+        raise AssertionError("agent-native generated globs must stay native")
+
+
+class FakeNativeAgent(FakeAgent):
+    def subject_lifecycle_mode(self) -> SubjectLifecycleMode:
+        return SubjectLifecycleMode.AGENT_NATIVE
+
+    def prepare(self, context: TrialContext, exposed_subject) -> Observation:
+        return Observation(
+            {
+                "available": True,
+                "version": "native-agent 1",
+                "executable_sha256": "e" * 64,
+                "model": "native/model",
+                "provider": "native",
+                "native_config_sha256": "d" * 64,
+                "native_subject_identity": {
+                    "verified": True,
+                    "subject": "native-subject",
+                    "command": "native-subject",
+                    "executable_sha256": "c" * 64,
+                    "reason_code": None,
+                },
+                "mcp_exposure": {
+                    "name": "native-subject",
+                    "source": "native-agent-config",
+                },
+                "observed_identity": {
+                    "workspace_binding": {
+                        "verified": True,
+                        "subject": "native-subject",
+                        "method": "test-native-binding",
+                        "reason_code": None,
+                    }
+                },
+            },
+            "",
         )
 
 
@@ -491,6 +572,13 @@ class PilotExecutionTests(unittest.TestCase):
                             "inspection": inspection,
                             "effective_inspection": inspection,
                             "selected_server": "hashmarks",
+                            "native_subject_identity": {
+                                "verified": True,
+                                "subject": "hashmarks",
+                                "command": "hashmarks",
+                                "executable_sha256": "c" * 64,
+                                "reason_code": None,
+                            },
                             "workspace_binding": {
                                 "verified": True,
                                 "subject": "hashmarks",
@@ -591,6 +679,13 @@ class PilotExecutionTests(unittest.TestCase):
                             "inspection": inspection,
                             "effective_inspection": inspection,
                             "selected_server": "hashmarks",
+                            "native_subject_identity": {
+                                "verified": True,
+                                "subject": "hashmarks",
+                                "command": "hashmarks",
+                                "executable_sha256": "c" * 64,
+                                "reason_code": None,
+                            },
                             "workspace_binding": {
                                 "verified": False,
                                 "subject": "hashmarks",
@@ -1180,6 +1275,433 @@ class PilotExecutionTests(unittest.TestCase):
                     },
                 )
 
+    def test_report_and_status_reject_mixed_subject_authority(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        condition = next(
+            row
+            for row in suite.experiment["conditions"]
+            if row["id"] == "hashmarks-opencode-native"
+        )
+        selected = [
+            row
+            for row in suite.trial_definitions()
+            if row["condition_id"] == condition["id"]
+        ][:2]
+        receipts = []
+        for index, row in enumerate(selected):
+            receipts.append(
+                {
+                    "definition_id": row["definition_id"],
+                    "trial_id": ("f" if index == 0 else "e") * 64,
+                    "experiment": suite.experiment,
+                    "task": suite.tasks[row["task_id"]],
+                    "condition": suite.expanded_condition(condition),
+                    "status": "PASS",
+                    "authority": {
+                        "subject": {
+                            "available": True,
+                            "declared": {
+                                "participant_id": "hashmarks",
+                                "kind": "repository_intelligence",
+                                "version": "runtime-observed",
+                                "provenance": {},
+                            },
+                            "observed": {
+                                "source": "native-agent-runtime",
+                                "subject": "hashmarks",
+                                "native_subject_identity": {
+                                    "verified": True,
+                                    "subject": "hashmarks",
+                                    "command": "hashmarks",
+                                    "executable_sha256": (
+                                        ("1" if index == 0 else "2") * 64
+                                    ),
+                                    "reason_code": None,
+                                },
+                            },
+                        },
+                        "agent": {
+                            "observed": {
+                                "version": "opencode 1",
+                                "executable_sha256": "a" * 64,
+                                "auth_mode": "native-opencode",
+                                "model": "liteLLM/gemma4",
+                                "provider": "liteLLM",
+                                "native_config_sha256": "b" * 64,
+                            }
+                        },
+                    },
+                    "execution": {
+                        "trial_index": int(row["trial"]),
+                        "seed": int(row["seed"]),
+                    },
+                    "measurements": {"agent": {}},
+                }
+            )
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            with self.assertRaisesRegex(
+                ReportError,
+                "mixed observed subject authority",
+            ):
+                build_report(
+                    suite=suite,
+                    results_root=Path("/unused"),
+                    selected_definitions={
+                        row["definition_id"] for row in selected
+                    },
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            by_directory = {}
+            for receipt in receipts:
+                directory = results / receipt["trial_id"]
+                directory.mkdir()
+                (directory / "result.json").write_text(
+                    json.dumps(receipt),
+                    encoding="utf-8",
+                )
+                by_directory[directory] = receipt
+            with mock.patch(
+                "benchmarks.harness.campaign.verify_bundle",
+                return_value=(True, None),
+            ):
+                status = campaign_status(
+                    suite=suite,
+                    results_root=results,
+                    selected_definitions={
+                        row["definition_id"] for row in selected
+                    },
+                )
+        self.assertTrue(status["complete"])
+        self.assertFalse(status["qualified"])
+        self.assertIn(
+            "mixed observed subject authority",
+            status["comparability_error"] or "",
+        )
+
+    def test_admission_proves_harness_before_materialization(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        row = next(
+            value
+            for value in suite.trial_definitions()
+            if value["condition_id"] == "bare-opencode-native"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                mock.patch(
+                    "benchmarks.harness.admission.harness_identity",
+                    side_effect=TrialAdmissionError("dirty harness"),
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission.materialize_repository",
+                ) as materialize,
+            ):
+                with self.assertRaisesRegex(
+                    TrialAdmissionError,
+                    "dirty harness",
+                ):
+                    with admit_trial(
+                        suite=suite,
+                        task_id=str(row["task_id"]),
+                        condition_id=str(row["condition_id"]),
+                        trial_index=int(row["trial"]),
+                        harness_root=Path("."),
+                        cache_root=Path(tmp) / "cache",
+                        work_root=Path(tmp) / "work",
+                    ):
+                        self.fail("admission should not yield")
+            materialize.assert_not_called()
+
+    def test_agent_native_lifecycle_never_calls_standalone_subject_lifecycle(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        row = next(
+            value
+            for value in suite.trial_definitions()
+            if value["condition_id"] == "hashmarks-opencode-native"
+        )
+        mutation = Observation({"identity": None}, "")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            def materialize(**kwargs):
+                kwargs["destination"].mkdir(parents=True)
+
+            with (
+                mock.patch(
+                    "benchmarks.harness.admission.harness_identity",
+                    return_value={
+                        "repository": "fixture",
+                        "commit": "1" * 40,
+                        "tree": "2" * 40,
+                        "contract": "test",
+                    },
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission.materialize_repository",
+                    side_effect=materialize,
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission.apply_mutation",
+                    return_value=mutation,
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission.snapshot",
+                    return_value={},
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission.build_subject",
+                    return_value=FakeNativeSubject(),
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission.build_agent",
+                    return_value=FakeNativeAgent(),
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission.build_oracle",
+                    return_value=FakeOracle(),
+                ),
+            ):
+                with admit_trial(
+                    suite=suite,
+                    task_id=str(row["task_id"]),
+                    condition_id=str(row["condition_id"]),
+                    trial_index=int(row["trial"]),
+                    harness_root=Path("."),
+                    cache_root=root / "cache",
+                    work_root=root / "work",
+                ) as admission:
+                    self.assertEqual(
+                        admission.subject_lifecycle_mode,
+                        SubjectLifecycleMode.AGENT_NATIVE,
+                    )
+                    self.assertTrue(
+                        admission.subject_prepare.payload["available"]
+                    )
+                    self.assertEqual(
+                        admission.subject_prepare.payload[
+                            "lifecycle_owner"
+                        ],
+                        "agent-native",
+                    )
+                    self.assertEqual(admission.generated_globs(), ())
+                    self.assertEqual(
+                        admission.post_change(("x.py",)).payload[
+                            "lifecycle_owner"
+                        ],
+                        "agent-native",
+                    )
+                    self.assertEqual(
+                        admission.cleanup_subject().payload[
+                            "lifecycle_owner"
+                        ],
+                        "agent-native",
+                    )
+
+    def test_campaign_root_derives_paths_without_manifest_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "campaign"
+            paths = resolve_campaign_paths(
+                root=root,
+                cache=None,
+                work=None,
+                results=None,
+                need_execution=True,
+            )
+            self.assertEqual(paths.root, root.resolve())
+            self.assertEqual(paths.cache, root.resolve() / "cache")
+            self.assertEqual(paths.work, root.resolve() / "work")
+            self.assertEqual(paths.results, root.resolve() / "results")
+
+            with self.assertRaises(CampaignError):
+                resolve_campaign_paths(
+                    root=root,
+                    cache=root / "other-cache",
+                    work=None,
+                    results=None,
+                    need_execution=True,
+                )
+
+    def test_campaign_status_separates_receipts_from_qualification(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        selected = [
+            row
+            for row in suite.trial_definitions()
+            if row["condition_id"] == "bare-opencode-native"
+        ][:2]
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            first_dir = results / ("a" * 64)
+            second_dir = results / ("b" * 64)
+            first_dir.mkdir()
+            second_dir.mkdir()
+            (first_dir / "result.json").write_text(
+                json.dumps(
+                    {
+                        "definition_id": selected[0]["definition_id"],
+                        "trial_id": "a" * 64,
+                        "status": "PASS",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (second_dir / "result.json").write_text(
+                json.dumps(
+                    {
+                        "definition_id": selected[1]["definition_id"],
+                        "trial_id": "b" * 64,
+                        "status": "INCOMPLETE",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch(
+                "benchmarks.harness.campaign.verify_bundle",
+                return_value=(True, None),
+            ):
+                status = campaign_status(
+                    suite=suite,
+                    results_root=results,
+                    selected_definitions={
+                        str(row["definition_id"]) for row in selected
+                    },
+                )
+
+            self.assertTrue(status["complete"])
+            self.assertFalse(status["qualified"])
+            self.assertEqual(status["unresolved_outcome_trials"], 1)
+            self.assertEqual(
+                status["outcomes"],
+                {"INCOMPLETE": 1, "PASS": 1},
+            )
+
+    def test_campaign_status_surfaces_conflicts_and_corrupt_bundles(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        row = next(
+            value
+            for value in suite.trial_definitions()
+            if value["condition_id"] == "bare-opencode-native"
+        )
+        definition = str(row["definition_id"])
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            for name, trial_id in (("a" * 64, "a" * 64), ("b" * 64, "b" * 64)):
+                directory = results / name
+                directory.mkdir()
+                (directory / "result.json").write_text(
+                    json.dumps(
+                        {
+                            "definition_id": definition,
+                            "trial_id": trial_id,
+                            "status": "PASS",
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+            corrupt = results / ("c" * 64)
+            corrupt.mkdir()
+
+            def verify(directory: Path):
+                if directory == corrupt:
+                    return False, "tampered"
+                return True, None
+
+            with mock.patch(
+                "benchmarks.harness.campaign.verify_bundle",
+                side_effect=verify,
+            ):
+                status = campaign_status(
+                    suite=suite,
+                    results_root=results,
+                    selected_definitions={definition},
+                )
+
+        self.assertEqual(status["conflicting_trials"], 1)
+        self.assertEqual(len(status["corrupt_bundles"]), 1)
+        self.assertFalse(status["complete"])
+        self.assertFalse(status["qualified"])
+        self.assertEqual(status["rows"][0]["state"], "CONFLICT")
+
+    def test_preflight_reuses_shared_admission_and_rejects_recorded_incomplete(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        row = next(
+            value
+            for value in suite.trial_definitions()
+            if value["condition_id"] == "bare-opencode-native"
+        )
+        admission = SimpleNamespace(
+            definition_id=str(row["definition_id"]),
+            trial_id="c" * 64,
+            task=suite.tasks[str(row["task_id"])],
+            context=SimpleNamespace(workspace=Path("/workspace")),
+            admitted_state={},
+            subject=FakeSubject(),
+            subject_authority={"available": True},
+            agent_authority={"available": True},
+            oracle_authority={"healthy": True},
+            agent_prepare=Observation(
+                {
+                    "model": "native/model",
+                    "provider": "native",
+                },
+                "",
+            ),
+            initial_outcome=lambda: (None, None),
+            generated_globs=lambda: (),
+            cleanup_subject=lambda: Observation({}, ""),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            result_dir = results / admission.trial_id
+            result_dir.mkdir()
+            (result_dir / "result.json").write_text(
+                json.dumps({"status": "INCOMPLETE"}),
+                encoding="utf-8",
+            )
+            with (
+                mock.patch(
+                    "benchmarks.harness.preflight.admit_trial",
+                    return_value=nullcontext(admission),
+                ),
+                mock.patch(
+                    "benchmarks.harness.preflight.snapshot",
+                    return_value={},
+                ),
+                mock.patch(
+                    "benchmarks.harness.preflight.classify_contamination",
+                    return_value={
+                        "contaminated": False,
+                        "diff": {
+                            "added": [],
+                            "removed": [],
+                            "changed": [],
+                        },
+                    },
+                ),
+                mock.patch(
+                    "benchmarks.harness.preflight.verify_bundle",
+                    return_value=(True, None),
+                ),
+            ):
+                result = preflight_trial(
+                    suite=suite,
+                    task_id=str(row["task_id"]),
+                    condition_id=str(row["condition_id"]),
+                    trial_index=int(row["trial"]),
+                    harness_root=Path("."),
+                    cache_root=Path(tmp) / "cache",
+                    work_root=Path(tmp) / "work",
+                    results_root=results,
+                )
+
+        self.assertEqual(result.status, "RECORDED_INCOMPLETE")
+        self.assertEqual(result.existing_result_status, "INCOMPLETE")
+        self.assertIn("new campaign root", result.reason or "")
+
     def test_trial_lifecycle_publishes_and_reuses_verified_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1289,19 +1811,19 @@ class PilotExecutionTests(unittest.TestCase):
 
             patches = (
                 mock.patch(
-                    "benchmarks.harness.runner.build_subject",
+                    "benchmarks.harness.admission.build_subject",
                     return_value=FakeSubject(),
                 ),
                 mock.patch(
-                    "benchmarks.harness.runner.build_agent",
+                    "benchmarks.harness.admission.build_agent",
                     return_value=FakeAgent(),
                 ),
                 mock.patch(
-                    "benchmarks.harness.runner.build_oracle",
+                    "benchmarks.harness.admission.build_oracle",
                     return_value=FakeOracle(),
                 ),
                 mock.patch(
-                    "benchmarks.harness.runner.harness_identity",
+                    "benchmarks.harness.admission.harness_identity",
                     return_value={
                         "repository": "fixture",
                         "commit": "1" * 40,

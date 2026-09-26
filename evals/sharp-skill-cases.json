@@ -975,6 +975,27 @@
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "During an adversarial repair campaign over a release-candidate directory, the next reproduced defect is proven to belong to a separately versioned upstream repository. Repairing it locally would require a downstream workaround that duplicates upstream semantics. Determine whether to keep patching the current candidate."
+    },
+    {
+      "id": "empirical-benchmark-campaign-positive-structurally-complete-incomplete",
+      "skill": "empirical-benchmark-campaign",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A frozen paired benchmark has verified immutable receipts for every selected definition, but one assisted trial is INCOMPLETE because the native MCP workspace binding could not be verified. The operator treats structural receipt completeness as qualification, counts that row as a product failure, and publishes the comparison."
+    },
+    {
+      "id": "empirical-benchmark-campaign-positive-post-result-contract-edit",
+      "skill": "empirical-benchmark-campaign",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "After an assisted condition fails its frozen oracle, the campaign edits the prompt and answer key in the same experiment version, reruns only that condition, and combines the new receipt with the original bare control to claim improvement."
+    },
+    {
+      "id": "empirical-benchmark-campaign-control-qualified-evidence",
+      "skill": "empirical-benchmark-campaign",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A frozen paired campaign re-establishes current harness authority, preflights the exact selected definitions, runs with matching bare controls, retains verified non-conflicting PASS/FAIL receipts under stable runtime authority, reports unavailable metrics as unavailable, and hands a reproduced product defect to a separate repair campaign without changing the experiment."
     }
   ]
 }

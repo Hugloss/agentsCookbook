@@ -48,6 +48,7 @@ resource-lifetime-review
 failure-contract-review
 dogfood-saturation-loop
 adversarial-repair-campaign
+empirical-benchmark-campaign
 sensitive-data-masking
 semantic-identity-invariance-review
 evidence-projection-preservation-review
