@@ -32,6 +32,7 @@ from benchmarks.adapters.registry import (
     AdapterConfigurationError,
     build_agent,
 )
+from benchmarks.harness.admission import TrialAdmissionError, admit_trial
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.campaign import (
     CampaignError,
@@ -1188,6 +1189,39 @@ class PilotExecutionTests(unittest.TestCase):
                     },
                 )
 
+    def test_admission_proves_harness_before_materialization(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        row = next(
+            value
+            for value in suite.trial_definitions()
+            if value["condition_id"] == "bare-opencode-native"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                mock.patch(
+                    "benchmarks.harness.admission.harness_identity",
+                    side_effect=TrialAdmissionError("dirty harness"),
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission.materialize_repository",
+                ) as materialize,
+            ):
+                with self.assertRaisesRegex(
+                    TrialAdmissionError,
+                    "dirty harness",
+                ):
+                    with admit_trial(
+                        suite=suite,
+                        task_id=str(row["task_id"]),
+                        condition_id=str(row["condition_id"]),
+                        trial_index=int(row["trial"]),
+                        harness_root=Path("."),
+                        cache_root=Path(tmp) / "cache",
+                        work_root=Path(tmp) / "work",
+                    ):
+                        self.fail("admission should not yield")
+            materialize.assert_not_called()
+
     def test_campaign_root_derives_paths_without_manifest_authority(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "campaign"
@@ -1264,6 +1298,53 @@ class PilotExecutionTests(unittest.TestCase):
                 status["outcomes"],
                 {"INCOMPLETE": 1, "PASS": 1},
             )
+
+    def test_campaign_status_surfaces_conflicts_and_corrupt_bundles(self) -> None:
+        suite = load_suite(MATRIX_V2)
+        row = next(
+            value
+            for value in suite.trial_definitions()
+            if value["condition_id"] == "bare-opencode-native"
+        )
+        definition = str(row["definition_id"])
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp)
+            for name, trial_id in (("a" * 64, "a" * 64), ("b" * 64, "b" * 64)):
+                directory = results / name
+                directory.mkdir()
+                (directory / "result.json").write_text(
+                    json.dumps(
+                        {
+                            "definition_id": definition,
+                            "trial_id": trial_id,
+                            "status": "PASS",
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+            corrupt = results / ("c" * 64)
+            corrupt.mkdir()
+
+            def verify(directory: Path):
+                if directory == corrupt:
+                    return False, "tampered"
+                return True, None
+
+            with mock.patch(
+                "benchmarks.harness.campaign.verify_bundle",
+                side_effect=verify,
+            ):
+                status = campaign_status(
+                    suite=suite,
+                    results_root=results,
+                    selected_definitions={definition},
+                )
+
+        self.assertEqual(status["conflicting_trials"], 1)
+        self.assertEqual(len(status["corrupt_bundles"]), 1)
+        self.assertFalse(status["complete"])
+        self.assertFalse(status["qualified"])
+        self.assertEqual(status["rows"][0]["state"], "CONFLICT")
 
     def test_preflight_reuses_shared_admission_and_rejects_recorded_incomplete(self) -> None:
         suite = load_suite(MATRIX_V2)
