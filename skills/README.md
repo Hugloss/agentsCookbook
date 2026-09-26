@@ -86,6 +86,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 
 ## Qualification integrity
 
+- `empirical-benchmark-campaign` — Execute and resume frozen empirical benchmark campaigns through shared preflight, immutable receipts, and qualified interpretation.
 - `aggregate-hard-failure-masking-review` — Find hard contract violations hidden by aggregate scores or unrelated positive measurements.
 - `measurement-comparability-review` — Find deltas or rankings computed across incompatible measurement conditions.
 - `evidence-readiness-review` — Find qualification claims made before the evidence set is eligible, non-vacuous, and sufficiently representative.
@@ -122,6 +123,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 Use the narrowest skill that owns the question:
 
 - `adversarial-repair-campaign` owns **feeding reproduced defects back into one mutable campaign candidate and attacking each repaired candidate again**; `dogfood-saturation-loop` owns **the evidence-closed decision that the campaign is saturated and finally qualified**.
+- `empirical-benchmark-campaign` owns **executing and resuming a frozen benchmark definition set from preflight through qualified evidence**; `measurement-comparability-review` owns **whether separately produced measurements may be compared**; `adversarial-repair-campaign` owns **repairing reproducible defects that the campaign exposes**.
 - `repository-improvement-scout` asks **what repository signals are worth investigating next**; `codebase-finding-derivation` asks **whether one investigated signal is proven enough to become a finding**; `architecture-risk-triage` asks **which narrow specialist should inspect an evidence-backed architecture hotspot**.
 - `codebase-finding-derivation` asks **whether inspected code evidence justifies a finding at all**; `fact-grounding-auditor` asks **whether an existing repository-specific claim is supported**.
 - `coverage-design-review` asks **what real behavior is not proved**; `test-contract-coupling-review` asks **what tests freeze private implementation**.
