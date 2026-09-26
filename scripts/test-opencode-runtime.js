@@ -174,8 +174,16 @@ async function testSharedLifecycle() {
   );
   try {
     const fake = [process.execPath, writeFakeOpenCode(root)];
+    for (const name of ['hashmarks', 'enola']) {
+      const executable = path.join(root, name);
+      fs.writeFileSync(executable, '#!/bin/sh\nexit 0\n', 'utf8');
+      fs.chmodSync(executable, 0o755);
+    }
     const statePath = path.join(root, 'state.json');
-    const env = { FAKE_OPENCODE_STATE: statePath };
+    const env = {
+      FAKE_OPENCODE_STATE: statePath,
+      PATH: root + path.delimiter + (process.env.PATH || ''),
+    };
 
     const resolved = runtime.resolveNativeConfig({
       opencodeBin: fake,
@@ -218,6 +226,18 @@ async function testSharedLifecycle() {
       );
       assert.strictEqual(prepared.workspace_binding.verified, true);
       assert.strictEqual(
+        prepared.native_subject_identity.verified,
+        true,
+      );
+      assert.strictEqual(
+        prepared.native_subject_identity.subject,
+        'hashmarks',
+      );
+      assert.match(
+        prepared.native_subject_identity.executable_sha256,
+        /^[0-9a-f]{64}$/,
+      );
+      assert.strictEqual(
         prepared.workspace_binding.method,
         'hashmarks-explicit-workspace',
       );
@@ -241,6 +261,8 @@ async function testSharedLifecycle() {
     });
     assert.strictEqual(enola.status, 'completed', enola.reason);
     assert.strictEqual(enola.workspace_binding.verified, true);
+    assert.strictEqual(enola.native_subject_identity.verified, true);
+    assert.strictEqual(enola.native_subject_identity.subject, 'enola');
     assert.strictEqual(
       enola.workspace_binding.method,
       'enola-default-repository-from-mcp-cwd',
