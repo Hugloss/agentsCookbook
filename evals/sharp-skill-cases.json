@@ -996,6 +996,20 @@
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "Local Make and CI both select the same checked-in benchmark profile and execution owner. CI additionally binds its own job timeout, credentials, sandbox, and artifact upload because those are CI-host responsibilities; it does not redefine benchmark budget, corpus, mode, or output semantics."
+    },
+    {
+      "id": "native-tool-authority-review-positive-host-config-redecision",
+      "skill": "native-tool-authority-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "An isolated benchmark is explicitly required to use native Codex. The host already has a usable Codex configuration selecting its model and provider, but the repository runner asks the operator which model-setting policy to use and offers to copy or override those settings in a trial profile. Isolation only needs workspace, sandbox, timeout, and evidence binding; no benchmark policy requires a different Codex model."
+    },
+    {
+      "id": "native-tool-authority-review-control-host-config-with-benchmark-policy",
+      "skill": "native-tool-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A benchmark invokes native Codex using its existing host model/provider configuration without asking the operator to reselect them. The checked-in benchmark profile independently owns repository workload policy and defaults to one paired smoke, while the runner binds an isolated workspace, timeout, and evidence output. No native Codex settings are copied into the benchmark profile."
     }
   ]
 }
