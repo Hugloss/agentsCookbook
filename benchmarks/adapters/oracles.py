@@ -1,4 +1,5 @@
 """Independent deterministic benchmark oracles."""
+
 from __future__ import annotations
 
 import json
@@ -83,6 +84,7 @@ class CommandOracle:
     health_argv: tuple[str, ...]
     grade_argv: tuple[str, ...]
     timeout_seconds: int = 60
+    valid_exit_codes: tuple[int, ...] | None = None
 
     def identity(self) -> ParticipantIdentity:
         return ParticipantIdentity(
@@ -158,6 +160,10 @@ class CommandOracle:
             and not result.stdout_truncated
             and not result.stderr_truncated
             and result.return_code is not None
+            and (
+                self.valid_exit_codes is None
+                or result.return_code in self.valid_exit_codes
+            )
         )
         passed = valid and result.return_code == 0
         return Observation(

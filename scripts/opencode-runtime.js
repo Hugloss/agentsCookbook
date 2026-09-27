@@ -434,6 +434,7 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
       verified: bound === workspace,
       subject: selectedSubject,
       method: 'hashmarks-explicit-workspace',
+      command_executable: server.command[0],
       workspace,
       effective_cwd: effectiveCwd,
       resolved_workspace: bound,
@@ -466,6 +467,7 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
       verified: effectiveCwd === workspace,
       subject: selectedSubject,
       method: 'enola-default-repository-from-mcp-cwd',
+      command_executable: server.command[0],
       workspace,
       effective_cwd: effectiveCwd,
       reason: effectiveCwd === workspace
@@ -493,7 +495,7 @@ function connectedMcp(output, selectedSubject) {
     const tokens = line.replace(/\x1b\[[0-9;]*m/g, '').trim()
       .split(/\s+/).map((token) => token.replace(/:$/, ''));
     const index = tokens.indexOf(selectedSubject);
-    return index >= 0 && index <= 1 && tokens[index + 1] === 'connected';
+    return index >= 0 && tokens[index + 1] === 'connected';
   });
 }
 

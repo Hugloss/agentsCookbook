@@ -60,3 +60,7 @@ OpenCode Code Mode child calls are counted from export metadata when present. Pe
 result bytes and calls without usable metadata remain unobserved.
 
 Do not publish an overall winner score.
+
+## Current native suites
+
+`native-matrix-v3/` is the current native Codex/OpenCode comparison, with one paired smoke task by default from Hashmarks. It pins a source revision without checked-in answers. `enola-cycle-reproduction-v1/` adapts the published TypeScript cycle example and reports functional success and cycle introduction separately. Both are development-only experiments in agentsCookbook; neither enters the installed Hashmarks product.

@@ -4,10 +4,13 @@ OpenCode owns model/provider/auth configuration. The benchmark never writes thos
 settings. A shared JS runtime owns OpenCode run/session/export lifecycle. This adapter
 only owns benchmark-specific MCP gating and observation projection.
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -23,7 +26,9 @@ from benchmarks.harness.model import (
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
-_RUNTIME_SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "opencode-runtime.js"
+_RUNTIME_SCRIPT = (
+    Path(__file__).resolve().parents[2] / "scripts" / "opencode-runtime.js"
+)
 
 
 def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
@@ -44,6 +49,7 @@ def _native_environment(context: TrialContext) -> dict[str, str]:
         "TMPDIR": context.environment["TMPDIR"],
         "TMP": context.environment["TMP"],
         "TEMP": context.environment["TEMP"],
+        "XDG_CACHE_HOME": context.environment["XDG_CACHE_HOME"],
     }
     return environment
 
@@ -137,18 +143,17 @@ def _metrics(
         metadata = state.get("metadata") if isinstance(state, dict) else None
         calls = metadata.get("toolCalls") if isinstance(metadata, dict) else None
         if not isinstance(calls, list) or any(
-            not isinstance(call, dict)
-            or not isinstance(call.get("tool"), str)
+            not isinstance(call, dict) or not isinstance(call.get("tool"), str)
             for call in calls
         ):
             nested_observable = False
             continue
         nested_mcp_calls.extend(call["tool"] for call in calls)
     nested_mcp_calls = [
-        name for name in nested_mcp_calls
+        name
+        for name in nested_mcp_calls
         if any(
-            name.startswith(f"{server}.")
-            or name.startswith(f"tools.{server}.")
+            name.startswith(f"{server}.") or name.startswith(f"tools.{server}.")
             for server in mcp_servers
         )
     ]
@@ -156,21 +161,18 @@ def _metrics(
     subject_calls = [
         name
         for name in mcp_calls
-        if selected_server and (
+        if selected_server
+        and (
             name.startswith(f"{selected_server}_")
             or name.startswith(f"{selected_server}.")
             or name.startswith(f"tools.{selected_server}.")
         )
     ]
     command_calls = [
-        name
-        for name in names
-        if name in {"bash", "shell", "terminal", "run"}
+        name for name in names if name in {"bash", "shell", "terminal", "run"}
     ]
     file_changes = [
-        name
-        for name in names
-        if name in {"edit", "write", "patch", "apply_patch"}
+        name for name in names if name in {"edit", "write", "patch", "apply_patch"}
     ]
     result_bytes = 0
     for part in tool_parts:
@@ -181,8 +183,13 @@ def _metrics(
         output = state.get("output") if isinstance(state, dict) else None
         if output is not None:
             rendered = (
-                output if isinstance(output, str) else json.dumps(
-                    output, sort_keys=True, separators=(",", ":"), default=str,
+                output
+                if isinstance(output, str)
+                else json.dumps(
+                    output,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
                 )
             )
             result_bytes += len(rendered.encode("utf-8"))
@@ -196,9 +203,7 @@ def _metrics(
         "input_tokens": input_tokens,
         "cached_input_tokens": cached_tokens,
         "output_tokens": output_tokens,
-        "source_read_observability": (
-            "not-authoritatively-exposed-by-opencode-export"
-        ),
+        "source_read_observability": ("not-authoritatively-exposed-by-opencode-export"),
     }
     if nested_observable:
         metrics.update(
@@ -251,6 +256,7 @@ class OpenCodeNativeAgent:
     timeout_seconds: int = 600
     max_output_bytes: int = 50_000_000
     max_tool_calls: int | None = None
+    strict_executable: bool = False
 
     def identity(self) -> ParticipantIdentity:
         return ParticipantIdentity(
@@ -356,9 +362,22 @@ class OpenCodeNativeAgent:
                 "verified": selected is None,
                 "reason": "shared runtime emitted no workspace-binding evidence",
             }
-        binding_verified = (
-            selected is None or workspace_binding.get("verified") is True
-        )
+        binding_verified = selected is None or workspace_binding.get("verified") is True
+        executable_verified = True
+        if selected and self.strict_executable:
+            configured = workspace_binding.get("command_executable")
+            expected = shutil.which(selected, path=context.environment.get("PATH"))
+            configured_path = (
+                shutil.which(configured, path=context.environment.get("PATH"))
+                if isinstance(configured, str) and os.sep not in configured
+                else configured
+            )
+            executable_verified = bool(
+                expected
+                and isinstance(configured_path, str)
+                and Path(configured_path).is_file()
+                and Path(configured_path).samefile(expected)
+            )
         overlay_identity = dict(resolved.get("overlay_identity", {}))
         workspace_binding_identity = {
             "verified": workspace_binding.get("verified") is True,
@@ -390,22 +409,22 @@ class OpenCodeNativeAgent:
             and bool(model)
             and selected_ready
             and binding_verified
+            and executable_verified
         )
         reason = None
         if not isinstance(model, str) or not model:
-            reason = (
-                "native OpenCode config does not resolve an explicit build model"
-            )
+            reason = "native OpenCode config does not resolve an explicit build model"
         elif not selected_ready:
             reason = (
-                f"native OpenCode config does not expose enabled MCP server "
-                f"{selected}"
+                f"native OpenCode config does not expose enabled MCP server {selected}"
             )
         elif not binding_verified:
             reason = str(
                 workspace_binding.get("reason")
                 or "native OpenCode MCP workspace binding is unverified"
             )
+        elif not executable_verified:
+            reason = f"native OpenCode MCP {selected} does not use the selected {selected} executable"
         return Observation(
             {
                 **executable.payload,
@@ -413,9 +432,7 @@ class OpenCodeNativeAgent:
                 "reason": reason,
                 "observed_identity": {
                     "version": executable.payload.get("version"),
-                    "executable_sha256": executable.payload.get(
-                        "executable_sha256"
-                    ),
+                    "executable_sha256": executable.payload.get("executable_sha256"),
                     **evidence,
                 },
                 "model": model,
@@ -443,9 +460,9 @@ class OpenCodeNativeAgent:
         context: TrialContext,
     ) -> dict[str, Any]:
         evidence = json.loads(
-            (
-                context.control_root / "opencode-native-evidence.json"
-            ).read_text(encoding="utf-8")
+            (context.control_root / "opencode-native-evidence.json").read_text(
+                encoding="utf-8"
+            )
         )
         return evidence
 
@@ -457,10 +474,7 @@ class OpenCodeNativeAgent:
     ) -> Observation:
         evidence = self._load_prepared(context)
         environment = _native_environment(context)
-        title = (
-            "agents-cookbook-benchmark:"
-            + context.control_root.parent.name
-        )
+        title = "agents-cookbook-benchmark:" + context.control_root.parent.name
         prompt_path = context.control_root / "opencode-prompt.txt"
         prompt_path.write_text(prompt, encoding="utf-8")
         envelope, result = _runtime_call(
@@ -500,9 +514,7 @@ class OpenCodeNativeAgent:
             session = envelope.get("session_id")
             session_id = session if isinstance(session, str) else None
             run_value = envelope.get("run")
-            run_evidence = (
-                run_value if isinstance(run_value, dict) else None
-            )
+            run_evidence = run_value if isinstance(run_value, dict) else None
             runtime_error = envelope.get("error")
             if isinstance(runtime_error, str) and runtime_error:
                 export_error = runtime_error
@@ -536,9 +548,7 @@ class OpenCodeNativeAgent:
             _metrics(
                 exported,
                 mcp_servers=metric_server_names,
-                selected_server=(
-                    selected if isinstance(selected, str) else None
-                ),
+                selected_server=(selected if isinstance(selected, str) else None),
             )
             if exported
             else {
@@ -553,21 +563,14 @@ class OpenCodeNativeAgent:
         metrics["stderr_bytes"] = len(result.stderr)
 
         observed_model, observed_provider = (
-            _observed_model(exported)
-            if exported
-            else (None, None)
+            _observed_model(exported) if exported else (None, None)
         )
-        final_text = (
-            envelope.get("final_text")
-            if isinstance(envelope, dict)
-            else None
-        )
+        final_text = envelope.get("final_text") if isinstance(envelope, dict) else None
         if not isinstance(final_text, str) or not final_text:
             final_text = None
 
-        model_mismatch = (
-            observed_model is not None
-            and observed_model != evidence.get("model")
+        model_mismatch = observed_model is not None and observed_model != evidence.get(
+            "model"
         )
         if observed_model is None and export_error is None:
             export_error = "OpenCode export did not identify the executed model"
@@ -578,9 +581,7 @@ class OpenCodeNativeAgent:
             )
 
         run_status = (
-            run_evidence.get("status")
-            if isinstance(run_evidence, dict)
-            else None
+            run_evidence.get("status") if isinstance(run_evidence, dict) else None
         )
         complete = (
             envelope is not None
@@ -608,9 +609,7 @@ class OpenCodeNativeAgent:
                 "tool_available": isinstance(selected, str),
                 "model": observed_model or evidence.get("model"),
                 "provider": observed_provider or evidence.get("provider"),
-                "native_config_sha256": evidence.get(
-                    "native_config_sha256"
-                ),
+                "native_config_sha256": evidence.get("native_config_sha256"),
                 "native_mcp_servers": list(server_names),
                 "session_id": session_id,
                 "runtime_contract": evidence.get("runtime_contract"),

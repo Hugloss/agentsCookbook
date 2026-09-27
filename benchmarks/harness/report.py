@@ -1,4 +1,5 @@
 """Aggregate complete benchmark receipts without ranking products."""
+
 from __future__ import annotations
 
 import json
@@ -38,15 +39,13 @@ def _receipts(results_root: Path) -> list[dict[str, Any]]:
             continue
         valid, reason = verify_bundle(directory)
         if not valid:
-            raise ReportError(
-                f"invalid published result bundle {directory}: {reason}"
-            )
+            raise ReportError(f"invalid published result bundle {directory}: {reason}")
         try:
-            value = json.loads(
-                (directory / "result.json").read_text(encoding="utf-8")
-            )
+            value = json.loads((directory / "result.json").read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise ReportError(f"cannot load complete receipt {directory}: {exc}") from exc
+            raise ReportError(
+                f"cannot load complete receipt {directory}: {exc}"
+            ) from exc
         if not isinstance(value, dict):
             raise ReportError(f"receipt is not an object: {directory}")
         rows.append(value)
@@ -78,9 +77,7 @@ def _metric_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     metrics: dict[str, Any] = {}
     for name in _NUMERIC_AGENT_METRICS:
         values = [
-            value
-            for row in receipts
-            if (value := _agent_metric(row, name)) is not None
+            value for row in receipts if (value := _agent_metric(row, name)) is not None
         ]
         metrics[name] = {
             "observations": len(values),
@@ -98,23 +95,17 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
         row
         for row in receipts
         if row.get("authority", {}).get("subject", {}).get("available") is True
-        and row.get("measurements", {})
-        .get("agent", {})
-        .get("subject_tool_configured")
+        and row.get("measurements", {}).get("agent", {}).get("subject_tool_configured")
         is True
         and isinstance(
-            row.get("measurements", {})
-            .get("agent", {})
-            .get("subject_tool_invoked"),
+            row.get("measurements", {}).get("agent", {}).get("subject_tool_invoked"),
             bool,
         )
     ]
     invoked = [
         row
         for row in tool_available
-        if row.get("measurements", {})
-        .get("agent", {})
-        .get("subject_tool_invoked")
+        if row.get("measurements", {}).get("agent", {}).get("subject_tool_invoked")
         is True
     ]
     observability = sorted(
@@ -147,22 +138,14 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _agent_id(receipt: dict[str, Any]) -> str:
-    value = (
-        receipt.get("condition", {})
-        .get("agent_definition", {})
-        .get("id")
-    )
+    value = receipt.get("condition", {}).get("agent_definition", {}).get("id")
     if not isinstance(value, str) or not value:
         raise ReportError("receipt has no frozen agent id")
     return value
 
 
 def _subject_id(receipt: dict[str, Any]) -> str:
-    value = (
-        receipt.get("condition", {})
-        .get("subject_definition", {})
-        .get("id")
-    )
+    value = receipt.get("condition", {}).get("subject_definition", {}).get("id")
     if not isinstance(value, str) or not value:
         raise ReportError("receipt has no frozen subject id")
     return value
@@ -189,6 +172,7 @@ def _comparison_identity(receipt: dict[str, Any]) -> dict[str, Any]:
         )
     elif adapter == "codex":
         common["reasoning_effort"] = observed.get("reasoning_effort")
+        common["native_config_sha256"] = observed.get("native_config_sha256")
     return common
 
 
@@ -210,8 +194,32 @@ def _check_comparable_agents(receipts: list[dict[str, Any]]) -> None:
             )
 
 
+def _check_comparable_evidence(receipts: list[dict[str, Any]]) -> None:
+    if not receipts:
+        return
+    for field in ("harness", "environment"):
+        baseline = receipts[0].get("authority", {}).get(field)
+        if any(
+            receipt.get("authority", {}).get(field) != baseline
+            for receipt in receipts[1:]
+        ):
+            raise ReportError(f"mixed {field} authority; use separate result campaigns")
+    subjects: dict[str, Any] = {}
+    for receipt in receipts:
+        authority = receipt.get("authority", {}).get("subject", {})
+        if authority.get("available") is not True:
+            continue
+        subject = _subject_id(receipt)
+        observed = authority.get("observed")
+        if subject in subjects and subjects[subject] != observed:
+            raise ReportError(
+                f"mixed observed subject authority for {subject}; "
+                "use separate result campaigns"
+            )
+        subjects[subject] = observed
+
+
 def _pair_key(receipt: dict[str, Any]) -> tuple[str, str, int, int]:
-    condition = receipt["condition"]
     execution = receipt["execution"]
     agent_id = _agent_id(receipt)
     return (
@@ -229,9 +237,7 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if receipt.get("status") not in _VALID_OUTCOMES:
             continue
         adapter = (
-            receipt.get("condition", {})
-            .get("subject_definition", {})
-            .get("adapter")
+            receipt.get("condition", {}).get("subject_definition", {}).get("adapter")
         )
         if adapter == "none":
             key = _pair_key(receipt)
@@ -257,8 +263,7 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "bare_status": baseline["status"],
             "assisted_status": receipt["status"],
             "task_success_delta": (
-                int(receipt["status"] == "PASS")
-                - int(baseline["status"] == "PASS")
+                int(receipt["status"] == "PASS") - int(baseline["status"] == "PASS")
             ),
         }
         for metric in (
@@ -347,15 +352,12 @@ def build_report(
     selection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     receipts = _receipts(results_root)
-    all_expected = {
-        str(row["definition_id"]): row for row in suite.trial_definitions()
-    }
+    all_expected = {str(row["definition_id"]): row for row in suite.trial_definitions()}
     expected = (
         all_expected
         if selected_definitions is None
         else {
-            key: row for key, row in all_expected.items()
-            if key in selected_definitions
+            key: row for key, row in all_expected.items() if key in selected_definitions
         }
     )
     if selected_definitions is not None and set(expected) != selected_definitions:
@@ -392,6 +394,7 @@ def build_report(
         )
 
     _check_comparable_agents(receipts)
+    _check_comparable_evidence(receipts)
 
     by_condition: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_agent: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -410,9 +413,13 @@ def build_report(
             "id": suite.experiment["id"],
             "version": suite.experiment["version"],
         },
-        "selection": selection or {
-            "tasks": [], "agents": [], "subjects": [],
-            "condition": None, "bare_control_included": False,
+        "selection": selection
+        or {
+            "tasks": [],
+            "agents": [],
+            "subjects": [],
+            "condition": None,
+            "bare_control_included": False,
         },
         "expected_trials": len(expected),
         "observed_trials": len(receipts),

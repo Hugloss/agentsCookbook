@@ -1,10 +1,13 @@
 """Codex CLI benchmark agent with structured JSONL evidence."""
+
 from __future__ import annotations
 
 import hashlib
 import json
 import os
+import re
 import shutil
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -34,9 +37,7 @@ def _render_config(
     if model:
         lines.append(f"model = {_toml_string(model)}")
     if reasoning_effort:
-        lines.append(
-            f"model_reasoning_effort = {_toml_string(reasoning_effort)}"
-        )
+        lines.append(f"model_reasoning_effort = {_toml_string(reasoning_effort)}")
     if exposure is not None:
         lines.extend(
             [
@@ -79,8 +80,7 @@ def _completed_items(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         event.get("item", {})
         for event in events
-        if event.get("type") == "item.completed"
-        and isinstance(event.get("item"), dict)
+        if event.get("type") == "item.completed" and isinstance(event.get("item"), dict)
     ]
 
 
@@ -90,9 +90,7 @@ def _metrics(
     subject_server: str | None,
 ) -> dict[str, int | float | str | bool]:
     items = _completed_items(events)
-    commands = [
-        item for item in items if item.get("type") == "command_execution"
-    ]
+    commands = [item for item in items if item.get("type") == "command_execution"]
     changes = [item for item in items if item.get("type") == "file_change"]
     mcp_calls = [item for item in items if item.get("type") == "mcp_tool_call"]
     subject_calls = [
@@ -100,9 +98,7 @@ def _metrics(
         for item in mcp_calls
         if subject_server and item.get("server") == subject_server
     ]
-    completed = [
-        event for event in events if event.get("type") == "turn.completed"
-    ]
+    completed = [event for event in events if event.get("type") == "turn.completed"]
     usage = completed[-1].get("usage", {}) if completed else {}
     if not isinstance(usage, dict):
         usage = {}
@@ -128,13 +124,9 @@ def _metrics(
         "subject_tool_invoked": bool(subject_calls),
         "mcp_result_bytes": result_bytes,
         "input_tokens": int(usage.get("input_tokens", 0) or 0),
-        "cached_input_tokens": int(
-            usage.get("cached_input_tokens", 0) or 0
-        ),
+        "cached_input_tokens": int(usage.get("cached_input_tokens", 0) or 0),
         "output_tokens": int(usage.get("output_tokens", 0) or 0),
-        "source_read_observability": (
-            "not-authoritatively-exposed-by-codex-jsonl"
-        ),
+        "source_read_observability": ("not-authoritatively-exposed-by-codex-jsonl"),
     }
 
 
@@ -155,9 +147,7 @@ def seed_codex_auth(
     if source is not None:
         source = source.expanduser().resolve()
         if not source.is_file():
-            raise FileNotFoundError(
-                f"Codex auth seed does not exist: {source}"
-            )
+            raise FileNotFoundError(f"Codex auth seed does not exist: {source}")
         shutil.copyfile(source, target)
         try:
             target.chmod(0o600)
@@ -178,16 +168,72 @@ def _final_message(events: list[dict[str, Any]]) -> str | None:
     messages = [
         item.get("text")
         for item in _completed_items(events)
-        if item.get("type") == "agent_message"
-        and isinstance(item.get("text"), str)
+        if item.get("type") == "agent_message" and isinstance(item.get("text"), str)
     ]
     return messages[-1] if messages else None
+
+
+def _verify_native_binding(
+    server: dict[str, Any], name: str, workspace: Path, path: str | None
+) -> None:
+    transport = server.get("transport")
+    if not isinstance(transport, dict) or transport.get("type") != "stdio":
+        raise ValueError(f"native Codex MCP server {name} is not stdio")
+    command = transport.get("command")
+    args = transport.get("args")
+    cwd = transport.get("cwd")
+    if (
+        not isinstance(command, str)
+        or not isinstance(args, list)
+        or not all(isinstance(x, str) for x in args)
+    ):
+        raise ValueError(f"native Codex MCP server {name} has an unverified command")
+    expected = shutil.which(name, path=path)
+    configured = shutil.which(command, path=path) if os.sep not in command else command
+    if (
+        Path(command).name != name
+        or not expected
+        or not configured
+        or not Path(configured).is_file()
+        or not Path(configured).samefile(expected)
+    ):
+        raise ValueError(
+            f"native Codex MCP server {name} must use the selected {name} executable"
+        )
+    root = workspace.resolve()
+    current = (root / cwd).resolve() if isinstance(cwd, str) else root
+    if current != root:
+        raise ValueError(f"native Codex MCP server {name} runs outside trial workspace")
+    if name == "enola":
+        if args:
+            raise ValueError("native Enola MCP must use its workspace-default command")
+        return
+    if name == "hashmarks":
+        values = [
+            args[index + 1]
+            for index, value in enumerate(args[:-1])
+            if value == "--workspace"
+        ]
+        values += [
+            value.split("=", 1)[1] for value in args if value.startswith("--workspace=")
+        ]
+        if (
+            len(values) != 1
+            or args[-1:] != ["mcp"]
+            or (root / values[0]).resolve() != root
+        ):
+            raise ValueError(
+                "native Hashmarks MCP must bind --workspace to the trial repository"
+            )
+        return
+    raise ValueError(f"unsupported native benchmark subject: {name}")
 
 
 @dataclass(frozen=True)
 class CodexAgent:
     model: str | None = None
     reasoning_effort: str | None = None
+    native_host: bool = False
     timeout_seconds: int = 600
     max_output_bytes: int = 50_000_000
     max_tool_calls: int | None = None
@@ -201,6 +247,7 @@ class CodexAgent:
                 "model": self.model or "host-default",
                 "reasoning_effort": self.reasoning_effort,
                 "surface": "codex-exec-json",
+                "native_host": self.native_host,
             },
         )
 
@@ -222,6 +269,8 @@ class CodexAgent:
         exposed_subject: SubjectAdapter | None,
     ) -> Observation:
         exposure = self._exposure(context, exposed_subject)
+        if self.native_host:
+            return self._prepare_native(context, exposure)
         config = _render_config(
             self.model,
             exposure,
@@ -235,12 +284,8 @@ class CodexAgent:
         payload = dict(observed.payload)
         payload.update(
             {
-                "config_sha256": hashlib.sha256(
-                    config.encode()
-                ).hexdigest(),
-                "mcp_exposure": (
-                    exposure.semantic_identity if exposure else None
-                ),
+                "config_sha256": hashlib.sha256(config.encode()).hexdigest(),
+                "mcp_exposure": (exposure.semantic_identity if exposure else None),
                 "auth_mode": context.environment.get(
                     "BENCHMARK_CODEX_AUTH_MODE",
                     "none",
@@ -255,8 +300,107 @@ class CodexAgent:
             observed.measurements,
         )
 
-    def _exec_argv(self, prompt: str) -> tuple[str, ...]:
-        argv = ["codex", "exec", "--json", "--full-auto"]
+    def _prepare_native(
+        self, context: TrialContext, exposure: McpExposure | None
+    ) -> Observation:
+        observed = observe_executable(context, "codex")
+        config_path = self._config_path(context)
+        try:
+            raw = config_path.read_bytes()
+            config = tomllib.loads(raw.decode("utf-8"))
+            model = config.get("model")
+            effort = config.get("model_reasoning_effort")
+            if not isinstance(model, str) or not model:
+                raise ValueError(
+                    "native Codex config needs an explicit model for comparison"
+                )
+            result = run_bounded(
+                repository_root=context.workspace,
+                argv=("codex", "mcp", "list", "--json"),
+                environment=context.environment,
+                limits=ProcessLimits(timeout_seconds=30, max_stdout_bytes=1_000_000),
+            )
+            if result.return_code != 0 or result.timed_out or result.stdout_truncated:
+                raise ValueError("native Codex MCP list did not complete")
+            servers = json.loads(result.stdout)
+            if not isinstance(servers, list):
+                raise ValueError("native Codex MCP list was not an array")
+            if any(not isinstance(row, dict) for row in servers):
+                raise ValueError("native Codex MCP list contains a malformed server")
+            names = [row.get("name") for row in servers]
+            if any(
+                not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", name)
+                for name in names
+            ) or len(names) != len(set(names)):
+                raise ValueError("native Codex MCP names are invalid or duplicated")
+            selected = exposure.name if exposure else None
+            if selected:
+                server = next((row for row in servers if row["name"] == selected), None)
+                if not server or server.get("enabled") is not True:
+                    raise ValueError(
+                        f"native Codex MCP server {selected} is not enabled"
+                    )
+                _verify_native_binding(
+                    server, selected, context.workspace, context.environment.get("PATH")
+                )
+            (context.control_root / "codex-native-servers.json").write_text(
+                json.dumps(
+                    {"names": names, "config_sha256": hashlib.sha256(raw).hexdigest()}
+                )
+            )
+            reason = None
+            available = bool(observed.payload.get("available"))
+        except (
+            OSError,
+            UnicodeError,
+            tomllib.TOMLDecodeError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as exc:
+            model = effort = None
+            names = []
+            reason = str(exc)
+            available = False
+            raw = b""
+        payload = dict(observed.payload)
+        payload.update(
+            {
+                "available": available,
+                "reason": reason,
+                "auth_mode": "native-host",
+                "model": model,
+                "reasoning_effort": effort,
+                "native_config_sha256": hashlib.sha256(raw).hexdigest()
+                if raw
+                else None,
+                "native_mcp_servers": sorted(names),
+                "mcp_exposure": exposure.semantic_identity if exposure else None,
+                "observed_identity": {
+                    "version": observed.payload.get("version"),
+                    "executable_sha256": observed.payload.get("executable_sha256"),
+                    "model": model,
+                    "reasoning_effort": effort,
+                    "native_config_sha256": hashlib.sha256(raw).hexdigest()
+                    if raw
+                    else None,
+                },
+            }
+        )
+        return Observation(payload, observed.raw, observed.measurements)
+
+    def _exec_argv(
+        self, prompt: str, names: tuple[str, ...] = (), selected: str | None = None
+    ) -> tuple[str, ...]:
+        argv = ["codex", "exec", "--json"]
+        if self.native_host:
+            argv.extend(
+                ("--sandbox", "workspace-write", "--approve-for-me", "--ephemeral")
+            )
+            for name in names:
+                if name != selected:
+                    argv.extend(("-c", f"mcp_servers.{name}.enabled=false"))
+        else:
+            argv.append("--full-auto")
         if self.model:
             argv.extend(("--model", self.model))
         argv.append(prompt)
@@ -269,9 +413,26 @@ class CodexAgent:
         exposed_subject: SubjectAdapter | None,
     ) -> Observation:
         exposure = self._exposure(context, exposed_subject)
+        names: tuple[str, ...] = ()
+        if self.native_host:
+            prepared = json.loads(
+                (context.control_root / "codex-native-servers.json").read_text()
+            )
+            if (
+                hashlib.sha256(self._config_path(context).read_bytes()).hexdigest()
+                != prepared["config_sha256"]
+            ):
+                return Observation(
+                    {
+                        "terminal_event": None,
+                        "reason": "native Codex config changed during trial",
+                    },
+                    "",
+                )
+            names = tuple(prepared["names"])
         result = run_bounded(
             repository_root=context.workspace,
-            argv=self._exec_argv(prompt),
+            argv=self._exec_argv(prompt, names, exposure.name if exposure else None),
             environment=context.environment,
             limits=ProcessLimits(
                 timeout_seconds=self.timeout_seconds,
@@ -284,8 +445,7 @@ class CodexAgent:
             (
                 event
                 for event in reversed(events)
-                if event.get("type")
-                in {"turn.completed", "turn.failed", "error"}
+                if event.get("type") in {"turn.completed", "turn.failed", "error"}
             ),
             None,
         )
@@ -299,9 +459,7 @@ class CodexAgent:
             "available": not result.executable_missing,
             "terminal_event": terminal,
             "terminal_complete": bool(
-                terminal
-                and terminal.get("type")
-                in {"turn.completed", "turn.failed"}
+                terminal and terminal.get("type") in {"turn.completed", "turn.failed"}
             ),
             "final_message": _final_message(events),
             "jsonl_parse_errors": parse_errors,
@@ -310,15 +468,10 @@ class CodexAgent:
             "model": self.model,
             "reasoning_effort": self.reasoning_effort,
             "budget_violation": (
-                (
-                    f"tool calls {tool_calls} exceed max_tool_calls "
-                    f"{self.max_tool_calls}"
-                )
-                if self.max_tool_calls is not None
-                and tool_calls > self.max_tool_calls
+                (f"tool calls {tool_calls} exceed max_tool_calls {self.max_tool_calls}")
+                if self.max_tool_calls is not None and tool_calls > self.max_tool_calls
                 else (
-                    "agent output exceeded max_output_bytes "
-                    f"{self.max_output_bytes}"
+                    f"agent output exceeded max_output_bytes {self.max_output_bytes}"
                     if result.stdout_truncated
                     else None
                 )

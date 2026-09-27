@@ -1,4 +1,5 @@
 """Adapter registry for frozen benchmark definitions."""
+
 from __future__ import annotations
 
 import sys
@@ -23,12 +24,11 @@ def build_subject(definition: dict[str, Any]):
         return NoneSubject()
     if adapter == "hashmarks":
         return HashmarksSubject(
-            timeout_seconds=int(config.get("timeout_seconds", 120))
+            timeout_seconds=int(config.get("timeout_seconds", 120)),
+            require_source=bool(config.get("require_source", False)),
         )
     if adapter == "enola":
-        return EnolaSubject(
-            timeout_seconds=int(config.get("timeout_seconds", 180))
-        )
+        return EnolaSubject(timeout_seconds=int(config.get("timeout_seconds", 180)))
     raise AdapterConfigurationError(f"unknown subject adapter: {adapter}")
 
 
@@ -39,21 +39,22 @@ def build_agent(definition: dict[str, Any], *, budgets: dict[str, Any]):
         int(config.get("timeout_seconds", budgets["timeout_seconds"])),
         int(budgets["timeout_seconds"]),
     )
-    max_output_bytes = int(
-        budgets.get("max_output_bytes", 50_000_000)
-    )
+    max_output_bytes = int(budgets.get("max_output_bytes", 50_000_000))
     max_tool_calls = (
-        int(budgets["max_tool_calls"])
-        if "max_tool_calls" in budgets
-        else None
+        int(budgets["max_tool_calls"]) if "max_tool_calls" in budgets else None
     )
 
     if adapter == "codex":
         model = config.get("model")
-        if model is not None and not isinstance(model, str):
+        native_host = config.get("native_host", False) is True
+        if native_host and (
+            model is not None or config.get("reasoning_effort") is not None
+        ):
             raise AdapterConfigurationError(
-                "codex model must be a string or null"
+                "native Codex model settings belong to the host config"
             )
+        if model is not None and not isinstance(model, str):
+            raise AdapterConfigurationError("codex model must be a string or null")
         reasoning_effort = config.get("reasoning_effort")
         if reasoning_effort is not None and not isinstance(
             reasoning_effort,
@@ -79,6 +80,7 @@ def build_agent(definition: dict[str, Any], *, budgets: dict[str, Any]):
         return CodexAgent(
             model=model,
             reasoning_effort=reasoning_effort,
+            native_host=native_host,
             timeout_seconds=timeout_seconds,
             max_output_bytes=max_output_bytes,
             max_tool_calls=max_tool_calls,
@@ -106,12 +108,13 @@ def build_agent(definition: dict[str, Any], *, budgets: dict[str, Any]):
             timeout_seconds=timeout_seconds,
             max_output_bytes=max_output_bytes,
             max_tool_calls=max_tool_calls,
+            strict_executable=bool(config.get("strict_executable", False)),
         )
 
     raise AdapterConfigurationError(f"unknown agent adapter: {adapter}")
 
 
-def build_oracle(definition: dict[str, Any], *, timeout_seconds: int):
+def build_oracle(definition: dict[str, Any], *, timeout_seconds: int, suite_root=None):
     adapter = definition["adapter"]
     identity = definition["identity"]
     config = definition["configuration"]
@@ -140,10 +143,29 @@ def build_oracle(definition: dict[str, Any], *, timeout_seconds: int):
             raise AdapterConfigurationError(
                 "command oracle requires non-empty health_argv and grade_argv"
             )
-        expand = lambda values: tuple(
-            sys.executable if value == "{python}" else value
-            for value in values
-        )
+
+        def expand(values):
+            return tuple(
+                sys.executable
+                if value == "{python}"
+                else value.replace("{suite}", str(suite_root))
+                if suite_root is not None
+                else value
+                for value in values
+            )
+
+        valid_exit_codes = config.get("valid_exit_codes")
+        if valid_exit_codes is not None and not (
+            isinstance(valid_exit_codes, list)
+            and valid_exit_codes
+            and all(
+                isinstance(value, int) and not isinstance(value, bool) and value >= 0
+                for value in valid_exit_codes
+            )
+        ):
+            raise AdapterConfigurationError(
+                "command oracle valid_exit_codes must be nonempty integers"
+            )
         return CommandOracle(
             str(identity["id"]),
             str(identity["version"]),
@@ -153,5 +175,8 @@ def build_oracle(definition: dict[str, Any], *, timeout_seconds: int):
                 int(config.get("timeout_seconds", timeout_seconds)),
                 timeout_seconds,
             ),
+            valid_exit_codes=tuple(valid_exit_codes)
+            if valid_exit_codes is not None
+            else None,
         )
     raise AdapterConfigurationError(f"unknown oracle adapter: {adapter}")
