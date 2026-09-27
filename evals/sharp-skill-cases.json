@@ -1010,6 +1010,20 @@
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "A benchmark invokes native Codex using its existing host model/provider configuration without asking the operator to reselect them. The checked-in benchmark profile independently owns repository workload policy and defaults to one paired smoke, while the runner binds an isolated workspace, timeout, and evidence output. No native Codex settings are copied into the benchmark profile."
+    },
+    {
+      "id": "architecture-risk-triage-native-host-config-redecision",
+      "skill": "architecture-risk-triage",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A benchmark path explicitly invokes native Codex. A usable host Codex configuration already owns model and provider selection, but the isolated runner asks the operator to choose how to import or override those settings. The repository legitimately owns workspace isolation and benchmark workload defaults. Triage should route the host-configuration redecision to native-tool-authority-review rather than treating it as an ordinary benchmark preference."
+    },
+    {
+      "id": "entrypoint-authority-review-control-native-host-config",
+      "skill": "entrypoint-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Both `make benchmark` and `uv run hashmarks-benchmark` select the same checked-in benchmark workload profile, which defaults to one paired smoke. The implementation invokes native Codex and leaves model/provider/profile resolution to the usable Codex host configuration. Neither entrypoint copies or overrides native settings."
     }
   ]
 }
