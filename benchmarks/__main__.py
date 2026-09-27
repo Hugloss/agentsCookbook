@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from benchmarks.harness.campaign import (
     resolve_campaign_paths,
 )
 from benchmarks.harness.preflight import preflight_trial
-from benchmarks.harness.report import build_report
+from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
 from benchmarks.harness.selection import SelectionError, select_definitions
 from benchmarks.harness.suite import load_suite
@@ -108,7 +109,7 @@ def _select(args, suite):
         raise SystemExit(str(exc)) from exc
 
 
-def _paths(args, *, need_execution: bool):
+def _paths(args, *, need_execution: bool, results_optional: bool = False):
     try:
         return resolve_campaign_paths(
             root=args.root,
@@ -116,6 +117,7 @@ def _paths(args, *, need_execution: bool):
             work=getattr(args, "work", None),
             results=args.results,
             need_execution=need_execution,
+            results_optional=results_optional,
         )
     except CampaignError as exc:
         raise SystemExit(str(exc)) from exc
@@ -163,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "status":
         paths = _paths(args, need_execution=False)
+        assert paths.results is not None
         status = campaign_status(
             suite=suite,
             results_root=paths.results,
@@ -181,24 +184,33 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "report":
         paths = _paths(args, need_execution=False)
-        print(
-            json.dumps(
-                build_report(
-                    suite=suite,
-                    results_root=paths.results,
-                    require_complete=not args.allow_incomplete,
-                    selected_definitions={
-                        str(row["definition_id"]) for row in rows
-                    },
-                    selection=_selection_metadata(args),
-                ),
-                indent=2,
-                sort_keys=True,
+        assert paths.results is not None
+        if not paths.results.is_dir() or not any(paths.results.iterdir()):
+            raise SystemExit(
+                f"no benchmark receipts in {paths.results}; run the selected suite first"
             )
+        try:
+            report_data = build_report(
+                suite=suite,
+                results_root=paths.results,
+                require_complete=not args.allow_incomplete,
+                selected_definitions={str(row["definition_id"]) for row in rows},
+                selection=_selection_metadata(args),
+            )
+        except ReportError as exc:
+            raise SystemExit(
+                f"benchmark report unavailable: {exc}; use --allow-incomplete to inspect a partial campaign"
+            ) from exc
+        print(
+            json.dumps(report_data, indent=2, sort_keys=True)
         )
         return 0
 
-    paths = _paths(args, need_execution=True)
+    paths = _paths(
+        args,
+        need_execution=True,
+        results_optional=args.command == "preflight",
+    )
     assert paths.cache is not None
     assert paths.work is not None
 
@@ -221,6 +233,12 @@ def main(argv: list[str] | None = None) -> int:
             value = result.as_dict()
             results.append(value)
             counts[result.status] += 1
+            detail = f": {result.reason}" if result.reason else ""
+            print(
+                f"{result.task_id} / {result.condition_id}: {result.status}{detail}",
+                file=sys.stderr,
+                flush=True,
+            )
         payload = {
             "paths": paths.as_dict(),
             "selection": _selection_metadata(args),
@@ -236,7 +254,13 @@ def main(argv: list[str] | None = None) -> int:
 
     results = []
     invalid = False
+    assert paths.results is not None
     for row in rows:
+        print(
+            f"starting {row['task_id']} / {row['condition_id']} trial {row['trial']}",
+            file=sys.stderr,
+            flush=True,
+        )
         result = run_trial(
             suite=suite,
             task_id=str(row["task_id"]),
@@ -256,7 +280,14 @@ def main(argv: list[str] | None = None) -> int:
                 "status": result.status,
                 "result_dir": str(result.result_dir),
                 "reused": result.reused,
+                "reason": result.reason,
             }
+        )
+        detail = f": {result.reason}" if result.reason else ""
+        print(
+            f"{row['task_id']} / {row['condition_id']}: {result.status}{detail}",
+            file=sys.stderr,
+            flush=True,
         )
         if result.status in {"INCOMPLETE", "INVALID", "CONTAMINATED"}:
             invalid = True

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import os
 import platform
 import tempfile
 from contextlib import contextmanager
@@ -116,13 +118,13 @@ class TrialAdmission:
         return None, None
 
 
-def _git_value(root: Path, argv: tuple[str, ...]) -> str:
+def _git_bytes(root: Path, argv: tuple[str, ...]) -> bytes:
     result = run_bounded(
         repository_root=root,
         argv=argv,
         limits=ProcessLimits(
             timeout_seconds=30.0,
-            max_stdout_bytes=1_000_000,
+            max_stdout_bytes=50_000_000,
             max_stderr_bytes=1_000_000,
         ),
     )
@@ -136,23 +138,40 @@ def _git_value(root: Path, argv: tuple[str, ...]) -> str:
         raise TrialAdmissionError(
             f"cannot establish harness git authority: {' '.join(argv)}"
         )
-    return result.stdout.decode("utf-8", errors="strict").strip()
+    return result.stdout
+
+
+def _git_value(root: Path, argv: tuple[str, ...]) -> str:
+    return _git_bytes(root, argv).decode("utf-8", errors="strict").strip()
 
 
 def harness_identity(root: Path) -> dict[str, Any]:
     root = root.resolve()
     commit = _git_value(root, ("git", "rev-parse", "HEAD"))
     tree = _git_value(root, ("git", "rev-parse", "HEAD^{tree}"))
-    tracked_status = _git_value(
-        root,
-        ("git", "status", "--porcelain", "--untracked-files=no"),
-    )
-    if tracked_status:
-        raise TrialAdmissionError("benchmark harness tracked files are dirty")
+    diff = _git_bytes(root, ("git", "diff", "--binary", "HEAD"))
+    untracked = [
+        path
+        for path in _git_bytes(
+            root, ("git", "ls-files", "--others", "--exclude-standard", "-z")
+        ).split(b"\0")
+        if path
+    ]
+    fingerprint = hashlib.sha256(diff)
+    try:
+        for path in untracked:
+            fingerprint.update(path)
+            fingerprint.update((root / os.fsdecode(path)).read_bytes())
+    except OSError as exc:
+        raise TrialAdmissionError(
+            "cannot fingerprint untracked benchmark files"
+        ) from exc
     return {
         "repository": "Hugloss/agentsCookbook",
         "commit": commit,
         "tree": tree,
+        "working_copy_sha256": fingerprint.hexdigest(),
+        "working_copy_clean": not diff and not untracked,
         "contract": "generic-benchmark-runner-v1",
     }
 
@@ -336,6 +355,10 @@ def admit_trial(
         )
         control_root = run_root / "control"
         environment = isolated_environment(control_root)
+        if "HASHMARKS_BENCH_SOURCE" in os.environ:
+            environment["HASHMARKS_BENCH_SOURCE"] = os.environ[
+                "HASHMARKS_BENCH_SOURCE"
+            ]
         context = TrialContext(
             workspace=workspace,
             control_root=control_root,
@@ -352,8 +375,24 @@ def admit_trial(
         subject = build_subject(suite.subjects[str(condition["subject"])])
         agent_definition = suite.agents[str(condition["agent"])]
         agent = build_agent(agent_definition, budgets=task["budgets"])
+        native_codex = (
+            agent_definition["adapter"] == "codex"
+            and agent_definition.get("configuration", {}).get("native_host") is True
+        )
+        if native_codex:
+            context.environment["HOME"] = str(Path.home())
+            context.environment["CODEX_HOME"] = str(
+                Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").resolve()
+            )
+            for name in ("XDG_CONFIG_HOME", "XDG_STATE_HOME"):
+                if name in os.environ:
+                    context.environment[name] = os.environ[name]
+                else:
+                    context.environment.pop(name, None)
         auth_mode = (
-            seed_codex_auth(context, codex_auth)
+            "native-host"
+            if native_codex
+            else seed_codex_auth(context, codex_auth)
             if agent_definition["adapter"] == "codex"
             else "native-opencode"
             if agent_definition["adapter"] == "opencode-native"
@@ -365,6 +404,7 @@ def admit_trial(
         oracle = build_oracle(
             task["oracle"],
             timeout_seconds=int(task["budgets"]["timeout_seconds"]),
+            suite_root=suite.root,
         )
 
         lifecycle_mode = agent.subject_lifecycle_mode()

@@ -6,6 +6,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 . "$script_dir/lib-opencode.sh"
 repo_root="$(ac_repo_root_from_script "${BASH_SOURCE[0]}")"
 agent_src_dir="$(ac_agent_source_dir "$repo_root")"; skill_src_dir="$(ac_skill_source_dir "$repo_root")"
+AC_SKILL_NAMES="$(ac_skill_names "$repo_root")"
 opencode_adapter="$(ac_opencode_artifact_adapter "$repo_root")"; pi_adapter="$(ac_pi_artifact_adapter "$repo_root")"
 failures=0
 pass() { printf 'CHECK name=%s status=pass %s\n' "$1" "${2:-}"; }
@@ -26,10 +27,8 @@ check_description() {
 actual_agents="$(find "$agent_src_dir" -maxdepth 1 -type f -name '*.md' -printf '%f\n' | sort)"
 expected_agents="$(printf '%s\n' $AC_AGENT_FILES | sed '/^$/d' | sort)"
 [ "$actual_agents" = "$expected_agents" ] && pass agent_registry_exact count=12 || fail agent_registry_exact mismatch
-actual_skills="$(find "$skill_src_dir" -mindepth 2 -maxdepth 2 -type f -name SKILL.md -printf '%h\n' | xargs -r -n1 basename | sort)"
 expected_skills="$(printf '%s\n' $AC_SKILL_NAMES | sed '/^$/d' | sort)"
 expected_skill_count="$(printf '%s\n' $AC_SKILL_NAMES | sed '/^$/d' | wc -l)"
-[ "$actual_skills" = "$expected_skills" ] && pass skill_registry_exact "count=$expected_skill_count" || fail skill_registry_exact mismatch
 
 catalog_file="$skill_src_dir/README.md"
 if [ -f "$catalog_file" ]; then

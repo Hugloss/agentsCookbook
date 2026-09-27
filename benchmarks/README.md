@@ -54,6 +54,8 @@ Preflight reports every selected frozen definition as one of:
 - `RECORDED_INCOMPLETE`, `RECORDED_INVALID`, or `RECORDED_CONTAMINATED` — an immutable non-outcome receipt already exists for that execution identity;
 - `INVALID_RESULT` / `ERROR` — corrupt persisted evidence or a preflight infrastructure error.
 
+Existing callers may pass `--cache` and `--work` without `--results` for a diagnostic preflight. In that mode preflight does not inspect existing receipts.
+
 Then run the exact same selection:
 
 ```bash

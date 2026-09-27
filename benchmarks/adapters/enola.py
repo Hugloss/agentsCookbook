@@ -1,4 +1,5 @@
 """Concrete Enola architecture-intelligence adapter."""
+
 from __future__ import annotations
 
 import json
@@ -129,4 +130,4 @@ class EnolaSubject:
         )
 
     def generated_globs(self) -> tuple[str, ...]:
-        return (".benchmark-enola/**",)
+        return (".benchmark-enola/**", ".enola/**")

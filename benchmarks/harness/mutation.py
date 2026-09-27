@@ -1,4 +1,5 @@
 """Verified mutation application for frozen benchmark tasks."""
+
 from __future__ import annotations
 
 import hashlib
@@ -76,14 +77,20 @@ def apply_mutation(
     _git(context, ("git", "apply", "--check", str(artifact)))
     _git(context, ("git", "apply", str(artifact)))
     _git(context, ("git", "diff", "--check"))
-    changed = _git(
+    tracked = _git(
         context,
         ("git", "diff", "--name-only", "--no-ext-diff", "-z"),
     ).stdout
+    added = _git(
+        context,
+        ("git", "ls-files", "--others", "--exclude-standard", "-z"),
+    ).stdout
     changed_paths = sorted(
-        value.decode("utf-8", errors="strict")
-        for value in changed.split(b"\0")
-        if value
+        {
+            value.decode("utf-8", errors="strict")
+            for value in (tracked + added).split(b"\0")
+            if value
+        }
     )
     expected_paths = sorted(str(value) for value in mutation["changed_paths"])
     if changed_paths != expected_paths:

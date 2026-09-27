@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import os
+import runpy
 import shutil
 import subprocess
 import sys
@@ -32,7 +32,7 @@ from benchmarks.adapters.registry import (
     AdapterConfigurationError,
     build_agent,
 )
-from benchmarks.harness.admission import TrialAdmissionError, admit_trial
+from benchmarks.harness.admission import TrialAdmissionError, admit_trial, harness_identity
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.campaign import (
     CampaignError,
@@ -54,7 +54,7 @@ from benchmarks.harness.runner import run_trial
 from benchmarks.harness.selection import SelectionError, select_definitions
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.suite import SuiteDefinition, SuiteError, load_suite
-from benchmarks.harness.workspace import isolated_environment, snapshot
+from benchmarks.harness.workspace import isolated_environment
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
@@ -62,6 +62,7 @@ PILOT = Path("benchmarks/suites/repository-intelligence/pilot-v1")
 MATRIX_V2 = Path(
     "benchmarks/suites/repository-intelligence/agent-matrix-v2"
 )
+CYCLE = Path("benchmarks/suites/repository-intelligence/enola-cycle-reproduction-v1")
 PINNED_COMMIT = "0841a8822f417b8fd03af61c03779df8f1cdc941"
 PINNED_TREE = "65a32888329e308615647dda194f0e36c2afe2ac"
 MATRIX_V2_COMMIT = "6ce8b0d9230dd9bc5369ddf495ad9404766fbbaf"
@@ -216,6 +217,53 @@ class FakeOracle:
 
 
 class PilotExecutionTests(unittest.TestCase):
+    def test_harness_identity_changes_with_local_source_edits(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(("git", "init", "-q", str(root)), check=True)
+            tracked = root / "runner.py"
+            tracked.write_text("before\n")
+            subprocess.run(("git", "-C", str(root), "add", "runner.py"), check=True)
+            subprocess.run(
+                (
+                    "git",
+                    "-C",
+                    str(root),
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.invalid",
+                    "commit",
+                    "-qm",
+                    "base",
+                ),
+                check=True,
+            )
+            clean = harness_identity(root)
+            tracked.write_text("after\n")
+            edited = harness_identity(root)
+            self.assertNotEqual(
+                clean["working_copy_sha256"], edited["working_copy_sha256"]
+            )
+            self.assertFalse(edited["working_copy_clean"])
+            (root / "new.py").write_text("first\n")
+            with_untracked = harness_identity(root)
+            (root / "new.py").write_text("second\n")
+            changed_untracked = harness_identity(root)
+            self.assertNotEqual(
+                with_untracked["working_copy_sha256"],
+                changed_untracked["working_copy_sha256"],
+            )
+
+    def test_native_codex_uses_host_model_and_gates_unselected_mcp(self) -> None:
+        argv = CodexAgent(native_host=True)._exec_argv(
+            "find owner", ("hashmarks", "enola"), "hashmarks"
+        )
+        self.assertIn("--approve-for-me", argv)
+        self.assertIn("mcp_servers.enola.enabled=false", argv)
+        self.assertNotIn("mcp_servers.hashmarks.enabled=false", argv)
+        self.assertNotIn("--model", argv)
+
     def test_pilot_suite_freezes_nine_paired_trials(self) -> None:
         suite = load_suite(PILOT)
         self.assertEqual(len(suite.tasks), 3)
@@ -450,6 +498,10 @@ class PilotExecutionTests(unittest.TestCase):
             self.assertEqual(
                 environment["TMPDIR"],
                 context.environment["TMPDIR"],
+            )
+            self.assertEqual(
+                environment["XDG_CACHE_HOME"],
+                context.environment["XDG_CACHE_HOME"],
             )
             self.assertNotIn("OPENCODE_CONFIG_CONTENT", environment)
 
@@ -949,6 +1001,28 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertTrue(result["contaminated"])
         self.assertEqual(result["unexpected"]["added"], ["unexpected.txt"])
 
+    def test_cycle_fixture_mutation_accounts_for_new_files(self) -> None:
+        suite = load_suite(CYCLE)
+        task = suite.tasks["recent-orders-without-cycle"]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            materialize_repository(
+                repository=task["repository"],
+                destination=workspace,
+                cache_root=root / "cache",
+                local_source=Path("."),
+            )
+            control = root / "control"
+            context = TrialContext(workspace, control, isolated_environment(control))
+            mutation = apply_mutation(
+                context, suite_root=suite.root, mutation=task["mutation"]
+            )
+            self.assertEqual(
+                mutation.payload["changed_paths"],
+                sorted(task["mutation"]["changed_paths"]),
+            )
+
     def test_pilot_mutation_is_exact_and_oracle_discriminates(self) -> None:
         suite = load_suite(PILOT)
         task = suite.tasks["repair-partial-receipt-regression"]
@@ -1212,6 +1286,16 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(
             profile["metrics"]["subject_mcp_calls"]["observations"], 1,
         )
+
+        receipts[0]["authority"]["harness"] = {"working_copy_sha256": "a"}
+        receipts[1]["authority"]["harness"] = {"working_copy_sha256": "b"}
+        with mock.patch("benchmarks.harness.report._receipts", return_value=receipts):
+            with self.assertRaisesRegex(ReportError, "mixed harness authority"):
+                build_report(
+                    suite=suite,
+                    results_root=Path("/unused"),
+                    selected_definitions={row["definition_id"] for row in selected},
+                )
 
     def test_report_selection_rejects_mixed_native_runtime_authority(self) -> None:
         suite = load_suite(MATRIX_V2)
@@ -1516,6 +1600,17 @@ class PilotExecutionTests(unittest.TestCase):
             self.assertEqual(paths.cache, root.resolve() / "cache")
             self.assertEqual(paths.work, root.resolve() / "work")
             self.assertEqual(paths.results, root.resolve() / "results")
+
+            legacy_preflight = resolve_campaign_paths(
+                root=None,
+                cache=root / "cache",
+                work=root / "work",
+                results=None,
+                need_execution=True,
+                results_optional=True,
+            )
+            self.assertIsNone(legacy_preflight.results)
+            self.assertEqual(legacy_preflight.cache, root / "cache")
 
             with self.assertRaises(CampaignError):
                 resolve_campaign_paths(
@@ -1847,6 +1942,39 @@ class PilotExecutionTests(unittest.TestCase):
                 "work_root": root / "work",
                 "local_source": source,
             }
+            with mock.patch.object(FakeAgent, "run", side_effect=AssertionError("model called")):
+                checked = preflight_trial(
+                    suite=suite,
+                    task_id="task",
+                    condition_id="condition",
+                    trial_index=0,
+                    harness_root=Path("."),
+                    cache_root=root / "cache",
+                    work_root=root / "preflight-work",
+                    local_source=source,
+                )
+            self.assertEqual(checked.status, "READY")
+            self.assertFalse((root / "results").exists())
+            with mock.patch.object(
+                FakeAgent,
+                "prepare",
+                return_value=Observation(
+                    {"available": False, "reason": "missing native MCP"}, ""
+                ),
+            ):
+                blocked = preflight_trial(
+                    suite=suite,
+                    task_id="task",
+                    condition_id="condition",
+                    trial_index=0,
+                    harness_root=Path("."),
+                    cache_root=root / "cache",
+                    work_root=root / "preflight-work",
+                    local_source=source,
+                )
+            self.assertEqual(blocked.status, "INCOMPLETE")
+            self.assertEqual(blocked.reason, "missing native MCP")
+            self.assertFalse((root / "results").exists())
             first = run_trial(**kwargs)
             self.assertEqual(first.status, "PASS")
             self.assertFalse(first.reused)
@@ -2083,6 +2211,20 @@ class PilotExecutionTests(unittest.TestCase):
                     suite=suite,
                     results_root=Path("/unused"),
                 )
+
+    def test_cycle_score_rejects_duplicate_receipts_before_counting(self) -> None:
+        suite = load_suite(CYCLE)
+        definition = suite.trial_definitions()[0]["definition_id"]
+        cycle_score = runpy.run_path(str(CYCLE / "score.py"))["score"]
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=[
+                {"definition_id": definition, "trial_id": "a" * 64},
+                {"definition_id": definition, "trial_id": "b" * 64},
+            ],
+        ):
+            with self.assertRaisesRegex(ReportError, "multiple executions"):
+                cycle_score(Path("/unused"), require_complete=False)
 
 
 if __name__ == "__main__":

@@ -111,9 +111,11 @@ if (command === 'mcp' && filtered[1] === 'list') {
   const resolved = config();
   const servers = resolved.mcp.servers || resolved.mcp;
   for (const [name, value] of Object.entries(servers)) {
-    process.stdout.write(name + ': ' +
-      (value.enabled === false || value.disabled === true || process.env.FAKE_MCP_DISCONNECTED === name
-        ? (process.env.FAKE_MCP_STATUS || 'disabled') : 'connected') + '\\n');
+    const status = value.enabled === false || value.disabled === true || process.env.FAKE_MCP_DISCONNECTED === name
+      ? (process.env.FAKE_MCP_STATUS || 'disabled') : 'connected';
+    process.stdout.write(process.env.FAKE_MCP_TREE === '1'
+      ? '●  ✓ ' + name + ' ' + status + '\\n'
+      : name + ': ' + status + '\\n');
   }
   if (process.env.FAKE_MCP_DISTRACTOR === '1') {
     process.stdout.write('backup_hashmarks: connected\\n');
@@ -363,6 +365,14 @@ async function testSharedLifecycle() {
     });
     assert.strictEqual(disconnected.status, 'failed');
     assert.match(disconnected.reason, /is not connected/);
+
+    const nativeTree = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      env: { ...env, FAKE_MCP_TREE: '1' },
+      selectedSubject: 'hashmarks',
+    });
+    assert.strictEqual(nativeTree.status, 'completed', nativeTree.reason);
 
     for (const status of ['disconnected', 'not connected']) {
       const misleading = runtime.prepareBenchmarkConfig({

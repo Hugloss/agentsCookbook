@@ -60,14 +60,14 @@ class CampaignPaths:
     root: Path | None
     cache: Path | None
     work: Path | None
-    results: Path
+    results: Path | None
 
     def as_dict(self) -> dict[str, str | None]:
         return {
             "root": str(self.root) if self.root is not None else None,
             "cache": str(self.cache) if self.cache is not None else None,
             "work": str(self.work) if self.work is not None else None,
-            "results": str(self.results),
+            "results": str(self.results) if self.results is not None else None,
         }
 
 
@@ -86,6 +86,7 @@ def resolve_campaign_paths(
     work: Path | None,
     results: Path | None,
     need_execution: bool,
+    results_optional: bool = False,
 ) -> CampaignPaths:
     if root is not None:
         if any(value is not None for value in (cache, work, results)):
@@ -100,17 +101,17 @@ def resolve_campaign_paths(
             results=root / "results",
         )
 
-    if results is None:
+    if results is None and not results_optional:
         raise CampaignError("provide --root or --results")
     if need_execution and (cache is None or work is None):
         raise CampaignError(
-            "execution requires --root or all of --cache, --work, and --results"
+            "execution requires --root or both --cache and --work"
         )
     return CampaignPaths(
         root=None,
         cache=cache.resolve() if cache is not None else None,
         work=work.resolve() if work is not None else None,
-        results=results.resolve(),
+        results=results.resolve() if results is not None else None,
     )
 
 
@@ -238,6 +239,7 @@ def campaign_status(
         "qualified": (
             state_counts["COMPLETE"] == len(definitions)
             and not corrupt
+            and not foreign
             and state_counts["CONFLICT"] == 0
             and unresolved_outcomes == 0
             and comparability_error is None

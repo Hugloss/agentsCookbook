@@ -1,6 +1,11 @@
 """Concrete Hashmarks repository-intelligence adapter."""
+
 from __future__ import annotations
 
+import hashlib
+import os
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +22,50 @@ from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 @dataclass(frozen=True)
 class HashmarksSubject:
     timeout_seconds: int = 120
+    require_source: bool = False
+
+    def _source_identity(
+        self, context: TrialContext
+    ) -> tuple[dict[str, object] | None, str | None]:
+        source = context.environment.get("HASHMARKS_BENCH_SOURCE")
+        if not source:
+            return None, "HASHMARKS_BENCH_SOURCE is required for scored native runs"
+        root = Path(source).resolve()
+        expected = root / ".venv" / "bin" / "hashmarks"
+        actual = shutil.which("hashmarks", path=context.environment.get("PATH"))
+        if not actual or not expected.is_file() or not Path(actual).samefile(expected):
+            return None, f"hashmarks on PATH must be {expected}"
+        try:
+            values = []
+            for args in (
+                ("rev-parse", "HEAD"),
+                ("rev-parse", "HEAD^{tree}"),
+                ("diff", "--binary", "HEAD"),
+                ("ls-files", "--others", "--exclude-standard", "-z"),
+            ):
+                result = subprocess.run(
+                    ("git", "-C", str(root), *args),
+                    capture_output=True,
+                    timeout=30,
+                    check=False,
+                )
+                if result.returncode != 0:
+                    return None, "cannot establish Hashmarks source identity"
+                values.append(result.stdout)
+            fingerprint = hashlib.sha256(values[2])
+            untracked = [path for path in values[3].split(b"\0") if path]
+            for path in untracked:
+                fingerprint.update(path)
+                fingerprint.update((root / os.fsdecode(path)).read_bytes())
+        except (OSError, subprocess.TimeoutExpired):
+            return None, "cannot fingerprint Hashmarks source checkout"
+        return {
+            "root": str(root),
+            "commit": values[0].decode().strip(),
+            "tree": values[1].decode().strip(),
+            "working_copy_sha256": fingerprint.hexdigest(),
+            "working_copy_clean": not values[2] and not untracked,
+        }, None
 
     def identity(self) -> ParticipantIdentity:
         return ParticipantIdentity(
@@ -56,6 +105,11 @@ class HashmarksSubject:
         executable = observe_executable(context, "hashmarks", version_args=("version",))
         if not executable.payload["available"]:
             return executable
+        source_identity, source_error = (
+            self._source_identity(context) if self.require_source else (None, None)
+        )
+        if source_error:
+            return Observation({"available": False, "reason": source_error}, "")
         sync = self._run(context, (*self._base(context), "map", "sync"))
         available = (
             not sync.executable_missing
@@ -64,15 +118,27 @@ class HashmarksSubject:
             and not sync.stdout_truncated
             and not sync.stderr_truncated
         )
+        stderr = sync.stderr.decode("utf-8", errors="replace")
+        detail = stderr.strip().splitlines()[-1] if stderr.strip() else ""
+        reason = (
+            None
+            if available
+            else (
+                f"Hashmarks map sync failed (exit {sync.return_code})"
+                + (f": {detail[:300]}" if detail else "")
+            )
+        )
         return Observation(
             {
                 "available": available,
+                "reason": reason,
                 "observed_identity": {
                     "version": executable.payload["version"],
                     "executable_sha256": executable.payload["executable_sha256"],
+                    "source": source_identity,
                 },
                 "sync": sync.metrics(),
-                "stderr": sync.stderr.decode("utf-8", errors="replace"),
+                "stderr": stderr,
             },
             sync.stdout.decode("utf-8", errors="replace"),
             {"duration_ms": sync.elapsed_ms},
@@ -130,4 +196,4 @@ class HashmarksSubject:
         )
 
     def generated_globs(self) -> tuple[str, ...]:
-        return ()
+        return (".hashmarks/**",)

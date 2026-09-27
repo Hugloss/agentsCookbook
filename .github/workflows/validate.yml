@@ -104,6 +104,18 @@ jobs:
             --suite benchmarks/suites/repository-intelligence/agent-matrix-v2 \
             > "$RUNNER_TEMP/repository-intelligence-agent-matrix-v2-plan.json"
 
+          python -m benchmarks validate-suite \
+            --suite benchmarks/suites/repository-intelligence/native-matrix-v3
+          python -m benchmarks plan \
+            --suite benchmarks/suites/repository-intelligence/native-matrix-v3 \
+            > "$RUNNER_TEMP/repository-intelligence-native-matrix-v3-plan.json"
+
+          python -m benchmarks validate-suite \
+            --suite benchmarks/suites/repository-intelligence/enola-cycle-reproduction-v1
+          python -m benchmarks plan \
+            --suite benchmarks/suites/repository-intelligence/enola-cycle-reproduction-v1 \
+            > "$RUNNER_TEMP/repository-intelligence-enola-cycle-plan.json"
+
           python - <<'PY'
           import json
           import os
@@ -113,6 +125,8 @@ jobs:
           expected = {
               "repository-intelligence-pilot-plan.json": 9,
               "repository-intelligence-agent-matrix-v2-plan.json": 18,
+              "repository-intelligence-native-matrix-v3-plan.json": 18,
+              "repository-intelligence-enola-cycle-plan.json": 18,
           }
           for filename, expected_count in expected.items():
               plan = json.loads(

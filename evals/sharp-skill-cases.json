@@ -977,6 +977,55 @@
       "scenario": "During an adversarial repair campaign over a release-candidate directory, the next reproduced defect is proven to belong to a separately versioned upstream repository. Repairing it locally would require a downstream workaround that duplicates upstream semantics. Determine whether to keep patching the current candidate."
     },
     {
+      "id": "entrypoint-authority-review-positive-duplicate-launch-defaults",
+      "skill": "entrypoint-authority-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A benchmark can be started through Make, a Python launcher, and CI. Make hard-codes budget 1200 and one output path, the Python launcher defaults budget 1000 and another path, and CI copies a third full command line. All three claim to run the same benchmark and operators must remember which settings are authoritative."
+    },
+    {
+      "id": "entrypoint-authority-review-control-thin-aliases",
+      "skill": "entrypoint-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A benchmark supports `make benchmark` and a direct `uv run` command. Both select the same checked-in named profile, which alone owns budget, corpus, mode, and output path, then invoke the same existing benchmark implementation. Make adds no independent defaults."
+    },
+    {
+      "id": "entrypoint-authority-review-control-ci-boundary",
+      "skill": "entrypoint-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Local Make and CI both select the same checked-in benchmark profile and execution owner. CI additionally binds its own job timeout, credentials, sandbox, and artifact upload because those are CI-host responsibilities; it does not redefine benchmark budget, corpus, mode, or output semantics."
+    },
+    {
+      "id": "native-tool-authority-review-positive-host-config-redecision",
+      "skill": "native-tool-authority-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "An isolated benchmark is explicitly required to use native Codex. The host already has a usable Codex configuration selecting its model and provider, but the repository runner asks the operator which model-setting policy to use and offers to copy or override those settings in a trial profile. Isolation only needs workspace, sandbox, timeout, and evidence binding; no benchmark policy requires a different Codex model."
+    },
+    {
+      "id": "native-tool-authority-review-control-host-config-with-benchmark-policy",
+      "skill": "native-tool-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A benchmark invokes native Codex using its existing host model/provider configuration without asking the operator to reselect them. The checked-in benchmark profile independently owns repository workload policy and defaults to one paired smoke, while the runner binds an isolated workspace, timeout, and evidence output. No native Codex settings are copied into the benchmark profile."
+    },
+    {
+      "id": "architecture-risk-triage-native-host-config-redecision",
+      "skill": "architecture-risk-triage",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A benchmark path explicitly invokes native Codex. A usable host Codex configuration already owns model and provider selection, but the isolated runner asks the operator to choose how to import or override those settings. The repository legitimately owns workspace isolation and benchmark workload defaults. Triage should route the host-configuration redecision to native-tool-authority-review rather than treating it as an ordinary benchmark preference."
+    },
+    {
+      "id": "entrypoint-authority-review-control-native-host-config",
+      "skill": "entrypoint-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Both `make benchmark` and `uv run hashmarks-benchmark` select the same checked-in benchmark workload profile, which defaults to one paired smoke. The implementation invokes native Codex and leaves model/provider/profile resolution to the usable Codex host configuration. Neither entrypoint copies or overrides native settings."
+    },
+    {
       "id": "empirical-benchmark-campaign-positive-structurally-complete-incomplete",
       "skill": "empirical-benchmark-campaign",
       "kind": "positive",

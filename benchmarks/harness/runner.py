@@ -35,6 +35,7 @@ class TrialRunResult:
     status: str
     result_dir: Path
     reused: bool
+    reason: str | None = None
 
 
 def _validate_result_receipt(receipt: dict[str, Any]) -> None:
@@ -200,6 +201,7 @@ def run_trial(
                     status=str(existing["status"]),
                     result_dir=final_dir,
                     reused=True,
+                    reason=existing.get("reason"),
                 )
 
             run_root = context.workspace.parent
@@ -391,7 +393,7 @@ def run_trial(
                 status=status.value,
                 result_dir=result_dir,
                 reused=False,
+                reason=reason,
             )
     except TrialAdmissionError as exc:
         raise TrialRunnerError(str(exc)) from exc
-

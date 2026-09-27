@@ -5,6 +5,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="$(cd -- "$script_dir/.." && pwd -P)"
 # shellcheck source=scripts/lib-opencode.sh
 . "$script_dir/lib-opencode.sh"
+AC_SKILL_NAMES="$(ac_skill_names "$repo_root")"
 
 pass() { printf 'SMOKE name=%s status=pass %s\n' "$1" "${2:-}"; }
 fail() { printf 'SMOKE name=%s status=fail %s\n' "$1" "${2:-}" >&2; exit 1; }
