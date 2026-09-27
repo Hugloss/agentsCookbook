@@ -73,14 +73,14 @@ uv run ... benchmark
  existing benchmark implementation
 ```
 
-Keep environment-specific entrypoints boring: select a profile, bind necessary host constraints, invoke the existing owner. Do not mirror its defaults.
+Keep environment-specific entrypoints boring: select a repository-owned workload profile when needed, bind necessary host constraints, and invoke the existing owner. Do not mirror its defaults. When that owner is a native tool, preserve usable native host configuration rather than turning model/provider/profile selection into another repository launch default.
 
 Prefer deletion of stale alternate launch paths over compatibility shims when callers are controlled.
 
 ## OVERLAP
 
 - Use `call-chain-collapse-review` when the defect is forwarding hops with no guarantee.
-- Use `native-tool-authority-review` when repository code recreates semantics owned by an external/native tool.
+- Use `native-tool-authority-review` when repository code recreates semantics owned by an external/native tool or asks the operator to re-decide usable native host configuration.
 - Use `cross-surface-convergence-review` when equivalent surfaces already exist but produce different semantic results or authority.
 - Use `state-authority-review` when competing representations, rather than launch paths, act as truth.
 - Use this skill when the specific question is **who owns how one conceptual action is launched and configured**.
