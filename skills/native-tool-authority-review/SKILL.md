@@ -10,13 +10,15 @@ Standalone, read-only review of repository layers around native or external tool
 
 ## INVARIANT
 
-> **When a native tool already owns an operation's semantics, repository code may orchestrate that operation but must not create a second semantic implementation around it.**
+> **When a native tool already owns an operation's semantics or host configuration, repository code may orchestrate that operation but must not create a second semantic implementation or ask the operator to re-decide native settings already owned by the host.**
 
 ## HUNT
 
 Trace real operations that invoke package managers, build tools, container engines, cluster clients, VCS, process managers, test/lint/typecheck tools, infrastructure CLIs, or similar native authorities.
 
 Hunt for repository layers that:
+- ask the operator or agent to choose model, provider, profile, endpoint, authentication mode, or equivalent native settings when the task already says to use the native tool and a usable host configuration exists;
+- copy native host configuration into repository profiles, trial manifests, benchmark flags, or prompts and then require the two authorities to stay synchronized;
 - reimplement resolution, installation, cache, retry, rollout, lifecycle, health, version-selection, scheduling, or state semantics already owned by the native tool;
 - replace one native failure with a different command or fallback that claims to prove the same semantic fact;
 - mirror native state into a second writable authority and reconcile the two;
@@ -29,6 +31,8 @@ Typical subjects include uv/pip/npm, Docker/BuildKit, Kubernetes/kubectl/Helm, G
 ## PROVE
 
 For each finding show:
+- whether the operation explicitly requests the **native tool** and whether a usable native host configuration already exists;
+- which settings are host-owned versus genuinely repository-owned;
 - the **native owner** and exact operation it already owns;
 - the **repository path/call chain** that duplicates or substitutes those semantics;
 - the duplicated semantic decision, state, retry/cache/lifecycle rule, or fallback proof;
@@ -39,6 +43,8 @@ For each finding show:
 A thin wrapper is not a defect by itself. The finding requires proof that it owns or recreates native semantics rather than merely transporting an invocation through a meaningful boundary.
 
 ## DO NOT REPORT
+
+Do not ask the operator to choose how to honor native model/provider/profile settings merely because execution is isolated. Isolation may bind cwd, workspace, sandbox, environment, credentials, timeout, or evidence capture while the native tool continues to resolve its own host configuration.
 
 Do not report a boundary merely because it wraps a native command when it genuinely owns:
 - cwd, environment, workspace, sandbox, credential, or isolation binding;
@@ -52,6 +58,14 @@ Do not report a boundary merely because it wraps a native command when it genuin
 Do not demand removal when the native tool cannot express the repository-specific invariant. Do not report from grep matches alone; trace the real operation.
 
 ## PREFER
+
+When the request says to use a native tool, default to the tool's existing host configuration. Do not invent a repository-owned model/profile choice and do not ask a preference question unless:
+- the requested operation explicitly requires an override;
+- no usable native configuration exists;
+- multiple native configurations are simultaneously applicable and the tool itself cannot resolve them; or
+- applying the host configuration would violate an explicit isolation, security, or reproducibility contract.
+
+Repository-owned workload policy remains repository-owned. For example, a benchmark may define its default corpus, lane set, repetition count, or "paired smoke" profile while Codex still owns its model/provider configuration. These are different authorities and should not be collapsed.
 
 Prefer the shortest authority path:
 
