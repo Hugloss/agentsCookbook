@@ -1,16 +1,58 @@
 """Command-line entry point for reusable empirical benchmark suites."""
-
 from __future__ import annotations
 
 import argparse
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 
+from benchmarks.harness.campaign import (
+    CampaignError,
+    campaign_status,
+    resolve_campaign_paths,
+)
+from benchmarks.harness.preflight import preflight_trial
 from benchmarks.harness.report import ReportError, build_report
-from benchmarks.harness.runner import preflight_trial, run_trial
+from benchmarks.harness.runner import run_trial
 from benchmarks.harness.selection import SelectionError, select_definitions
 from benchmarks.harness.suite import load_suite
+
+
+def _add_selectors(command: argparse.ArgumentParser) -> None:
+    command.add_argument("--task", action="append", default=[])
+    command.add_argument("--agent", action="append", default=[])
+    command.add_argument("--subject", action="append", default=[])
+    command.add_argument("--condition")
+
+
+def _add_campaign_paths(
+    command: argparse.ArgumentParser,
+    *,
+    execution: bool,
+) -> None:
+    command.add_argument(
+        "--root",
+        type=Path,
+        help=(
+            "campaign root; derives cache/, work/, and results/ "
+            "without creating a second campaign manifest"
+        ),
+    )
+    if execution:
+        command.add_argument("--cache", type=Path)
+        command.add_argument("--work", type=Path)
+    command.add_argument("--results", type=Path)
+
+
+def _add_execution_inputs(command: argparse.ArgumentParser) -> None:
+    command.add_argument("--harness-root", type=Path, default=Path("."))
+    command.add_argument("--source", type=Path)
+    command.add_argument(
+        "--codex-auth",
+        type=Path,
+        help="copy only this auth.json into isolated CODEX_HOME for Codex runs",
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -22,43 +64,76 @@ def _parser() -> argparse.ArgumentParser:
 
     plan = sub.add_parser("plan")
     plan.add_argument("--suite", type=Path, required=True)
-
-    run = sub.add_parser("run")
-    run.add_argument("--suite", type=Path, required=True)
-    run.add_argument("--results", type=Path, required=True)
-    run.add_argument("--cache", type=Path, required=True)
-    run.add_argument("--work", type=Path, required=True)
-    run.add_argument("--harness-root", type=Path, default=Path("."))
-    run.add_argument("--source", type=Path)
-    run.add_argument(
-        "--codex-auth",
-        type=Path,
-        help="copy only this auth.json into isolated CODEX_HOME for Codex runs",
-    )
+    _add_selectors(plan)
 
     preflight = sub.add_parser("preflight")
     preflight.add_argument("--suite", type=Path, required=True)
-    preflight.add_argument("--cache", type=Path, required=True)
-    preflight.add_argument("--work", type=Path, required=True)
-    preflight.add_argument("--source", type=Path)
-    preflight.add_argument("--codex-auth", type=Path)
+    _add_selectors(preflight)
+    _add_campaign_paths(preflight, execution=True)
+    _add_execution_inputs(preflight)
+
+    run = sub.add_parser("run")
+    run.add_argument("--suite", type=Path, required=True)
+    _add_selectors(run)
+    _add_campaign_paths(run, execution=True)
+    _add_execution_inputs(run)
+
+    status = sub.add_parser("status")
+    status.add_argument("--suite", type=Path, required=True)
+    _add_selectors(status)
+    _add_campaign_paths(status, execution=False)
 
     report = sub.add_parser("report")
     report.add_argument("--suite", type=Path, required=True)
-    report.add_argument("--results", type=Path, required=True)
+    _add_selectors(report)
+    _add_campaign_paths(report, execution=False)
     report.add_argument(
         "--allow-incomplete",
         action="store_true",
         help="report available valid receipts without requiring every frozen definition",
     )
 
-    for command in (plan, run, report, preflight):
-        command.add_argument("--task", action="append", default=[])
-        command.add_argument("--agent", action="append", default=[])
-        command.add_argument("--subject", action="append", default=[])
-        command.add_argument("--condition")
-
     return parser
+
+
+def _select(args, suite):
+    try:
+        return select_definitions(
+            suite,
+            tasks=tuple(args.task),
+            agents=tuple(args.agent),
+            subjects=tuple(args.subject),
+            condition=args.condition,
+        )
+    except SelectionError as exc:
+        raise SystemExit(str(exc)) from exc
+
+
+def _paths(args, *, need_execution: bool, results_optional: bool = False):
+    try:
+        return resolve_campaign_paths(
+            root=args.root,
+            cache=getattr(args, "cache", None),
+            work=getattr(args, "work", None),
+            results=args.results,
+            need_execution=need_execution,
+            results_optional=results_optional,
+        )
+    except CampaignError as exc:
+        raise SystemExit(str(exc)) from exc
+
+
+def _selection_metadata(args) -> dict[str, object]:
+    return {
+        "tasks": sorted(set(args.task)),
+        "agents": sorted(set(args.agent)),
+        "subjects": sorted(set(args.subject)),
+        "condition": args.condition,
+        "bare_control_included": bool(
+            not args.condition
+            and any(subject != "none" for subject in args.subject)
+        ),
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -82,80 +157,104 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    try:
-        rows = select_definitions(
-            suite,
-            tasks=tuple(args.task),
-            agents=tuple(args.agent),
-            subjects=tuple(args.subject),
-            condition=args.condition,
-        )
-    except SelectionError as exc:
-        raise SystemExit(str(exc)) from exc
+    rows = _select(args, suite)
 
     if args.command == "plan":
         print(json.dumps(rows, indent=2, sort_keys=True))
         return 0
 
+    if args.command == "status":
+        paths = _paths(args, need_execution=False)
+        assert paths.results is not None
+        status = campaign_status(
+            suite=suite,
+            results_root=paths.results,
+            selected_definitions={
+                str(row["definition_id"]) for row in rows
+            },
+        )
+        status["paths"] = paths.as_dict()
+        status["selection"] = _selection_metadata(args)
+        print(json.dumps(status, indent=2, sort_keys=True))
+        return 2 if (
+            status["conflicting_trials"]
+            or status["corrupt_bundles"]
+            or status["foreign_bundles"]
+        ) else 0
+
     if args.command == "report":
-        if not args.results.is_dir() or not any(args.results.iterdir()):
+        paths = _paths(args, need_execution=False)
+        assert paths.results is not None
+        if not paths.results.is_dir() or not any(paths.results.iterdir()):
             raise SystemExit(
-                f"no benchmark receipts in {args.results}; run the selected suite first"
+                f"no benchmark receipts in {paths.results}; run the selected suite first"
             )
         try:
             report_data = build_report(
                 suite=suite,
-                results_root=args.results,
+                results_root=paths.results,
                 require_complete=not args.allow_incomplete,
-                selected_definitions={row["definition_id"] for row in rows},
-                selection={
-                    "tasks": sorted(set(args.task)),
-                    "agents": sorted(set(args.agent)),
-                    "subjects": sorted(set(args.subject)),
-                    "condition": args.condition,
-                    "bare_control_included": bool(
-                        not args.condition
-                        and any(subject != "none" for subject in args.subject)
-                    ),
-                },
+                selected_definitions={str(row["definition_id"]) for row in rows},
+                selection=_selection_metadata(args),
             )
         except ReportError as exc:
             raise SystemExit(
                 f"benchmark report unavailable: {exc}; use --allow-incomplete to inspect a partial campaign"
             ) from exc
-        print(json.dumps(report_data, indent=2, sort_keys=True))
+        print(
+            json.dumps(report_data, indent=2, sort_keys=True)
+        )
         return 0
 
+    paths = _paths(
+        args,
+        need_execution=True,
+        results_optional=args.command == "preflight",
+    )
+    assert paths.cache is not None
+    assert paths.work is not None
+
     if args.command == "preflight":
-        checked: set[tuple[str, str]] = set()
         results = []
+        counts: Counter[str] = Counter()
         for row in rows:
-            key = (str(row["task_id"]), str(row["condition_id"]))
-            if key in checked:
-                continue
-            checked.add(key)
             result = preflight_trial(
                 suite=suite,
-                task_id=key[0],
-                condition_id=key[1],
+                task_id=str(row["task_id"]),
+                condition_id=str(row["condition_id"]),
                 trial_index=int(row["trial"]),
-                cache_root=args.cache,
-                work_root=args.work,
+                harness_root=args.harness_root,
+                cache_root=paths.cache,
+                work_root=paths.work,
+                results_root=paths.results,
                 local_source=args.source,
                 codex_auth=args.codex_auth,
             )
-            results.append(vars(result))
+            value = result.as_dict()
+            results.append(value)
+            counts[result.status] += 1
             detail = f": {result.reason}" if result.reason else ""
             print(
                 f"{result.task_id} / {result.condition_id}: {result.status}{detail}",
                 file=sys.stderr,
                 flush=True,
             )
-        print(json.dumps(results, indent=2, sort_keys=True))
-        return 0 if all(row["status"] == "READY" for row in results) else 2
+        payload = {
+            "paths": paths.as_dict(),
+            "selection": _selection_metadata(args),
+            "summary": dict(sorted(counts.items())),
+            "ready": all(
+                row["status"] in {"READY", "COMPLETE"}
+                for row in results
+            ),
+            "trials": results,
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0 if payload["ready"] else 2
 
     results = []
     invalid = False
+    assert paths.results is not None
     for row in rows:
         print(
             f"starting {row['task_id']} / {row['condition_id']} trial {row['trial']}",
@@ -168,9 +267,9 @@ def main(argv: list[str] | None = None) -> int:
             condition_id=str(row["condition_id"]),
             trial_index=int(row["trial"]),
             harness_root=args.harness_root,
-            cache_root=args.cache,
-            results_root=args.results,
-            work_root=args.work,
+            cache_root=paths.cache,
+            results_root=paths.results,
+            work_root=paths.work,
             local_source=args.source,
             codex_auth=args.codex_auth,
         )

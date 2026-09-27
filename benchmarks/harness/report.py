@@ -176,6 +176,11 @@ def _comparison_identity(receipt: dict[str, Any]) -> dict[str, Any]:
     return common
 
 
+def validate_comparability(receipts: list[dict[str, Any]]) -> None:
+    _check_comparable_agents(receipts)
+    _check_comparable_evidence(receipts)
+
+
 def _check_comparable_agents(receipts: list[dict[str, Any]]) -> None:
     identities: dict[str, dict[str, Any]] = {}
     for receipt in receipts:
@@ -393,8 +398,7 @@ def build_report(
             f"campaign is incomplete: {len(missing)} frozen definition(s) missing"
         )
 
-    _check_comparable_agents(receipts)
-    _check_comparable_evidence(receipts)
+    validate_comparability(receipts)
 
     by_condition: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_agent: dict[str, list[dict[str, Any]]] = defaultdict(list)

@@ -21,6 +21,7 @@ from benchmarks.harness.model import (
     Observation,
     ParticipantIdentity,
     SubjectAdapter,
+    SubjectLifecycleMode,
     TrialContext,
 )
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
@@ -258,6 +259,9 @@ class OpenCodeNativeAgent:
     max_tool_calls: int | None = None
     strict_executable: bool = False
 
+    def subject_lifecycle_mode(self) -> SubjectLifecycleMode:
+        return SubjectLifecycleMode.AGENT_NATIVE
+
     def identity(self) -> ParticipantIdentity:
         return ParticipantIdentity(
             "opencode-native",
@@ -379,6 +383,20 @@ class OpenCodeNativeAgent:
                 and Path(configured_path).samefile(expected)
             )
         overlay_identity = dict(resolved.get("overlay_identity", {}))
+        native_subject_identity = resolved.get("native_subject_identity")
+        if not isinstance(native_subject_identity, dict):
+            native_subject_identity = None
+        native_identity_verified = (
+            selected is None
+            or (
+                isinstance(native_subject_identity, dict)
+                and native_subject_identity.get("verified") is True
+                and isinstance(
+                    native_subject_identity.get("executable_sha256"),
+                    str,
+                )
+            )
+        )
         workspace_binding_identity = {
             "verified": workspace_binding.get("verified") is True,
             "subject": workspace_binding.get("subject"),
@@ -396,6 +414,7 @@ class OpenCodeNativeAgent:
             "mcp_shape": inspection.get("mcp_shape"),
             "selected_server": selected,
             "workspace_binding": workspace_binding_identity,
+            "native_subject_identity": native_subject_identity,
             "overlay_sha256": hashlib.sha256(
                 canonical_json(overlay_identity)
             ).hexdigest(),
@@ -409,6 +428,7 @@ class OpenCodeNativeAgent:
             and bool(model)
             and selected_ready
             and binding_verified
+            and native_identity_verified
             and executable_verified
         )
         reason = None
@@ -425,6 +445,8 @@ class OpenCodeNativeAgent:
             )
         elif not executable_verified:
             reason = f"native OpenCode MCP {selected} does not use the selected {selected} executable"
+        elif not native_identity_verified:
+            reason = "native OpenCode MCP executable identity is unverified"
         return Observation(
             {
                 **executable.payload,
@@ -440,6 +462,7 @@ class OpenCodeNativeAgent:
                 "native_config_sha256": evidence["native_config_sha256"],
                 "native_mcp_servers": evidence["native_mcp_servers"],
                 "workspace_binding": workspace_binding,
+                "native_subject_identity": native_subject_identity,
                 "mcp_exposure": (
                     {
                         "name": selected,

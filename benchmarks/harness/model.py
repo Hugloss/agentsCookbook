@@ -7,6 +7,11 @@ from pathlib import Path
 from typing import Any, Protocol
 
 
+class SubjectLifecycleMode(str, Enum):
+    ADAPTER = "adapter"
+    AGENT_NATIVE = "agent-native"
+
+
 class TrialStatus(str, Enum):
     PASS = "PASS"
     FAIL = "FAIL"
@@ -64,6 +69,7 @@ class SubjectAdapter(Protocol):
 
 class AgentAdapter(Protocol):
     def identity(self) -> ParticipantIdentity: ...
+    def subject_lifecycle_mode(self) -> SubjectLifecycleMode: ...
     def prepare(
         self,
         context: TrialContext,
