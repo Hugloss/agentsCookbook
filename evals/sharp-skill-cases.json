@@ -1045,6 +1045,34 @@
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "A frozen paired campaign re-establishes current harness authority, preflights the exact selected definitions, runs with matching bare controls, retains verified non-conflicting PASS/FAIL receipts under stable runtime authority, reports unavailable metrics as unavailable, and hands a reproduced product defect to a separate repair campaign without changing the experiment."
+    },
+    {
+      "id": "single-owner-contract-positive-split-materialization",
+      "skill": "single-owner-contract-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A repository requires generated/release/static only when building the release wheel, but four independent mechanisms try to make that path exist: make init mkdirs it, source normalization recreates it, an editable-build hook creates or references it, and archive packaging injects it. Certification copies canonical source into an isolated workspace where one compensator is absent and editable uv materialization fails because Hatchling force-includes the missing release directory. The reviewer should identify one release/package owner and remove source/bootstrap compensations rather than add another mkdir."
+    },
+    {
+      "id": "single-owner-contract-control-owner-consumer-validation",
+      "skill": "single-owner-contract-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A release build step is the sole producer of frontend static bytes. The wheel packager consumes those bytes and fails closed if they are missing; the source archive transports the declared source inputs; editable installation does not require release static output. CI independently verifies the packaged wheel contains the expected bytes but never recreates them."
+    },
+    {
+      "id": "single-owner-contract-confusion-semantic-redecision",
+      "skill": "single-owner-contract-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "Admission and a worker independently interpret the same raw flags to decide whether execution is allowed. Neither path creates, repairs, defaults, or materializes a shared prerequisite or artifact. The issue is duplicate semantic policy interpretation and should be routed to semantic-redecision-review."
+    },
+    {
+      "id": "architecture-risk-triage-single-owner-contract-routing",
+      "skill": "architecture-risk-triage",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A build prerequisite path is mkdir'd by Make, recreated by source normalization, synthesized by an editable build hook, and injected again by release packaging. A real isolated certification path fails when one compensator is missing. Triage should route this hotspot to single-owner-contract-review, not generic DRY cleanup or native-tool-authority-review."
     }
   ]
 }

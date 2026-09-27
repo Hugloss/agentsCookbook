@@ -21,6 +21,7 @@ Trace important production paths and hunt strong signals:
 - leaked, prematurely closed, or ambiguously owned resources;
 - inconsistent failure meaning, retryability, or recovery;
 - repeated semantic decisions;
+- one repository-owned prerequisite, generated artifact, manifest, or derived fact independently synthesized or repaired in multiple lifecycle layers;
 - multiple durable commit paths;
 - resolved facts reconstructed from raw inputs;
 - competing state authorities;
@@ -30,7 +31,8 @@ Trace important production paths and hunt strong signals:
 - obsolete alternate paths;
 - hidden side effects;
 - oversized dependency surfaces;
-- repository wrappers that recreate resolution, cache, retry, lifecycle, rollout, host configuration, or other semantics already owned by a native/external tool;\n- native-tool workflows that ask operators to reselect model, provider, profile, endpoint, authentication mode, or equivalent host-owned settings even though usable native host configuration already exists;
+- repository wrappers that recreate resolution, cache, retry, lifecycle, rollout, host configuration, or other semantics already owned by a native/external tool;
+- native-tool workflows that ask operators to reselect model, provider, profile, endpoint, authentication mode, or equivalent host-owned settings even though usable native host configuration already exists;
 - slow, complex, nondeterministic, or implementation-coupled tests.
 
 ## PROVE
@@ -45,7 +47,7 @@ Do not deeply solve every category. Do not rank files by size or complexity aest
 
 ## PREFER
 
-Route each hotspot to the narrowest skill. Route shadow native/external-tool semantics and unnecessary re-decisions of usable native host configuration to `native-tool-authority-review`; use `call-chain-collapse-review` only when the defect is no-value indirection rather than duplicated tool semantics. Protect coherent owners. A clean result is only a statement about the completed triage boundary, not proof that the entire repository has no architecture risk.
+Route each hotspot to the narrowest skill. Route repeated repository-owned prerequisite/artifact compensation across lifecycle layers to `single-owner-contract-review`; route repeated interpretation of one semantic answer to `semantic-redecision-review`; route shadow native/external-tool semantics and unnecessary re-decisions of usable native host configuration to `native-tool-authority-review`; use `call-chain-collapse-review` only when the defect is no-value indirection rather than duplicated semantics. Protect coherent owners. A clean result is only a statement about the completed triage boundary, not proof that the entire repository has no architecture risk.
 
 ## OUTPUT
 
