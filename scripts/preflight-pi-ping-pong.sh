@@ -30,6 +30,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 repo_root="$(ac_repo_root_from_script "${BASH_SOURCE[0]}")"
+AC_SKILL_NAMES="$(ac_skill_names "$repo_root")"
 agent_src_dir="$(ac_agent_source_dir "$repo_root")"; skill_src_dir="$(ac_skill_source_dir "$repo_root")"; pi_adapter="$(ac_pi_artifact_adapter "$repo_root")"; pi_adapter_dir="$(dirname -- "$pi_adapter")"
 target_repo="$(ac_absolute_path "${target_repo:-$PWD}")"
 if [ -n "$pi_agent_dir_arg" ]; then pi_agent_dir="$(ac_absolute_path "$pi_agent_dir_arg")"; elif ! pi_agent_dir="$(ac_default_pi_agent_dir)"; then ac_die "HOME is not set"; fi

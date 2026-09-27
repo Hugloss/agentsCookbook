@@ -30,6 +30,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 repo_root="$(ac_repo_root_from_script "${BASH_SOURCE[0]}")"
+AC_SKILL_NAMES="$(ac_skill_names "$repo_root")"
 agent_src_dir="$(ac_agent_source_dir "$repo_root")"; skill_src_dir="$(ac_skill_source_dir "$repo_root")"
 opencode_adapter="$(ac_opencode_artifact_adapter "$repo_root")"
 target_repo="$(ac_absolute_path "${target_repo:-$PWD}")"

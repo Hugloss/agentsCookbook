@@ -26,80 +26,6 @@ code-performance-optimization-auditor.md
 
 AC_AGENT_FILES="$AC_PRIMARY_AGENT_FILES$AC_FLOW_REVIEWER_AGENT_FILES$AC_STANDALONE_AGENT_FILES"
 
-AC_SKILL_NAMES="
-plan-gap-scout
-alternative-route-challenge
-validation-gap-finder
-coverage-design-review
-implementation-dry-run
-fact-grounding-auditor
-repository-improvement-scout
-codebase-finding-derivation
-plan-contract-guard
-red-team-leftover-gate
-code-performance-optimization-audit
-skill-contract-review
-stale-work-race-review
-ui-lifecycle-race-review
-shared-state-ownership-review
-atomic-operation-review
-retry-idempotency-review
-resource-lifetime-review
-failure-contract-review
-dogfood-saturation-loop
-adversarial-repair-campaign
-sensitive-data-masking
-semantic-identity-invariance-review
-evidence-projection-preservation-review
-completeness-accounting-review
-bounded-authority-monotonicity-review
-cache-validity-binding-review
-persistence-roundtrip-convergence-review
-evidence-provenance-binding-review
-unknown-state-collapse-review
-cross-surface-convergence-review
-semantic-noninterference-review
-evidence-visibility-enforcement-review
-explicit-target-resolution-review
-roundtrip-capacity-contract-review
-evidence-integrity-revalidation-review
-identifier-scope-uniqueness-review
-negative-evidence-admissibility-review
-orthogonal-state-axis-review
-stable-observation-snapshot-review
-static-evidence-overclaim-review
-path-scope-confinement-review
-authority-escalation-review
-semantic-redecision-review
-durable-commit-path-review
-resolved-fact-regression-review
-state-authority-review
-invalid-state-model-review
-correlation-causation-boundary-review
-aggregate-hard-failure-masking-review
-measurement-comparability-review
-evidence-readiness-review
-baseline-self-authorization-review
-current-measurement-authority-review
-improvement-claim-remeasurement-review
-single-observation-review
-call-chain-collapse-review
-native-tool-authority-review
-entrypoint-authority-review
-alternate-path-removal-review
-hidden-side-effect-review
-dependency-surface-review
-test-work-amplification-review
-repeated-test-setup-review
-test-isolation-boundary-review
-test-orchestration-complexity-review
-deterministic-causality-test-review
-test-state-contamination-review
-test-contract-coupling-review
-verification-locality-review
-architecture-risk-triage
-"
-
 AC_FLOW_REVIEWER_SKILL_MAP="
 plan-coverage-reviewer coverage-design-review liteLLM/gpt-oss
 plan-improver-model2 plan-gap-scout liteLLM/gpt-oss
@@ -164,6 +90,9 @@ ac_repo_root_from_script() {
 
 ac_agent_source_dir() { printf '%s/agents\n' "$1"; }
 ac_skill_source_dir() { printf '%s/skills\n' "$1"; }
+ac_skill_names() {
+  find "$(ac_skill_source_dir "$1")" -mindepth 2 -maxdepth 2 -type f -name SKILL.md -printf '%h\n' | xargs -r -n1 basename | sort
+}
 ac_opencode_artifact_adapter() { printf '%s/adapters/opencode/review-artifact.js\n' "$1"; }
 ac_pi_artifact_adapter() { printf '%s/adapters/pi/review-artifact.js\n' "$1"; }
 
