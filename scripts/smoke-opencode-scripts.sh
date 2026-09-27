@@ -2,7 +2,7 @@
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-repo_root="$(cd -- "$script_dir/.." && pwd -P)"
+repo_root="$(cd -- "$script_dir/.." && pwd -P)"\nAC_SKILL_NAMES="$(ac_skill_names "$repo_root")"
 # shellcheck source=scripts/lib-opencode.sh
 . "$script_dir/lib-opencode.sh"
 
