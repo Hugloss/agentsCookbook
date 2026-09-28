@@ -1206,6 +1206,41 @@
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "The disclosure boundary is the same internal operations team, whose policy explicitly permits service names, namespaces, deployment labels, build IDs, and transaction counts but forbids credentials and customer identities. The sanitizer preserves the permitted operational labels and counts, masks the token and customer id with typed placeholders, preserves repeated-subject identity consistently, and verifies the transformed output."
+    },
+    {
+      "id": "hidden-authority-cucumber-attack-positive-name-privilege",
+      "skill": "hidden-authority-cucumber-attack",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A certification engine has a set named SPECIAL_RESOURCE_OVERRIDE_PLANS containing only `app-certification`. Plans normally receive execution resources from the runtime authority, but if the plan name matches that set the template may override them. The current architecture says plan templates do not own execution resource authority, no current consumer requires the exception, and renaming `app-certification` while preserving identical semantics removes the privilege."
+    },
+    {
+      "id": "hidden-authority-cucumber-attack-positive-test-only-legacy-alias",
+      "skill": "hidden-authority-cucumber-attack",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A deprecated CLI alias `certify-app-old` redirects through a legacy recovery path. Repository search finds no supported caller, documentation, packaging entrypoint, or compatibility policy that still advertises it; only two tests assert the alias exists and an exact command-count snapshot includes it. Deleting the alias breaks only those tests."
+    },
+    {
+      "id": "hidden-authority-cucumber-attack-control-supported-compatibility-name",
+      "skill": "hidden-authority-cucumber-attack",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A public wire protocol still accepts field name `legacy_id` because the published compatibility contract guarantees it through version 4 and current external clients are observed using it. The parser maps both old and new field names to one semantic identifier owner, tests cover both, and the removal condition is documented for version 5."
+    },
+    {
+      "id": "hidden-authority-cucumber-attack-confusion-split-current-owners",
+      "skill": "hidden-authority-cucumber-attack",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "Two current canonical launch paths independently establish different execution-authority contracts for the same test scope. Both paths have real consumers and neither behavior depends on a legacy name, alias, historical exception, or privileged identity. This is a split source-of-truth defect and should be handled by single-source-of-truth-review."
+    },
+    {
+      "id": "architecture-risk-triage-hidden-authority-routing",
+      "skill": "architecture-risk-triage",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A runtime branch grants one Plan named `app-certification` a resource override via a SPECIAL_* allowlist even though current architecture says plan templates never own execution resource authority. Renaming the otherwise identical Plan removes the privilege, and no current consumer or compatibility contract requires it. Triage should route this to hidden-authority-cucumber-attack rather than generic cleanup."
     }
   ]
 }
