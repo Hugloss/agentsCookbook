@@ -19,7 +19,7 @@ Trace important production, test, build, and recovery paths and hunt for signals
 - old and new architecture paths coexisting;
 - unclear ownership of durable state, resources, retries, failure handling, or lifecycle;
 - repeated defensive guards that may indicate a weak upstream model or contract;
-- the same prerequisite, generated artifact, placeholder, manifest, or derived fact being synthesized or repaired in several lifecycle layers;
+- the authoritative owner of the same semantic truth changing across callers, outer workflows, entrypoints, lifecycle phases, fixtures, or duplicate producers;
 - slow or complex tests that appear to expose production coupling or repeated work;
 - hidden side effects, broad dependency surfaces, or long forwarding chains;
 - async work, callbacks, retries, recovery, or cleanup whose ownership is hard to explain;
@@ -40,7 +40,7 @@ For every investigation lead, provide:
 - **Disconfirmation check** — evidence that would show the suspected issue is actually intentional or safe;
 - **Next skill** — `codebase-finding-derivation` or the narrow specialist that should prove the issue if the lead survives.
 
-When the signal is several reachable layers independently creating or repairing the same repository-owned prerequisite/artifact contract, route it to `single-owner-contract-review` rather than treating repetition alone as a finding.
+When the signal is that several reachable paths independently establish or select what consumers accept as the same semantic truth, route it to `single-source-of-truth-review`. This includes duplicate materialization/repair paths and context-dependent execution authority; repetition alone is still not a finding.
 
 Also record the **inspection boundary** used for this scouting pass and any material areas that were skipped, truncated, unavailable, or intentionally out of scope.
 
