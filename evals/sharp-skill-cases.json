@@ -1157,6 +1157,34 @@
       "kind": "positive",
       "expected": "FINDING",
       "scenario": "A release certification path hard-fails when a source module reaches 601 lines even though a harmless comment is the only change and all certified runtime behavior is identical. The limit began as a maintainability heuristic. Triage should route this to proxy-gate-authority-review rather than generic refactoring or test cleanup."
+    },
+    {
+      "id": "sensitive-data-masking-positive-operational-topology",
+      "skill": "sensitive-data-masking",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Disclosure scope is a public support issue. The sanitized log masks the user email and bearer token but leaves a private service name, its derived pod name, an internal namespace, and an internal route in cleartext because they are not PII. Review whether the result satisfies the masking contract."
+    },
+    {
+      "id": "sensitive-data-masking-positive-nested-serialized-business-data",
+      "skill": "sensitive-data-masking",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Disclosure policy forbids customer identifiers and transaction amounts. A structured log field named payload contains a JSON string with both values. The sanitizer masks the outer request_id and service field but treats payload as an opaque string, declares MASKED, and never performs a second pass over the decoded nested object."
+    },
+    {
+      "id": "sensitive-data-masking-control-public-reproducibility-metadata",
+      "skill": "sensitive-data-masking",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A public bug report masks a private API token, tenant id, internal hostname, and home-directory username. It deliberately preserves the public GitHub repository name, public commit SHA, Python 3.13.5, package version 2.4.1, HTTP status 503, timestamp, and 842 ms duration because the disclosure policy permits them and they are needed to reproduce and diagnose the issue. Verification finds no prohibited values."
+    },
+    {
+      "id": "sensitive-data-masking-control-scope-permits-operational-labels",
+      "skill": "sensitive-data-masking",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The disclosure boundary is the same internal operations team, whose policy explicitly permits service names, namespaces, deployment labels, build IDs, and transaction counts but forbids credentials and customer identities. The sanitizer preserves the permitted operational labels and counts, masks the token and customer id with typed placeholders, preserves repeated-subject identity consistently, and verifies the transformed output."
     }
   ]
 }
