@@ -956,6 +956,20 @@
       "scenario": "A repository wraps native uv lock authoring in a helper that first runs uv lock, then independently parses dependency metadata, maintains its own retry/cache state, rewrites the lock on selected failures, and reports its synthetic convergence result as dependency truth. No repository-specific policy requires those duplicated resolution semantics."
     },
     {
+      "id": "native-tool-authority-review-positive-shadow-package-manager-certification",
+      "skill": "native-tool-authority-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A CLI offers an explicit Upgrade now action for a package installed by native uv or pipx. Before invoking the native upgrade command, repository code reconstructs uv/pipx installation roots, parses uv-receipt.toml or pipx_metadata.json, and decides whether that manager is allowed to own the installation. The native package manager already owns whether the package is installed, managed, supported, and upgradeable; no independent repository security or policy contract requires the duplicate certification."
+    },
+    {
+      "id": "native-tool-authority-review-control-direct-native-upgrade-delegation",
+      "skill": "native-tool-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A product checks only whether a newer release exists. After explicit user consent, an already-selected native package-manager command is invoked directly; the repository does not parse manager receipts, reconstruct manager filesystem layout, or preflight whether the native tool considers the package upgradeable. Native stdout, stderr, and exit status are reported unchanged."
+    },
+    {
       "id": "native-tool-authority-review-control-isolation-evidence-boundary",
       "skill": "native-tool-authority-review",
       "kind": "control",
@@ -1017,6 +1031,13 @@
       "kind": "positive",
       "expected": "FINDING",
       "scenario": "A benchmark path explicitly invokes native Codex. A usable host Codex configuration already owns model and provider selection, but the isolated runner asks the operator to choose how to import or override those settings. The repository legitimately owns workspace isolation and benchmark workload defaults. Triage should route the host-configuration redecision to native-tool-authority-review rather than treating it as an ordinary benchmark preference."
+    },
+    {
+      "id": "architecture-risk-triage-native-package-manager-certification",
+      "skill": "architecture-risk-triage",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "An update path reconstructs uv/pipx installation directories and parses their receipts before allowing an explicitly approved native upgrade. The package managers already own whether the installation is managed and upgradeable. Triage should route this shadow certification to native-tool-authority-review rather than treat the extra preflight as generic safety hardening."
     },
     {
       "id": "entrypoint-authority-review-control-native-host-config",
