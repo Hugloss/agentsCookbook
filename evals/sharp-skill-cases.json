@@ -1269,6 +1269,34 @@
       "kind": "positive",
       "expected": "FINDING",
       "scenario": "A certification repair workflow instructs operators to copy patches and evidence bundles into the repository root before applying them. Source admission then sees those transport artifacts as authored inputs, and a later cleanup proposal suggests making certification ignore `*.patch` and OS metadata. Triage should route the incidental-location authority and self-contaminating repair mechanism to hidden-authority-cucumber-attack rather than generic packaging cleanup."
+    },
+    {
+      "id": "hidden-authority-cucumber-attack-positive-command-name-policy",
+      "skill": "hidden-authority-cucumber-attack",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A CLI keeps _AUTOMATIC_SKIP_COMMANDS = {\"daemon\", \"mcp\", \"upgrade\", \"version\"}. Product behavior branches on those command names even though each command is already declared by the parser and could own one explicit automatic-update-eligibility property. Renaming an equivalent command changes behavior without changing semantics, and no external protocol requires those literal names."
+    },
+    {
+      "id": "hidden-authority-cucumber-attack-control-semantic-command-property",
+      "skill": "hidden-authority-cucumber-attack",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Each CLI command declaration owns an explicit automatic_update_check boolean based on its semantics. The update subsystem consumes only that resolved property and interaction/environment state; it has no command-name allowlist, denylist, path recognition, or historical exception table."
+    },
+    {
+      "id": "hidden-authority-cucumber-attack-confusion-semantic-redecision",
+      "skill": "hidden-authority-cucumber-attack",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "A parser resolves one semantic eligibility boolean, but a downstream service independently recomputes the same eligibility from the same semantic inputs. No name, path, version, historical identity, or exception object is privileged. The primary defect belongs to semantic-redecision-review, not hidden-authority-cucumber-attack."
+    },
+    {
+      "id": "architecture-risk-triage-hidden-command-policy-routing",
+      "skill": "architecture-risk-triage",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A CLI subsystem maintains SPECIAL_COMMANDS and *_SKIP_COMMANDS sets whose literal command names decide update-check behavior even though the parser already owns each command declaration and could expose one semantic eligibility property. Renaming an equivalent command changes behavior. Triage should route this identity-as-policy hotspot to hidden-authority-cucumber-attack rather than generic semantic redecision."
     }
   ]
 }
