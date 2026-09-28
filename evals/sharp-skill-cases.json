@@ -1101,6 +1101,27 @@
       "kind": "positive",
       "expected": "FINDING",
       "scenario": "The same strict tests use a global fixture tied to backend-tests authority when run directly, but APP certification launches them through backend-p0 with a different authority contract. Triage should route this context-dependent source-of-truth split to single-source-of-truth-review rather than suggest adding whichever tool happens to fail first."
+    },
+    {
+      "id": "native-tool-authority-review-positive-redundant-executable-authority",
+      "skill": "native-tool-authority-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A Python repository already establishes pyproject.toml plus uv.lock as its native environment authority. A test Goon runs `uv run pytest`, but its manifest additionally requires global declarations for uv, python, and pytest, and a launcher separately searches PATH for each before allowing execution. No distinct trust or policy boundary needs those repeated choices. Review whether these declarations and lookups add authority or merely restate and re-resolve the native project workflow."
+    },
+    {
+      "id": "native-tool-authority-review-control-exceptional-capability",
+      "skill": "native-tool-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A repository's normal tests use its established uv environment without separately declaring Python or pytest. A distinct deployment task additionally requires kubectl because it talks to a Kubernetes cluster, a capability not implied by the Python project workflow. The deployment boundary explicitly names kubectl and cluster credentials while leaving kubectl's own configuration semantics native."
+    },
+    {
+      "id": "native-tool-authority-review-confusion-split-internal-authority",
+      "skill": "native-tool-authority-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "Two internal canonical Goons launch the same test surface with different repository-owned tool-authority contracts. Neither wraps or reimplements an external tool's semantics; the defect is that the authoritative execution contract changes with the outer Goon. Treat this as split source-of-truth ownership rather than a native-tool-authority finding."
     }
   ]
 }
