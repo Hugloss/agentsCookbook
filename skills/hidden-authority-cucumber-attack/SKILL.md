@@ -1,6 +1,6 @@
 ---
 name: hidden-authority-cucumber-attack
-description: Exposes behavior justified only by historical identity, special-case recognition, unexplained exceptions, or repair/transport artifacts that silently become authority.
+description: Exposes hidden authority from historical identity, unexplained exceptions, or repair/transport artifacts that silently become source.
 license: MIT
 ---
 
