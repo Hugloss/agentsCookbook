@@ -91,6 +91,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `aggregate-hard-failure-masking-review` — Find hard contract violations hidden by aggregate scores or unrelated positive measurements.
 - `measurement-comparability-review` — Find deltas or rankings computed across incompatible measurement conditions.
 - `evidence-readiness-review` — Find qualification claims made before the evidence set is eligible, non-vacuous, and sufficiently representative.
+- `proxy-gate-authority-review` — Find hard qualification gates whose veto is a heuristic proxy rather than the semantic contract they claim to prove.
 - `baseline-self-authorization-review` — Find changes that weaken their own governing baseline or policy and then validate against that candidate state.
 - `current-measurement-authority-review` — Find historical baselines or snapshots reused as if they measured current state.
 - `improvement-claim-remeasurement-review` — Find improvement claims inferred from code movement instead of comparable post-change measurement.
@@ -142,6 +143,7 @@ Use the narrowest skill that owns the question:
 - `bounded-authority-monotonicity-review` tests authority across retrieval/presentation bounds; `semantic-identity-invariance-review` tests identity across any semantic no-op representation change.
 - `evidence-provenance-binding-review` asks whether one reusable evidence artifact binds its authority context; `measurement-comparability-review` asks whether two measurements are valid to compare.
 - `evidence-readiness-review` asks whether evidence is sufficient to qualify at all; `aggregate-hard-failure-masking-review` asks whether a hard violation can be compensated after readiness is established.
+- `proxy-gate-authority-review` asks whether a hard gate's veto actually proves the semantic contract it claims to qualify; `baseline-self-authorization-review` asks whether the candidate weakens a legitimate governing oracle; `evidence-readiness-review` asks whether a legitimate oracle has sufficient eligible evidence; `aggregate-hard-failure-masking-review` asks whether a real hard violation can be compensated away.
 - `cache-validity-binding-review` owns semantic cache-key/validity completeness; `stale-work-race-review` owns superseded asynchronous work committing after newer ownership exists.
 - `cross-surface-convergence-review` compares equivalent public surfaces; `evidence-projection-preservation-review` follows evidence through one projection chain.
 - `semantic-noninterference-review` asks whether out-of-scope evidence changes a conclusion; `bounded-authority-monotonicity-review` narrows that question specifically to retrieval/presentation bounds.
