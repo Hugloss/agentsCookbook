@@ -26,6 +26,7 @@ Search for:
 - allowlists, denylists, exception maps, and privileged named sets;
 - `SPECIAL_*`, `EXPLICIT_*`, `*_OVERRIDE*`, `*_EXCEPTION*`, `*_LEGACY*`, `*_COMPAT*`;
 - branches on names, paths, filenames, targets, versions, modes, environment names, plan names, task names, or fixture names;
+- parser/registry declarations where behavior semantics are already declared, but downstream code keeps command/name/path/version allowlists or skip sets instead of consuming one explicit semantic property;
 - compatibility aliases, deprecated entrypoints, old command names, migration shims, and retained legacy identifiers;
 - fallback, recovery, rescue, “try old shape,” or “if known target” paths;
 - duplicated authority vocabularies that classify the same subject differently;
@@ -56,8 +57,9 @@ For every candidate ask:
 5. Is this behavior described by current normative architecture, compatibility policy, protocol, or product requirements?
 6. If deleted, does real product behavior fail, or only a test/snapshot/count that memorializes the exception?
 7. Is another native, tool, runtime, platform, or repository owner already authoritative for the same decision?
-8. Does the repair, recovery, evidence, or debugging mechanism alter canonical source membership merely because of where it stages its own artifacts?
-9. If contamination is possible, is cleanup explicit and owned, or is some unrelated init/certify/build path silently compensating for it?
+8. Could one explicit semantic property owned where the object is declared replace a list of privileged identities?
+9. Does the repair, recovery, evidence, or debugging mechanism alter canonical source membership merely because of where it stages its own artifacts?
+10. If contamination is possible, is cleanup explicit and owned, or is some unrelated init/certify/build path silently compensating for it?
 
 **No current owner + no current consumer = probable cucumber.**
 
@@ -164,6 +166,16 @@ delete authority entirely
 Delete obsolete compatibility aliases, exception sets, fallback/recovery paths, magic-count assertions, generated residue, and tests whose only purpose is to preserve the removed exception.
 
 If a real compatibility or policy requirement remains, make that contract explicit and give it a removal condition or durable owner instead of relying on folklore comments or identity recognition.
+
+When distinct behavior is legitimate and the object already has a canonical declaration/registry owner, prefer making the reason explicit there:
+
+~~~text
+semantic declaration
+  -> explicit capability / eligibility / policy property
+  -> behavior
+~~~
+
+rather than maintaining a second downstream list of privileged command names, paths, versions, or targets.
 
 For repair/transport self-contamination, prefer:
 
