@@ -27,6 +27,7 @@ Trace important production paths and hunt strong signals:
 - competing state authorities;
 - invalid state combinations;
 - named/legacy identities, exception sets, compatibility aliases, or fallback recognition that grant behavior not justified by a current semantic owner/consumer;
+- repair, recovery, evidence, or debugging mechanisms that stage their own patches, archives, reports, temporary outputs, or OS/editor metadata inside the subject repository so incidental placement changes canonical source membership, packaging, or qualification;
 - repeated observation;
 - pass-through call chains;
 - obsolete alternate paths;
@@ -51,7 +52,7 @@ Do not deeply solve every category. Do not rank files by size or complexity aest
 
 ## PREFER
 
-Route each hotspot to the narrowest skill. Route path-dependent or producer-dependent ownership of one semantic truth to `single-source-of-truth-review`; route repeated interpretation inside one authority chain to `semantic-redecision-review`; route named/legacy identities, exception sets, compatibility residue, or fallback recognition acting as authority without a current semantic owner/consumer to `hidden-authority-cucumber-attack`; route competing state representations to `state-authority-review`; route shadow native/external-tool semantics, redundant executable authority, and unnecessary re-decisions of usable native host configuration to `native-tool-authority-review`; route heuristic/source-shape checks promoted into hard qualification authority to `proxy-gate-authority-review`; use `call-chain-collapse-review` only when the defect is no-value indirection rather than split authority. Protect coherent owners. A clean result is only a statement about the completed triage boundary, not proof that the entire repository has no architecture risk.
+Route each hotspot to the narrowest skill. Route path-dependent or producer-dependent ownership of one semantic truth to `single-source-of-truth-review`; route repeated interpretation inside one authority chain to `semantic-redecision-review`; route named/legacy identities, exception sets, compatibility residue, fallback recognition, or repair/transport self-contamination that changes source authority by incidental staging location to `hidden-authority-cucumber-attack`; route competing state representations to `state-authority-review`; route shadow native/external-tool semantics, redundant executable authority, and unnecessary re-decisions of usable native host configuration to `native-tool-authority-review`; route heuristic/source-shape checks promoted into hard qualification authority to `proxy-gate-authority-review`; use `call-chain-collapse-review` only when the defect is no-value indirection rather than split authority. Protect coherent owners. A clean result is only a statement about the completed triage boundary, not proof that the entire repository has no architecture risk.
 
 ## OUTPUT
 
