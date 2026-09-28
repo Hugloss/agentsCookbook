@@ -63,7 +63,7 @@ You do **not** need to run a giant review flow. Pick the smallest prompt that an
 | plan a change through eight independent review passes | [`ping-pong-plan`](agents/ping-pong-plan.md) |
 | implement, validate, review, fix, and polish a change | [`ping-ping-build`](agents/ping-ping-build.md) |
 
-The complete catalog of **35 skills** and their overlap boundaries is in [`skills/README.md`](skills/README.md).
+The complete skill catalog and its overlap boundaries are in [`skills/README.md`](skills/README.md).
 
 ## Why this library exists
 
@@ -170,6 +170,7 @@ The current library groups prompts by the kind of question they answer:
 - **Concurrency** — stale work and UI lifecycle races.
 - **Execution integrity** — atomicity, retries/idempotency, resource lifetime, failure contracts.
 - **Semantic authority** — repeated decisions, durable commit authority, resolved facts, state authority, invalid states.
+- **Qualification integrity** — readiness, governing baselines, proxy-gate authority, comparability, and hard-failure qualification semantics.
 - **Structural simplicity** — repeated observation, no-value call chains, obsolete paths, hidden effects, oversized dependency surfaces.
 - **Test-derived architecture** — amplified work, repeated setup, isolation boundaries, orchestration complexity, deterministic causality, state contamination, contract coupling.
 - **Performance** — algorithmic scaling, repeated work, I/O, memory, batching, contention, and cache economics.
