@@ -1,20 +1,22 @@
 ---
 name: hidden-authority-cucumber-attack
-description: Exposes behavior justified only by historical identity, special-case recognition, duplicated authority, or unexplained exceptions.
+description: Exposes behavior justified only by historical identity, special-case recognition, unexplained exceptions, or repair/transport artifacts that silently become authority.
 license: MIT
 ---
 
 # Hidden Authority / Cucumber Attack
 
-Standalone, read-only attack on hidden authority preserved by names, historical exceptions, compatibility residue, fallback recognition, or tests that outlived the semantic contract they once protected.
+Standalone, read-only attack on hidden authority preserved by names, historical exceptions, compatibility residue, fallback recognition, tests that outlived the semantic contract they once protected, or repair/transport mechanisms that accidentally mutate the source authority they are supposed to repair.
 
 ## INVARIANT
 
-> **Behavior should follow current semantic capability, purpose, requirement, or policy—not historical identity, unexplained special recognition, or an exception whose owner and consumer no longer exist.**
+> **Behavior should follow current semantic capability, purpose, requirement, or policy—not historical identity, unexplained special recognition, incidental artifact location, or an exception whose owner and consumer no longer exist. Repair machinery must not change canonical source membership merely by carrying its own artifacts into the subject it repairs.**
 
 A **cucumber** is suspicious authority or behavior that survives because the repository recognizes a particular name, path, filename, target, version, environment, legacy alias, fallback, or test expectation rather than because the current architecture requires that semantic distinction.
 
 Identity can legitimately be semantic. The defect is not “there is a special case.” The defect is **special identity acting as authority without a current semantic owner, consumer, or normative contract**.
+
+A second form of the same cucumber appears when **incidental placement becomes authority**: a patch, evidence bundle, generated report, archive, debug output, editor temporary, or OS metadata sidecar is carried into a repository to repair or inspect it, then source discovery, packaging, architecture, or certification starts treating that transport artifact as authored source. The repair mechanism has changed the subject merely by touching it.
 
 ## HUNT
 
@@ -31,10 +33,17 @@ Search for:
 - assertions based on magic counts, exact lists, or identities produced only by retained exceptions;
 - comments containing “special”, “legacy”, “temporary”, “for certification”, “for CI”, “except”, “compatibility”, “deprecated”, or “workaround”;
 - generated/derived contracts that still encode an exception absent from normative architecture;
-- exception cleanup code that removes one branch while another alias, fallback, or generated form silently restores it.
+- exception cleanup code that removes one branch while another alias, fallback, or generated form silently restores it;
+- hotfix/recovery instructions that download, copy, or stage patch files, ZIPs, evidence bundles, reports, logs, temporary outputs, editor artifacts, or OS metadata inside the repository they modify;
+- source-layout or packaging code where mere directory placement decides whether a repair/transport artifact becomes authored source;
+- ignore lists added to validators only so repair-created contamination passes admission;
+- hidden cleanup in init, certify, build, test, or release paths that erases repair contamination instead of leaving one explicit cleanup owner.
 
-For each candidate, trace:
-`identity/exception -> decision -> affected behavior -> current consumer`.
+For each candidate, trace one or both forms:
+
+`identity/exception -> decision -> affected behavior -> current consumer`
+
+`repair/transport artifact -> staging location -> source-membership decision -> affected admission/build/package/certification behavior`.
 
 ## CHALLENGE
 
@@ -47,8 +56,12 @@ For every candidate ask:
 5. Is this behavior described by current normative architecture, compatibility policy, protocol, or product requirements?
 6. If deleted, does real product behavior fail, or only a test/snapshot/count that memorializes the exception?
 7. Is another native, tool, runtime, platform, or repository owner already authoritative for the same decision?
+8. Does the repair, recovery, evidence, or debugging mechanism alter canonical source membership merely because of where it stages its own artifacts?
+9. If contamination is possible, is cleanup explicit and owned, or is some unrelated init/certify/build path silently compensating for it?
 
 **No current owner + no current consumer = probable cucumber.**
+
+**Repair transport that mutates canonical source membership by incidental placement = probable cucumber even when the transported bytes are disposable.**
 
 That is a lead, not sufficient proof. Continue until the real path is established.
 
@@ -64,6 +77,8 @@ Before reporting a finding:
 6. Show why the exception is absent from, weaker than, or contradictory to current normative architecture.
 7. Check whether another owner already decides the fact and the special case duplicates or overrides it.
 8. Identify every alternate alias, fallback, generated contract, and test expectation that could restore the hidden authority after the obvious branch is removed.
+9. For repair/transport candidates, compare source membership before and after the repair mechanism stages its own artifact. Prove whether the patch/evidence/archive/sidecar becomes an authored member, changes package inputs, or changes qualification outcome.
+10. Check the transport boundary itself: prove whether the same repair can be applied from outside the checkout without changing canonical source membership.
 
 Strong proof often looks like:
 
@@ -91,6 +106,16 @@ obsolete compatibility alias
   -> tests are now the only reason the alias exists
 ~~~
 
+or:
+
+~~~text
+repair / evidence artifact
+  -> staged inside repository being repaired
+  -> incidental location makes it source
+  -> admission / packaging / certification changes
+  -> repair mechanism mutated its own subject
+~~~
+
 ## DO NOT REPORT
 
 Do not report identity-sensitive behavior when identity is itself part of a current semantic contract, for example:
@@ -98,7 +123,9 @@ Do not report identity-sensitive behavior when identity is itself part of a curr
 - a security or policy rule intentionally names a concrete principal, resource, jurisdiction, artifact class, or externally governed identifier;
 - a migration alias still has a proven current consumer and an explicit removal condition;
 - a filename/path/name is the documented public interface rather than an incidental implementation label;
-- a test names one object but only proves a general semantic invariant that all equivalent objects satisfy.
+- a test names one object but only proves a general semantic invariant that all equivalent objects satisfy;
+- a repair bundle remains outside the canonical source boundary, is applied inward, and never becomes a source/package/admission member;
+- a generated artifact is intentionally declared as authored source by a current generator/consumer contract rather than becoming source solely because a repair copied it into the tree.
 
 Do not delete a compatibility path merely because it is old. Prove the supported consumer is gone or the contract has expired.
 
@@ -109,6 +136,8 @@ Do not report a repository wrapper that recreates external/native semantics mere
 Do not report a canonical path plus a genuinely obsolete second implementation merely because the second path has an old name; use `alternate-path-removal-review` when the central defect is architectural duplication rather than identity-based privilege.
 
 Do not report tests that merely couple to private choreography unless the test is actually the only current consumer preserving the hidden exception; otherwise use `test-contract-coupling-review`.
+
+Do not solve repair-artifact contamination by teaching architecture, packaging, or certification to ignore arbitrary files. Preserve fail-closed source admission. Distinguish disposable transport metadata through the canonical source-membership owner and keep cleanup explicit.
 
 ## REPAIR
 
@@ -135,6 +164,16 @@ delete authority entirely
 Delete obsolete compatibility aliases, exception sets, fallback/recovery paths, magic-count assertions, generated residue, and tests whose only purpose is to preserve the removed exception.
 
 If a real compatibility or policy requirement remains, make that contract explicit and give it a removal condition or durable owner instead of relying on folklore comments or identity recognition.
+
+For repair/transport self-contamination, prefer:
+
+~~~text
+repair bundle outside canonical source
+    -> apply transformation inward
+    -> canonical source membership unchanged except for intended edits
+~~~
+
+Keep patches, evidence bundles, ZIPs, reports, logs, downloaded artifacts, and their OS/editor sidecars outside the checkout they modify. If contamination already exists, use one explicit source-transport cleanup owner. Do not add silent cleanup to init/certify/build and do not widen ignore rules merely to make the repair pass.
 
 ## REGRESSION
 
@@ -169,6 +208,12 @@ A focused regression should normally include:
 - an equivalent renamed identity with the same semantics;
 - a non-equivalent control whose semantic requirement legitimately differs.
 
+For repair/transport contamination, also prove:
+- applying the repair from outside the repository changes only the intended authored files;
+- staging the repair artifact inside canonical source is detected rather than silently accepted;
+- recognized disposable transport metadata is handled by the canonical source-membership/cleanup owner, not independently reclassified by every consumer;
+- a genuine authored extra remains a hard failure.
+
 ## PROVE AFTER REPAIR
 
 After repair:
@@ -177,7 +222,8 @@ After repair:
 - verify generated/derived contracts agree with normative architecture;
 - run architecture/structural checks;
 - run focused semantic regressions;
-- attack the repaired area again from another entrypoint, caller, phase, or equivalent renamed identity.
+- attack the repaired area again from another entrypoint, caller, phase, or equivalent renamed identity;
+- re-run source membership/package identity after the repair and prove no repair bundle, evidence file, archive, temporary output, or metadata sidecar became canonical source.
 
 The repair is incomplete when the obvious branch is gone but another representation preserves the same hidden authority.
 
@@ -192,7 +238,7 @@ Use the narrowest skill:
 - `test-contract-coupling-review` — tests freeze private choreography or implementation shape.
 - `baseline-self-authorization-review` — a candidate changes the governing baseline/policy and then validates itself against the weakened authority.
 
-Use this skill when the central defect is: **historical or named identity has become authority without a current semantic reason**.
+Use this skill when the central defect is either **historical/named identity has become authority without a current semantic reason** or **incidental repair/transport placement has become source/qualification authority without a semantic reason**.
 
 ## OUTPUT
 
@@ -205,6 +251,7 @@ Return `# Hidden Authority / Cucumber Attack` with:
 - legitimate identity-sensitive contracts to leave alone;
 - authority/aliases/fallbacks/tests/generated residue to delete;
 - semantic replacement contract and focused regressions;
+- repair/transport self-contamination paths and source-membership before/after evidence;
 - post-repair re-attack surface.
 
 End with one:
