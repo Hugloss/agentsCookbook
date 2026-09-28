@@ -34,6 +34,8 @@ Hunt for repository layers that:
 - replace one native failure with a different command or fallback that claims to prove the same semantic fact;
 - mirror native state into a second writable authority and reconcile the two;
 - parse or normalize native configuration into a repository-owned semantic model without an independent repository policy need;
+- reconstruct native package-manager installation roots, receipts, metadata, or platform support in order to certify whether the native package manager is allowed to update, repair, remove, or otherwise manage something it already owns;
+- add a repository preflight that tries to prove the same installation/state fact the native command itself will validate, then blocks before giving the native tool a chance to accept or reject the operation;
 - add forwarding wrappers, compatibility shims, helper chains, executable manifests, or adapters whose only purpose is to make the native command fit local architecture;
 - infer a native fact from adjacent evidence instead of observing the native authority that owns the fact;
 - choose an executable from ambient PATH even though an upstream authority already selected the tool or environment;
@@ -65,6 +67,15 @@ repository/native authority already selects tool
   -> caller redeclares same tool
   -> helper resolves it again
   -> execution
+~~~
+
+or:
+
+~~~text
+user explicitly approves native operation
+  -> repository reconstructs native manager state/receipts
+  -> repository certifies whether operation is allowed
+  -> native tool would have owned that validation itself
 ~~~
 
 or:
@@ -129,7 +140,25 @@ repository authority
 
 rather than separately resolving every executable.
 
-Delete shadow resolvers, custom package caches, duplicate retry engines, synthetic rollout/lifecycle models, redundant executable declarations, compatibility shims, and pass-through helper chains when the existing authority already owns those semantics.
+Delete shadow resolvers, custom package caches, duplicate retry engines, synthetic rollout/lifecycle models, redundant executable declarations, compatibility shims, package-manager receipt/metadata certifiers, and pass-through helper chains when the existing authority already owns those semantics.
+
+When explicit user consent is the repository/product boundary, prefer:
+
+~~~text
+user consent
+  -> native tool
+  -> native exit status / output
+  -> repository reporting
+~~~
+
+not:
+
+~~~text
+user consent
+  -> repository inspects native receipts / filesystem layout / support matrix
+  -> repository certifies native ownership
+  -> native tool
+~~~
 
 If a wrapper is justified, make the guarantee it adds explicit and keep native semantics opaque rather than reconstructing them.
 
