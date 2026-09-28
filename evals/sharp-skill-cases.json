@@ -1047,32 +1047,60 @@
       "scenario": "A frozen paired campaign re-establishes current harness authority, preflights the exact selected definitions, runs with matching bare controls, retains verified non-conflicting PASS/FAIL receipts under stable runtime authority, reports unavailable metrics as unavailable, and hands a reproduced product defect to a separate repair campaign without changing the experiment."
     },
     {
-      "id": "single-owner-contract-positive-split-materialization",
-      "skill": "single-owner-contract-review",
+      "id": "single-source-of-truth-positive-split-materialization",
+      "skill": "single-source-of-truth-review",
       "kind": "positive",
       "expected": "FINDING",
       "scenario": "A repository requires generated/release/static only when building the release wheel, but four independent mechanisms try to make that path exist: make init mkdirs it, source normalization recreates it, an editable-build hook creates or references it, and archive packaging injects it. Certification copies canonical source into an isolated workspace where one compensator is absent and editable uv materialization fails because Hatchling force-includes the missing release directory. The reviewer should identify one release/package owner and remove source/bootstrap compensations rather than add another mkdir."
     },
     {
-      "id": "single-owner-contract-control-owner-consumer-validation",
-      "skill": "single-owner-contract-review",
+      "id": "single-source-of-truth-control-owner-consumer-validation",
+      "skill": "single-source-of-truth-review",
       "kind": "control",
       "expected": "CLEAN",
       "scenario": "A release build step is the sole producer of frontend static bytes. The wheel packager consumes those bytes and fails closed if they are missing; the source archive transports the declared source inputs; editable installation does not require release static output. CI independently verifies the packaged wheel contains the expected bytes but never recreates them."
     },
     {
-      "id": "single-owner-contract-confusion-semantic-redecision",
-      "skill": "single-owner-contract-review",
+      "id": "single-source-of-truth-confusion-semantic-redecision",
+      "skill": "single-source-of-truth-review",
       "kind": "confusion",
       "expected": "CLEAN",
-      "scenario": "Admission and a worker independently interpret the same raw flags to decide whether execution is allowed. Neither path creates, repairs, defaults, or materializes a shared prerequisite or artifact. The issue is duplicate semantic policy interpretation and should be routed to semantic-redecision-review."
+      "scenario": "Admission owns the public can-run result. A downstream diagnostic helper redundantly recomputes the same boolean from the same raw flags for a warning, but callers never consume that helper's result as authority and it cannot override admission. This is semantic redecision inside one authority chain, not a second accepted source of truth."
     },
     {
-      "id": "architecture-risk-triage-single-owner-contract-routing",
+      "id": "architecture-risk-triage-single-source-of-truth-routing",
       "skill": "architecture-risk-triage",
       "kind": "positive",
       "expected": "FINDING",
-      "scenario": "A build prerequisite path is mkdir'd by Make, recreated by source normalization, synthesized by an editable build hook, and injected again by release packaging. A real isolated certification path fails when one compensator is missing. Triage should route this hotspot to single-owner-contract-review, not generic DRY cleanup or native-tool-authority-review."
+      "scenario": "A build prerequisite path is mkdir'd by Make, recreated by source normalization, synthesized by an editable build hook, and injected again by release packaging. A real isolated certification path fails when one compensator is missing. Triage should route this hotspot to single-source-of-truth-review, not generic DRY cleanup or native-tool-authority-review."
+    },
+    {
+      "id": "single-source-of-truth-positive-context-dependent-execution-authority",
+      "skill": "single-source-of-truth-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "The same strict backend test files are launched by two canonical Goons. A global test fixture always derives its tool authority from backend-tests, while APP certification launches those tests through backend-p0 with a different declared tool set. The test surface therefore has two execution-authority contracts depending on the outer Goon. Adding git to backend-p0 would only expose the next mismatch while preserving split ownership. The reviewer should identify one authority owner for that test scope and make every launcher transport or derive from it consistently."
+    },
+    {
+      "id": "single-source-of-truth-control-shared-resolved-execution-authority",
+      "skill": "single-source-of-truth-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A resolved Plan establishes the exact tool authority for a test scope once. backend-p0, a broader backend test Goon, and direct diagnostic execution all transport that resolved authority into the same fixture. The fixture validates the transported tools but never selects a different Goon or reconstructs another authority based on its caller."
+    },
+    {
+      "id": "single-source-of-truth-positive-path-dependent-identity-owner",
+      "skill": "single-source-of-truth-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A release path computes package identity from the canonical source manifest, while recovery recomputes a nominally identical package identity from archive filenames and accepts either result as authoritative depending on which command resumed the workflow. Both identities feed the same downstream qualification record, so command path selects the owner of one semantic truth."
+    },
+    {
+      "id": "architecture-risk-triage-single-source-execution-authority-routing",
+      "skill": "architecture-risk-triage",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "The same strict tests use a global fixture tied to backend-tests authority when run directly, but APP certification launches them through backend-p0 with a different authority contract. Triage should route this context-dependent source-of-truth split to single-source-of-truth-review rather than suggest adding whichever tool happens to fail first."
     }
   ]
 }
