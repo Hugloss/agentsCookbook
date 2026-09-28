@@ -12,6 +12,7 @@ const specialistSections = new Set([
   'Skill authoring',
   'Concurrency',
   'Execution integrity',
+  'Data handling',
   'Evidence integrity',
   'Semantic authority',
   'Qualification integrity',

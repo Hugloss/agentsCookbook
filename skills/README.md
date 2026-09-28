@@ -49,7 +49,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 
 ## Data handling
 
-- `sensitive-data-masking` — Produce shareable bounded documents and logs by consistently masking PII, credentials, secrets, and sensitive infrastructure data, with fail-closed verification.
+- `sensitive-data-masking` — Produce policy-safe shareable evidence by detecting broadly, classifying against a disclosure boundary, masking sensitive subjects consistently, and proving both disclosure closure and diagnostic preservation.
 
 ## Evidence integrity
 
@@ -124,6 +124,8 @@ A strong finding normally removes a path, decision, representation, traversal, b
 ## Overlap boundaries
 
 Use the narrowest skill that owns the question:
+
+- `sensitive-data-masking` owns **bounded transformation of supplied evidence for a declared disclosure policy**; `evidence-visibility-enforcement-review` owns **whether a system admits denied or hidden evidence across an operational visibility boundary**. Masking should preserve permitted public/reproducibility evidence rather than treating every operational-looking value as sensitive.
 
 - `adversarial-repair-campaign` owns **feeding reproduced defects back into one mutable campaign candidate and attacking each repaired candidate again**; `dogfood-saturation-loop` owns **the evidence-closed decision that the campaign is saturated and finally qualified**.
 - `empirical-benchmark-campaign` owns **executing and resuming a frozen benchmark definition set from preflight through qualified evidence**; `measurement-comparability-review` owns **whether separately produced measurements may be compared**; `adversarial-repair-campaign` owns **repairing reproducible defects that the campaign exposes**.
