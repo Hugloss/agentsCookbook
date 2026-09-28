@@ -1241,6 +1241,34 @@
       "kind": "positive",
       "expected": "FINDING",
       "scenario": "A runtime branch grants one Plan named `app-certification` a resource override via a SPECIAL_* allowlist even though current architecture says plan templates never own execution resource authority. Renaming the otherwise identical Plan removes the privilege, and no current consumer or compatibility contract requires it. Triage should route this to hidden-authority-cucumber-attack rather than generic cleanup."
+    },
+    {
+      "id": "hidden-authority-cucumber-attack-positive-repair-self-contamination",
+      "skill": "hidden-authority-cucumber-attack",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A recovery guide tells an operator to download a hotfix patch into the repository root and apply it there. Windows also creates a `:Zone.Identifier` sidecar beside the patch. The repository's source-layout admission treats physical entries under the root as source inputs, so the repair bundle and sidecar change architecture/package membership even though neither is authored product source. Re-running the same repair with the patch stored outside the checkout changes only the intended edited files. Review whether the repair mechanism itself has become hidden source authority."
+    },
+    {
+      "id": "hidden-authority-cucumber-attack-control-external-repair-transport",
+      "skill": "hidden-authority-cucumber-attack",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A hotfix patch is stored in a temporary directory outside the repository and applied inward. Canonical source membership before and after differs only by the intended edited source files. Source admission remains fail-closed for unexpected in-tree transport artifacts, and an explicit source-transport cleanup command is available only when separately detected contamination must be removed. No init, build, certification, or validator silently cleans or ignores arbitrary files."
+    },
+    {
+      "id": "hidden-authority-cucumber-attack-control-owned-generated-source",
+      "skill": "hidden-authority-cucumber-attack",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A repository declares generated API bindings as committed authored source. One canonical generator owns those files, downstream compilation consumes them, regeneration is deterministic, and source/package manifests explicitly include that generated directory. The files are source because of the current generator/consumer contract, not because a repair or debugging artifact happened to be copied into the checkout."
+    },
+    {
+      "id": "architecture-risk-triage-repair-self-contamination-routing",
+      "skill": "architecture-risk-triage",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A certification repair workflow instructs operators to copy patches and evidence bundles into the repository root before applying them. Source admission then sees those transport artifacts as authored inputs, and a later cleanup proposal suggests making certification ignore `*.patch` and OS metadata. Triage should route the incidental-location authority and self-contaminating repair mechanism to hidden-authority-cucumber-attack rather than generic packaging cleanup."
     }
   ]
 }
