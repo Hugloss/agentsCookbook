@@ -1033,6 +1033,13 @@
       "scenario": "A benchmark path explicitly invokes native Codex. A usable host Codex configuration already owns model and provider selection, but the isolated runner asks the operator to choose how to import or override those settings. The repository legitimately owns workspace isolation and benchmark workload defaults. Triage should route the host-configuration redecision to native-tool-authority-review rather than treating it as an ordinary benchmark preference."
     },
     {
+      "id": "architecture-risk-triage-native-package-manager-certification",
+      "skill": "architecture-risk-triage",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "An update path reconstructs uv/pipx installation directories and parses their receipts before allowing an explicitly approved native upgrade. The package managers already own whether the installation is managed and upgradeable. Triage should route this shadow certification to native-tool-authority-review rather than treat the extra preflight as generic safety hardening."
+    },
+    {
       "id": "entrypoint-authority-review-control-native-host-config",
       "skill": "entrypoint-authority-review",
       "kind": "control",
