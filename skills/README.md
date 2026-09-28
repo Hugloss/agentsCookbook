@@ -78,6 +78,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 
 - `authority-escalation-review` — Find derived evidence that gains stronger authority without new qualifying proof.
 - `semantic-redecision-review` — Find the same semantic answer being independently decided twice.
+- `single-source-of-truth-review` — Find one semantic truth whose authoritative owner changes across paths, callers, phases, or producers.
 - `durable-commit-path-review` — Find one durable transition committing through multiple paths.
 - `resolved-fact-regression-review` — Find downstream code falling back from resolved facts to raw inputs.
 - `state-authority-review` — Find competing representations acting as truth.
@@ -99,7 +100,6 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `single-observation-review` — Find one logical operation observing the same input world twice.
 - `call-chain-collapse-review` — Find forwarding layers that add no meaningful guarantee.
 - `native-tool-authority-review` — Find repository layers that recreate semantics already owned by native tools.
-- `single-source-of-truth-review` — Find one semantic truth whose authoritative owner changes across paths, callers, phases, or producers.
 - `entrypoint-authority-review` — Find one conceptual operator action whose launch defaults or configuration semantics have multiple owners.
 - `alternate-path-removal-review` — Find obsolete architecture paths beside a canonical one.
 - `hidden-side-effect-review` — Find externally visible effects hidden behind misleading boundaries.
