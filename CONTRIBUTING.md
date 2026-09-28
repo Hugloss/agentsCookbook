@@ -74,12 +74,11 @@ Before merging a new or materially changed skill, apply `skill-contract-review` 
 
 ## Adding a skill
 
-1. Add `skills/<skill-name>/SKILL.md`.
+1. Add `skills/<skill-name>/SKILL.md`. Canonical skill discovery is derived from `skills/*/SKILL.md`; do not maintain a second manual skill registry.
 2. Add the skill to `skills/README.md` in the narrowest fitting category.
-3. Add the skill name to `AC_SKILL_NAMES` in `scripts/lib-opencode.sh` so supported hosts can install it.
-4. Document overlap boundaries when another skill could plausibly report the same code.
-5. Add or update evaluation evidence when the change affects behavioral discrimination.
-6. Do not add a new agent wrapper or mandatory flow step unless the role itself is distinct and the extra workflow cost is intentional.
+3. Document overlap boundaries when another skill could plausibly report the same code.
+4. Add or update evaluation evidence when the change affects behavioral discrimination.
+5. Do not add a new agent wrapper or mandatory flow step unless the role itself is distinct and the extra workflow cost is intentional.
 
 ## Agent prompts
 

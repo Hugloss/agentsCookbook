@@ -33,6 +33,8 @@ Trace important production paths and hunt strong signals:
 - oversized dependency surfaces;
 - repository wrappers that recreate resolution, cache, retry, lifecycle, rollout, host configuration, or other semantics already owned by a native/external tool;
 - native-tool workflows that ask operators to reselect model, provider, profile, endpoint, authentication mode, or equivalent host-owned settings even though usable native host configuration already exists;
+- native/project workflows that redundantly redeclare or independently resolve ordinary executables already implied by platform or repository authority;
+- hard admission, certification, release, readiness, or qualification gates driven by source shape, line counts, complexity, debt, formatting, source positions, or other heuristic proxies that do not directly prove the claimed semantic contract;
 - slow, complex, nondeterministic, or implementation-coupled tests.
 
 ## PROVE
@@ -47,7 +49,7 @@ Do not deeply solve every category. Do not rank files by size or complexity aest
 
 ## PREFER
 
-Route each hotspot to the narrowest skill. Route path-dependent or producer-dependent ownership of one semantic truth to `single-source-of-truth-review`; route repeated interpretation inside one authority chain to `semantic-redecision-review`; route competing state representations to `state-authority-review`; route shadow native/external-tool semantics and unnecessary re-decisions of usable native host configuration to `native-tool-authority-review`; use `call-chain-collapse-review` only when the defect is no-value indirection rather than split authority. Protect coherent owners. A clean result is only a statement about the completed triage boundary, not proof that the entire repository has no architecture risk.
+Route each hotspot to the narrowest skill. Route path-dependent or producer-dependent ownership of one semantic truth to `single-source-of-truth-review`; route repeated interpretation inside one authority chain to `semantic-redecision-review`; route competing state representations to `state-authority-review`; route shadow native/external-tool semantics, redundant executable authority, and unnecessary re-decisions of usable native host configuration to `native-tool-authority-review`; route heuristic/source-shape checks promoted into hard qualification authority to `proxy-gate-authority-review`; use `call-chain-collapse-review` only when the defect is no-value indirection rather than split authority. Protect coherent owners. A clean result is only a statement about the completed triage boundary, not proof that the entire repository has no architecture risk.
 
 ## OUTPUT
 

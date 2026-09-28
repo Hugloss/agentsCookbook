@@ -1101,6 +1101,62 @@
       "kind": "positive",
       "expected": "FINDING",
       "scenario": "The same strict tests use a global fixture tied to backend-tests authority when run directly, but APP certification launches them through backend-p0 with a different authority contract. Triage should route this context-dependent source-of-truth split to single-source-of-truth-review rather than suggest adding whichever tool happens to fail first."
+    },
+    {
+      "id": "native-tool-authority-review-positive-redundant-executable-authority",
+      "skill": "native-tool-authority-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A Python repository already establishes pyproject.toml plus uv.lock as its native environment authority. A test Goon runs `uv run pytest`, but its manifest additionally requires global declarations for uv, python, and pytest, and a launcher separately searches PATH for each before allowing execution. No distinct trust or policy boundary needs those repeated choices. Review whether these declarations and lookups add authority or merely restate and re-resolve the native project workflow."
+    },
+    {
+      "id": "native-tool-authority-review-control-exceptional-capability",
+      "skill": "native-tool-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A repository's normal tests use its established uv environment without separately declaring Python or pytest. A distinct deployment task additionally requires kubectl because it talks to a Kubernetes cluster, a capability not implied by the Python project workflow. The deployment boundary explicitly names kubectl and cluster credentials while leaving kubectl's own configuration semantics native."
+    },
+    {
+      "id": "native-tool-authority-review-confusion-split-internal-authority",
+      "skill": "native-tool-authority-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "Two internal canonical Goons launch the same test surface with different repository-owned tool-authority contracts. Neither wraps or reimplements an external tool's semantics; the defect is that the authoritative execution contract changes with the outer Goon. Treat this as split source-of-truth ownership rather than a native-tool-authority finding."
+    },
+    {
+      "id": "proxy-gate-authority-review-positive-source-line-ceiling",
+      "skill": "proxy-gate-authority-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "`make certify` proves an application's runtime and security behavior, but one transitive gate fails when `dev_runtime_acceptance.py` grows from 600 to 601 lines. Adding one harmless comment crosses the ceiling while all runtime tests and invariants remain identical. The line ceiling was introduced as a maintainability signal, not as a documented runtime contract."
+    },
+    {
+      "id": "proxy-gate-authority-review-control-real-artifact-bound",
+      "skill": "proxy-gate-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A device deployment contract explicitly limits the signed firmware image to 16 MiB because the target bootloader cannot load anything larger. Release qualification hard-fails an image above 16 MiB by measuring the final signed artifact bytes. The size bound is itself part of the supported deployment contract."
+    },
+    {
+      "id": "proxy-gate-authority-review-control-advisory-maintainability",
+      "skill": "proxy-gate-authority-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "`make verify` reports that one source file exceeded a maintainability guideline and emits a warning with navigation evidence. The warning does not affect runtime certification, release validity, or admission, and maintainers may use it only as an investigation signal."
+    },
+    {
+      "id": "proxy-gate-authority-review-confusion-candidate-weakens-legitimate-baseline",
+      "skill": "proxy-gate-authority-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "A repository has an independently governed minimum security-test coverage floor that is explicitly part of release policy. A candidate lowers the floor in the same change and then passes release qualification against its weakened value. The problem is self-authorization of a legitimate baseline, not use of a heuristic proxy as the gate."
+    },
+    {
+      "id": "architecture-risk-triage-proxy-gate-routing",
+      "skill": "architecture-risk-triage",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A release certification path hard-fails when a source module reaches 601 lines even though a harmless comment is the only change and all certified runtime behavior is identical. The limit began as a maintainability heuristic. Triage should route this to proxy-gate-authority-review rather than generic refactoring or test cleanup."
     }
   ]
 }
