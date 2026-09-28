@@ -84,6 +84,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `state-authority-review` — Find competing representations acting as truth.
 - `invalid-state-model-review` — Find impossible domain/lifecycle states that remain representable.
 - `correlation-causation-boundary-review` — Find correlation promoted into causation, incident identity, responsibility, or remediation authority.
+- `hidden-authority-cucumber-attack` — Expose named, legacy, exception, or fallback behavior acting as authority without a current semantic owner or consumer.
 
 ## Qualification integrity
 
@@ -134,6 +135,7 @@ Use the narrowest skill that owns the question:
 - `coverage-design-review` asks **what real behavior is not proved**; `test-contract-coupling-review` asks **what tests freeze private implementation**.
 - `code-performance-optimization-audit` asks **where runtime cost scales badly**; `test-work-amplification-review` starts from measured slow tests; `single-observation-review` asks whether one logical operation observes the same input world twice.
 - `semantic-redecision-review` catches the same semantic answer being made repeatedly; `resolved-fact-regression-review` catches a resolved answer being discarded so downstream code returns to raw facts.
+- `hidden-authority-cucumber-attack` asks whether a historical/name-based exception is itself acting as authority without a current semantic owner or consumer; `single-source-of-truth-review` asks whether multiple current owners establish the same truth; `alternate-path-removal-review` asks whether an obsolete implementation path remains beside the canonical path.
 - `state-authority-review` asks **which representation is truth**; `invalid-state-model-review` asks **whether that representation can express impossible states**.
 - `stale-work-race-review` asks whether superseded old work can still commit; `retry-idempotency-review` asks whether the **same logical operation** can repeat a one-shot effect.
 - `durable-commit-path-review` asks why one transition has multiple commit authorities; `atomic-operation-review` asks whether one legitimate path can expose only part of its required outcome.
