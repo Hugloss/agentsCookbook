@@ -28,6 +28,8 @@ Trial admission is single-owned by `benchmarks.harness.admission`:
 
 Both `preflight` and `run` use that same path. Preflight is diagnostic and never invokes the coding agent or publishes a trial result.
 
+For native OpenCode trials, OpenCode remains the authority for model, provider, authentication, permissions, and user configuration. The selected benchmark subject is different authority: its adapter supplies the exact MCP executable and invocation. The harness overlays only that subject exposure and tool gating through OpenCode's native runtime configuration, proves the effective executable/workspace binding before agent work, and binds the exposure digest into execution authority. A repository-local OpenCode MCP entry may therefore be observed and shadowed for the trial, but it never chooses which Hashmarks or Enola executable is benchmarked.
+
 Agent Economics remains a benchmark consumer/suite; shared process semantics remain single-owned until that module is promoted to a more generic repository location.
 
 ## Recommended campaign workflow
