@@ -47,27 +47,29 @@ host's existing `OPENCODE_CONFIG_CONTENT` layer. Host inline settings, including
 provider, model, authentication, and permissions, remain in that runtime layer. The
 benchmark does not store the composed content or its secrets in a receipt.
 
-The bare condition disables all native MCP servers. An assisted condition disables
-all non-selected native MCP servers and reuses the already configured native
-`hashmarks` or `enola` server unchanged. agentsCookbook does not supply its command,
-arguments, working directory, environment, provider settings, or credentials.
+The bare condition disables repository-intelligence MCP servers. An assisted condition
+disables non-selected repository-intelligence servers and supplies the selected
+subject from its benchmark adapter. That exposure contains the exact admitted
+Hashmarks or Enola executable and its trial-scoped command, working directory, and
+state/config. OpenCode still owns provider, model, authentication, permissions, and
+all unrelated native configuration.
 
-The selected native server must already exist, be enabled, and connect successfully.
-Its workspace binding must also be positively verified before the trial is admitted.
+A pre-existing project/global OpenCode server with the same subject name is not reused
+as command authority. The benchmark temporarily shadows it, proves the effective
+OpenCode definition matches the adapter exposure, and records whether shadowing was
+required. The selected subject executable must exist and connect successfully; its
+workspace binding and executable SHA-256 must be positively verified before admission.
 
 Workspace verification is intentionally conservative:
 
-- Hashmarks: the native command must resolve its explicit `--workspace` to the isolated
-  trial workspace. The command must directly invoke Hashmarks, end in `mcp`, and contain
-  exactly one unambiguous workspace option. An absolute path to the Hashmarks binary
-  is accepted; wrappers and workspace paths resolving elsewhere are not admitted.
-- Enola: the standard native registration `command: ["enola"]` is verified from
-  OpenCode's MCP cwd semantics: absent `cwd`, OpenCode starts the local MCP in the
-  trial workspace; relative `cwd` is resolved from that workspace. An absolute path
-  to the Enola binary is accepted. Wrappers or config/repository arguments are
-  unverified because the benchmark does not rewrite or parse them heuristically.
-- Any missing, remote, unsupported, or otherwise unprovable binding produces
-  `INCOMPLETE`, never product `FAIL`.
+- Hashmarks: the benchmark exposure directly invokes the admitted Hashmarks executable,
+  ends in `mcp`, and contains exactly one explicit `--workspace` resolving to the
+  isolated trial workspace. Its explicit isolated state directory is part of the
+  exposure identity.
+- Enola: the benchmark exposure uses the admitted Enola executable plus an explicit
+  trial-owned config whose repository resolves to the isolated workspace.
+- Any missing executable, changed exposure identity, unsupported command, or otherwise
+  unprovable binding produces `INCOMPLETE`, never product `FAIL`.
 
 Full absolute path diagnostics stay in preparation evidence, while only stable proof
 semantics are bound into execution identity so temporary workspace paths do not break
