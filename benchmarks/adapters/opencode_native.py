@@ -1,8 +1,9 @@
 """Native OpenCode benchmark adapter.
 
 OpenCode owns model/provider/auth configuration. The benchmark never writes those
-settings. A shared JS runtime owns OpenCode run/session/export lifecycle. This adapter
-only owns benchmark-specific MCP gating and observation projection.
+settings. The selected subject adapter owns the exact MCP executable and invocation.
+A shared JS runtime overlays only that benchmark subject plus MCP tool gating, then
+owns OpenCode run/session/export lifecycle and observation projection.
 """
 
 from __future__ import annotations
