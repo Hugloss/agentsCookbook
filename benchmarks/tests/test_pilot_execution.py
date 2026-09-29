@@ -778,7 +778,10 @@ class PilotExecutionTests(unittest.TestCase):
                             "overlay_identity": {
                                 "shape": "flat",
                                 "selected_subject": "hashmarks",
-                                "native_server_reused": True,
+                                "subject_definition_source":
+                                    "benchmark-subject-exposure",
+                                "native_server_shadowed": True,
+                                "subject_exposure_sha256": "d" * 64,
                             },
                         },
                         runtime_result,
