@@ -41,6 +41,7 @@ from benchmarks.harness.campaign import (
 )
 from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.model import (
+    McpExposure,
     Observation,
     ParticipantIdentity,
     SubjectLifecycleMode,
@@ -161,8 +162,14 @@ class FakeNativeSubject:
     def cleanup(self, context: TrialContext) -> Observation:
         raise AssertionError("agent-native cleanup must not run")
 
-    def mcp_exposure(self, context: TrialContext):
-        raise AssertionError("agent-native MCP exposure must stay native")
+    def mcp_exposure(self, context: TrialContext) -> McpExposure:
+        return McpExposure(
+            name="native-subject",
+            command="native-subject",
+            args=(),
+            cwd=context.workspace,
+            semantic_identity={"source": "subject-adapter"},
+        )
 
     def generated_globs(self) -> tuple[str, ...]:
         raise AssertionError("agent-native generated globs must stay native")
@@ -190,7 +197,7 @@ class FakeNativeAgent(FakeAgent):
                 },
                 "mcp_exposure": {
                     "name": "native-subject",
-                    "source": "native-agent-config",
+                    "source": "benchmark-subject-exposure",
                 },
                 "observed_identity": {
                     "workspace_binding": {
@@ -577,12 +584,15 @@ class PilotExecutionTests(unittest.TestCase):
                 ),
             )
 
-    def test_opencode_assisted_prepare_reuses_native_subject_server(self) -> None:
+    def test_opencode_assisted_prepare_uses_subject_owned_exposure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workspace = root / "workspace"
             workspace.mkdir()
             control = root / "control"
+            installed = root / "bin" / "hashmarks"
+            installed.parent.mkdir()
+            installed.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             context = TrialContext(
                 workspace,
                 control,
@@ -611,10 +621,15 @@ class PilotExecutionTests(unittest.TestCase):
             runtime_result.stderr = b""
             runtime_result.stdout = b"{}"
             subject = HashmarksSubject()
+            exposure_path = control / "opencode-benchmark-exposure.json"
             with (
                 mock.patch(
                     "benchmarks.adapters.opencode_native.observe_executable",
                     return_value=executable,
+                ),
+                mock.patch(
+                    "benchmarks.adapters.hashmarks.shutil.which",
+                    return_value=str(installed),
                 ),
                 mock.patch(
                     "benchmarks.adapters.opencode_native._runtime_call",
@@ -628,6 +643,7 @@ class PilotExecutionTests(unittest.TestCase):
                                 "verified": True,
                                 "subject": "hashmarks",
                                 "command": "hashmarks",
+                                "executable_path": str(installed.resolve()),
                                 "executable_sha256": "c" * 64,
                                 "reason_code": None,
                             },
@@ -635,29 +651,29 @@ class PilotExecutionTests(unittest.TestCase):
                                 "verified": True,
                                 "subject": "hashmarks",
                                 "method": "hashmarks-explicit-workspace",
+                                "command_executable": str(installed.resolve()),
                                 "workspace": str(workspace),
                                 "effective_cwd": str(workspace),
                                 "resolved_workspace": str(workspace),
                                 "reason": None,
+                                "reason_code": None,
                             },
                             "overlay_identity": {
                                 "shape": "flat",
                                 "selected_subject": "hashmarks",
-                                "native_server_reused": True,
+                                "subject_definition_source":
+                                    "benchmark-subject-exposure",
+                                "native_server_shadowed": True,
+                                "subject_exposure_sha256": "d" * 64,
                             },
                         },
                         runtime_result,
                     ),
                 ) as runtime_call,
-                mock.patch.object(
-                    HashmarksSubject,
-                    "mcp_exposure",
-                    side_effect=AssertionError(
-                        "native OpenCode must not request benchmark MCP exposure"
-                    ),
-                ),
             ):
-                prepared = OpenCodeNativeAgent().prepare(context, subject)
+                prepared = OpenCodeNativeAgent(
+                    strict_executable=True
+                ).prepare(context, subject)
 
             self.assertTrue(prepared.payload["available"])
             self.assertEqual(
@@ -666,10 +682,14 @@ class PilotExecutionTests(unittest.TestCase):
             )
             self.assertEqual(
                 prepared.payload["mcp_exposure"]["source"],
-                "native-opencode-config",
+                "benchmark-subject-exposure",
             )
             self.assertTrue(
-                prepared.payload["mcp_exposure"]["native_server_reused"]
+                prepared.payload["mcp_exposure"]["native_server_shadowed"]
+            )
+            self.assertEqual(
+                prepared.payload["native_subject_identity"]["executable_path"],
+                str(installed.resolve()),
             )
             runtime_call.assert_called_once()
             self.assertEqual(
@@ -680,11 +700,14 @@ class PilotExecutionTests(unittest.TestCase):
                     str(workspace),
                     "--benchmark-subject",
                     "hashmarks",
+                    "--benchmark-exposure-file",
+                    str(exposure_path),
                 ),
             )
-            self.assertFalse(
-                (control / "opencode-benchmark-exposure.json").exists()
-            )
+            self.assertTrue(exposure_path.exists())
+            exposure = json.loads(exposure_path.read_text(encoding="utf-8"))
+            self.assertEqual(exposure["command"][0], str(installed.resolve()))
+            self.assertEqual(exposure["command"][-1], "mcp")
 
     def test_opencode_unverified_native_workspace_binding_is_unavailable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
