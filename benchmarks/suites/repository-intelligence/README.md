@@ -31,18 +31,20 @@ Each runtime runs bare, with Hashmarks, and with Enola, producing 18 frozen defi
 the benchmark uses that native setup and observes/binds what actually ran. No
 OpenCode model/provider configuration is stored in this repository.
 
-The benchmark composes only a transient enable/disable and tool-gating overlay with
-native OpenCode configuration, including any host `OPENCODE_CONFIG_CONTENT` layer.
-The bare trial disables native MCP servers; an assisted trial reuses the host's
-already-configured native `hashmarks` or `enola` server and disables the others.
-agentsCookbook does not mirror the selected server command/configuration. Model,
-provider, authentication, and subject MCP configuration stay with OpenCode.
+The benchmark composes a transient OpenCode runtime overlay while preserving the
+host's native model, provider, authentication, permissions, and existing inline
+configuration. Bare trials disable repository-intelligence MCP servers. Assisted
+trials take the selected subject's MCP exposure from its benchmark adapter: the exact
+admitted Hashmarks or Enola executable, arguments, working directory, and isolated
+state/config needed for that trial. Any same-named project/global OpenCode MCP entry is
+observed but shadowed for the trial; it is not benchmark subject authority.
 
-Native OpenCode assistance is admitted only when the selected server can be proven to
-target the isolated trial workspace. Hashmarks is proven from its resolved
-`--workspace`; Enola's normal no-argument registration is proven from OpenCode's MCP
-working-directory semantics. Unprovable or outside-workspace bindings remain native
-and unchanged, but the trial is recorded as `INCOMPLETE`.
+Native OpenCode assistance is admitted only when that benchmark-owned subject exposure
+can be proven to target the isolated trial workspace and the effective OpenCode MCP
+command resolves to the admitted executable identity. Hashmarks is proven from its
+explicit `--workspace`; Enola is proven from its explicit trial repository/config
+binding. Missing executables, changed exposure identity, or unprovable/outside-workspace
+bindings produce `INCOMPLETE` before agent work.
 
 Primary interpretation is assistance gain within the same runtime/model authority.
 Cross-runtime rows are descriptive only.
