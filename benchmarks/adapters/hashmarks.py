@@ -176,9 +176,11 @@ class HashmarksSubject:
         return Observation({}, "")
 
     def mcp_exposure(self, context: TrialContext) -> McpExposure:
+        resolved = shutil.which("hashmarks", path=context.environment.get("PATH"))
+        command = str(Path(resolved).resolve()) if resolved else "hashmarks"
         return McpExposure(
             name="hashmarks",
-            command="hashmarks",
+            command=command,
             args=(
                 "--workspace",
                 ".",

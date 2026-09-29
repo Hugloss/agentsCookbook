@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -116,9 +117,11 @@ class EnolaSubject:
         return Observation({}, "")
 
     def mcp_exposure(self, context: TrialContext) -> McpExposure:
+        resolved = shutil.which("enola", path=context.environment.get("PATH"))
+        command = str(Path(resolved).resolve()) if resolved else "enola"
         return McpExposure(
             name="enola",
-            command="enola",
+            command=command,
             args=(str(self._config(context)),),
             cwd=context.workspace,
             semantic_identity={

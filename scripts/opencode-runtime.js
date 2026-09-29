@@ -227,45 +227,128 @@ function inlineConfig(env) {
   return parsed;
 }
 
+function readBenchmarkExposure(filePath, selectedSubject, repoDir) {
+  if (!selectedSubject) {
+    if (filePath) {
+      throw new Error('bare benchmark must not provide a subject exposure');
+    }
+    return null;
+  }
+  if (!filePath) {
+    throw new Error(`benchmark subject ${selectedSubject} has no exposure file`);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(path.resolve(filePath), 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `benchmark subject exposure cannot be read: ${error.message || error}`,
+    );
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('benchmark subject exposure must be a JSON object');
+  }
+  if (parsed.name !== selectedSubject) {
+    throw new Error(
+      `benchmark subject exposure names ${parsed.name || 'nothing'}, expected ${selectedSubject}`,
+    );
+  }
+  if (
+    !Array.isArray(parsed.command) ||
+    parsed.command.length === 0 ||
+    parsed.command.some((value) => typeof value !== 'string' || !value)
+  ) {
+    throw new Error('benchmark subject exposure command must be non-empty strings');
+  }
+  if (typeof parsed.cwd !== 'string' || !parsed.cwd) {
+    throw new Error('benchmark subject exposure cwd is required');
+  }
+  const cwd = canonicalPath(parsed.cwd);
+  const workspace = canonicalPath(repoDir);
+  if (cwd !== workspace) {
+    throw new Error(
+      `benchmark subject exposure cwd resolves outside trial workspace: ${cwd}`,
+    );
+  }
+  const environment =
+    parsed.environment && typeof parsed.environment === 'object' &&
+    !Array.isArray(parsed.environment)
+      ? parsed.environment
+      : {};
+  if (
+    Object.entries(environment).some(
+      ([key, value]) =>
+        typeof key !== 'string' || !key ||
+        typeof value !== 'string',
+    )
+  ) {
+    throw new Error('benchmark subject exposure environment must contain strings');
+  }
+  const semanticIdentity =
+    parsed.semantic_identity && typeof parsed.semantic_identity === 'object' &&
+    !Array.isArray(parsed.semantic_identity)
+      ? parsed.semantic_identity
+      : {};
+
+  return {
+    name: selectedSubject,
+    command: [...parsed.command],
+    cwd,
+    environment: { ...environment },
+    semantic_identity: semanticIdentity,
+  };
+}
+
 function mcpEntries(config, shape) {
   const mcp = config.mcp || {};
   return shape === 'nested-servers' ? (mcp.servers || {}) : mcp;
 }
 
-function benchmarkOverlay(config, selectedSubject) {
+function benchmarkOverlay(config, subjectExposure) {
   const inspected = inspectMcp(config);
   const nested = inspected.shape === 'nested-servers';
   const source = mcpEntries(config, inspected.shape);
+  const selectedSubject = subjectExposure?.name || null;
   const servers = {};
   const tools = {};
 
-  if (selectedSubject && !Object.hasOwn(source, selectedSubject)) {
-    throw new Error(
-      `native OpenCode config does not define MCP server ${selectedSubject}`,
-    );
-  }
-
   for (const [name, value] of Object.entries(source)) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-    const selected = selectedSubject === name;
-    const nativeEnabled =
-      value.enabled !== false && value.disabled !== true;
-    if (selected && !nativeEnabled) {
-      throw new Error(
-        `native OpenCode MCP server ${name} is disabled`,
-      );
-    }
-    servers[name] = selected
-      ? { ...value }
-      : nested
-        ? { ...value, disabled: true }
-        : { ...value, enabled: false };
-    tools[`${name}_*`] = selected;
+    if (name === selectedSubject) continue;
+    servers[name] = nested
+      ? { ...value, disabled: true }
+      : { ...value, enabled: false };
+    tools[`${name}_*`] = false;
+  }
+
+  let selectedDefinition = null;
+  if (subjectExposure) {
+    const environment = subjectExposure.environment || {};
+    const definition = {
+      type: 'local',
+      command: [...subjectExposure.command],
+      cwd: subjectExposure.cwd,
+      ...(Object.keys(environment).length > 0
+        ? { environment: { ...environment } }
+        : {}),
+    };
+    selectedDefinition = nested
+      ? { ...definition, disabled: false }
+      : { ...definition, enabled: true };
+    servers[selectedSubject] = selectedDefinition;
+    tools[`${selectedSubject}_*`] = true;
   }
 
   return {
-    selected: selectedSubject || null,
+    selected: selectedSubject,
     shape: inspected.shape,
+    selected_definition: selectedDefinition,
+    native_server_shadowed:
+      selectedSubject !== null && Object.hasOwn(source, selectedSubject),
+    subject_exposure_sha256: subjectExposure
+      ? sha256Text(canonicalJson(subjectExposure))
+      : null,
     config: {
       mcp: nested ? { servers } : servers,
       ...(nested ? {} : {
@@ -276,7 +359,7 @@ function benchmarkOverlay(config, selectedSubject) {
   };
 }
 
-function verifyBenchmarkConfig(base, effective, overlay, selectedSubject) {
+function verifyBenchmarkConfig(base, effective, overlay, subjectExposure) {
   const original = inspectConfig(base);
   const resolved = inspectConfig(effective);
   if (original.model !== resolved.model || original.provider !== resolved.provider) {
@@ -285,31 +368,42 @@ function verifyBenchmarkConfig(base, effective, overlay, selectedSubject) {
 
   const baseServers = mcpEntries(base, overlay.shape);
   const servers = mcpEntries(effective, overlay.shape);
-  if (canonicalJson(Object.keys(servers).sort()) !==
-      canonicalJson(Object.keys(baseServers).sort())) {
-    throw new Error('benchmark overlay changed the native MCP server set');
+  const expectedNames = new Set(Object.keys(baseServers));
+  if (overlay.selected) expectedNames.add(overlay.selected);
+  if (
+    canonicalJson(Object.keys(servers).sort()) !==
+    canonicalJson([...expectedNames].sort())
+  ) {
+    throw new Error('benchmark overlay resolved an unexpected MCP server set');
   }
-  for (const name of Object.keys(baseServers)) {
-    const value = servers[name];
-    const selected = name === selectedSubject;
-    if (!value) {
-      throw new Error(`benchmark overlay removed native MCP server ${name}`);
+
+  for (const [name, nativeDefinition] of Object.entries(baseServers)) {
+    if (name === overlay.selected) continue;
+    const expected = overlay.shape === 'nested-servers'
+      ? { ...nativeDefinition, disabled: true }
+      : { ...nativeDefinition, enabled: false };
+    if (canonicalJson(servers[name]) !== canonicalJson(expected)) {
+      throw new Error(`benchmark overlay changed native MCP server ${name}`);
     }
-    if (
-      selected
-        ? (overlay.shape === 'nested-servers'
-          ? value.disabled === true
-          : value.enabled === false)
-        : (overlay.shape === 'nested-servers'
-          ? value.disabled !== true
-          : value.enabled !== false)
-    ) {
+  }
+
+  if (overlay.selected) {
+    if (!subjectExposure || subjectExposure.name !== overlay.selected) {
+      throw new Error('benchmark selected subject exposure is missing');
+    }
+    const observedSelected = { ...servers[overlay.selected] };
+    const expectedSelected = { ...overlay.selected_definition };
+    if (overlay.shape === 'nested-servers') {
+      delete observedSelected.enabled;
+      delete expectedSelected.enabled;
+    } else {
+      delete observedSelected.disabled;
+      delete expectedSelected.disabled;
+    }
+    if (canonicalJson(observedSelected) !== canonicalJson(expectedSelected)) {
       throw new Error(
-        `benchmark overlay resolved unexpected MCP state for ${name}`,
+        `effective benchmark MCP definition changed for ${overlay.selected}`,
       );
-    }
-    if (selected && canonicalJson(value) !== canonicalJson(baseServers[name])) {
-      throw new Error(`effective native MCP definition changed for ${name}`);
     }
   }
 
@@ -370,8 +464,9 @@ function nativeSubjectExecutableIdentity(
       verified: false,
       subject: selectedSubject,
       command: null,
+      executable_path: null,
       executable_sha256: null,
-      reason_code: 'native-subject-executable-unresolved',
+      reason_code: 'benchmark-subject-executable-unresolved',
     };
   }
   const effectiveCwd = canonicalPath(
@@ -387,14 +482,16 @@ function nativeSubjectExecutableIdentity(
       verified: false,
       subject: selectedSubject,
       command: path.basename(String(server.command[0])),
+      executable_path: null,
       executable_sha256: null,
-      reason_code: 'native-subject-executable-unresolved',
+      reason_code: 'benchmark-subject-executable-unresolved',
     };
   }
   return {
     verified: true,
     subject: selectedSubject,
     command: path.basename(resolved),
+    executable_path: resolved,
     executable_sha256: sha256File(resolved),
     reason_code: null,
   };
@@ -523,35 +620,85 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
   }
 
   if (selectedSubject === 'enola') {
-    if (!['enola', 'enola.exe'].includes(executable) ||
-        server.command.length !== 1) {
+    if (!['enola', 'enola.exe'].includes(executable)) {
       return {
         verified: false,
         subject: selectedSubject,
         method: null,
+        command_executable: server.command[0],
         workspace,
         effective_cwd: effectiveCwd,
-        reason: (
-          'native Enola MCP command or repository/config arguments cannot '
-          + 'be proven workspace-bound without changing the definition'
-        ),
+        reason: 'benchmark Enola MCP executable is unverified',
+        reason_code: 'enola-command-unverifiable',
+      };
+    }
+    if (effectiveCwd !== workspace) {
+      return {
+        verified: false,
+        subject: selectedSubject,
+        method: null,
+        command_executable: server.command[0],
+        workspace,
+        effective_cwd: effectiveCwd,
+        reason: `benchmark Enola MCP cwd resolves outside trial workspace: ${effectiveCwd}`,
+        reason_code: 'enola-workspace-outside-trial',
+      };
+    }
+    if (server.command.length === 1) {
+      return {
+        verified: true,
+        subject: selectedSubject,
+        method: 'enola-default-repository-from-mcp-cwd',
+        command_executable: server.command[0],
+        workspace,
+        effective_cwd: effectiveCwd,
+        reason: null,
+        reason_code: null,
+      };
+    }
+    if (server.command.length !== 2 || typeof server.command[1] !== 'string') {
+      return {
+        verified: false,
+        subject: selectedSubject,
+        method: null,
+        command_executable: server.command[0],
+        workspace,
+        effective_cwd: effectiveCwd,
+        reason: 'benchmark Enola MCP command form is unverified',
+        reason_code: 'enola-command-unverifiable',
+      };
+    }
+    try {
+      const configPath = path.resolve(effectiveCwd, server.command[1]);
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      const bound = canonicalPath(config.repo);
+      return {
+        verified: bound === workspace,
+        subject: selectedSubject,
+        method: 'enola-explicit-config-repository',
+        command_executable: server.command[0],
+        workspace,
+        effective_cwd: effectiveCwd,
+        resolved_workspace: bound,
+        reason: bound === workspace
+          ? null
+          : `benchmark Enola config resolves outside trial workspace: ${bound}`,
+        reason_code: bound === workspace
+          ? null
+          : 'enola-workspace-outside-trial',
+      };
+    } catch {
+      return {
+        verified: false,
+        subject: selectedSubject,
+        method: null,
+        command_executable: server.command[0],
+        workspace,
+        effective_cwd: effectiveCwd,
+        reason: 'benchmark Enola MCP config cannot prove repository binding',
         reason_code: 'enola-workspace-unverifiable',
       };
     }
-    return {
-      verified: effectiveCwd === workspace,
-      subject: selectedSubject,
-      method: 'enola-default-repository-from-mcp-cwd',
-      command_executable: server.command[0],
-      workspace,
-      effective_cwd: effectiveCwd,
-      reason: effectiveCwd === workspace
-        ? null
-        : `native Enola MCP cwd resolves outside trial workspace: ${effectiveCwd}`,
-      reason_code: effectiveCwd === workspace
-        ? null
-        : 'enola-workspace-outside-trial',
-    };
   }
 
   return {
@@ -752,6 +899,7 @@ function prepareBenchmarkConfig({
   repoDir,
   env = process.env,
   selectedSubject = null,
+  subjectExposure = null,
   pure = true,
   probe = true,
 }) {
@@ -764,7 +912,13 @@ function prepareBenchmarkConfig({
     };
   }
   try {
-    const overlay = benchmarkOverlay(base.config, selectedSubject);
+    if (selectedSubject && (!subjectExposure || subjectExposure.name !== selectedSubject)) {
+      throw new Error(`benchmark subject ${selectedSubject} has no matching exposure`);
+    }
+    if (!selectedSubject && subjectExposure) {
+      throw new Error('bare benchmark must not expose a subject');
+    }
+    const overlay = benchmarkOverlay(base.config, subjectExposure);
     const content = mergeObjects(inlineConfig(env), overlay.config);
     const commandEnv = {
       ...env,
@@ -783,7 +937,7 @@ function prepareBenchmarkConfig({
       base.config,
       effective.config,
       overlay,
-      selectedSubject,
+      subjectExposure,
     );
     const workspaceBinding = verifyWorkspaceBinding(
       effective.config,
@@ -803,7 +957,7 @@ function prepareBenchmarkConfig({
       (!subjectExecutable || subjectExecutable.verified !== true)
     ) {
       throw new Error(
-        `native OpenCode MCP executable for ${selectedSubject} cannot be identified`,
+        `benchmark MCP executable for ${selectedSubject} cannot be identified`,
       );
     }
     if (probe && selectedSubject && workspaceBinding.verified) {
@@ -815,7 +969,7 @@ function prepareBenchmarkConfig({
       const connected = connectedMcp(connection.stdout, selectedSubject);
       if (connection.status !== 0 || !connected) {
         throw new Error(
-          `native OpenCode MCP connection ${selectedSubject} is not connected`,
+          `benchmark OpenCode MCP connection ${selectedSubject} is not connected`,
         );
       }
     }
@@ -829,7 +983,10 @@ function prepareBenchmarkConfig({
       overlay_identity: {
         shape: overlay.shape,
         selected_subject: selectedSubject,
-        native_server_reused: selectedSubject !== null,
+        subject_definition_source:
+          selectedSubject ? 'benchmark-subject-exposure' : null,
+        native_server_shadowed: overlay.native_server_shadowed,
+        subject_exposure_sha256: overlay.subject_exposure_sha256,
       },
       environment: commandEnv,
     };
@@ -976,12 +1133,20 @@ async function main(argv) {
   const selectedSubject = benchmarkMode && options['benchmark-subject'] !== 'none'
     ? options['benchmark-subject']
     : null;
+  const subjectExposure = selectedSubject
+    ? readBenchmarkExposure(
+      options['benchmark-exposure-file'],
+      selectedSubject,
+      repoDir,
+    )
+    : null;
   if (command === 'inspect-config') {
     const result = benchmarkMode
       ? prepareBenchmarkConfig({
         repoDir,
         env: process.env,
         selectedSubject,
+        subjectExposure,
       })
       : resolveNativeConfig({ repoDir, env: process.env });
     const { environment, ...safe } = result;
@@ -1008,17 +1173,23 @@ async function main(argv) {
         repoDir,
         env: process.env,
         selectedSubject,
+        subjectExposure,
       });
       if (
         prepared.status !== 'completed' ||
         prepared.workspace_binding?.verified !== true ||
         prepared.inspection.config_sha256 !==
-          options['native-config-sha256']
+          options['native-config-sha256'] ||
+        (
+          selectedSubject &&
+          prepared.overlay_identity?.subject_exposure_sha256 !==
+            options['subject-exposure-sha256']
+        )
       ) {
         process.stdout.write(`${JSON.stringify({
           schema: RUNTIME_SCHEMA,
           run: { status: 1 },
-          error: prepared.reason || 'native OpenCode config changed after admission',
+          error: prepared.reason || 'benchmark OpenCode authority changed after admission',
         })}\n`);
         return;
       }
@@ -1053,6 +1224,7 @@ module.exports = {
   benchmarkOverlay,
   prepareBenchmarkConfig,
   providerFromModel,
+  readBenchmarkExposure,
   readJsonText,
   resolveNativeConfig,
   runCommand,

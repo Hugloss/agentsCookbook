@@ -1,8 +1,9 @@
 """Native OpenCode benchmark adapter.
 
 OpenCode owns model/provider/auth configuration. The benchmark never writes those
-settings. A shared JS runtime owns OpenCode run/session/export lifecycle. This adapter
-only owns benchmark-specific MCP gating and observation projection.
+settings. The selected subject adapter owns the exact MCP executable and invocation.
+A shared JS runtime overlays only that benchmark subject plus MCP tool gating, then
+owns OpenCode run/session/export lifecycle and observation projection.
 """
 
 from __future__ import annotations
@@ -270,8 +271,8 @@ class OpenCodeNativeAgent:
             {
                 "configuration": "native-opencode",
                 "model_provider": "native-opencode",
-                "runtime_overlay": "mcp-tool-gating-only",
-                "surface": "shared-opencode-runtime-v1",
+                "runtime_overlay": "benchmark-subject-exposure+tool-gating-only",
+                "surface": "shared-opencode-runtime-v2",
             },
         )
 
@@ -286,10 +287,38 @@ class OpenCodeNativeAgent:
             return None
         return identity.participant_id
 
+    def _subject_exposure(
+        self,
+        context: TrialContext,
+        exposed_subject: SubjectAdapter | None,
+        selected_subject: str | None,
+    ) -> tuple[Path | None, dict[str, Any] | None]:
+        if selected_subject is None:
+            return None, None
+        if exposed_subject is None:
+            raise ValueError(f"benchmark subject {selected_subject} is unavailable")
+        exposure = exposed_subject.mcp_exposure(context)
+        if exposure is None or exposure.name != selected_subject:
+            raise ValueError(
+                f"benchmark subject {selected_subject} has no matching MCP exposure"
+            )
+        payload = {
+            "name": exposure.name,
+            "command": [exposure.command, *exposure.args],
+            "cwd": str(exposure.cwd),
+            "environment": dict(exposure.environment),
+            "semantic_identity": dict(exposure.semantic_identity),
+        }
+        path = context.control_root / "opencode-benchmark-exposure.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(canonical_json(payload))
+        return path, payload
+
     def _resolve_native(
         self,
         context: TrialContext,
         selected_subject: str | None,
+        exposure_path: Path | None,
     ) -> tuple[dict[str, Any], Observation]:
         environment = _native_environment(context)
         executable = observe_executable(
@@ -297,15 +326,18 @@ class OpenCodeNativeAgent:
             "opencode",
             environment=environment,
         )
+        args = (
+            "inspect-config",
+            "--repo",
+            str(context.workspace),
+            "--benchmark-subject",
+            selected_subject or "none",
+        )
+        if exposure_path is not None:
+            args += ("--benchmark-exposure-file", str(exposure_path))
         envelope, result = _runtime_call(
             context,
-            args=(
-                "inspect-config",
-                "--repo",
-                str(context.workspace),
-                "--benchmark-subject",
-                selected_subject or "none",
-            ),
+            args=args,
             environment=environment,
             timeout_seconds=30,
             max_stdout_bytes=1_000_000,
@@ -316,7 +348,7 @@ class OpenCodeNativeAgent:
             or not isinstance(envelope.get("inspection"), dict)
             or not isinstance(envelope.get("effective_inspection"), dict)
         ):
-            reason = "shared OpenCode runtime could not resolve native config"
+            reason = "shared OpenCode runtime could not resolve benchmark config"
             if envelope and (envelope.get("reason") or envelope.get("parse_error")):
                 reason = str(envelope.get("reason") or envelope["parse_error"])
             return {}, Observation(
@@ -340,9 +372,24 @@ class OpenCodeNativeAgent:
         exposed_subject: SubjectAdapter | None,
     ) -> Observation:
         selected_subject = self._selected_subject(exposed_subject)
+        try:
+            exposure_path, subject_exposure = self._subject_exposure(
+                context,
+                exposed_subject,
+                selected_subject,
+            )
+        except ValueError as exc:
+            return Observation(
+                {
+                    "available": False,
+                    "reason": str(exc),
+                },
+                "",
+            )
         resolved, executable = self._resolve_native(
             context,
             selected_subject,
+            exposure_path,
         )
         if not resolved:
             return executable
@@ -370,17 +417,29 @@ class OpenCodeNativeAgent:
         executable_verified = True
         if selected and self.strict_executable:
             configured = workspace_binding.get("command_executable")
-            expected = shutil.which(selected, path=context.environment.get("PATH"))
+            expected = (
+                subject_exposure["command"][0]
+                if isinstance(subject_exposure, dict)
+                and isinstance(subject_exposure.get("command"), list)
+                and subject_exposure["command"]
+                else None
+            )
             configured_path = (
                 shutil.which(configured, path=context.environment.get("PATH"))
                 if isinstance(configured, str) and os.sep not in configured
                 else configured
             )
+            expected_path = (
+                shutil.which(expected, path=context.environment.get("PATH"))
+                if isinstance(expected, str) and os.sep not in expected
+                else expected
+            )
             executable_verified = bool(
-                expected
-                and isinstance(configured_path, str)
+                isinstance(configured_path, str)
+                and isinstance(expected_path, str)
                 and Path(configured_path).is_file()
-                and Path(configured_path).samefile(expected)
+                and Path(expected_path).is_file()
+                and Path(configured_path).samefile(expected_path)
             )
         overlay_identity = dict(resolved.get("overlay_identity", {}))
         native_subject_identity = resolved.get("native_subject_identity")
@@ -404,7 +463,7 @@ class OpenCodeNativeAgent:
             "reason_code": workspace_binding.get("reason_code"),
         }
         evidence = {
-            "runtime_contract": "agents-cookbook-opencode-runtime/v1",
+            "runtime_contract": "agents-cookbook-opencode-runtime/v2",
             "native_config_sha256": inspection.get("config_sha256"),
             "model": model,
             "provider": provider,
@@ -415,6 +474,12 @@ class OpenCodeNativeAgent:
             "selected_server": selected,
             "workspace_binding": workspace_binding_identity,
             "native_subject_identity": native_subject_identity,
+            "subject_exposure_sha256": overlay_identity.get(
+                "subject_exposure_sha256"
+            ),
+            "native_server_shadowed": overlay_identity.get(
+                "native_server_shadowed"
+            ),
             "overlay_sha256": hashlib.sha256(
                 canonical_json(overlay_identity)
             ).hexdigest(),
@@ -435,18 +500,18 @@ class OpenCodeNativeAgent:
         if not isinstance(model, str) or not model:
             reason = "native OpenCode config does not resolve an explicit build model"
         elif not selected_ready:
-            reason = (
-                f"native OpenCode config does not expose enabled MCP server {selected}"
-            )
+            reason = f"benchmark MCP server {selected} is not enabled"
         elif not binding_verified:
             reason = str(
                 workspace_binding.get("reason")
-                or "native OpenCode MCP workspace binding is unverified"
+                or "benchmark MCP workspace binding is unverified"
             )
         elif not executable_verified:
-            reason = f"native OpenCode MCP {selected} does not use the selected {selected} executable"
+            reason = (
+                f"benchmark MCP {selected} does not use the selected subject executable"
+            )
         elif not native_identity_verified:
-            reason = "native OpenCode MCP executable identity is unverified"
+            reason = "benchmark MCP executable identity is unverified"
         return Observation(
             {
                 **executable.payload,
@@ -466,7 +531,7 @@ class OpenCodeNativeAgent:
                 "mcp_exposure": (
                     {
                         "name": selected,
-                        "source": "native-opencode-config",
+                        "source": "benchmark-subject-exposure",
                         **overlay_identity,
                     }
                     if selected
@@ -500,27 +565,37 @@ class OpenCodeNativeAgent:
         title = "agents-cookbook-benchmark:" + context.control_root.parent.name
         prompt_path = context.control_root / "opencode-prompt.txt"
         prompt_path.write_text(prompt, encoding="utf-8")
+        run_args = (
+            "run-export",
+            "--repo",
+            str(context.workspace),
+            "--agent",
+            "build",
+            "--title",
+            title,
+            "--prompt-file",
+            str(prompt_path),
+            "--benchmark-subject",
+            (
+                str(evidence["selected_server"])
+                if evidence.get("selected_server")
+                else "none"
+            ),
+        )
+        if evidence.get("selected_server"):
+            run_args += (
+                "--benchmark-exposure-file",
+                str(context.control_root / "opencode-benchmark-exposure.json"),
+                "--subject-exposure-sha256",
+                str(evidence["subject_exposure_sha256"]),
+            )
+        run_args += (
+            "--native-config-sha256",
+            evidence["native_config_sha256"],
+        )
         envelope, result = _runtime_call(
             context,
-            args=(
-                "run-export",
-                "--repo",
-                str(context.workspace),
-                "--agent",
-                "build",
-                "--title",
-                title,
-                "--prompt-file",
-                str(prompt_path),
-                "--benchmark-subject",
-                (
-                    str(evidence["selected_server"])
-                    if evidence.get("selected_server")
-                    else "none"
-                ),
-                "--native-config-sha256",
-                evidence["native_config_sha256"],
-            ),
+            args=run_args,
             environment=environment,
             timeout_seconds=self.timeout_seconds + 120,
             max_stdout_bytes=self.max_output_bytes,
