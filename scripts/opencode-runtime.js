@@ -391,10 +391,16 @@ function verifyBenchmarkConfig(base, effective, overlay, subjectExposure) {
     if (!subjectExposure || subjectExposure.name !== overlay.selected) {
       throw new Error('benchmark selected subject exposure is missing');
     }
-    if (
-      canonicalJson(servers[overlay.selected]) !==
-      canonicalJson(overlay.selected_definition)
-    ) {
+    const observedSelected = { ...servers[overlay.selected] };
+    const expectedSelected = { ...overlay.selected_definition };
+    if (overlay.shape === 'nested-servers') {
+      delete observedSelected.enabled;
+      delete expectedSelected.enabled;
+    } else {
+      delete observedSelected.disabled;
+      delete expectedSelected.disabled;
+    }
+    if (canonicalJson(observedSelected) !== canonicalJson(expectedSelected)) {
       throw new Error(
         `effective benchmark MCP definition changed for ${overlay.selected}`,
       );
@@ -458,8 +464,9 @@ function nativeSubjectExecutableIdentity(
       verified: false,
       subject: selectedSubject,
       command: null,
+      executable_path: null,
       executable_sha256: null,
-      reason_code: 'native-subject-executable-unresolved',
+      reason_code: 'benchmark-subject-executable-unresolved',
     };
   }
   const effectiveCwd = canonicalPath(
@@ -1172,12 +1179,17 @@ async function main(argv) {
         prepared.status !== 'completed' ||
         prepared.workspace_binding?.verified !== true ||
         prepared.inspection.config_sha256 !==
-          options['native-config-sha256']
+          options['native-config-sha256'] ||
+        (
+          selectedSubject &&
+          prepared.overlay_identity?.subject_exposure_sha256 !==
+            options['subject-exposure-sha256']
+        )
       ) {
         process.stdout.write(`${JSON.stringify({
           schema: RUNTIME_SCHEMA,
           run: { status: 1 },
-          error: prepared.reason || 'native OpenCode config changed after admission',
+          error: prepared.reason || 'benchmark OpenCode authority changed after admission',
         })}\n`);
         return;
       }
