@@ -247,7 +247,11 @@ def _native_subject_preparation(
             ),
             "lifecycle_owner": "agent-native",
             "observed_identity": {
-                "source": "native-agent-runtime",
+                "source": (
+                    exposure.get("source")
+                    if isinstance(exposure, dict) and exposure.get("source")
+                    else "native-agent-runtime"
+                ),
                 "subject": identity.participant_id,
                 "mcp_exposure": exposure,
                 "native_config_sha256": agent_prepare.payload.get(
