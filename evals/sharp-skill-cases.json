@@ -216,6 +216,20 @@
       "scenario": "A command named recordProfileAccess() explicitly documents and performs the durable write and event emission at the application boundary."
     },
     {
+      "id": "hidden-side-effect-positive-inherited-update-default",
+      "skill": "hidden-side-effect-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A generic CLI parser defaults automatic_update_check=true for every present and future command. The periodic check may perform network I/O and display an upgrade prompt before the selected command runs, even though newly registered commands do not declare that effect. A command author can add an unrelated local command and silently inherit the network/prompt behavior."
+    },
+    {
+      "id": "hidden-side-effect-control-explicit-update-opt-in",
+      "skill": "hidden-side-effect-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The CLI defaults automatic update awareness to disabled. Commands whose public semantics intentionally permit the bounded interactive release check explicitly opt in where they are registered; undeclared commands remain network/prompt inert."
+    },
+    {
       "id": "dependency-surface-positive",
       "skill": "dependency-surface-review",
       "kind": "positive",
