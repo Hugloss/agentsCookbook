@@ -179,9 +179,27 @@ def harness_identity(root: Path) -> dict[str, Any]:
 
 def runtime_environment_identity(
     environment: dict[str, str],
+    *,
+    control_root: Path,
 ) -> dict[str, Any]:
+    control_root = control_root.resolve()
+
+    def semantic_value(value: str) -> str:
+        candidate = Path(value)
+        if not candidate.is_absolute():
+            return value
+        try:
+            relative = candidate.resolve().relative_to(control_root)
+        except (OSError, ValueError):
+            return value
+        return "$CONTROL_ROOT/" + relative.as_posix()
+
+    semantic = {
+        key: semantic_value(value)
+        for key, value in sorted(environment.items())
+    }
     digest = hashlib.sha256()
-    for key, value in sorted(environment.items()):
+    for key, value in semantic.items():
         digest.update(key.encode())
         digest.update(b"\0")
         digest.update(value.encode())
@@ -194,7 +212,7 @@ def runtime_environment_identity(
         "machine": platform.machine(),
         "python": platform.python_version(),
         "environment_sha256": digest.hexdigest(),
-        "environment_variables": sorted(environment),
+        "environment_variables": sorted(semantic),
     }
 
 
@@ -415,7 +433,8 @@ def admit_trial(
             context.environment["BENCHMARK_CODEX_AUTH_MODE"] = auth_mode
 
         environment_authority = runtime_environment_identity(
-            context.environment
+            context.environment,
+            control_root=context.control_root,
         )
 
         oracle = build_oracle(
