@@ -402,9 +402,13 @@ class PilotExecutionTests(unittest.TestCase):
         )
         with self.assertRaises(SelectionError):
             select_definitions(suite, agents=("unknown",))
+        self.assertEqual(
+            len(select_definitions(suite, agents=("codex-sol",), condition="bare-sol")),
+            3,
+        )
         with self.assertRaises(SelectionError):
             select_definitions(
-                suite, agents=("codex-sol",), condition="bare-sol"
+                suite, agents=("opencode-native",), condition="bare-sol"
             )
 
     def test_suite_loader_enforces_repo_owned_schema(self) -> None:

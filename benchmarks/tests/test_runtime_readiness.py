@@ -396,11 +396,24 @@ class RuntimeReadinessTests(unittest.TestCase):
             )
 
         labels = {check.label for check in report.checks}
-        self.assertIn("opencode-native native config", labels)
-        self.assertIn("opencode-native -> hashmarks MCP", labels)
-        self.assertIn("opencode-native -> enola MCP", labels)
+        self.assertEqual(
+            labels,
+            {
+                "opencode-native + bare",
+                "opencode-native + hashmarks",
+                "opencode-native + enola",
+            },
+        )
         self.assertFalse(any("codex-native" in label for label in labels))
         self.assertFalse(any(call[0] == "codex-native" for call in calls))
+
+    def test_readiness_rejects_selected_agent_without_conditions(self) -> None:
+        suite = fake_suite()
+        suite.agents["unused"] = {"id": "unused", "adapter": "codex"}
+        with self.assertRaisesRegex(ValueError, "unused"):
+            check_runtime_readiness(
+                suite, agents=("codex-native", "unused")
+            )
 
     def test_each_unique_runtime_pair_is_checked_once_without_retry(self) -> None:
         suite = fake_suite()
@@ -451,38 +464,39 @@ class RuntimeReadinessTests(unittest.TestCase):
             mock.patch(
                 "benchmarks.harness.readiness.observe_executable",
                 return_value=observed,
-            ),
+            ) as executable_probe,
             mock.patch.object(
                 HashmarksSubject,
                 "source_identity",
                 return_value=clean_source,
             ),
-            tempfile.TemporaryDirectory(),
+            mock.patch.object(
+                SuiteDefinition,
+                "trial_definitions",
+                side_effect=AssertionError("readiness expanded frozen trials"),
+            ),
         ):
-            report = check_runtime_readiness(
-                suite,
-                agents=("codex-native", "opencode-native"),
-            )
+            report = check_runtime_readiness(suite)
 
         states = {check.label: check.state for check in report.checks}
-        self.assertEqual(states["hashmarks runtime"], "READY")
-        self.assertEqual(states["enola runtime"], "READY")
-        self.assertEqual(states["codex-native native config"], "READY")
-        self.assertEqual(states["opencode-native native config"], "READY")
+        self.assertEqual(len(states), 6)
+        self.assertEqual(executable_probe.call_count, 2)
+        self.assertEqual(states["codex-native + bare"], "READY")
+        self.assertEqual(states["opencode-native + bare"], "READY")
         self.assertEqual(
-            states["codex-native -> hashmarks exposure"],
+            states["codex-native + hashmarks"],
             "READY",
         )
         self.assertEqual(
-            states["codex-native -> enola exposure"],
+            states["codex-native + enola"],
             "READY",
         )
         self.assertEqual(
-            states["opencode-native -> hashmarks MCP"],
+            states["opencode-native + hashmarks"],
             "FAILED",
         )
         self.assertEqual(
-            states["opencode-native -> enola MCP"],
+            states["opencode-native + enola"],
             "CONNECTED",
         )
         self.assertFalse(report.ready)

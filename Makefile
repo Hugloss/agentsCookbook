@@ -15,8 +15,15 @@ _benchmark-suite-env:
 	}
 
 _benchmark-agent-env: _benchmark-suite-env
+	@awk -F= '$$1 ~ /^[[:space:]]*BENCHMARK_AGENT[[:space:]]*$$/ { \
+		value = $$2; sub(/[[:space:]]*#.*/, "", value); \
+		gsub(/[[:space:]]/, "", value); if (value != "") found = 1; \
+	} END { exit !found }' .env || { \
+		echo "ERROR: set BENCHMARK_AGENT explicitly in .env before selected-agent work."; \
+		exit 2; \
+	}
 	@test -n "$(strip $(BENCHMARK_AGENT))" || { \
-		echo "ERROR: BENCHMARK_AGENT must explicitly select the benchmark agent in .env; there is no execution default."; \
+		echo "ERROR: set BENCHMARK_AGENT explicitly in .env before selected-agent work."; \
 		exit 2; \
 	}
 
@@ -34,11 +41,10 @@ _benchmark-execution-env: _benchmark-selected-campaign-env
 		exit 2; \
 	}
 
-benchmark-check: _benchmark-agent-env
+benchmark-check: _benchmark-suite-env
 	@uv run --no-project python -m benchmarks check \
 		--env-file .env \
-		--suite "$(BENCHMARK_SUITE_PATH)" \
-		--agent "$(BENCHMARK_AGENT)"
+		--suite "$(BENCHMARK_SUITE_PATH)"
 
 benchmark-check-all: _benchmark-execution-env
 	@uv run --no-project python -m benchmarks preflight \

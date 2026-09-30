@@ -56,10 +56,10 @@ The credential contents are never written to benchmark receipts.
 ## Validate and inspect the plan
 
 ```bash
-python -m benchmarks validate-suite \
+uv run --no-project python -m benchmarks validate-suite \
   --suite benchmarks/suites/repository-intelligence/pilot-v1
 
-python -m benchmarks plan \
+uv run --no-project python -m benchmarks plan \
   --suite benchmarks/suites/repository-intelligence/pilot-v1
 ```
 
@@ -68,13 +68,17 @@ The frozen plan contains exactly nine unique definition identities.
 ## Run
 
 Keep generated campaign state outside the repository. From an agentsCookbook checkout
-that still contains the pinned source commit:
+that still contains the pinned source commit, set `HASHMARKS_BENCH_SOURCE` in `.env`
+to the clean Hashmarks checkout used by the assisted condition:
 
 ```bash
 root="${TMPDIR:-/tmp}/agents-cookbook-ri-pilot-v1"
 
-python -m benchmarks run \
+uv run --no-project python -m benchmarks run \
   --suite benchmarks/suites/repository-intelligence/pilot-v1 \
+  --env-file .env \
+  --harness-root . \
+  --agent codex \
   --source . \
   --cache "$root/cache" \
   --work "$root/work" \
@@ -88,8 +92,11 @@ If Codex is authenticated through an exported credential instead, omit
 A narrower diagnostic can select one task and/or condition:
 
 ```bash
-python -m benchmarks run \
+uv run --no-project python -m benchmarks run \
   --suite benchmarks/suites/repository-intelligence/pilot-v1 \
+  --env-file .env \
+  --harness-root . \
+  --agent codex \
   --source . \
   --cache "$root/cache" \
   --work "$root/work" \
@@ -105,8 +112,9 @@ states and make the campaign command exit non-zero.
 ## Report
 
 ```bash
-python -m benchmarks report \
+uv run --no-project python -m benchmarks report \
   --suite benchmarks/suites/repository-intelligence/pilot-v1 \
+  --agent codex \
   --results "$root/results"
 ```
 

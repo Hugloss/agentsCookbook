@@ -22,7 +22,11 @@ from benchmarks.harness.runtime_authority import (
 )
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
-from benchmarks.harness.selection import SelectionError, select_definitions
+from benchmarks.harness.selection import (
+    SelectionError,
+    parse_agent_arguments,
+    select_definitions,
+)
 from benchmarks.harness.suite import load_runtime_suite, load_suite
 
 
@@ -131,8 +135,8 @@ def _parser() -> argparse.ArgumentParser:
     check.add_argument(
         "--agent",
         action="append",
-        required=True,
-        help="explicit native benchmark agent; there is no execution default",
+        default=[],
+        help="optional native agent filter; without it, check every suite agent",
     )
     check.add_argument(
         "--env-file",
@@ -222,6 +226,11 @@ def _selection_metadata(args, suite, rows) -> dict[str, object]:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if hasattr(args, "agent"):
+        try:
+            args.agent = list(parse_agent_arguments(args.agent))
+        except SelectionError as exc:
+            raise SystemExit(str(exc)) from exc
     suite = (
         load_runtime_suite(args.suite)
         if args.command == "check"
@@ -259,10 +268,10 @@ def main(argv: list[str] | None = None) -> int:
         authority_rows = [
             {"condition_id": str(condition["id"])}
             for condition in suite.experiment["conditions"]
-            if str(condition["agent"]) in set(args.agent)
+            if not args.agent or str(condition["agent"]) in args.agent
         ]
         if not authority_rows:
-            raise SystemExit("selected benchmark agent has no suite conditions")
+            raise SystemExit("benchmark check has no suite conditions")
         missing = [
             name
             for name in required_runtime_authority(suite, authority_rows)

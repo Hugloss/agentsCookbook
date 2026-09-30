@@ -95,23 +95,23 @@ model sampler is seedable.
 ## Validate
 
 ```bash
-python -m benchmarks validate-suite \
+uv run --no-project python -m benchmarks validate-suite \
   --suite benchmarks/suites/repository-intelligence/agent-matrix-v2
 
-python -m benchmarks plan \
+uv run --no-project python -m benchmarks plan \
   --suite benchmarks/suites/repository-intelligence/agent-matrix-v2
 
-python -m benchmarks plan \
+uv run --no-project python -m benchmarks plan \
   --suite benchmarks/suites/repository-intelligence/agent-matrix-v2 \
   --agent opencode-native --subject hashmarks
 ```
 
 The full plan contains exactly 18 unique definition identities. The selected plan
-contains six: three Hashmarks trials and their three matching bare controls.
-`--task`, `--agent`, and `--subject` can be repeated on plan, run, and report.
-Selecting one or more assisted subjects automatically includes bare controls for
-the selected agent and tasks. `--condition` selects one exact condition and cannot
-be combined with `--agent` or `--subject`.
+contains three Hashmarks trials; add `--subject none` to include the three matching
+bare controls. `--task`, `--agent`, and `--subject` can be repeated on plan, run,
+and report. `--agent` also accepts comma-separated agent IDs. `--condition`
+selects one exact condition and may be combined with its matching single `--agent`,
+but not with `--subject`.
 
 ## Run
 
@@ -120,8 +120,11 @@ Keep campaign output outside the repository:
 ```bash
 root="${TMPDIR:-/tmp}/agents-cookbook-ri-agent-matrix-v2"
 
-python -m benchmarks run \
+uv run --no-project python -m benchmarks run \
   --suite benchmarks/suites/repository-intelligence/agent-matrix-v2 \
+  --env-file .env \
+  --harness-root . \
+  --agent codex-sol,opencode-native \
   --source . \
   --cache "$root/cache" \
   --work "$root/work" \
@@ -136,8 +139,10 @@ A native OpenCode Hashmarks comparison can be run without changing the frozen
 experiment:
 
 ```bash
-python -m benchmarks run \
+uv run --no-project python -m benchmarks run \
   --suite benchmarks/suites/repository-intelligence/agent-matrix-v2 \
+  --env-file .env \
+  --harness-root . \
   --source . \
   --cache "$root/cache" \
   --work "$root/work" \
@@ -147,12 +152,13 @@ python -m benchmarks run \
 ```
 
 For an isolated diagnostic of only one condition, use
-`--condition hashmarks-opencode-native` instead.
+`--condition hashmarks-opencode-native` with `--agent opencode-native` instead
+of the subject filter.
 
 ## Report
 
 ```bash
-python -m benchmarks report \
+uv run --no-project python -m benchmarks report \
   --suite benchmarks/suites/repository-intelligence/agent-matrix-v2 \
   --results "$root/results" \
   --agent opencode-native --subject hashmarks
@@ -160,8 +166,8 @@ python -m benchmarks report \
 
 Use the same selectors for run and report. The report requires all selected frozen
 definitions by default and ignores other valid definitions in the suite. Its selection
-metadata records the requested filters and automatic bare control. For a diagnostic
-of a partial campaign, add `--allow-incomplete`. The report contains per-condition
+metadata records the requested filters; bare controls are included only when selected.
+For a diagnostic of a partial campaign, add `--allow-incomplete`. The report contains per-condition
 profiles, per-agent profiles, paired assistance rows, and descriptive cross-agent
 observations. It never calculates an overall winner.
 
