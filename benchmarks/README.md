@@ -38,7 +38,27 @@ Agent Economics remains a benchmark consumer/suite; shared process semantics rem
 
 ## Recommended campaign workflow
 
-Use one external campaign root to avoid repeating cache/work/results paths:
+For local human-driven campaigns, configure authority once:
+
+```sh
+cp -n .env.example .env
+# edit .env and set:
+# HASHMARKS_BENCH_SOURCE=...
+# BENCHMARK_SUITE=...
+# BENCHMARK_ROOT=...
+```
+
+Then use the thin Make entrypoints:
+
+```sh
+make benchmark-check
+make benchmark
+make benchmark-report
+```
+
+The Makefile has no fallback suite, campaign root, or Hashmarks checkout. It only transports the explicit values from `.env` and fails before benchmark execution when any required value is absent.
+
+The underlying CLI remains available for automation and explicit one-off selections. Use one external campaign root to avoid repeating cache/work/results paths:
 
 ```bash
 suite="benchmarks/suites/repository-intelligence/agent-matrix-v2"
