@@ -46,6 +46,7 @@ cp -n .env.example .env
 # HASHMARKS_BENCH_SOURCE=...
 # BENCHMARK_SUITE=...
 # BENCHMARK_ROOT=...
+# BENCHMARK_HARNESS_ROOT=...
 ```
 
 Then use the thin Make entrypoints:
@@ -56,7 +57,7 @@ make benchmark
 make benchmark-report
 ```
 
-The Makefile has no fallback suite, campaign root, or Hashmarks checkout. It only transports the explicit values from `.env` and fails before benchmark execution when any required value is absent.
+The Makefile has no fallback suite, campaign root, harness root, or Hashmarks checkout. It only transports the explicit values from `.env` and fails before benchmark execution when any required value is absent.
 
 The underlying CLI remains available for automation and explicit one-off selections. Use one external campaign root to avoid repeating cache/work/results paths:
 
