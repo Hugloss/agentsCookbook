@@ -4,15 +4,25 @@ This agentsCookbook suite measures what native Codex and native OpenCode do with
 
 The runner owns process execution, isolation, contamination checks, receipts, and scoring. Hashmarks supplies repository evidence only. Expected JSON answers and the repair oracle live in the suite definitions and are never supplied to the agent prompt. The repair mutation and its focused test come from the already validated native matrix v3.
 
-From the agentsCookbook root, configure the Hashmarks checkout once:
+From the agentsCookbook root, configure the benchmark authority once:
 
 ```sh
-cp .env.example .env
+cp -n .env.example .env
 # edit .env:
 # HASHMARKS_BENCH_SOURCE=/absolute/path/to/Hashmarks
+# BENCHMARK_SUITE=benchmarks/suites/repository-intelligence/heldout-v1
+# BENCHMARK_ROOT=/tmp/agentscookbook-heldout-v1
 ```
 
-`.env` is ignored by Git. Benchmark `preflight` and `run` load it automatically; pass `--env-file PATH` if you keep the setting elsewhere. An already exported `HASHMARKS_BENCH_SOURCE` takes precedence.
+`.env` is ignored by Git. The normal local workflow is:
+
+```sh
+make benchmark-check
+make benchmark
+make benchmark-report
+```
+
+The Makefile provides no hidden fallback values for the source checkout, suite, or campaign root. Each must be explicit in `.env`. The underlying benchmark CLI remains available for automation and one-off selections; an already exported `HASHMARKS_BENCH_SOURCE` still takes precedence when invoking it directly.
 
 Do not run `hashmarks install --opencode` for the benchmark and do not prepend the checkout to `PATH`. The source must be a clean committed checkout. The harness directly selects `$HASHMARKS_BENCH_SOURCE/.venv/bin/hashmarks`, records its Git commit/tree, and injects that exact executable into the ephemeral OpenCode benchmark exposure. Repository-local `opencode.json` is not created or modified. A Hashmarks-assisted run fails at benchmark startup if no source path is configured.
 
