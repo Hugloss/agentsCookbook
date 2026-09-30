@@ -260,6 +260,7 @@ def _runtime_call(
             max_stdout_bytes=max_stdout_bytes,
             max_stderr_bytes=2_000_000,
         ),
+        inherit_environment=False,
     )
     if (
         result.executable_missing
