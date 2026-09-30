@@ -126,7 +126,10 @@ if (command === 'mcp' && filtered[1] === 'list') {
   if (process.env.FAKE_MCP_DISTRACTOR === '1') {
     process.stdout.write('backup_hashmarks: connected\\n');
   }
-  process.exit(0);
+  if (process.env.FAKE_MCP_STDERR) {
+    process.stderr.write(process.env.FAKE_MCP_STDERR + '\\n');
+  }
+  process.exit(Number(process.env.FAKE_MCP_EXIT || '0'));
 }
 
 if (command === 'run') {
@@ -390,12 +393,25 @@ async function testSharedLifecycle() {
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
-      env: { ...env, FAKE_MCP_DISCONNECTED: 'hashmarks' },
+      env: {
+        ...env,
+        FAKE_MCP_DISCONNECTED: 'hashmarks',
+        FAKE_MCP_STATUS: 'failed',
+        FAKE_MCP_STDERR:
+          'Hashmarks MCP support requires the optional extra: install hashmarks[mcp]',
+        FAKE_MCP_EXIT: '7',
+      },
       selectedSubject: 'hashmarks',
       subjectExposure: exposure,
     });
     assert.strictEqual(disconnected.status, 'failed');
     assert.match(disconnected.reason, /is not connected/);
+    assert.match(disconnected.reason, /exit=7/);
+    assert.match(disconnected.reason, /hashmarks: failed/);
+    assert.match(
+      disconnected.reason,
+      /Hashmarks MCP support requires the optional extra/,
+    );
 
     const nativeTree = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
