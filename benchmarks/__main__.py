@@ -175,15 +175,21 @@ def _paths(args, *, need_execution: bool, results_optional: bool = False):
         raise SystemExit(str(exc)) from exc
 
 
-def _selection_metadata(args) -> dict[str, object]:
+def _selection_metadata(args, suite, rows) -> dict[str, object]:
+    conditions = {
+        str(condition["id"]): condition
+        for condition in suite.experiment["conditions"]
+    }
+    bare_control_included = any(
+        conditions.get(str(row["condition_id"]), {}).get("subject") == "none"
+        for row in rows
+    )
     return {
         "tasks": sorted(set(args.task)),
         "agents": sorted(set(args.agent)),
         "subjects": sorted(set(args.subject)),
         "condition": args.condition,
-        "bare_control_included": bool(
-            not args.condition and "none" in set(args.subject)
-        ),
+        "bare_control_included": bare_control_included,
     }
 
 
@@ -245,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
             },
         )
         status["paths"] = paths.as_dict()
-        status["selection"] = _selection_metadata(args)
+        status["selection"] = _selection_metadata(args, suite, rows)
         print(json.dumps(status, indent=2, sort_keys=True))
         return 2 if (
             status["conflicting_trials"]
@@ -266,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
                 results_root=paths.results,
                 require_complete=not args.allow_incomplete,
                 selected_definitions={str(row["definition_id"]) for row in rows},
-                selection=_selection_metadata(args),
+                selection=_selection_metadata(args, suite, rows),
             )
         except ReportError as exc:
             raise SystemExit(
@@ -312,7 +318,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         payload = {
             "paths": paths.as_dict(),
-            "selection": _selection_metadata(args),
+            "selection": _selection_metadata(args, suite, rows),
             "summary": dict(sorted(counts.items())),
             "ready": all(
                 row["status"] in {"READY", "COMPLETE"}
