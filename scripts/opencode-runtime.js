@@ -719,6 +719,38 @@ function verifyWorkspaceBinding(config, shape, selectedSubject, repoDir) {
   };
 }
 
+function cleanDiagnosticText(value, maxBytes = 1200) {
+  const cleaned = String(value || '')
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .trim();
+  if (Buffer.byteLength(cleaned, 'utf8') <= maxBytes) return cleaned;
+  let result = '';
+  for (const character of cleaned) {
+    if (Buffer.byteLength(result + character, 'utf8') > maxBytes) break;
+    result += character;
+  }
+  return `${result}…`;
+}
+
+function selectedMcpLines(output, selectedSubject) {
+  const lines = String(output || '').split(/\r?\n/);
+  const normalized = lines.map((line) =>
+    line.replace(/\x1b\[[0-9;]*m/g, '').trim()
+  );
+  const index = normalized.findIndex((line) => {
+    const tokens = line
+      .split(/\s+/)
+      .map((token) => token.replace(/:$/, ''));
+    return tokens.includes(selectedSubject);
+  });
+  if (index < 0) return '';
+  return cleanDiagnosticText(
+    normalized.slice(index, Math.min(index + 4, normalized.length))
+      .filter(Boolean)
+      .join('\n'),
+  );
+}
+
 function connectedMcp(output, selectedSubject) {
   return output.split(/\r?\n/).some((line) => {
     const tokens = line.replace(/\x1b\[[0-9;]*m/g, '').trim()
@@ -726,6 +758,25 @@ function connectedMcp(output, selectedSubject) {
     const index = tokens.indexOf(selectedSubject);
     return index >= 0 && tokens[index + 1] === 'connected';
   });
+}
+
+function mcpConnectionFailure(connection, selectedSubject) {
+  const details = [`exit=${connection.status}`];
+  const selected = selectedMcpLines(connection.stdout, selectedSubject);
+  if (selected) {
+    details.push(`mcp-list=${JSON.stringify(selected)}`);
+  } else {
+    details.push('mcp-list=selected server missing');
+  }
+  const stderr = cleanDiagnosticText(connection.stderr);
+  if (stderr) details.push(`stderr=${JSON.stringify(stderr)}`);
+  const error = cleanDiagnosticText(connection.error);
+  if (error) details.push(`error=${JSON.stringify(error)}`);
+  if (connection.signal) details.push(`signal=${connection.signal}`);
+  return (
+    `benchmark OpenCode MCP connection ${selectedSubject} is not connected; ` +
+    details.join('; ')
+  );
 }
 
 function commandPrefix(pure) {
@@ -990,7 +1041,7 @@ function prepareBenchmarkConfig({
       const connected = connectedMcp(connection.stdout, selectedSubject);
       if (connection.status !== 0 || !connected) {
         throw new Error(
-          `benchmark OpenCode MCP connection ${selectedSubject} is not connected`,
+          mcpConnectionFailure(connection, selectedSubject),
         );
       }
     }
@@ -1259,6 +1310,8 @@ module.exports = {
   sanitize,
   verifyWorkspaceBinding,
   nativeSubjectExecutableIdentity,
+  mcpConnectionFailure,
+  selectedMcpLines,
 };
 
 if (require.main === module) {
