@@ -177,14 +177,24 @@ def harness_identity(root: Path) -> dict[str, Any]:
     }
 
 
-def runtime_environment_identity() -> dict[str, Any]:
+def runtime_environment_identity(
+    environment: dict[str, str],
+) -> dict[str, Any]:
+    digest = hashlib.sha256()
+    for key, value in sorted(environment.items()):
+        digest.update(key.encode())
+        digest.update(b"\0")
+        digest.update(value.encode())
+        digest.update(b"\0")
     return {
         "isolation_contract": (
-            "codex-isolated-or-opencode-native-config-v2"
+            "explicit-benchmark-environment-v3"
         ),
         "system": platform.system(),
         "machine": platform.machine(),
         "python": platform.python_version(),
+        "environment_sha256": digest.hexdigest(),
+        "environment_variables": sorted(environment),
     }
 
 
@@ -343,7 +353,6 @@ def admit_trial(
     )
 
     harness_authority = harness_identity(harness_root)
-    environment_authority = runtime_environment_identity()
 
     work_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
@@ -360,7 +369,10 @@ def admit_trial(
         )
         control_root = run_root / "control"
         environment = isolated_environment(control_root)
-        transport_runtime_authority(os.environ, environment)
+        try:
+            transport_runtime_authority(os.environ, environment)
+        except ValueError as exc:
+            raise TrialAdmissionError(str(exc)) from exc
         context = TrialContext(
             workspace=workspace,
             control_root=control_root,
@@ -401,6 +413,10 @@ def admit_trial(
         )
         if agent_definition["adapter"] == "codex":
             context.environment["BENCHMARK_CODEX_AUTH_MODE"] = auth_mode
+
+        environment_authority = runtime_environment_identity(
+            context.environment
+        )
 
         oracle = build_oracle(
             task["oracle"],
