@@ -119,7 +119,7 @@ def _subject_runtime_check(
                 _reason(observed.payload, "executable probe failed"),
             )
         if isinstance(subject, HashmarksSubject):
-            identity, error = subject._source_identity(context)
+            identity, error = subject.source_identity(context)
             if error:
                 return ReadinessCheck(
                     "hashmarks runtime",
