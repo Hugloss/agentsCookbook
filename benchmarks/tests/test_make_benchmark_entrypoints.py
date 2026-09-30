@@ -162,7 +162,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         report_block = makefile.split(
             "benchmark-report: _benchmark-selected-campaign-env", 1
         )[1].split(
-            "_benchmark-score-env: _benchmark-campaign-env", 1
+            "_benchmark-score-env: _benchmark-selected-campaign-env", 1
         )[0]
         self.assertNotIn("--harness-root", report_block)
         self.assertIn('--agent "$(BENCHMARK_AGENT)"', report_block)
@@ -271,6 +271,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / ".env").write_text(
+                "BENCHMARK_AGENT=opencode-native\n"
                 "BENCHMARK_SUITE_PATH=benchmarks/suites/example\n"
                 "BENCHMARK_CAMPAIGN_ROOT=/work/campaign\n"
                 "BENCHMARK_HARNESS_REPO_ROOT=/work/agentsCookbook\n"
@@ -304,6 +305,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             '--output "/work/campaign/special-report.json"',
             result.stdout,
         )
+        self.assertIn('--agent "opencode-native"', result.stdout)
 
 
 if __name__ == "__main__":
