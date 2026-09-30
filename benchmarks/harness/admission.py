@@ -21,6 +21,7 @@ from benchmarks.harness.model import (
     TrialStatus,
 )
 from benchmarks.harness.mutation import apply_mutation
+from benchmarks.harness.runtime_authority import transport_runtime_authority
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.suite import SuiteDefinition
 from benchmarks.harness.workspace import isolated_environment, snapshot
@@ -359,10 +360,7 @@ def admit_trial(
         )
         control_root = run_root / "control"
         environment = isolated_environment(control_root)
-        if "HASHMARKS_BENCH_SOURCE" in os.environ:
-            environment["HASHMARKS_BENCH_SOURCE"] = os.environ[
-                "HASHMARKS_BENCH_SOURCE"
-            ]
+        transport_runtime_authority(os.environ, environment)
         context = TrialContext(
             workspace=workspace,
             control_root=control_root,
@@ -384,15 +382,14 @@ def admit_trial(
             and agent_definition.get("configuration", {}).get("native_host") is True
         )
         if native_codex:
-            context.environment["HOME"] = str(Path.home())
+            codex_home = context.environment.get("BENCHMARK_CODEX_HOME")
+            if not codex_home:
+                raise TrialAdmissionError(
+                    "BENCHMARK_CODEX_HOME is required for native Codex"
+                )
             context.environment["CODEX_HOME"] = str(
-                Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").resolve()
+                Path(codex_home).expanduser().resolve()
             )
-            for name in ("XDG_CONFIG_HOME", "XDG_STATE_HOME"):
-                if name in os.environ:
-                    context.environment[name] = os.environ[name]
-                else:
-                    context.environment.pop(name, None)
         auth_mode = (
             "native-host"
             if native_codex
