@@ -94,7 +94,7 @@ make benchmark-score
 ```
 
 - `benchmark-check` is a fast runtime/connectivity check for the explicitly selected `BENCHMARK_AGENT`. It uses one disposable smoke workspace, checks that agent's unique subject pairings once, invokes no model, creates no trial, and exits.
-- `benchmark-check-all` explicitly preflights all 216 frozen definitions. It can be slow and is never run implicitly.
+- `benchmark-check-all` explicitly preflights the selected agent's 108 frozen definitions. It can be slow and is never run implicitly.
 - `benchmark` executes/resumes the frozen campaign and does not secretly run either check first.
 - `benchmark-report` is the generic framework report.
 - `benchmark-score` runs this suite's explicit language-separated held-out scorer.
@@ -142,7 +142,7 @@ uv run --no-project python -m benchmarks preflight \
   --suite "$BENCHMARK_SUITE_PATH" \
   --root "$BENCHMARK_CAMPAIGN_ROOT" \
   --harness-root "$BENCHMARK_HARNESS_REPO_ROOT" \
-  --agent opencode-native \
+  --agent "$BENCHMARK_AGENT" \
   --subject hashmarks \
   --subject none
 ```
