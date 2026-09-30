@@ -67,9 +67,18 @@ def _load_benchmark_env(
             environment[key] = value
 
 
-def _add_selectors(command: argparse.ArgumentParser) -> None:
+def _add_selectors(
+    command: argparse.ArgumentParser,
+    *,
+    require_agent: bool = False,
+) -> None:
     command.add_argument("--task", action="append", default=[])
-    command.add_argument("--agent", action="append", default=[])
+    command.add_argument(
+        "--agent",
+        action="append",
+        default=[],
+        required=require_agent,
+    )
     command.add_argument("--subject", action="append", default=[])
     command.add_argument("--condition")
 
@@ -120,6 +129,12 @@ def _parser() -> argparse.ArgumentParser:
     check = sub.add_parser("check")
     check.add_argument("--suite", type=Path, required=True)
     check.add_argument(
+        "--agent",
+        action="append",
+        required=True,
+        help="explicit native benchmark agent; there is no execution default",
+    )
+    check.add_argument(
         "--env-file",
         type=Path,
         required=True,
@@ -132,13 +147,13 @@ def _parser() -> argparse.ArgumentParser:
 
     preflight = sub.add_parser("preflight")
     preflight.add_argument("--suite", type=Path, required=True)
-    _add_selectors(preflight)
+    _add_selectors(preflight, require_agent=True)
     _add_campaign_paths(preflight, execution=True)
     _add_execution_inputs(preflight)
 
     run = sub.add_parser("run")
     run.add_argument("--suite", type=Path, required=True)
-    _add_selectors(run)
+    _add_selectors(run, require_agent=True)
     _add_campaign_paths(run, execution=True)
     _add_execution_inputs(run)
 
@@ -236,10 +251,18 @@ def main(argv: list[str] | None = None) -> int:
             os.environ,
             require_file=True,
         )
+        unknown_agents = sorted(set(args.agent) - set(suite.agents))
+        if unknown_agents:
+            raise SystemExit(
+                "unknown benchmark agent(s): " + ", ".join(unknown_agents)
+            )
         authority_rows = [
             {"condition_id": str(condition["id"])}
             for condition in suite.experiment["conditions"]
+            if str(condition["agent"]) in set(args.agent)
         ]
+        if not authority_rows:
+            raise SystemExit("selected benchmark agent has no suite conditions")
         missing = [
             name
             for name in required_runtime_authority(suite, authority_rows)
@@ -253,7 +276,10 @@ def main(argv: list[str] | None = None) -> int:
                 "or export them explicitly"
             )
         try:
-            report = check_runtime_readiness(suite)
+            report = check_runtime_readiness(
+                suite,
+                agents=tuple(args.agent),
+            )
         except (OSError, ValueError) as exc:
             raise SystemExit(f"benchmark runtime check failed: {exc}") from exc
         for item in report.checks:
