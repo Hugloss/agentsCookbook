@@ -40,6 +40,12 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         )
         self.assertIn("BENCHMARK_HARNESS_REPO_ROOT=.", env_example)
 
+        # Do not drift back to ambiguous names that hide whether a path is
+        # committed source/configuration or generated campaign state.
+        self.assertNotIn("\nBENCHMARK_SUITE=", env_example)
+        self.assertNotIn("\nBENCHMARK_ROOT=", env_example)
+        self.assertNotIn("\nBENCHMARK_HARNESS_ROOT=", env_example)
+
     def test_make_benchmark_fails_before_execution_without_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             result = subprocess.run(
