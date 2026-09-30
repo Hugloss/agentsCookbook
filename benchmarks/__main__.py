@@ -15,24 +15,17 @@ from benchmarks.harness.campaign import (
     resolve_campaign_paths,
 )
 from benchmarks.harness.preflight import preflight_trial
+from benchmarks.harness.runtime_authority import (
+    RUNTIME_AUTHORITY_ENV_KEYS,
+    required_runtime_authority,
+)
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
 from benchmarks.harness.selection import SelectionError, select_definitions
 from benchmarks.harness.suite import load_suite
 
 
-_BENCHMARK_ENV_KEYS = frozenset(
-    {
-        "HASHMARKS_BENCH_SOURCE",
-        "ENOLA_BENCH_EXECUTABLE",
-        "BENCHMARK_CODEX_EXECUTABLE",
-        "BENCHMARK_CODEX_HOME",
-        "BENCHMARK_OPENCODE_EXECUTABLE",
-        "BENCHMARK_OPENCODE_HOME",
-        "BENCHMARK_OPENCODE_CONFIG_HOME",
-        "BENCHMARK_OPENCODE_AGENT",
-    }
-)
+_BENCHMARK_ENV_KEYS = frozenset(RUNTIME_AUTHORITY_ENV_KEYS)
 
 
 def _load_benchmark_env(
@@ -71,55 +64,6 @@ def _load_benchmark_env(
             value = value[1:-1]
         if value:
             environment[key] = value
-
-
-def _required_runtime_env(
-    suite,
-    rows: list[dict[str, object]],
-) -> tuple[str, ...]:
-    selected_condition_ids = {
-        str(row["condition_id"])
-        for row in rows
-        if isinstance(row, dict) and "condition_id" in row
-    }
-    conditions = [
-        condition
-        for condition in suite.experiment["conditions"]
-        if condition.get("id") in selected_condition_ids
-    ]
-    subjects = {str(condition.get("subject")) for condition in conditions}
-    agents = {str(condition.get("agent")) for condition in conditions}
-
-    required: set[str] = set()
-    if "hashmarks" in subjects:
-        required.add("HASHMARKS_BENCH_SOURCE")
-    if "enola" in subjects:
-        required.add("ENOLA_BENCH_EXECUTABLE")
-    if any(
-        suite.agents[agent]["adapter"] == "codex"
-        for agent in agents
-        if agent in suite.agents
-    ):
-        required.update(
-            {
-                "BENCHMARK_CODEX_EXECUTABLE",
-                "BENCHMARK_CODEX_HOME",
-            }
-        )
-    if any(
-        suite.agents[agent]["adapter"] == "opencode-native"
-        for agent in agents
-        if agent in suite.agents
-    ):
-        required.update(
-            {
-                "BENCHMARK_OPENCODE_EXECUTABLE",
-                "BENCHMARK_OPENCODE_HOME",
-                "BENCHMARK_OPENCODE_CONFIG_HOME",
-                "BENCHMARK_OPENCODE_AGENT",
-            }
-        )
-    return tuple(sorted(required))
 
 
 def _add_selectors(command: argparse.ArgumentParser) -> None:
@@ -275,7 +219,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         missing = [
             name
-            for name in _required_runtime_env(suite, rows)
+            for name in required_runtime_authority(suite, rows)
             if not os.environ.get(name)
         ]
         if missing:
