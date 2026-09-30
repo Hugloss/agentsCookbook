@@ -445,6 +445,40 @@ class PilotExecutionTests(unittest.TestCase):
                 str(executable.resolve()),
             )
 
+    def test_hashmarks_scored_source_rejects_uncommitted_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            source = root / "hashmarks-source"
+            executable = source / ".venv" / "bin" / "hashmarks"
+            executable.parent.mkdir(parents=True)
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            environment = isolated_environment(control)
+            environment["HASHMARKS_BENCH_SOURCE"] = str(source)
+            context = TrialContext(workspace, control, environment)
+            git_results = [
+                SimpleNamespace(returncode=0, stdout=b"1" * 40 + b"\n"),
+                SimpleNamespace(returncode=0, stdout=b"2" * 40 + b"\n"),
+                SimpleNamespace(returncode=0, stdout=b"dirty diff"),
+                SimpleNamespace(returncode=0, stdout=b""),
+            ]
+
+            with mock.patch(
+                "benchmarks.adapters.hashmarks.subprocess.run",
+                side_effect=git_results,
+            ):
+                identity, error = HashmarksSubject(
+                    require_source=True
+                )._source_identity(context)
+
+            self.assertIsNone(identity)
+            self.assertEqual(
+                error,
+                "Hashmarks benchmark source must be a clean committed checkout",
+            )
+
     def test_enola_adapter_writes_explicit_trial_output_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
