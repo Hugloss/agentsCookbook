@@ -28,13 +28,15 @@ Trial admission is single-owned by `benchmarks.harness.admission`:
 
 Both `preflight` and `run` use that same path. Preflight is diagnostic and never invokes the coding agent or publishes a trial result.
 
-Native agent configuration and benchmark-subject execution are separate authorities.
+Native tool discovery and benchmark-subject selection are separate authorities.
 
-For native OpenCode trials, the explicitly configured OpenCode executable, home, config root, and agent persona own the native model/provider/auth/permission configuration. The selected benchmark subject is injected ephemerally from its adapter's exact executable, arguments, cwd, and environment. The harness proves the effective subject executable and workspace binding before agent work and binds that exposure into execution authority. Ambient/global OpenCode MCP registrations may be observed and disabled, but they never choose the Hashmarks or Enola executable under test.
+Codex, OpenCode, and Enola are normal host-installed tools. The benchmark does not duplicate their standard Linux installation paths or config roots in `.env`. It resolves their executables from the native `PATH`, derives Codex/OpenCode config roots from the host's normal `HOME`, `XDG_CONFIG_HOME`, and `CODEX_HOME` conventions, then records the resolved executable hash, version, native config identity, and effective subject exposure. Native defaults are therefore **observed authority**, not hidden benchmark configuration.
 
-For native Codex trials, the explicitly configured Codex executable and `CODEX_HOME` own the native model/auth configuration. Ambient Codex MCP registrations are disabled for the trial. The selected Hashmarks or Enola subject is injected ephemerally from the same adapter-owned exact exposure used by other agents, so a global Codex MCP registration cannot substitute another product installation.
+Hashmarks is intentionally different: it is the locally developed product under test, so `HASHMARKS_BENCH_SOURCE` explicitly selects the clean committed checkout and its exact `.venv/bin/hashmarks`. This prevents an unrelated installed Hashmarks from silently replacing the candidate under test.
 
-The benchmark never creates or edits repository-local `opencode.json` to register a subject. Hashmarks is selected only from `HASHMARKS_BENCH_SOURCE/.venv/bin/hashmarks`; Enola is selected only from `ENOLA_BENCH_EXECUTABLE`. Participant processes do not inherit arbitrary host environment variables. The harness carries one fixed process-substrate allowlist—`PATH`, locale variables, terminal identity, and the equivalent Windows process-launch variables—so native tools and agent shell commands can start. Those observed values are bound into execution identity; they are not product or model-selection authority. Provider variables must be named explicitly through `BENCHMARK_PASSTHROUGH_ENV_KEYS`, and the resulting explicit environment is also bound into execution identity.
+For native OpenCode and Codex trials, ambient/global MCP registrations are disabled as subject authority. The selected Hashmarks or Enola subject is injected ephemerally from the adapter-owned exact executable/cwd/args. A global MCP registration can therefore exist for normal development without choosing what the benchmark executes.
+
+Participant processes do not inherit arbitrary host environment variables. The harness carries one fixed process-substrate allowlist—`PATH`, locale variables, terminal identity, and equivalent Windows launch variables—so native tools can start. Provider variables must be named explicitly through `BENCHMARK_PASSTHROUGH_ENV_KEYS`. The resulting observed environment is bound into execution identity.
 
 There is no automatic `.env` discovery in the benchmark CLI and no default harness root. Local Make targets pass `--env-file .env`, `--suite`, `--root`, and `--harness-root` explicitly. Direct CLI callers must provide the same authorities themselves.
 
@@ -44,24 +46,25 @@ Agent Economics remains a benchmark consumer/suite; shared process semantics rem
 
 ### Authority vocabulary
 
-Keep source, runtime, and output roles separate:
+Keep deliberate benchmark choices separate from native host discovery:
 
 | Setting | Meaning | Authority/lifetime |
 | --- | --- | --- |
-| `HASHMARKS_BENCH_SOURCE` | Clean committed Hashmarks checkout being measured | Product source authority |
-| `ENOLA_BENCH_EXECUTABLE` | Exact Enola executable being measured | Product executable authority |
-| `BENCHMARK_CODEX_EXECUTABLE` | Exact Codex executable | Native-agent executable authority |
-| `BENCHMARK_CODEX_HOME` | Explicit Codex config/auth root | Native Codex configuration authority |
-| `BENCHMARK_OPENCODE_EXECUTABLE` | Exact OpenCode executable | Native-agent executable authority |
-| `BENCHMARK_OPENCODE_HOME` | Explicit OpenCode home | Native OpenCode user/config authority |
-| `BENCHMARK_OPENCODE_CONFIG_HOME` | Explicit OpenCode XDG config root | Native OpenCode configuration authority |
-| `BENCHMARK_OPENCODE_AGENT` | Exact OpenCode agent persona to execute | Native OpenCode agent authority |
-| `BENCHMARK_PASSTHROUGH_ENV_KEYS` | Comma-separated host variable names explicitly admitted into participant processes | Optional provider environment authority |
+| `HASHMARKS_BENCH_SOURCE` | Clean committed Hashmarks checkout being measured | Explicit product source authority |
+| `BENCHMARK_OPENCODE_AGENT` | Exact OpenCode agent persona to execute | Explicit benchmark semantic choice |
+| `BENCHMARK_PASSTHROUGH_ENV_KEYS` | Comma-separated provider variables explicitly admitted into participant processes | Optional provider environment authority |
 | `BENCHMARK_SUITE_PATH` | Committed suite definition inside agentsCookbook | Benchmark source/configuration |
 | `BENCHMARK_CAMPAIGN_ROOT` | Writable campaign directory containing `cache/`, `work/`, and `results/` | Generated campaign evidence |
 | `BENCHMARK_HARNESS_REPO_ROOT` | agentsCookbook checkout containing the runner | Harness source authority |
 | `BENCHMARK_SCORE_SCRIPT_PATH` | Optional suite-specific scorer | Specialized reporting authority |
 | `BENCHMARK_SCORE_OUTPUT_PATH` | Output file for the suite-specific score | Generated report |
+
+Not configured in `.env`:
+
+- `enola`, `codex`, and `opencode` executables are resolved from native `PATH`;
+- Codex uses native `CODEX_HOME` when set, otherwise `$HOME/.codex`;
+- OpenCode uses native `HOME` and `XDG_CONFIG_HOME` (or `$HOME/.config`);
+- all resolved executable/config identities are observed and recorded.
 
 A **suite path is not an output directory**. A **campaign root is not source configuration**. A native agent's config root is not subject executable authority. These distinctions are enforced so one configured authority cannot silently stand in for another.
 
@@ -81,7 +84,7 @@ make benchmark-report    # generic framework report
 make benchmark-score     # suite-specific scorer configured in .env
 ```
 
-The Makefile chooses no suite, campaign path, harness path, product executable, native config root, provider environment, agent persona, or specialized scorer. Missing authority fails before benchmark work begins.
+The Makefile chooses no native executable or native config root. Codex, OpenCode, and Enola use their installed host conventions; the benchmark observes what resolves. The Makefile only transports deliberate benchmark choices such as the Hashmarks checkout, suite, campaign root, OpenCode agent persona, provider passthrough, and scorer. Missing explicit benchmark choices fail before work begins.
 
 ### Advanced direct CLI
 
