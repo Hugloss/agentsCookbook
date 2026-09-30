@@ -24,7 +24,7 @@ class HashmarksSubject:
 
     def _source_root(self, context: TrialContext) -> Path | None:
         source = context.environment.get("HASHMARKS_BENCH_SOURCE")
-        return Path(source).resolve() if source else None
+        return Path(source).expanduser().resolve() if source else None
 
     def _executable(self, context: TrialContext) -> str:
         root = self._source_root(context)
