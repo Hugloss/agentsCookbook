@@ -59,6 +59,7 @@ Keep deliberate benchmark choices separate from native host discovery:
 | Setting | Meaning | Authority/lifetime |
 | --- | --- | --- |
 | `HASHMARKS_BENCH_SOURCE` | Clean committed Hashmarks checkout being measured | Explicit product source authority |
+| `BENCHMARK_AGENT` | Exact native agent population to check/run/report/score | Mandatory execution-selection authority; no default |
 | `BENCHMARK_OPENCODE_AGENT` | Exact OpenCode agent persona to execute | Explicit benchmark semantic choice |
 | `BENCHMARK_PASSTHROUGH_ENV_KEYS` | Comma-separated provider variables explicitly admitted into participant processes | Optional provider environment authority |
 | `BENCHMARK_SUITE_PATH` | Committed suite definition inside agentsCookbook | Benchmark source/configuration |
@@ -85,10 +86,16 @@ cp -n .env.example .env
 
 In the selected Hashmarks source checkout, install its locked MCP extra with `uv sync --frozen --extra mcp --group test` before running readiness. A correct `HASHMARKS_BENCH_SOURCE` path alone does not install the MCP server dependency.
 
+Set the execution agent explicitly in `.env`; omission is a hard failure:
+
+```dotenv
+BENCHMARK_AGENT=opencode-native
+```
+
 Then use:
 
 ```sh
-make benchmark-check       # fast native runtime/MCP readiness only
+make benchmark-check       # selected-agent runtime/MCP readiness only
 make benchmark-check-all   # explicit exhaustive frozen-definition preflight
 make benchmark
 make benchmark-report      # generic framework report
@@ -97,7 +104,7 @@ make benchmark-score       # suite-specific scorer configured in .env
 
 The Makefile chooses no native executable or native config root. Codex, OpenCode, and Enola use their installed host conventions; the benchmark observes what resolves. The Makefile only transports deliberate benchmark choices such as the Hashmarks checkout, suite, campaign root, OpenCode agent persona, provider passthrough, and scorer. Missing explicit benchmark choices fail before work begins.
 
-`benchmark-check` answers only **“can the configured native hosts and benchmark subjects be wired on this machine right now?”** It checks each unique participant/pair once and exits. OpenCode's MCP probe supplies a live stdio connection check. Only when that connection fails does readiness launch the selected MCP executable and args in the selected cwd and environment with stdin closed and a five-second bound, solely to capture a direct startup failure. A clean exit after stdin closes is inconclusive and adds no diagnostic. Codex readiness proves its native config plus the exact ephemeral subject exposure without invoking a model; it is reported as ready rather than falsely labelled connected. No readiness command retries automatically.
+`benchmark-check` answers only **“can the explicitly selected native agent and benchmark subjects be wired on this machine right now?”** It checks each unique participant/pair for `BENCHMARK_AGENT` once and exits. OpenCode's MCP probe supplies a live stdio connection check. Only when that connection fails does readiness launch the selected MCP executable and args in the selected cwd and environment with stdin closed and a five-second bound, solely to capture a direct startup failure. A clean exit after stdin closes is inconclusive and adds no diagnostic. Codex readiness proves its native config plus the exact ephemeral subject exposure without invoking a model; it is reported as ready rather than falsely labelled connected. No readiness command retries automatically.
 
 `benchmark-check-all` is the intentionally expensive command: it runs the existing `preflight` path across every frozen definition selected by the suite.
 
@@ -110,7 +117,8 @@ Fast runtime readiness:
 ```bash
 uv run --no-project python -m benchmarks check \
   --env-file .env \
-  --suite "$BENCHMARK_SUITE_PATH"
+  --suite "$BENCHMARK_SUITE_PATH" \
+  --agent "$BENCHMARK_AGENT"
 ```
 
 This command uses no campaign root or harness root and creates no benchmark trial.
@@ -123,7 +131,7 @@ uv run --no-project python -m benchmarks preflight \
   --suite "$BENCHMARK_SUITE_PATH" \
   --root "$BENCHMARK_CAMPAIGN_ROOT" \
   --harness-root "$BENCHMARK_HARNESS_REPO_ROOT" \
-  --agent opencode-native \
+  --agent "$BENCHMARK_AGENT" \
   --subject hashmarks \
   --subject none
 ```
@@ -138,7 +146,7 @@ uv run --no-project python -m benchmarks run \
   --suite "$BENCHMARK_SUITE_PATH" \
   --root "$BENCHMARK_CAMPAIGN_ROOT" \
   --harness-root "$BENCHMARK_HARNESS_REPO_ROOT" \
-  --agent opencode-native \
+  --agent "$BENCHMARK_AGENT" \
   --subject hashmarks \
   --subject none
 ```
@@ -149,14 +157,14 @@ Status and report do not execute participants, so they need only the suite, camp
 uv run --no-project python -m benchmarks status \
   --suite "$BENCHMARK_SUITE_PATH" \
   --root "$BENCHMARK_CAMPAIGN_ROOT" \
-  --agent opencode-native \
+  --agent "$BENCHMARK_AGENT" \
   --subject hashmarks \
   --subject none
 
 uv run --no-project python -m benchmarks report \
   --suite "$BENCHMARK_SUITE_PATH" \
   --root "$BENCHMARK_CAMPAIGN_ROOT" \
-  --agent opencode-native \
+  --agent "$BENCHMARK_AGENT" \
   --subject hashmarks \
   --subject none
 ```
