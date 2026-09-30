@@ -34,7 +34,12 @@ from benchmarks.adapters.registry import (
     build_agent,
 )
 from benchmarks.__main__ import _load_benchmark_env
-from benchmarks.harness.admission import TrialAdmissionError, admit_trial, harness_identity
+from benchmarks.harness.admission import (
+    TrialAdmissionError,
+    admit_trial,
+    harness_identity,
+    runtime_environment_identity,
+)
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.campaign import (
     CampaignError,
@@ -642,6 +647,36 @@ class PilotExecutionTests(unittest.TestCase):
                 prepared.payload["reason"],
             )
 
+    def test_environment_identity_normalizes_disposable_control_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            left_control = root / "left"
+            right_control = root / "right"
+            left = isolated_environment(left_control)
+            right = isolated_environment(right_control)
+            left["EXTERNAL_AUTHORITY"] = "/stable/tool"
+            right["EXTERNAL_AUTHORITY"] = "/stable/tool"
+
+            left_identity = runtime_environment_identity(
+                left,
+                control_root=left_control,
+            )
+            right_identity = runtime_environment_identity(
+                right,
+                control_root=right_control,
+            )
+            self.assertEqual(left_identity, right_identity)
+
+            right["EXTERNAL_AUTHORITY"] = "/different/tool"
+            changed = runtime_environment_identity(
+                right,
+                control_root=right_control,
+            )
+            self.assertNotEqual(
+                left_identity["environment_sha256"],
+                changed["environment_sha256"],
+            )
+
     def test_bounded_process_can_disable_host_environment_inheritance(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -868,7 +903,7 @@ class PilotExecutionTests(unittest.TestCase):
             installed.parent.mkdir(parents=True)
             installed.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             installed.chmod(0o755)
-            environment = isolated_environment(control)
+            environment = _opencode_trial_environment(control, root)
             environment["HASHMARKS_BENCH_SOURCE"] = str(source)
             context = TrialContext(
                 workspace,
