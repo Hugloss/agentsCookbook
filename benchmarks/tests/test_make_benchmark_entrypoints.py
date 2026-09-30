@@ -39,18 +39,15 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             env_example,
         )
         self.assertIn("BENCHMARK_HARNESS_REPO_ROOT=.", env_example)
-        self.assertIn(
-            "ENOLA_BENCH_EXECUTABLE=/absolute/path/to/enola",
-            env_example,
-        )
-        self.assertIn(
-            "BENCHMARK_CODEX_EXECUTABLE=/absolute/path/to/codex",
-            env_example,
-        )
-        self.assertIn(
-            "BENCHMARK_OPENCODE_EXECUTABLE=/absolute/path/to/opencode",
-            env_example,
-        )
+        for native_path_setting in (
+            "ENOLA_BENCH_EXECUTABLE=",
+            "BENCHMARK_CODEX_EXECUTABLE=",
+            "BENCHMARK_CODEX_HOME=",
+            "BENCHMARK_OPENCODE_EXECUTABLE=",
+            "BENCHMARK_OPENCODE_HOME=",
+            "BENCHMARK_OPENCODE_CONFIG_HOME=",
+        ):
+            self.assertNotIn(native_path_setting, env_example)
         self.assertIn("BENCHMARK_OPENCODE_AGENT=build", env_example)
         self.assertIn("BENCHMARK_PASSTHROUGH_ENV_KEYS=", env_example)
         self.assertIn(
