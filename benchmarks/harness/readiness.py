@@ -257,27 +257,66 @@ def _pair_check(
     )
 
 
-def check_runtime_readiness(suite: SuiteDefinition) -> ReadinessReport:
-    conditions = tuple(suite.experiment["conditions"])
+def check_runtime_readiness(
+    suite: SuiteDefinition,
+    *,
+    agents: tuple[str, ...] = (),
+) -> ReadinessReport:
+    unknown = sorted(set(agents) - set(suite.agents))
+    if unknown:
+        raise ValueError(
+            "unknown benchmark agent(s): " + ", ".join(unknown)
+        )
+    selected_agents = set(agents)
+    conditions = tuple(
+        condition
+        for condition in suite.experiment["conditions"]
+        if not agents or str(condition["agent"]) in selected_agents
+    )
+    if not conditions:
+        raise ValueError("benchmark readiness has no suite conditions")
+    missing_agents = sorted(
+        selected_agents - {str(condition["agent"]) for condition in conditions}
+    )
+    if missing_agents:
+        raise ValueError(
+            "no suite conditions for selected agent(s): "
+            + ", ".join(missing_agents)
+        )
     subject_ids = _unique(
         str(condition["subject"])
         for condition in conditions
         if str(condition["subject"]) != "none"
     )
-    agent_ids = _unique(str(condition["agent"]) for condition in conditions)
     pairs = _unique(
         (str(condition["agent"]), str(condition["subject"]))
         for condition in conditions
-        if str(condition["subject"]) != "none"
     )
 
     checks: list[ReadinessCheck] = []
     with tempfile.TemporaryDirectory(prefix="agents-cookbook-benchmark-check-") as tmp:
         root = Path(tmp)
-        for subject_id in subject_ids:
-            checks.append(_subject_runtime_check(suite, subject_id, root))
-        for agent_id in agent_ids:
-            checks.append(_agent_native_check(suite, agent_id, root))
+        subject_checks = {
+            subject_id: _subject_runtime_check(suite, subject_id, root)
+            for subject_id in subject_ids
+        }
         for agent_id, subject_id in pairs:
-            checks.append(_pair_check(suite, agent_id, subject_id, root))
+            if subject_id == "none":
+                result = _agent_native_check(suite, agent_id, root)
+            elif not subject_checks[subject_id].ok:
+                prerequisite = subject_checks[subject_id]
+                result = ReadinessCheck(
+                    "",
+                    "FAILED",
+                    f"{subject_id} runtime: {prerequisite.reason}",
+                )
+            else:
+                result = _pair_check(suite, agent_id, subject_id, root)
+            checks.append(
+                ReadinessCheck(
+                    f"{agent_id} + {'bare' if subject_id == 'none' else subject_id}",
+                    result.state,
+                    result.reason,
+                )
+            )
     return ReadinessReport(tuple(checks))

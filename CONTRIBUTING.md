@@ -116,6 +116,8 @@ Do not add repository entrypoints, CI steps, or documentation that call `python`
 
 ## Benchmark readiness
 
+Benchmark execution has no implicit agent population. `BENCHMARK_AGENT` must explicitly select one or more native agents in `.env` before Make preflight, execution, reporting, or specialized scoring. Direct `preflight` and `run` CLI calls likewise require `--agent`. `benchmark-check` checks each distinct agent/subject pair in the suite once, including bare conditions, without expanding tasks or seeds; direct `check --agent` can narrow that diagnostic. Never restore an all-agents execution default for preflight or execution; adding a new suite agent must not silently expose another model/provider to a trial.
+
 `make benchmark-check` is a runtime-connectivity check, not trial admission. It may resolve/fingerprint native hosts and subjects, validate the explicit Hashmarks checkout, and check each unique MCP exposure once in a disposable workspace. It must not load task authority, materialize repositories, apply mutations, run oracles, inspect receipts, derive trial identities, invoke a model, or retry automatically.
 
 Use `make benchmark-check-all` when exhaustive frozen-definition preflight is explicitly wanted. `make benchmark` must not invoke either check implicitly.

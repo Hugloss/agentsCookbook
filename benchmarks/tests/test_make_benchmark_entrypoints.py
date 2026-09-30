@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tempfile
@@ -59,6 +60,8 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             "BENCHMARK_OPENCODE_CONFIG_HOME=",
         ):
             self.assertNotIn(native_path_setting, env_example)
+        self.assertIn("BENCHMARK_AGENT=\n", env_example)
+        self.assertNotIn("BENCHMARK_AGENT=opencode-native\n", env_example)
         self.assertIn("BENCHMARK_OPENCODE_AGENT=build", env_example)
         self.assertIn("BENCHMARK_PASSTHROUGH_ENV_KEYS=", env_example)
         self.assertIn(
@@ -132,6 +135,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         )
         self.assertIn("--env-file .env", check_block)
         self.assertIn("--suite", check_block)
+        self.assertNotIn("--agent", check_block)
         self.assertNotIn("--root", check_block)
         self.assertNotIn("--harness-root", check_block)
         self.assertNotIn("preflight", check_block)
@@ -147,21 +151,24 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         )
         self.assertIn("--root", exhaustive)
         self.assertIn("--harness-root", exhaustive)
+        self.assertIn('--agent "$(BENCHMARK_AGENT)"', exhaustive)
 
         benchmark_block = makefile.split(
             "benchmark: _benchmark-execution-env", 1
         )[1].split(
-            "benchmark-report: _benchmark-campaign-env", 1
+            "benchmark-report: _benchmark-selected-campaign-env", 1
         )[0]
         self.assertNotIn("benchmark-check", benchmark_block)
         self.assertNotIn("preflight", benchmark_block)
+        self.assertIn('--agent "$(BENCHMARK_AGENT)"', benchmark_block)
 
         report_block = makefile.split(
-            "benchmark-report: _benchmark-campaign-env", 1
+            "benchmark-report: _benchmark-selected-campaign-env", 1
         )[1].split(
-            "_benchmark-score-env: _benchmark-campaign-env", 1
+            "_benchmark-score-env: _benchmark-selected-campaign-env", 1
         )[0]
         self.assertNotIn("--harness-root", report_block)
+        self.assertIn('--agent "$(BENCHMARK_AGENT)"', report_block)
 
     def test_make_benchmark_fails_before_execution_without_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -187,11 +194,46 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             result.stdout,
         )
 
+    def test_make_benchmark_fails_closed_without_explicit_agent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".env").write_text(
+                "BENCHMARK_SUITE_PATH=benchmarks/suites/example\n"
+                "BENCHMARK_CAMPAIGN_ROOT=/work/campaign\n"
+                "BENCHMARK_HARNESS_REPO_ROOT=/work/agentsCookbook\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                (
+                    "make",
+                    "--no-print-directory",
+                    "-f",
+                    str(MAKEFILE),
+                    "benchmark",
+                ),
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "set BENCHMARK_AGENT explicitly in .env",
+            result.stdout,
+        )
+        self.assertNotIn(
+            "uv run --no-project python -m benchmarks run",
+            result.stdout,
+        )
+
     def test_make_dry_run_transports_explicit_env_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / ".env").write_text(
                 "HASHMARKS_BENCH_SOURCE=/work/Hashmarks\n"
+                "BENCHMARK_AGENT=opencode-native\n"
                 "BENCHMARK_SUITE_PATH=benchmarks/suites/example\n"
                 "BENCHMARK_CAMPAIGN_ROOT=/work/campaign\n"
                 "BENCHMARK_HARNESS_REPO_ROOT=/work/agentsCookbook\n",
@@ -226,11 +268,119 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         self.assertIn('--suite "benchmarks/suites/example"', result.stdout)
         self.assertIn('--root "/work/campaign"', result.stdout)
         self.assertIn('--harness-root "/work/agentsCookbook"', result.stdout)
+        self.assertIn('--agent "opencode-native"', result.stdout)
+
+    def test_make_check_accepts_env_without_agent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".env").write_text(
+                "BENCHMARK_SUITE_PATH=benchmarks/suites/example\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ("make", "--no-print-directory", "-n", "-f", str(MAKEFILE), "benchmark-check"),
+                cwd=root,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("python -m benchmarks check", result.stdout)
+        self.assertNotIn("--agent", result.stdout)
+
+    def test_selected_targets_require_agent_in_env_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".env").write_text(
+                "BENCHMARK_SUITE_PATH=benchmarks/suites/example\n"
+                "BENCHMARK_CAMPAIGN_ROOT=/work/campaign\n"
+                "BENCHMARK_HARNESS_REPO_ROOT=/work/agentsCookbook\n"
+                "BENCHMARK_SCORE_SCRIPT_PATH=benchmarks/suites/example/score.py\n"
+                "BENCHMARK_SCORE_OUTPUT_PATH=/work/campaign/report.json\n",
+                encoding="utf-8",
+            )
+            for target in (
+                "benchmark-check-all",
+                "benchmark",
+                "benchmark-report",
+                "benchmark-score",
+            ):
+                with self.subTest(target=target):
+                    result = subprocess.run(
+                        ("make", "--no-print-directory", "-f", str(MAKEFILE), target),
+                        cwd=root,
+                        env={**os.environ, "BENCHMARK_AGENT": "codex-native"},
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(
+                        "set BENCHMARK_AGENT explicitly in .env",
+                        result.stdout + result.stderr,
+                    )
+
+    def test_blank_agent_in_env_file_is_not_replaced_by_shell_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".env").write_text(
+                "BENCHMARK_SUITE_PATH=benchmarks/suites/example\n"
+                "BENCHMARK_AGENT=\n"
+                "BENCHMARK_CAMPAIGN_ROOT=/work/campaign\n"
+                "BENCHMARK_HARNESS_REPO_ROOT=/work/agentsCookbook\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ("make", "--no-print-directory", "-f", str(MAKEFILE), "benchmark"),
+                cwd=root,
+                env={**os.environ, "BENCHMARK_AGENT": "codex-native"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "set BENCHMARK_AGENT explicitly in .env",
+            result.stdout + result.stderr,
+        )
+
+    def test_make_transports_two_explicit_agents_to_selected_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".env").write_text(
+                "BENCHMARK_AGENT=codex-native,opencode-native\n"
+                "BENCHMARK_SUITE_PATH=benchmarks/suites/example\n"
+                "BENCHMARK_CAMPAIGN_ROOT=/work/campaign\n"
+                "BENCHMARK_HARNESS_REPO_ROOT=/work/agentsCookbook\n"
+                "BENCHMARK_SCORE_SCRIPT_PATH=benchmarks/suites/example/score.py\n"
+                "BENCHMARK_SCORE_OUTPUT_PATH=/work/campaign/report.json\n",
+                encoding="utf-8",
+            )
+            for target in (
+                "benchmark-check-all",
+                "benchmark",
+                "benchmark-report",
+                "benchmark-score",
+            ):
+                with self.subTest(target=target):
+                    result = subprocess.run(
+                        ("make", "--no-print-directory", "-n", "-f", str(MAKEFILE), target),
+                        cwd=root,
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn(
+                        '--agent "codex-native,opencode-native"',
+                        result.stdout,
+                    )
 
     def test_make_score_transports_explicit_score_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / ".env").write_text(
+                "BENCHMARK_AGENT=opencode-native\n"
                 "BENCHMARK_SUITE_PATH=benchmarks/suites/example\n"
                 "BENCHMARK_CAMPAIGN_ROOT=/work/campaign\n"
                 "BENCHMARK_HARNESS_REPO_ROOT=/work/agentsCookbook\n"
@@ -264,6 +414,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             '--output "/work/campaign/special-report.json"',
             result.stdout,
         )
+        self.assertIn('--agent "opencode-native"', result.stdout)
 
 
 if __name__ == "__main__":

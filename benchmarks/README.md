@@ -28,7 +28,7 @@ Trial admission is single-owned by `benchmarks.harness.admission`:
 
 Both `preflight` and `run` use that same path. Preflight is diagnostic and never invokes the coding agent or publishes a trial result.
 
-Runtime readiness is deliberately separate from trial admission. `benchmark-check`/the `check` command never selects or materializes a task, applies a mutation, runs an oracle, derives a trial/execution identity, inspects receipts, or invokes a model. It creates one disposable smoke workspace, resolves the suite's unique native hosts and MCP subjects, verifies Hashmarks source authority, and checks each unique host/subject exposure once. The disposable workspace is deleted when the command exits; rerunning the check is always an explicit user action.
+Runtime readiness is deliberately separate from trial admission. `benchmark-check`/the `check` command never selects or materializes a task, applies a mutation, runs an oracle, derives a trial/execution identity, inspects receipts, or invokes a model. It creates one disposable smoke workspace, verifies shared subject prerequisites once, and checks each distinct agent/subject pair, including bare conditions, once. The held-out suite therefore produces six pair outcomes rather than expanding its 216 task/condition/seed definitions. The disposable workspace is deleted when the command exits; rerunning the check is always an explicit user action.
 
 Native tool discovery and benchmark-subject selection are separate authorities.
 
@@ -59,6 +59,7 @@ Keep deliberate benchmark choices separate from native host discovery:
 | Setting | Meaning | Authority/lifetime |
 | --- | --- | --- |
 | `HASHMARKS_BENCH_SOURCE` | Clean committed Hashmarks checkout being measured | Explicit product source authority |
+| `BENCHMARK_AGENT` | One native agent or a comma-separated list for preflight/run/report/score | Mandatory selected-agent authority; no default |
 | `BENCHMARK_OPENCODE_AGENT` | Exact OpenCode agent persona to execute | Explicit benchmark semantic choice |
 | `BENCHMARK_PASSTHROUGH_ENV_KEYS` | Comma-separated provider variables explicitly admitted into participant processes | Optional provider environment authority |
 | `BENCHMARK_SUITE_PATH` | Committed suite definition inside agentsCookbook | Benchmark source/configuration |
@@ -85,45 +86,58 @@ cp -n .env.example .env
 
 In the selected Hashmarks source checkout, install its locked MCP extra with `uv sync --frozen --extra mcp --group test` before running readiness. A correct `HASHMARKS_BENCH_SOURCE` path alone does not install the MCP server dependency.
 
+Set one or both execution agents explicitly in `.env` before selected-agent work; omission is a hard failure for those targets:
+
+```dotenv
+BENCHMARK_AGENT=opencode-native
+# Or: BENCHMARK_AGENT=codex-native,opencode-native
+```
+
 Then use:
 
 ```sh
-make benchmark-check       # fast native runtime/MCP readiness only
-make benchmark-check-all   # explicit exhaustive frozen-definition preflight
+make benchmark-check       # six agent/subject readiness probes for held-out v1
+make benchmark-check-all   # preflight 108 definitions per selected agent
 make benchmark
 make benchmark-report      # generic framework report
 make benchmark-score       # suite-specific scorer configured in .env
 ```
 
-The Makefile chooses no native executable or native config root. Codex, OpenCode, and Enola use their installed host conventions; the benchmark observes what resolves. The Makefile only transports deliberate benchmark choices such as the Hashmarks checkout, suite, campaign root, OpenCode agent persona, provider passthrough, and scorer. Missing explicit benchmark choices fail before work begins.
+The Makefile chooses no native executable or native config root. Codex, OpenCode, and Enola use their installed host conventions; the benchmark observes what resolves. The Makefile transports deliberate benchmark choices such as the Hashmarks checkout, selected agents, suite, campaign root, OpenCode agent persona, provider passthrough, and scorer. Missing selected-agent choices fail before preflight, execution, reporting, or scoring.
 
-`benchmark-check` answers only **“can the configured native hosts and benchmark subjects be wired on this machine right now?”** It checks each unique participant/pair once and exits. OpenCode's MCP probe supplies a live stdio connection check. Only when that connection fails does readiness launch the selected MCP executable and args in the selected cwd and environment with stdin closed and a five-second bound, solely to capture a direct startup failure. A clean exit after stdin closes is inconclusive and adds no diagnostic. Codex readiness proves its native config plus the exact ephemeral subject exposure without invoking a model; it is reported as ready rather than falsely labelled connected. No readiness command retries automatically.
+`benchmark-check` answers only **“can each suite agent/subject combination be wired on this machine right now?”** For held-out v1 it checks Codex and OpenCode with bare tools, Hashmarks, and Enola: six pair outcomes, independent of `BENCHMARK_AGENT`. OpenCode's assisted probes supply a live stdio connection check. Only when that connection fails does readiness launch the selected MCP executable and args in the selected cwd and environment with stdin closed and a five-second bound, solely to capture a direct startup failure. A clean exit after stdin closes is inconclusive and adds no diagnostic. Codex readiness proves its native config plus the exact ephemeral subject exposure without invoking a model; it is reported as ready rather than falsely labelled connected. No readiness command retries automatically.
 
-`benchmark-check-all` is the intentionally expensive command: it runs the existing `preflight` path across every frozen definition selected by the suite.
+`benchmark-check-all` is the intentionally expensive command: it preflights every frozen definition for the explicitly selected agents. Held-out v1 has 108 definitions for one agent or 216 when both are listed.
 
 ### Advanced direct CLI
 
-The benchmark CLI remains available for automation and explicit one-off selections. Repository Python is owned by uv: invoke it as `uv run --no-project python -m benchmarks ...`. The CLI does not discover `.env` and does not default `--harness-root`.
+The benchmark CLI remains available for automation and explicit one-off selections. Repository Python is owned by uv: invoke it as `uv run --no-project python -m benchmarks ...`. The CLI does not discover `.env` and does not default `--harness-root`. The snippets below set shell variables explicitly; entries in `.env` do not become shell variables automatically. Direct `--agent` accepts repeated values or a comma-separated list.
+
+```bash
+suite=benchmarks/suites/repository-intelligence/heldout-v1
+root=/tmp/agentscookbook-heldout-v1
+agents=opencode-native  # or codex-native,opencode-native
+```
 
 Fast runtime readiness:
 
 ```bash
 uv run --no-project python -m benchmarks check \
   --env-file .env \
-  --suite "$BENCHMARK_SUITE_PATH"
+  --suite "$suite"
 ```
 
-This command uses no campaign root or harness root and creates no benchmark trial.
+This command uses no campaign root, harness root, or agent selection and creates no benchmark trial. Add `--agent "$agents"` to diagnose only the selected agents.
 
 For exhaustive frozen-definition admission, use `make benchmark-check-all` or call preflight explicitly:
 
 ```bash
 uv run --no-project python -m benchmarks preflight \
   --env-file .env \
-  --suite "$BENCHMARK_SUITE_PATH" \
-  --root "$BENCHMARK_CAMPAIGN_ROOT" \
-  --harness-root "$BENCHMARK_HARNESS_REPO_ROOT" \
-  --agent opencode-native \
+  --suite "$suite" \
+  --root "$root" \
+  --harness-root . \
+  --agent "$agents" \
   --subject hashmarks \
   --subject none
 ```
@@ -135,10 +149,10 @@ Then run the exact same explicit selection:
 ```bash
 uv run --no-project python -m benchmarks run \
   --env-file .env \
-  --suite "$BENCHMARK_SUITE_PATH" \
-  --root "$BENCHMARK_CAMPAIGN_ROOT" \
-  --harness-root "$BENCHMARK_HARNESS_REPO_ROOT" \
-  --agent opencode-native \
+  --suite "$suite" \
+  --root "$root" \
+  --harness-root . \
+  --agent "$agents" \
   --subject hashmarks \
   --subject none
 ```
@@ -147,16 +161,16 @@ Status and report do not execute participants, so they need only the suite, camp
 
 ```bash
 uv run --no-project python -m benchmarks status \
-  --suite "$BENCHMARK_SUITE_PATH" \
-  --root "$BENCHMARK_CAMPAIGN_ROOT" \
-  --agent opencode-native \
+  --suite "$suite" \
+  --root "$root" \
+  --agent "$agents" \
   --subject hashmarks \
   --subject none
 
 uv run --no-project python -m benchmarks report \
-  --suite "$BENCHMARK_SUITE_PATH" \
-  --root "$BENCHMARK_CAMPAIGN_ROOT" \
-  --agent opencode-native \
+  --suite "$suite" \
+  --root "$root" \
+  --agent "$agents" \
   --subject hashmarks \
   --subject none
 ```
@@ -177,7 +191,7 @@ Then run the exact same selection:
 uv run --no-project python -m benchmarks run \
   --suite "$suite" \
   --root "$root" \
-  --agent opencode-native \
+  --agent "$agents" \
   --subject hashmarks \
   --subject enola
 ```
@@ -190,7 +204,7 @@ Inspect resumability without invoking any agent:
 uv run --no-project python -m benchmarks status \
   --suite "$suite" \
   --root "$root" \
-  --agent opencode-native \
+  --agent "$agents" \
   --subject hashmarks \
   --subject enola
 ```
@@ -203,7 +217,7 @@ Finally:
 uv run --no-project python -m benchmarks report \
   --suite "$suite" \
   --root "$root" \
-  --agent opencode-native \
+  --agent "$agents" \
   --subject hashmarks \
   --subject enola
 ```

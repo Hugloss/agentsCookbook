@@ -20,6 +20,7 @@ The local file contains **benchmark choices**, not a mirror of Linux installatio
 | Setting | What it points to |
 | --- | --- |
 | `HASHMARKS_BENCH_SOURCE` | Clean committed Hashmarks checkout; the benchmark executes its exact `.venv/bin/hashmarks` |
+| `BENCHMARK_AGENT` | One native agent or explicit comma-separated list, for example `codex-native,opencode-native`; there is no default for selected-agent work |
 
 Hashmarks is explicit because we are actively developing it and may have several local checkouts/installations.
 
@@ -75,6 +76,15 @@ agentsCookbook/
 
 ### Normal local workflow
 
+Readiness needs no `BENCHMARK_AGENT`. Before preflight, execution, reporting, or scoring, select one or both agents explicitly in `.env`:
+
+```dotenv
+BENCHMARK_AGENT=opencode-native
+# Or: BENCHMARK_AGENT=codex-native,opencode-native
+```
+
+If `BENCHMARK_AGENT` is absent or empty, selected-agent targets stop before any preflight or agent run.
+
 ```sh
 make benchmark-check
 # Optional explicit exhaustive admission:
@@ -84,8 +94,8 @@ make benchmark-report
 make benchmark-score
 ```
 
-- `benchmark-check` is a fast runtime/connectivity check. It uses one disposable smoke workspace, checks each unique host/subject pairing once, invokes no model, creates no trial, and exits.
-- `benchmark-check-all` explicitly preflights all 216 frozen definitions. It can be slow and is never run implicitly.
+- `benchmark-check` tests all six distinct agent/subject pairs once: each agent with bare tools, Hashmarks, and Enola. It uses one disposable smoke workspace, invokes no model, creates no trial, and exits.
+- `benchmark-check-all` preflights 108 frozen definitions for one selected agent or 216 for both. It can be slow and is never run implicitly.
 - `benchmark` executes/resumes the frozen campaign and does not secretly run either check first.
 - `benchmark-report` is the generic framework report.
 - `benchmark-score` runs this suite's explicit language-separated held-out scorer.
@@ -96,30 +106,40 @@ Do not run `hashmarks install --opencode` for benchmark authority and do not pre
 
 ### Advanced direct CLI
 
-Most developers should use the Make targets. The fast readiness check needs only the suite and explicit env file:
+Most developers should use the Make targets. For direct CLI calls, set shell variables explicitly; `.env` entries do not become shell variables automatically:
+
+```sh
+suite=benchmarks/suites/repository-intelligence/heldout-v1
+root=/tmp/agentscookbook-heldout-v1
+agents=opencode-native  # or codex-native,opencode-native
+```
+
+The fast readiness check needs only the suite and explicit env file:
 
 ```sh
 uv run --no-project python -m benchmarks check \
   --env-file .env \
-  --suite "$BENCHMARK_SUITE_PATH"
+  --suite "$suite"
 ```
 
-It does not need `BENCHMARK_CAMPAIGN_ROOT` or `BENCHMARK_HARNESS_REPO_ROOT`. It verifies Hashmarks/Enola runtime availability, Codex/OpenCode native configuration, Codex exact subject exposure, and live OpenCode MCP connections. It does not make an LLM request.
+It does not need a campaign root, harness root, or agent selection. It verifies Hashmarks/Enola runtime availability, Codex/OpenCode native configuration, Codex exact subject exposure, and live OpenCode MCP connections. It does not make an LLM request. Add `--agent "$agents"` for a focused readiness check.
 
 For exhaustive trial admission, pass campaign and harness authority explicitly:
 
 ```sh
 uv run --no-project python -m benchmarks preflight \
   --env-file .env \
-  --suite "$BENCHMARK_SUITE_PATH" \
-  --root "$BENCHMARK_CAMPAIGN_ROOT" \
-  --harness-root "$BENCHMARK_HARNESS_REPO_ROOT"
+  --suite "$suite" \
+  --root "$root" \
+  --harness-root . \
+  --agent "$agents"
 
 uv run --no-project python -m benchmarks run \
   --env-file .env \
-  --suite "$BENCHMARK_SUITE_PATH" \
-  --root "$BENCHMARK_CAMPAIGN_ROOT" \
-  --harness-root "$BENCHMARK_HARNESS_REPO_ROOT"
+  --suite "$suite" \
+  --root "$root" \
+  --harness-root . \
+  --agent "$agents"
 ```
 
 When filtering subjects, controls are never added automatically. For a Hashmarks-vs-bare paired subset, request both explicitly:
@@ -127,14 +147,14 @@ When filtering subjects, controls are never added automatically. For a Hashmarks
 ```sh
 uv run --no-project python -m benchmarks preflight \
   --env-file .env \
-  --suite "$BENCHMARK_SUITE_PATH" \
-  --root "$BENCHMARK_CAMPAIGN_ROOT" \
-  --harness-root "$BENCHMARK_HARNESS_REPO_ROOT" \
-  --agent opencode-native \
+  --suite "$suite" \
+  --root "$root" \
+  --harness-root . \
+  --agent "$agents" \
   --subject hashmarks \
   --subject none
 ```
 
-Use a fresh campaign root for each independent Hashmarks candidate or native agent/model configuration. A failed preflight or incomplete receipt is not a scored trial. The specialized score requires all 216 valid bundles and reports Python and TypeScript separately, with within-agent paired assistance and descriptive cross-agent observations. It does not rank the products into one winner.
+Use a fresh campaign root for each independent Hashmarks candidate or native agent/model configuration. A failed preflight or incomplete receipt is not a scored trial. The specialized score writes one report for the selected population: 108 valid bundles for one agent or 216 for both, split evenly between Python and TypeScript. Its v2 JSON records `selection.agents` as a list. It compares assistance within each agent and reports cross-agent observations descriptively when both are selected. It does not rank the products into one winner.
 
 The permanent drift gate lives in Hashmarks tests. This suite measures downstream agent behavior and must not replace Hashmarks' owner, ambiguity, provenance, freshness, or verification regressions.

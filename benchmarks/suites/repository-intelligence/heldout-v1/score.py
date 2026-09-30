@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from benchmarks.harness.report import build_report
+from benchmarks.harness.selection import SelectionError, parse_agent_arguments
 from benchmarks.harness.suite import load_suite
 
 
@@ -14,8 +15,21 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--results", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--agent", action="append", required=True)
     args = parser.parse_args()
     suite = load_suite(Path(__file__).resolve().parent)
+    try:
+        agents = parse_agent_arguments(args.agent)
+    except SelectionError as exc:
+        raise SystemExit(str(exc)) from exc
+    unknown = sorted(set(agents) - set(suite.agents))
+    if unknown:
+        raise SystemExit("unknown benchmark agent(s): " + ", ".join(unknown))
+    selected_agents = set(agents)
+    conditions = {
+        str(condition["id"]): condition
+        for condition in suite.experiment["conditions"]
+    }
     definitions = suite.trial_definitions()
     languages = {}
     for language in ("python", "typescript"):
@@ -28,9 +42,14 @@ def main() -> int:
             str(row["definition_id"])
             for row in definitions
             if row["task_id"] in task_ids
+            and conditions[str(row["condition_id"])]["agent"] in selected_agents
         }
-        if len(task_ids) != 6 or len(selected) != 108:
-            raise ValueError(f"{language}: expected six tasks and 108 frozen trials")
+        expected = 54 * len(agents)
+        if len(task_ids) != 6 or len(selected) != expected:
+            raise ValueError(
+                f"{language}: expected six tasks and {expected} frozen trials "
+                f"for agents {', '.join(agents)}"
+            )
         report = build_report(
             suite=suite,
             results_root=args.results,
@@ -48,13 +67,18 @@ def main() -> int:
             "cross_agent_observations": report["cross_agent_observations"],
         }
     payload = {
-        "schema": "agents-cookbook-heldout-observer-outcomes.v1",
-        "expected_trials": 216,
+        "schema": "agents-cookbook-heldout-observer-outcomes.v2",
+        "expected_trials": sum(row["expected_trials"] for row in languages.values()),
         "observed_trials": sum(row["observed_trials"] for row in languages.values()),
         "languages": languages,
+        "selection": {"agents": sorted(agents)},
         "authority": {
             "overall_winner": None,
-            "cross_agent_comparison": "descriptive-only",
+            "cross_agent_comparison": (
+                "descriptive-only"
+                if len(agents) > 1
+                else "not-applicable-single-agent-selection"
+            ),
             "assistance_comparison": "within-agent-paired-trials",
         },
     }
