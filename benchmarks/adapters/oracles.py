@@ -113,6 +113,7 @@ class CommandOracle:
                 max_stdout_bytes=5_000_000,
                 max_stderr_bytes=2_000_000,
             ),
+            inherit_environment=False,
         )
 
     def healthcheck(self, context: TrialContext) -> Observation:
