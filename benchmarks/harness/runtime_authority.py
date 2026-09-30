@@ -22,12 +22,6 @@ PROCESS_SUBSTRATE_ENV_KEYS = (
 
 RUNTIME_AUTHORITY_ENV_KEYS = (
     "HASHMARKS_BENCH_SOURCE",
-    "ENOLA_BENCH_EXECUTABLE",
-    "BENCHMARK_CODEX_EXECUTABLE",
-    "BENCHMARK_CODEX_HOME",
-    "BENCHMARK_OPENCODE_EXECUTABLE",
-    "BENCHMARK_OPENCODE_HOME",
-    "BENCHMARK_OPENCODE_CONFIG_HOME",
     "BENCHMARK_OPENCODE_AGENT",
     "BENCHMARK_PASSTHROUGH_ENV_KEYS",
 )
@@ -53,34 +47,12 @@ def required_runtime_authority(
     required: set[str] = set()
     if "hashmarks" in subjects:
         required.add("HASHMARKS_BENCH_SOURCE")
-    if "enola" in subjects:
-        required.add("ENOLA_BENCH_EXECUTABLE")
-    codex_definitions = [
-        suite.agents[agent]
-        for agent in agents
-        if agent in suite.agents
-        and suite.agents[agent]["adapter"] == "codex"
-    ]
-    if codex_definitions:
-        required.add("BENCHMARK_CODEX_EXECUTABLE")
-    if any(
-        definition.get("configuration", {}).get("native_host") is True
-        for definition in codex_definitions
-    ):
-        required.add("BENCHMARK_CODEX_HOME")
     if any(
         suite.agents[agent]["adapter"] == "opencode-native"
         for agent in agents
         if agent in suite.agents
     ):
-        required.update(
-            {
-                "BENCHMARK_OPENCODE_EXECUTABLE",
-                "BENCHMARK_OPENCODE_HOME",
-                "BENCHMARK_OPENCODE_CONFIG_HOME",
-                "BENCHMARK_OPENCODE_AGENT",
-            }
-        )
+        required.add("BENCHMARK_OPENCODE_AGENT")
     return tuple(sorted(required))
 
 
