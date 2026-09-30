@@ -10,7 +10,7 @@ From the agentsCookbook root, bind the Hashmarks checkout under test:
 export HASHMARKS_BENCH_SOURCE=/absolute/path/to/Hashmarks
 ```
 
-Do not run `hashmarks install --opencode` for the benchmark and do not prepend the checkout to `PATH`. The harness directly selects `$HASHMARKS_BENCH_SOURCE/.venv/bin/hashmarks` and injects that exact executable into the ephemeral OpenCode benchmark exposure. Repository-local `opencode.json` is not created or modified.
+Do not run `hashmarks install --opencode` for the benchmark and do not prepend the checkout to `PATH`. The source must be a clean committed checkout. The harness directly selects `$HASHMARKS_BENCH_SOURCE/.venv/bin/hashmarks`, records its Git commit/tree, and injects that exact executable into the ephemeral OpenCode benchmark exposure. Repository-local `opencode.json` is not created or modified.
 
 Then validate and preflight:
 
