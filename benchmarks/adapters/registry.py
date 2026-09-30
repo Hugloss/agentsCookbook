@@ -25,7 +25,6 @@ def build_subject(definition: dict[str, Any]):
     if adapter == "hashmarks":
         return HashmarksSubject(
             timeout_seconds=int(config.get("timeout_seconds", 120)),
-            require_source=bool(config.get("require_source", False)),
         )
     if adapter == "enola":
         return EnolaSubject(timeout_seconds=int(config.get("timeout_seconds", 180)))
@@ -108,7 +107,6 @@ def build_agent(definition: dict[str, Any], *, budgets: dict[str, Any]):
             timeout_seconds=timeout_seconds,
             max_output_bytes=max_output_bytes,
             max_tool_calls=max_tool_calls,
-            strict_executable=bool(config.get("strict_executable", False)),
         )
 
     raise AdapterConfigurationError(f"unknown agent adapter: {adapter}")
