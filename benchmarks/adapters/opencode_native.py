@@ -396,6 +396,9 @@ class OpenCodeNativeAgent:
                     **executable.payload,
                     "available": False,
                     "reason": reason,
+                    "failure_stage": envelope.get("failure_stage")
+                    if envelope
+                    else None,
                     "runtime_process": result.metrics(),
                     "stderr": result.stderr.decode(
                         "utf-8",

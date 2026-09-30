@@ -1057,9 +1057,12 @@ function prepareBenchmarkConfig({
       );
       const connected = connectedMcp(connection.stdout, selectedSubject);
       if (connection.status !== 0 || !connected) {
-        throw new Error(
-          mcpConnectionFailure(connection, selectedSubject),
-        );
+        return {
+          status: 'failed',
+          reason: mcpConnectionFailure(connection, selectedSubject),
+          failure_stage: 'mcp-connection',
+          inspection: base.inspection,
+        };
       }
     }
     return {

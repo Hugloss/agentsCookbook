@@ -12,6 +12,7 @@ from benchmarks.adapters.hashmarks import HashmarksSubject
 from benchmarks.harness.model import McpExposure, Observation
 from benchmarks.harness.readiness import (
     _mcp_startup_diagnostic,
+    _pair_check,
     check_runtime_readiness,
 )
 from benchmarks.harness.suite import (
@@ -20,6 +21,7 @@ from benchmarks.harness.suite import (
     load_runtime_suite,
     load_suite,
 )
+from scripts.agent_economics.bounded_process import BoundedProcessError
 
 
 class FakeSubject:
@@ -177,20 +179,30 @@ class RuntimeReadinessTests(unittest.TestCase):
                 args=("--workspace", ".", "mcp"),
                 cwd=workspace,
                 semantic_identity={"name": "hashmarks", "transport": "stdio"},
+                environment={"MCP_SETTING": "selected"},
             )
             process = SimpleNamespace(
                 return_code=1,
                 timed_out=False,
+                executable_missing=False,
+                stdout_truncated=False,
+                stderr_truncated=False,
                 stderr=(
                     b'Hashmarks MCP support requires the optional extra: '
                     b'pip install "hashmarks[mcp]"\n'
                 ),
                 stdout=b"",
             )
-            with mock.patch(
-                "benchmarks.harness.readiness.run_bounded",
-                return_value=process,
-            ) as bounded:
+            with (
+                mock.patch(
+                    "benchmarks.harness.readiness._native_environment",
+                    return_value={"PATH": "/native/bin", "HOME": "/native/home"},
+                ),
+                mock.patch(
+                    "benchmarks.harness.readiness.run_bounded",
+                    return_value=process,
+                ) as bounded,
+            ):
                 detail = _mcp_startup_diagnostic(context, exposure)
 
             self.assertIn("direct-startup-exit=1", detail)
@@ -200,6 +212,126 @@ class RuntimeReadinessTests(unittest.TestCase):
                 bounded.call_args.kwargs["limits"].timeout_seconds,
                 5,
             )
+            self.assertEqual(bounded.call_args.kwargs["cwd"], workspace)
+            self.assertEqual(
+                bounded.call_args.kwargs["environment"],
+                {
+                    "PATH": "/native/bin",
+                    "HOME": "/native/home",
+                    "MCP_SETTING": "selected",
+                },
+            )
+
+    def test_direct_probe_does_not_turn_clean_eof_into_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            context = mock.Mock(workspace=workspace, environment={})
+            exposure = FakeSubject("hashmarks").mcp_exposure(context)
+            process = SimpleNamespace(
+                return_code=0,
+                timed_out=False,
+                executable_missing=False,
+                stdout_truncated=False,
+                stderr_truncated=False,
+                stderr=b"MCP server started\n",
+                stdout=b"",
+            )
+            with (
+                mock.patch(
+                    "benchmarks.harness.readiness._native_environment",
+                    return_value={},
+                ),
+                mock.patch(
+                    "benchmarks.harness.readiness.run_bounded",
+                    return_value=process,
+                ),
+            ):
+                self.assertIsNone(_mcp_startup_diagnostic(context, exposure))
+
+    def test_direct_probe_failures_remain_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            context = mock.Mock(workspace=workspace, environment={})
+            exposure = FakeSubject("hashmarks").mcp_exposure(context)
+            with (
+                mock.patch(
+                    "benchmarks.harness.readiness._native_environment",
+                    return_value={},
+                ),
+                mock.patch(
+                    "benchmarks.harness.readiness.run_bounded",
+                    side_effect=BoundedProcessError("command failed to start"),
+                ),
+            ):
+                self.assertIn(
+                    "direct-startup-probe-error=command failed to start",
+                    _mcp_startup_diagnostic(context, exposure),
+                )
+
+            process = SimpleNamespace(
+                return_code=-9,
+                timed_out=False,
+                executable_missing=False,
+                stdout_truncated=False,
+                stderr_truncated=True,
+                stderr=b"startup output",
+                stdout=b"",
+            )
+            with (
+                mock.patch(
+                    "benchmarks.harness.readiness._native_environment",
+                    return_value={},
+                ),
+                mock.patch(
+                    "benchmarks.harness.readiness.run_bounded",
+                    return_value=process,
+                ),
+            ):
+                detail = _mcp_startup_diagnostic(context, exposure)
+            self.assertIn("direct-startup-stderr-truncated=true", detail)
+
+    def test_only_mcp_connection_failures_launch_direct_probe(self) -> None:
+        suite = fake_suite()
+        agent = mock.Mock()
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch(
+                "benchmarks.harness.readiness.build_subject",
+                return_value=FakeSubject("hashmarks"),
+            ),
+            mock.patch("benchmarks.harness.readiness._agent", return_value=agent),
+            mock.patch(
+                "benchmarks.harness.readiness._mcp_startup_diagnostic",
+                return_value="direct-startup-exit=1",
+            ) as direct,
+        ):
+            config_root = Path(tmp) / "config"
+            config_root.mkdir()
+            agent.prepare.return_value = Observation(
+                {"available": False, "reason": "native config failed"}, ""
+            )
+            config_check = _pair_check(
+                suite, "opencode-native", "hashmarks", config_root
+            )
+            self.assertEqual(config_check.reason, "native config failed")
+            direct.assert_not_called()
+
+            mcp_root = Path(tmp) / "mcp"
+            mcp_root.mkdir()
+            agent.prepare.return_value = Observation(
+                {
+                    "available": False,
+                    "reason": "MCP connection closed",
+                    "failure_stage": "mcp-connection",
+                },
+                "",
+            )
+            mcp_check = _pair_check(suite, "opencode-native", "hashmarks", mcp_root)
+            self.assertEqual(
+                mcp_check.reason,
+                "MCP connection closed; direct-startup-exit=1",
+            )
+            direct.assert_called_once()
 
     def test_each_unique_runtime_pair_is_checked_once_without_retry(self) -> None:
         suite = fake_suite()
