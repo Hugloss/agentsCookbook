@@ -156,6 +156,7 @@ def run_bounded(
     limits: ProcessLimits = ProcessLimits(),
     environment: Mapping[str, str] | None = None,
     inherit_environment: bool = True,
+    close_stdin: bool = False,
 ) -> ProcessResult:
     if not argv or not all(isinstance(item, str) and item for item in argv):
         raise BoundedProcessError("argv must contain non-empty strings")
@@ -183,6 +184,8 @@ def run_bounded(
         "shell": False,
         "env": child_environment,
     }
+    if close_stdin:
+        popen_kwargs["stdin"] = subprocess.DEVNULL
     if os.name == "nt":
         popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:

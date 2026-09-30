@@ -1062,6 +1062,7 @@ class PilotExecutionTests(unittest.TestCase):
                         {
                             "status": "failed",
                             "reason": reason,
+                            "failure_stage": "mcp-connection",
                             "inspection": {
                                 "model": "liteLLM/gemma4",
                                 "provider": "liteLLM",
@@ -1081,6 +1082,7 @@ class PilotExecutionTests(unittest.TestCase):
 
             self.assertFalse(prepared.payload["available"])
             self.assertEqual(prepared.payload["reason"], reason)
+            self.assertEqual(prepared.payload["failure_stage"], "mcp-connection")
             self.assertIn("exit=7", prepared.payload["reason"])
             self.assertIn("hashmarks: failed", prepared.payload["reason"])
             self.assertIn(

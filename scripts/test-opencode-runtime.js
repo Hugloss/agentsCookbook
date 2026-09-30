@@ -438,6 +438,7 @@ async function testSharedLifecycle() {
       subjectExposure: exposure,
     });
     assert.strictEqual(disconnected.status, 'failed');
+    assert.strictEqual(disconnected.failure_stage, 'mcp-connection');
     assert.match(disconnected.reason, /is not connected/);
     assert.match(disconnected.reason, /exit=7/);
     assert.match(disconnected.reason, /hashmarks failed/);
@@ -487,6 +488,7 @@ async function testSharedLifecycle() {
       subjectExposure: exposure,
     });
     assert.strictEqual(drifted.status, 'failed');
+    assert.strictEqual(drifted.failure_stage, undefined);
     assert.match(drifted.reason, /effective benchmark MCP definition changed/);
 
     const wrongExecutable = runtime.prepareBenchmarkConfig({

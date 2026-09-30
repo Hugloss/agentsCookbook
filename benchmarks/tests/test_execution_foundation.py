@@ -110,6 +110,26 @@ class ExecutionFoundationTests(unittest.TestCase):
             ]
             self.assertEqual(resource_warnings, [])
 
+    def test_bounded_process_can_close_child_stdin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = run_bounded(
+                repository_root=root,
+                argv=(
+                    sys.executable,
+                    "-c",
+                    (
+                        "import sys; "
+                        "data=sys.stdin.buffer.read(); "
+                        "print('closed' if data == b'' else 'unexpected')"
+                    ),
+                ),
+                limits=ProcessLimits(timeout_seconds=10),
+                close_stdin=True,
+            )
+            self.assertEqual(result.return_code, 0)
+            self.assertEqual(result.stdout.decode().strip(), "closed")
+
     def test_oracle_requires_positive_health(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             context = _context(Path(tmp))

@@ -14,15 +14,17 @@ from pathlib import Path
 from typing import Any
 
 from benchmarks.adapters.hashmarks import HashmarksSubject
+from benchmarks.adapters.opencode_native import _native_environment
 from benchmarks.adapters.registry import build_agent, build_subject
 from benchmarks.adapters.runtime import observe_executable
-from benchmarks.harness.model import TrialContext
+from benchmarks.harness.model import McpExposure, TrialContext
 from benchmarks.harness.runtime_authority import (
     native_host_paths,
     transport_runtime_authority,
 )
 from benchmarks.harness.suite import SuiteDefinition
 from benchmarks.harness.workspace import isolated_environment
+from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
 READINESS_TIMEOUT_SECONDS = 15
@@ -169,6 +171,51 @@ def _agent_native_check(
     return ReadinessCheck(f"{agent_id} native config", "READY")
 
 
+def _mcp_startup_diagnostic(
+    context: TrialContext,
+    exposure: McpExposure,
+) -> str | None:
+    try:
+        result = run_bounded(
+            repository_root=context.workspace,
+            argv=(exposure.command, *exposure.args),
+            cwd=exposure.cwd,
+            environment={**_native_environment(context), **exposure.environment},
+            limits=ProcessLimits(
+                timeout_seconds=5,
+                max_stdout_bytes=200_000,
+                max_stderr_bytes=200_000,
+            ),
+            inherit_environment=False,
+            close_stdin=True,
+        )
+    except (OSError, ValueError) as exc:
+        return f"direct-startup-probe-error={exc}"
+    if result.executable_missing:
+        return "direct-startup-executable-missing=true"
+    if (
+        result.return_code == 0
+        and not result.timed_out
+        and not result.stdout_truncated
+        and not result.stderr_truncated
+    ):
+        return None
+    stderr = result.stderr.decode("utf-8", errors="replace").strip()
+    stdout = result.stdout.decode("utf-8", errors="replace").strip()
+    details: list[str] = [f"direct-startup-exit={result.return_code}"]
+    if result.timed_out:
+        details.append("direct-startup-timeout=true")
+    if result.stdout_truncated:
+        details.append("direct-startup-stdout-truncated=true")
+    if result.stderr_truncated:
+        details.append("direct-startup-stderr-truncated=true")
+    if stderr:
+        details.append(f"direct-startup-stderr={stderr[-2000:]!r}")
+    elif stdout:
+        details.append(f"direct-startup-stdout={stdout[-1000:]!r}")
+    return "; ".join(details)
+
+
 def _pair_check(
     suite: SuiteDefinition,
     agent_id: str,
@@ -185,14 +232,24 @@ def _pair_check(
     )
     try:
         subject = build_subject(suite.subjects[subject_id])
+        exposure = subject.mcp_exposure(context)
         observation = _agent(suite, agent_id).prepare(context, subject)
     except (OSError, ValueError) as exc:
         return ReadinessCheck(label, "FAILED", str(exc))
     if observation.payload.get("available") is not True:
+        reason = _reason(observation.payload, "host/subject readiness failed")
+        if (
+            adapter == "opencode-native"
+            and exposure is not None
+            and observation.payload.get("failure_stage") == "mcp-connection"
+        ):
+            direct = _mcp_startup_diagnostic(context, exposure)
+            if direct:
+                reason = f"{reason}; {direct}"
         return ReadinessCheck(
             label,
             "FAILED",
-            _reason(observation.payload, "host/subject readiness failed"),
+            reason,
         )
     return ReadinessCheck(
         label,
