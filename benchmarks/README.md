@@ -95,7 +95,7 @@ make benchmark-score       # suite-specific scorer configured in .env
 
 The Makefile chooses no native executable or native config root. Codex, OpenCode, and Enola use their installed host conventions; the benchmark observes what resolves. The Makefile only transports deliberate benchmark choices such as the Hashmarks checkout, suite, campaign root, OpenCode agent persona, provider passthrough, and scorer. Missing explicit benchmark choices fail before work begins.
 
-`benchmark-check` answers only **“can the configured native hosts and benchmark subjects be wired on this machine right now?”** It checks each unique participant/pair once and exits. OpenCode's MCP probe supplies a live stdio connection check. Codex readiness proves its native config plus the exact ephemeral subject exposure without invoking a model; it is reported as ready rather than falsely labelled connected. No readiness command retries automatically.
+`benchmark-check` answers only **“can the configured native hosts and benchmark subjects be wired on this machine right now?”** It checks each unique participant/pair once and exits. OpenCode's MCP probe supplies a live stdio connection check. If that connection closes before OpenCode can report the child cause, readiness runs the exact selected MCP command once more with stdin closed and a five-second bound, solely to capture its direct startup exit/stderr. Codex readiness proves its native config plus the exact ephemeral subject exposure without invoking a model; it is reported as ready rather than falsely labelled connected. No readiness command retries automatically.
 
 `benchmark-check-all` is the intentionally expensive command: it runs the existing `preflight` path across every frozen definition selected by the suite.
 
