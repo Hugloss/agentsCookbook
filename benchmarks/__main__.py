@@ -23,7 +23,7 @@ from benchmarks.harness.runtime_authority import (
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
 from benchmarks.harness.selection import SelectionError, select_definitions
-from benchmarks.harness.suite import load_suite
+from benchmarks.harness.suite import load_runtime_suite, load_suite
 
 
 _BENCHMARK_ENV_KEYS = frozenset(RUNTIME_AUTHORITY_ENV_KEYS)
@@ -109,7 +109,9 @@ def _add_execution_inputs(command: argparse.ArgumentParser) -> None:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m benchmarks")
+    parser = argparse.ArgumentParser(
+        prog="uv run --no-project python -m benchmarks"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     validate = sub.add_parser("validate-suite")
@@ -205,7 +207,11 @@ def _selection_metadata(args, suite, rows) -> dict[str, object]:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    suite = load_suite(args.suite)
+    suite = (
+        load_runtime_suite(args.suite)
+        if args.command == "check"
+        else load_suite(args.suite)
+    )
 
     if args.command == "validate-suite":
         print(
