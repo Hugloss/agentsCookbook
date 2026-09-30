@@ -155,6 +155,7 @@ def run_bounded(
     cwd: Path | str = ".",
     limits: ProcessLimits = ProcessLimits(),
     environment: Mapping[str, str] | None = None,
+    inherit_environment: bool = True,
 ) -> ProcessResult:
     if not argv or not all(isinstance(item, str) and item for item in argv):
         raise BoundedProcessError("argv must contain non-empty strings")
@@ -173,7 +174,7 @@ def run_bounded(
     environment_identity, environment_variables = _environment_evidence(runtime_environment)
     command_identity = _identity(argv, cwd_relative, environment_identity)
     started = time.perf_counter()
-    child_environment = os.environ.copy()
+    child_environment = os.environ.copy() if inherit_environment else {}
     child_environment.update(runtime_environment)
     popen_kwargs: dict[str, object] = {
         "cwd": resolved_cwd,
