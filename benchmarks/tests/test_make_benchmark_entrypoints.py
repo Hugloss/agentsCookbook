@@ -24,6 +24,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         )
         self.assertNotIn("/tmp/agentscookbook-heldout-v1", makefile)
         self.assertNotIn("/absolute/path/to/Hashmarks", makefile)
+        self.assertNotIn("--harness-root .", makefile)
 
         self.assertIn(
             "BENCHMARK_SUITE=benchmarks/suites/repository-intelligence/heldout-v1",
@@ -37,6 +38,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             "HASHMARKS_BENCH_SOURCE=/absolute/path/to/Hashmarks",
             env_example,
         )
+        self.assertIn("BENCHMARK_HARNESS_ROOT=.", env_example)
 
     def test_make_benchmark_fails_before_execution_without_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -65,7 +67,8 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             (root / ".env").write_text(
                 "HASHMARKS_BENCH_SOURCE=/work/Hashmarks\n"
                 "BENCHMARK_SUITE=benchmarks/suites/example\n"
-                "BENCHMARK_ROOT=/work/campaign\n",
+                "BENCHMARK_ROOT=/work/campaign\n"
+                "BENCHMARK_HARNESS_ROOT=/work/agentsCookbook\n",
                 encoding="utf-8",
             )
             result = subprocess.run(
@@ -91,6 +94,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         )
         self.assertIn('--suite "benchmarks/suites/example"', result.stdout)
         self.assertIn('--root "/work/campaign"', result.stdout)
+        self.assertIn('--harness-root "/work/agentsCookbook"', result.stdout)
 
 
 if __name__ == "__main__":
