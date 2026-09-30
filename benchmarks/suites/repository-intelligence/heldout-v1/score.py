@@ -14,8 +14,15 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--results", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--agent", required=True)
     args = parser.parse_args()
     suite = load_suite(Path(__file__).resolve().parent)
+    if args.agent not in suite.agents:
+        raise ValueError(f"unknown benchmark agent: {args.agent}")
+    conditions = {
+        str(condition["id"]): condition
+        for condition in suite.experiment["conditions"]
+    }
     definitions = suite.trial_definitions()
     languages = {}
     for language in ("python", "typescript"):
@@ -28,9 +35,13 @@ def main() -> int:
             str(row["definition_id"])
             for row in definitions
             if row["task_id"] in task_ids
+            and conditions[str(row["condition_id"])]["agent"] == args.agent
         }
-        if len(task_ids) != 6 or len(selected) != 108:
-            raise ValueError(f"{language}: expected six tasks and 108 frozen trials")
+        if len(task_ids) != 6 or len(selected) != 54:
+            raise ValueError(
+                f"{language}: expected six tasks and 54 frozen trials "
+                f"for agent {args.agent}"
+            )
         report = build_report(
             suite=suite,
             results_root=args.results,
@@ -49,9 +60,10 @@ def main() -> int:
         }
     payload = {
         "schema": "agents-cookbook-heldout-observer-outcomes.v1",
-        "expected_trials": 216,
+        "expected_trials": 108,
         "observed_trials": sum(row["observed_trials"] for row in languages.values()),
         "languages": languages,
+        "selection": {"agent": args.agent},
         "authority": {
             "overall_winner": None,
             "cross_agent_comparison": "descriptive-only",
