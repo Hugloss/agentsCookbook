@@ -64,17 +64,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      - name: Install repository Python
+        run: uv python install
 
       - name: Compile benchmark framework
-        run: python -m compileall -q benchmarks
+        run: uv run --no-project python -m compileall -q benchmarks
 
       - name: Validate benchmark schema JSON
         run: |
-          python - <<'PY'
+          uv run --no-project python - <<'PY'
           import json
           from pathlib import Path
 
@@ -92,31 +93,31 @@ jobs:
 
       - name: Validate frozen repository-intelligence suites
         run: |
-          python -m benchmarks validate-suite \
+          uv run --no-project python -m benchmarks validate-suite \
             --suite benchmarks/suites/repository-intelligence/pilot-v1
-          python -m benchmarks plan \
+          uv run --no-project python -m benchmarks plan \
             --suite benchmarks/suites/repository-intelligence/pilot-v1 \
             > "$RUNNER_TEMP/repository-intelligence-pilot-plan.json"
 
-          python -m benchmarks validate-suite \
+          uv run --no-project python -m benchmarks validate-suite \
             --suite benchmarks/suites/repository-intelligence/agent-matrix-v2
-          python -m benchmarks plan \
+          uv run --no-project python -m benchmarks plan \
             --suite benchmarks/suites/repository-intelligence/agent-matrix-v2 \
             > "$RUNNER_TEMP/repository-intelligence-agent-matrix-v2-plan.json"
 
-          python -m benchmarks validate-suite \
+          uv run --no-project python -m benchmarks validate-suite \
             --suite benchmarks/suites/repository-intelligence/native-matrix-v3
-          python -m benchmarks plan \
+          uv run --no-project python -m benchmarks plan \
             --suite benchmarks/suites/repository-intelligence/native-matrix-v3 \
             > "$RUNNER_TEMP/repository-intelligence-native-matrix-v3-plan.json"
 
-          python -m benchmarks validate-suite \
+          uv run --no-project python -m benchmarks validate-suite \
             --suite benchmarks/suites/repository-intelligence/enola-cycle-reproduction-v1
-          python -m benchmarks plan \
+          uv run --no-project python -m benchmarks plan \
             --suite benchmarks/suites/repository-intelligence/enola-cycle-reproduction-v1 \
             > "$RUNNER_TEMP/repository-intelligence-enola-cycle-plan.json"
 
-          python - <<'PY'
+          uv run --no-project python - <<'PY'
           import json
           import os
           from pathlib import Path
@@ -145,7 +146,7 @@ jobs:
           PY
 
       - name: Benchmark foundation and pilot regressions
-        run: python -m unittest discover -s benchmarks/tests -v
+        run: uv run --no-project python -m unittest discover -s benchmarks/tests -v
 
   agent-economics:
     runs-on: ubuntu-latest
@@ -154,13 +155,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      - name: Install repository Python
+        run: uv python install
 
       - name: Compile Agent Economics
-        run: python -m compileall -q scripts/agent_economics
+        run: uv run --no-project python -m compileall -q scripts/agent_economics
 
       - name: Agent Economics full qualification
         run: |
@@ -193,23 +195,23 @@ jobs:
             agent_economics_stress_qualification
           )
           for module in "${modules[@]}"; do
-            python -m "scripts.agent_economics.${module}"
+            uv run --no-project python -m "scripts.agent_economics.${module}"
           done
 
       - name: Standalone package import smoke
         run: |
-          PYTHONPATH="$PWD/scripts" python -c "import agent_economics; from agent_economics.test_focus import test_focus_audit; from agent_economics.quality_debt import quality_debt_audit"
+          PYTHONPATH="$PWD/scripts" uv run --no-project python -c "import agent_economics; from agent_economics.test_focus import test_focus_audit; from agent_economics.quality_debt import quality_debt_audit"
 
       - name: CLI routing smoke
         run: |
-          python -m scripts.agent_economics --help >/dev/null
-          python -m scripts.agent_economics doctor --repository-root . --json >/dev/null
-          python -m scripts.agent_economics help quality-debt >/dev/null
-          python -m scripts.agent_economics capabilities --repository-root . --json >/dev/null
-          python -m scripts.agent_economics evidence-batches --help >/dev/null
-          python -m scripts.agent_economics refactor-locality --help >/dev/null
-          python -m scripts.agent_economics benchmark-outcomes --template-task ci-smoke >/dev/null
-          python -m scripts.agent_economics dogfood-campaign --help >/dev/null
+          uv run --no-project python -m scripts.agent_economics --help >/dev/null
+          uv run --no-project python -m scripts.agent_economics doctor --repository-root . --json >/dev/null
+          uv run --no-project python -m scripts.agent_economics help quality-debt >/dev/null
+          uv run --no-project python -m scripts.agent_economics capabilities --repository-root . --json >/dev/null
+          uv run --no-project python -m scripts.agent_economics evidence-batches --help >/dev/null
+          uv run --no-project python -m scripts.agent_economics refactor-locality --help >/dev/null
+          uv run --no-project python -m scripts.agent_economics benchmark-outcomes --template-task ci-smoke >/dev/null
+          uv run --no-project python -m scripts.agent_economics dogfood-campaign --help >/dev/null
 
       - name: Build qualified standalone Agent Economics artifact
         shell: bash
@@ -222,7 +224,7 @@ jobs:
           cp -a scripts/agent_economics "$stage/agent-economics/"
           cp scripts/bootstrap-agent-economics.sh "$stage/agent-economics/"
           cp docs/agent-economics-dogfood.md "$stage/agent-economics/"
-          REVISION="$revision" STAGE="$stage/agent-economics" python - <<'PY'
+          REVISION="$revision" STAGE="$stage/agent-economics" uv run --no-project python - <<'PY'
           import hashlib
           import json
           import os
@@ -250,7 +252,7 @@ jobs:
           PY
           (
             cd "$stage"
-            python -m zipfile -c "$GITHUB_WORKSPACE/$artifact" agent-economics
+            uv run --no-project python -m zipfile -c "$GITHUB_WORKSPACE/$artifact" agent-economics
           )
           sha256sum "$artifact" > "$artifact.sha256"
           printf '%s\n' "$artifact" > agent-economics-artifact-name.txt

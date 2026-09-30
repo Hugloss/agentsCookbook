@@ -42,6 +42,12 @@ There is no automatic `.env` discovery in the benchmark CLI and no default harne
 
 Agent Economics remains a benchmark consumer/suite; shared process semantics remain single-owned until that module is promoted to a more generic repository location.
 
+## Python runtime authority
+
+AgentsCookbook's benchmark and qualification Python is stdlib-only. The repository pins Python 3.11 in `.python-version` and executes it through uv. Do not call `python` or `python3` directly from repository-owned entrypoints, CI, or benchmark documentation.
+
+There is intentionally no synthetic Python package/dependency layer just to launch these modules: `uv run --no-project` provides the repository-owned interpreter without inventing package ownership.
+
 ## Recommended campaign workflow
 
 ### Authority vocabulary
@@ -88,12 +94,12 @@ The Makefile chooses no native executable or native config root. Codex, OpenCode
 
 ### Advanced direct CLI
 
-The Python CLI remains available for automation and explicit one-off selections. It does not discover `.env` and does not default `--harness-root`.
+The benchmark CLI remains available for automation and explicit one-off selections. Repository Python is owned by uv: invoke it as `uv run --no-project python -m benchmarks ...`. The CLI does not discover `.env` and does not default `--harness-root`.
 
 For example:
 
 ```bash
-python -m benchmarks preflight \
+uv run --no-project python -m benchmarks preflight \
   --env-file .env \
   --suite "$BENCHMARK_SUITE_PATH" \
   --root "$BENCHMARK_CAMPAIGN_ROOT" \
@@ -108,7 +114,7 @@ Selecting `--subject hashmarks` selects only Hashmarks conditions. If a paired b
 Then run the exact same explicit selection:
 
 ```bash
-python -m benchmarks run \
+uv run --no-project python -m benchmarks run \
   --env-file .env \
   --suite "$BENCHMARK_SUITE_PATH" \
   --root "$BENCHMARK_CAMPAIGN_ROOT" \
@@ -121,14 +127,14 @@ python -m benchmarks run \
 Status and report do not execute participants, so they need only the suite, campaign results, and the same explicit selection:
 
 ```bash
-python -m benchmarks status \
+uv run --no-project python -m benchmarks status \
   --suite "$BENCHMARK_SUITE_PATH" \
   --root "$BENCHMARK_CAMPAIGN_ROOT" \
   --agent opencode-native \
   --subject hashmarks \
   --subject none
 
-python -m benchmarks report \
+uv run --no-project python -m benchmarks report \
   --suite "$BENCHMARK_SUITE_PATH" \
   --root "$BENCHMARK_CAMPAIGN_ROOT" \
   --agent opencode-native \
@@ -149,7 +155,7 @@ Existing callers may pass `--cache` and `--work` without `--results` for a diagn
 Then run the exact same selection:
 
 ```bash
-python -m benchmarks run \
+uv run --no-project python -m benchmarks run \
   --suite "$suite" \
   --root "$root" \
   --agent opencode-native \
@@ -162,7 +168,7 @@ The runner reuses valid existing receipts, so rerunning the command resumes a pa
 Inspect resumability without invoking any agent:
 
 ```bash
-python -m benchmarks status \
+uv run --no-project python -m benchmarks status \
   --suite "$suite" \
   --root "$root" \
   --agent opencode-native \
@@ -175,7 +181,7 @@ python -m benchmarks status \
 Finally:
 
 ```bash
-python -m benchmarks report \
+uv run --no-project python -m benchmarks report \
   --suite "$suite" \
   --root "$root" \
   --agent opencode-native \

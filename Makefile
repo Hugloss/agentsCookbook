@@ -21,21 +21,21 @@ _benchmark-env:
 	}
 
 benchmark-check: _benchmark-env
-	@python -m benchmarks preflight \
+	@uv run --no-project python -m benchmarks preflight \
 		--env-file .env \
 		--suite "$(BENCHMARK_SUITE_PATH)" \
 		--root "$(BENCHMARK_CAMPAIGN_ROOT)" \
 		--harness-root "$(BENCHMARK_HARNESS_REPO_ROOT)"
 
 benchmark: _benchmark-env
-	@python -m benchmarks run \
+	@uv run --no-project python -m benchmarks run \
 		--env-file .env \
 		--suite "$(BENCHMARK_SUITE_PATH)" \
 		--root "$(BENCHMARK_CAMPAIGN_ROOT)" \
 		--harness-root "$(BENCHMARK_HARNESS_REPO_ROOT)"
 
 benchmark-report: _benchmark-env
-	@python -m benchmarks report \
+	@uv run --no-project python -m benchmarks report \
 		--suite "$(BENCHMARK_SUITE_PATH)" \
 		--root "$(BENCHMARK_CAMPAIGN_ROOT)"
 
@@ -50,6 +50,6 @@ _benchmark-score-env: _benchmark-env
 	}
 
 benchmark-score: _benchmark-score-env
-	@python "$(BENCHMARK_SCORE_SCRIPT_PATH)" \
+	@uv run --no-project python "$(BENCHMARK_SCORE_SCRIPT_PATH)" \
 		--results "$(BENCHMARK_CAMPAIGN_ROOT)/results" \
 		--output "$(BENCHMARK_SCORE_OUTPUT_PATH)"
