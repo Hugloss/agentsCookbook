@@ -252,7 +252,10 @@ def main(argv: list[str] | None = None) -> int:
                 + "; set the value(s) in the file passed with --env-file "
                 "or export them explicitly"
             )
-        report = check_runtime_readiness(suite)
+        try:
+            report = check_runtime_readiness(suite)
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"benchmark runtime check failed: {exc}") from exc
         for item in report.checks:
             print(item.line())
         print(
