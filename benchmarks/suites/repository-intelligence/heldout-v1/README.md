@@ -96,13 +96,13 @@ Do not run `hashmarks install --opencode` for benchmark authority and do not pre
 Most developers should use the Make targets. Direct callers must pass the env file and harness root explicitly:
 
 ```sh
-python -m benchmarks preflight \
+uv run --no-project python -m benchmarks preflight \
   --env-file .env \
   --suite "$BENCHMARK_SUITE_PATH" \
   --root "$BENCHMARK_CAMPAIGN_ROOT" \
   --harness-root "$BENCHMARK_HARNESS_REPO_ROOT"
 
-python -m benchmarks run \
+uv run --no-project python -m benchmarks run \
   --env-file .env \
   --suite "$BENCHMARK_SUITE_PATH" \
   --root "$BENCHMARK_CAMPAIGN_ROOT" \
@@ -112,7 +112,7 @@ python -m benchmarks run \
 When filtering subjects, controls are never added automatically. For a Hashmarks-vs-bare paired subset, request both explicitly:
 
 ```sh
-python -m benchmarks preflight \
+uv run --no-project python -m benchmarks preflight \
   --env-file .env \
   --suite "$BENCHMARK_SUITE_PATH" \
   --root "$BENCHMARK_CAMPAIGN_ROOT" \
