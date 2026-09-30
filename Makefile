@@ -7,10 +7,6 @@ _benchmark-env:
 		echo "ERROR: .env is required. Copy .env.example to .env and set all benchmark authority values."; \
 		exit 2; \
 	}
-	@test -n "$(strip $(HASHMARKS_BENCH_SOURCE))" || { \
-		echo "ERROR: HASHMARKS_BENCH_SOURCE must be set in .env."; \
-		exit 2; \
-	}
 	@test -n "$(strip $(BENCHMARK_SUITE_PATH))" || { \
 		echo "ERROR: BENCHMARK_SUITE_PATH must point to the committed benchmark suite definition in .env."; \
 		exit 2; \
@@ -25,15 +21,15 @@ _benchmark-env:
 	}
 
 benchmark-check: _benchmark-env
-	@HASHMARKS_BENCH_SOURCE="$(HASHMARKS_BENCH_SOURCE)" \
-	python -m benchmarks preflight \
+	@python -m benchmarks preflight \
+		--env-file .env \
 		--suite "$(BENCHMARK_SUITE_PATH)" \
 		--root "$(BENCHMARK_CAMPAIGN_ROOT)" \
 		--harness-root "$(BENCHMARK_HARNESS_REPO_ROOT)"
 
 benchmark: _benchmark-env
-	@HASHMARKS_BENCH_SOURCE="$(HASHMARKS_BENCH_SOURCE)" \
-	python -m benchmarks run \
+	@python -m benchmarks run \
+		--env-file .env \
 		--suite "$(BENCHMARK_SUITE_PATH)" \
 		--root "$(BENCHMARK_CAMPAIGN_ROOT)" \
 		--harness-root "$(BENCHMARK_HARNESS_REPO_ROOT)"
