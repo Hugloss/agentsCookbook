@@ -38,15 +38,28 @@ Agent Economics remains a benchmark consumer/suite; shared process semantics rem
 
 ## Recommended campaign workflow
 
+### Path vocabulary
+
+Keep these roles separate:
+
+| Setting | Meaning | Lifetime |
+| --- | --- | --- |
+| `HASHMARKS_BENCH_SOURCE` | Clean committed Hashmarks checkout being measured | Product source authority |
+| `BENCHMARK_SUITE_PATH` | Committed suite definition inside agentsCookbook: tasks, conditions, agents, subjects, budgets, and scoring inputs | Benchmark source/configuration |
+| `BENCHMARK_CAMPAIGN_ROOT` | Writable runtime directory for this campaign's `cache/`, `work/`, and `results/` | Generated campaign evidence |
+| `BENCHMARK_HARNESS_REPO_ROOT` | agentsCookbook checkout containing the benchmark runner code | Harness source authority |
+
+A **suite path is not an output directory**. A **campaign root is not source configuration**. Keeping those concepts separate makes it clear what is committed and what is disposable/generated.
+
 For local human-driven campaigns, configure authority once:
 
 ```sh
 cp -n .env.example .env
 # edit .env and set:
 # HASHMARKS_BENCH_SOURCE=...
-# BENCHMARK_SUITE=...
-# BENCHMARK_ROOT=...
-# BENCHMARK_HARNESS_ROOT=...
+# BENCHMARK_SUITE_PATH=...
+# BENCHMARK_CAMPAIGN_ROOT=...
+# BENCHMARK_HARNESS_REPO_ROOT=...
 ```
 
 Then use the thin Make entrypoints:
@@ -57,7 +70,7 @@ make benchmark
 make benchmark-report
 ```
 
-The Makefile has no fallback suite, campaign root, harness root, or Hashmarks checkout. It only transports the explicit values from `.env` and fails before benchmark execution when any required value is absent.
+The Makefile has no fallback suite path, campaign root, harness repository root, or Hashmarks checkout. It only transports the explicit values from `.env` and fails before benchmark execution when any required value is absent.
 
 The underlying CLI remains available for automation and explicit one-off selections. Use one external campaign root to avoid repeating cache/work/results paths:
 
