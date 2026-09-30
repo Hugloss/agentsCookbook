@@ -27,18 +27,24 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         self.assertNotIn("--harness-root .", makefile)
 
         self.assertIn(
-            "BENCHMARK_SUITE=benchmarks/suites/repository-intelligence/heldout-v1",
+            "BENCHMARK_SUITE_PATH=benchmarks/suites/repository-intelligence/heldout-v1",
             env_example,
         )
         self.assertIn(
-            "BENCHMARK_ROOT=/tmp/agentscookbook-heldout-v1",
+            "BENCHMARK_CAMPAIGN_ROOT=/tmp/agentscookbook-heldout-v1",
             env_example,
         )
         self.assertIn(
             "HASHMARKS_BENCH_SOURCE=/absolute/path/to/Hashmarks",
             env_example,
         )
-        self.assertIn("BENCHMARK_HARNESS_ROOT=.", env_example)
+        self.assertIn("BENCHMARK_HARNESS_REPO_ROOT=.", env_example)
+
+        # Do not drift back to ambiguous names that hide whether a path is
+        # committed source/configuration or generated campaign state.
+        self.assertNotIn("\nBENCHMARK_SUITE=", env_example)
+        self.assertNotIn("\nBENCHMARK_ROOT=", env_example)
+        self.assertNotIn("\nBENCHMARK_HARNESS_ROOT=", env_example)
 
     def test_make_benchmark_fails_before_execution_without_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -66,9 +72,9 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             root = Path(tmp)
             (root / ".env").write_text(
                 "HASHMARKS_BENCH_SOURCE=/work/Hashmarks\n"
-                "BENCHMARK_SUITE=benchmarks/suites/example\n"
-                "BENCHMARK_ROOT=/work/campaign\n"
-                "BENCHMARK_HARNESS_ROOT=/work/agentsCookbook\n",
+                "BENCHMARK_SUITE_PATH=benchmarks/suites/example\n"
+                "BENCHMARK_CAMPAIGN_ROOT=/work/campaign\n"
+                "BENCHMARK_HARNESS_REPO_ROOT=/work/agentsCookbook\n",
                 encoding="utf-8",
             )
             result = subprocess.run(
