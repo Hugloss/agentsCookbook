@@ -207,7 +207,7 @@ class RuntimeReadinessTests(unittest.TestCase):
             ),
             mock.patch.object(
                 HashmarksSubject,
-                "_source_identity",
+                "source_identity",
                 return_value=clean_source,
             ),
             tempfile.TemporaryDirectory(),
