@@ -8,6 +8,18 @@ from typing import Any
 from benchmarks.harness.suite import SuiteDefinition
 
 
+PROCESS_SUBSTRATE_ENV_KEYS = (
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "TERM",
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+)
+
+
 RUNTIME_AUTHORITY_ENV_KEYS = (
     "HASHMARKS_BENCH_SOURCE",
     "ENOLA_BENCH_EXECUTABLE",
