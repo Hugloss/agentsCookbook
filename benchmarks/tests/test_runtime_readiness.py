@@ -5,11 +5,15 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from benchmarks.adapters.hashmarks import HashmarksSubject
 from benchmarks.harness.model import McpExposure, Observation
-from benchmarks.harness.readiness import check_runtime_readiness
+from benchmarks.harness.readiness import (
+    _mcp_startup_diagnostic,
+    check_runtime_readiness,
+)
 from benchmarks.harness.suite import (
     SuiteDefinition,
     SuiteError,
@@ -154,6 +158,48 @@ class RuntimeReadinessTests(unittest.TestCase):
             "run_trial",
         ):
             self.assertNotIn(forbidden, source)
+
+    def test_failed_mcp_pair_surfaces_direct_child_stderr(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            control.mkdir()
+            context = mock.Mock(
+                workspace=workspace,
+                control_root=control,
+                environment={"PATH": os.environ.get("PATH", "")},
+            )
+            exposure = McpExposure(
+                name="hashmarks",
+                command="/work/Hashmarks/.venv/bin/hashmarks",
+                args=("--workspace", ".", "mcp"),
+                cwd=workspace,
+                semantic_identity={"name": "hashmarks", "transport": "stdio"},
+            )
+            process = SimpleNamespace(
+                return_code=1,
+                timed_out=False,
+                stderr=(
+                    b'Hashmarks MCP support requires the optional extra: '
+                    b'pip install "hashmarks[mcp]"\n'
+                ),
+                stdout=b"",
+            )
+            with mock.patch(
+                "benchmarks.harness.readiness.run_bounded",
+                return_value=process,
+            ) as bounded:
+                detail = _mcp_startup_diagnostic(context, exposure)
+
+            self.assertIn("direct-startup-exit=1", detail)
+            self.assertIn("Hashmarks MCP support requires the optional extra", detail)
+            self.assertTrue(bounded.call_args.kwargs["close_stdin"])
+            self.assertEqual(
+                bounded.call_args.kwargs["limits"].timeout_seconds,
+                5,
+            )
 
     def test_each_unique_runtime_pair_is_checked_once_without_retry(self) -> None:
         suite = fake_suite()
