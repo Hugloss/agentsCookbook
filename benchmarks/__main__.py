@@ -21,7 +21,18 @@ from benchmarks.harness.selection import SelectionError, select_definitions
 from benchmarks.harness.suite import load_suite
 
 
-_BENCHMARK_ENV_KEYS = frozenset({"HASHMARKS_BENCH_SOURCE"})
+_BENCHMARK_ENV_KEYS = frozenset(
+    {
+        "HASHMARKS_BENCH_SOURCE",
+        "ENOLA_BENCH_EXECUTABLE",
+        "BENCHMARK_CODEX_EXECUTABLE",
+        "BENCHMARK_CODEX_HOME",
+        "BENCHMARK_OPENCODE_EXECUTABLE",
+        "BENCHMARK_OPENCODE_HOME",
+        "BENCHMARK_OPENCODE_CONFIG_HOME",
+        "BENCHMARK_OPENCODE_AGENT",
+    }
+)
 
 
 def _load_benchmark_env(
@@ -62,17 +73,53 @@ def _load_benchmark_env(
             environment[key] = value
 
 
-def _hashmarks_source_required(suite, rows: list[dict[str, object]]) -> bool:
-    conditions = {
+def _required_runtime_env(
+    suite,
+    rows: list[dict[str, object]],
+) -> tuple[str, ...]:
+    selected_condition_ids = {
         str(row["condition_id"])
         for row in rows
         if isinstance(row, dict) and "condition_id" in row
     }
-    return any(
-        str(condition.get("subject")) == "hashmarks"
+    conditions = [
+        condition
         for condition in suite.experiment["conditions"]
-        if condition.get("id") in conditions
-    )
+        if condition.get("id") in selected_condition_ids
+    ]
+    subjects = {str(condition.get("subject")) for condition in conditions}
+    agents = {str(condition.get("agent")) for condition in conditions}
+
+    required: set[str] = set()
+    if "hashmarks" in subjects:
+        required.add("HASHMARKS_BENCH_SOURCE")
+    if "enola" in subjects:
+        required.add("ENOLA_BENCH_EXECUTABLE")
+    if any(
+        suite.agents[agent]["adapter"] == "codex"
+        for agent in agents
+        if agent in suite.agents
+    ):
+        required.update(
+            {
+                "BENCHMARK_CODEX_EXECUTABLE",
+                "BENCHMARK_CODEX_HOME",
+            }
+        )
+    if any(
+        suite.agents[agent]["adapter"] == "opencode-native"
+        for agent in agents
+        if agent in suite.agents
+    ):
+        required.update(
+            {
+                "BENCHMARK_OPENCODE_EXECUTABLE",
+                "BENCHMARK_OPENCODE_HOME",
+                "BENCHMARK_OPENCODE_CONFIG_HOME",
+                "BENCHMARK_OPENCODE_AGENT",
+            }
+        )
+    return tuple(sorted(required))
 
 
 def _add_selectors(command: argparse.ArgumentParser) -> None:
@@ -102,11 +149,11 @@ def _add_campaign_paths(
 
 
 def _add_execution_inputs(command: argparse.ArgumentParser) -> None:
-    command.add_argument("--harness-root", type=Path, default=Path("."))
+    command.add_argument("--harness-root", type=Path, required=True)
     command.add_argument(
         "--env-file",
         type=Path,
-        help="benchmark environment file; defaults to .env when present",
+        help="explicit benchmark environment file; no file is auto-discovered",
     )
     command.add_argument("--source", type=Path)
     command.add_argument(
@@ -191,8 +238,7 @@ def _selection_metadata(args) -> dict[str, object]:
         "subjects": sorted(set(args.subject)),
         "condition": args.condition,
         "bare_control_included": bool(
-            not args.condition
-            and any(subject != "none" for subject in args.subject)
+            not args.condition and "none" in set(args.subject)
         ),
     }
 
@@ -221,18 +267,23 @@ def main(argv: list[str] | None = None) -> int:
     rows = _select(args, suite)
 
     if args.command in {"preflight", "run"}:
-        env_file = args.env_file or Path(".env")
-        _load_benchmark_env(
-            env_file,
-            os.environ,
-            require_file=args.env_file is not None,
-        )
-        if _hashmarks_source_required(suite, rows) and not os.environ.get(
-            "HASHMARKS_BENCH_SOURCE"
-        ):
+        if args.env_file is not None:
+            _load_benchmark_env(
+                args.env_file,
+                os.environ,
+                require_file=True,
+            )
+        missing = [
+            name
+            for name in _required_runtime_env(suite, rows)
+            if not os.environ.get(name)
+        ]
+        if missing:
             raise SystemExit(
-                "HASHMARKS_BENCH_SOURCE is required for the selected Hashmarks "
-                "benchmark; set it in .env, pass --env-file, or export it"
+                "missing explicit benchmark runtime authority: "
+                + ", ".join(missing)
+                + "; set the value(s) in the file passed with --env-file "
+                "or export them explicitly"
             )
 
     if args.command == "plan":
