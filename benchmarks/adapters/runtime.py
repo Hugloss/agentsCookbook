@@ -18,6 +18,21 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def resolve_native_executable(
+    context: TrialContext,
+    command: str,
+    *,
+    environment: Mapping[str, str] | None = None,
+) -> str | None:
+    effective = (
+        dict(environment)
+        if environment is not None
+        else context.environment
+    )
+    resolved = shutil.which(command, path=effective.get("PATH"))
+    return str(Path(resolved).resolve()) if resolved else None
+
+
 def observe_executable(
     context: TrialContext,
     command: str,
@@ -26,7 +41,11 @@ def observe_executable(
     timeout_seconds: float = 30.0,
     environment: Mapping[str, str] | None = None,
 ) -> Observation:
-    resolved = shutil.which(command)
+    resolved = resolve_native_executable(
+        context,
+        command,
+        environment=environment,
+    )
     result = run_bounded(
         repository_root=context.workspace,
         argv=(command, *version_args),
@@ -42,7 +61,7 @@ def observe_executable(
         ),
         inherit_environment=False,
     )
-    path = Path(resolved).resolve() if resolved else None
+    path = Path(resolved) if resolved else None
     executable_sha256 = None
     if path is not None and path.is_file():
         try:
