@@ -8,6 +8,8 @@ artifacts/
 # Runtime artifacts
 .artifacts/**
 src/app/data/runtime/
+src/app/data/schedule_runs/
+opencode.json
 
 # keep scaffold markers
 !.artifacts/
@@ -232,5 +234,3 @@ e2e-snapshots/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
-
-src/app/data/schedule_runs/
