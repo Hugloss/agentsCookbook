@@ -32,6 +32,7 @@ from benchmarks.adapters.registry import (
     AdapterConfigurationError,
     build_agent,
 )
+from benchmarks.__main__ import _hashmarks_source_required, _load_benchmark_env
 from benchmarks.harness.admission import TrialAdmissionError, admit_trial, harness_identity
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.campaign import (
@@ -62,6 +63,9 @@ from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 PILOT = Path("benchmarks/suites/repository-intelligence/pilot-v1")
 MATRIX_V2 = Path(
     "benchmarks/suites/repository-intelligence/agent-matrix-v2"
+)
+HELDOUT_V1 = Path(
+    "benchmarks/suites/repository-intelligence/heldout-v1"
 )
 CYCLE = Path("benchmarks/suites/repository-intelligence/enola-cycle-reproduction-v1")
 PINNED_COMMIT = "0841a8822f417b8fd03af61c03779df8f1cdc941"
@@ -389,6 +393,70 @@ class PilotExecutionTests(unittest.TestCase):
             and row["condition_id"] == "hashmarks-codex"
         )
         self.assertNotEqual(original, altered)
+
+    def test_benchmark_env_file_loads_only_hashmarks_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_file = root / ".env"
+            env_file.write_text(
+                "# benchmark local config\n"
+                "HASHMARKS_BENCH_SOURCE='/work/Hashmarks'\n"
+                "UNRELATED=value\n",
+                encoding="utf-8",
+            )
+            environment: dict[str, str] = {}
+            _load_benchmark_env(
+                env_file,
+                environment,
+                require_file=True,
+            )
+            self.assertEqual(
+                environment,
+                {"HASHMARKS_BENCH_SOURCE": "/work/Hashmarks"},
+            )
+
+    def test_benchmark_env_file_does_not_override_process_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / ".env"
+            env_file.write_text(
+                "HASHMARKS_BENCH_SOURCE=/from-env-file\n",
+                encoding="utf-8",
+            )
+            environment = {"HASHMARKS_BENCH_SOURCE": "/already-exported"}
+            _load_benchmark_env(
+                env_file,
+                environment,
+                require_file=True,
+            )
+            self.assertEqual(
+                environment["HASHMARKS_BENCH_SOURCE"],
+                "/already-exported",
+            )
+
+    def test_selected_hashmarks_requires_source_at_startup(self) -> None:
+        for suite_path, agent in (
+            (HELDOUT_V1, "opencode-native"),
+            (MATRIX_V2, "opencode-native"),
+            (PILOT, "codex"),
+        ):
+            suite = load_suite(suite_path)
+            rows = select_definitions(
+                suite,
+                agents=(agent,),
+                subjects=("hashmarks",),
+            )
+            self.assertTrue(
+                _hashmarks_source_required(suite, rows),
+                str(suite_path),
+            )
+
+        suite = load_suite(HELDOUT_V1)
+        bare = select_definitions(
+            suite,
+            agents=("opencode-native",),
+            subjects=("none",),
+        )
+        self.assertFalse(_hashmarks_source_required(suite, bare))
 
     def test_hashmarks_adapter_uses_real_version_surface(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

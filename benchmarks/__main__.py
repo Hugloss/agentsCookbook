@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections import Counter
+from collections.abc import MutableMapping
 from pathlib import Path
 
 from benchmarks.harness.campaign import (
@@ -17,6 +19,60 @@ from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
 from benchmarks.harness.selection import SelectionError, select_definitions
 from benchmarks.harness.suite import load_suite
+
+
+_BENCHMARK_ENV_KEYS = frozenset({"HASHMARKS_BENCH_SOURCE"})
+
+
+def _load_benchmark_env(
+    path: Path,
+    environment: MutableMapping[str, str],
+    *,
+    require_file: bool,
+) -> None:
+    if not path.is_file():
+        if require_file:
+            raise SystemExit(f"benchmark env file does not exist: {path}")
+        return
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except OSError as exc:
+        raise SystemExit(f"cannot read benchmark env file {path}: {exc}") from exc
+    for line_no, raw in enumerate(lines, 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            key = line.strip()
+            if key in _BENCHMARK_ENV_KEYS:
+                raise SystemExit(
+                    f"{path}:{line_no}: benchmark environment entry needs KEY=VALUE"
+                )
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key not in _BENCHMARK_ENV_KEYS or environment.get(key):
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        if value:
+            environment[key] = value
+
+
+def _hashmarks_source_required(suite, rows: list[dict[str, object]]) -> bool:
+    conditions = {
+        str(row["condition_id"])
+        for row in rows
+        if isinstance(row, dict) and "condition_id" in row
+    }
+    return any(
+        str(condition.get("subject")) == "hashmarks"
+        for condition in suite.experiment["conditions"]
+        if condition.get("id") in conditions
+    )
 
 
 def _add_selectors(command: argparse.ArgumentParser) -> None:
@@ -47,6 +103,11 @@ def _add_campaign_paths(
 
 def _add_execution_inputs(command: argparse.ArgumentParser) -> None:
     command.add_argument("--harness-root", type=Path, default=Path("."))
+    command.add_argument(
+        "--env-file",
+        type=Path,
+        help="benchmark environment file; defaults to .env when present",
+    )
     command.add_argument("--source", type=Path)
     command.add_argument(
         "--codex-auth",
@@ -158,6 +219,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     rows = _select(args, suite)
+
+    if args.command in {"preflight", "run"}:
+        env_file = args.env_file or Path(".env")
+        _load_benchmark_env(
+            env_file,
+            os.environ,
+            require_file=args.env_file is not None,
+        )
+        if _hashmarks_source_required(suite, rows) and not os.environ.get(
+            "HASHMARKS_BENCH_SOURCE"
+        ):
+            raise SystemExit(
+                "HASHMARKS_BENCH_SOURCE is required for the selected Hashmarks "
+                "benchmark; set it in .env, pass --env-file, or export it"
+            )
 
     if args.command == "plan":
         print(json.dumps(rows, indent=2, sort_keys=True))

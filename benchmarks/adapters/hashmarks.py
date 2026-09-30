@@ -121,8 +121,11 @@ class HashmarksSubject:
         )
         if not executable.payload["available"]:
             return executable
+        source_configured = self._source_root(context) is not None
         source_identity, source_error = (
-            self._source_identity(context) if self.require_source else (None, None)
+            self._source_identity(context)
+            if self.require_source or source_configured
+            else (None, None)
         )
         if source_error:
             return Observation({"available": False, "reason": source_error}, "")

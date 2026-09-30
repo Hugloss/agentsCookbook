@@ -32,6 +32,8 @@ For native OpenCode trials, OpenCode remains the authority for model, provider, 
 
 The benchmark never creates or edits repository-local `opencode.json` to register a subject, and an ambient/global Hashmarks MCP registration is never benchmark execution authority. For source-bound Hashmarks runs, `HASHMARKS_BENCH_SOURCE` directly selects that checkout's `.venv/bin/hashmarks`; changing `PATH` is neither required nor authoritative.
 
+For local runs, copy `.env.example` to the ignored `.env` file and set `HASHMARKS_BENCH_SOURCE` there. `preflight` and `run` load only that benchmark-owned variable from `.env` by default; use `--env-file PATH` for another file. An already exported process value takes precedence. Every selected Hashmarks benchmark condition requires this source authority and fails before trial admission if the value is still missing.
+
 Agent Economics remains a benchmark consumer/suite; shared process semantics remain single-owned until that module is promoted to a more generic repository location.
 
 ## Recommended campaign workflow
