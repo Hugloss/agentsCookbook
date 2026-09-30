@@ -333,6 +333,75 @@ class RuntimeReadinessTests(unittest.TestCase):
             )
             direct.assert_called_once()
 
+    def test_readiness_checks_only_explicitly_selected_agent(self) -> None:
+        suite = fake_suite()
+        calls: list[tuple[str, str | None]] = []
+
+        def agent(definition, *, budgets):
+            return FakeAgent(str(definition["id"]), calls)
+
+        observed = Observation(
+            {
+                "available": True,
+                "version": "test",
+                "executable_sha256": "a" * 64,
+            },
+            "test",
+        )
+        clean_source = (
+            {
+                "root": "/work/Hashmarks",
+                "commit": "b" * 40,
+                "tree": "c" * 40,
+                "working_copy_sha256": "d" * 64,
+                "working_copy_clean": True,
+            },
+            None,
+        )
+        environment = {
+            "HASHMARKS_BENCH_SOURCE": "/work/Hashmarks",
+            "BENCHMARK_OPENCODE_AGENT": "build",
+        }
+        with (
+            mock.patch.dict(os.environ, environment, clear=False),
+            mock.patch(
+                "benchmarks.harness.readiness.build_subject",
+                side_effect=lambda definition: (
+                    HashmarksSubject(timeout_seconds=15)
+                    if definition["id"] == "hashmarks"
+                    else FakeSubject(str(definition["id"]))
+                ),
+            ),
+            mock.patch(
+                "benchmarks.harness.readiness.build_agent",
+                side_effect=agent,
+            ),
+            mock.patch(
+                "benchmarks.harness.readiness.observe_executable",
+                return_value=observed,
+            ),
+            mock.patch.object(
+                HashmarksSubject,
+                "source_identity",
+                return_value=clean_source,
+            ),
+            mock.patch(
+                "benchmarks.harness.readiness._mcp_startup_diagnostic",
+                return_value="direct-startup-exit=1",
+            ),
+        ):
+            report = check_runtime_readiness(
+                suite,
+                agents=("opencode-native",),
+            )
+
+        labels = {check.label for check in report.checks}
+        self.assertIn("opencode-native native config", labels)
+        self.assertIn("opencode-native -> hashmarks MCP", labels)
+        self.assertIn("opencode-native -> enola MCP", labels)
+        self.assertFalse(any("codex-native" in label for label in labels))
+        self.assertFalse(any(call[0] == "codex-native" for call in calls))
+
     def test_each_unique_runtime_pair_is_checked_once_without_retry(self) -> None:
         suite = fake_suite()
         calls: list[tuple[str, str | None]] = []
@@ -390,7 +459,10 @@ class RuntimeReadinessTests(unittest.TestCase):
             ),
             tempfile.TemporaryDirectory(),
         ):
-            report = check_runtime_readiness(suite)
+            report = check_runtime_readiness(
+                suite,
+                agents=("codex-native", "opencode-native"),
+            )
 
         states = {check.label: check.state for check in report.checks}
         self.assertEqual(states["hashmarks runtime"], "READY")
