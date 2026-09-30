@@ -257,8 +257,26 @@ def _pair_check(
     )
 
 
-def check_runtime_readiness(suite: SuiteDefinition) -> ReadinessReport:
-    conditions = tuple(suite.experiment["conditions"])
+def check_runtime_readiness(
+    suite: SuiteDefinition,
+    *,
+    agents: tuple[str, ...],
+) -> ReadinessReport:
+    unknown = sorted(set(agents) - set(suite.agents))
+    if unknown:
+        raise ValueError(
+            "unknown benchmark agent(s): " + ", ".join(unknown)
+        )
+    if not agents:
+        raise ValueError("benchmark readiness requires an explicit agent")
+    selected_agents = set(agents)
+    conditions = tuple(
+        condition
+        for condition in suite.experiment["conditions"]
+        if str(condition["agent"]) in selected_agents
+    )
+    if not conditions:
+        raise ValueError("selected benchmark agent has no suite conditions")
     subject_ids = _unique(
         str(condition["subject"])
         for condition in conditions
