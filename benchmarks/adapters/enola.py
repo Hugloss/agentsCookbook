@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,6 +28,14 @@ class EnolaSubject:
             {"surface": "cli+mcp", "output": "explicit-repository-derived"},
         )
 
+    def _executable(self, context: TrialContext) -> str:
+        configured = context.environment.get("ENOLA_BENCH_EXECUTABLE")
+        if not configured:
+            raise ValueError(
+                "ENOLA_BENCH_EXECUTABLE is required; PATH lookup is not benchmark authority"
+            )
+        return str(Path(configured).expanduser().resolve())
+
     def _config(self, context: TrialContext) -> Path:
         path = context.control_root / "enola-benchmark.yaml"
         if not path.exists():
@@ -52,12 +59,16 @@ class EnolaSubject:
         )
 
     def prepare(self, context: TrialContext) -> Observation:
-        executable = observe_executable(context, "enola")
+        try:
+            command = self._executable(context)
+        except ValueError as exc:
+            return Observation({"available": False, "reason": str(exc)}, "")
+        executable = observe_executable(context, command)
         if not executable.payload["available"]:
             return executable
         result = self._run(
             context,
-            ("enola", "--generate", str(self._config(context))),
+            (command, "--generate", str(self._config(context))),
         )
         available = (
             not result.executable_missing
@@ -81,7 +92,10 @@ class EnolaSubject:
         )
 
     def query(self, context: TrialContext, prompt: str) -> Observation:
-        result = self._run(context, ("enola", "--explain", str(context.workspace)))
+        result = self._run(
+            context,
+            (self._executable(context), "--explain", str(context.workspace)),
+        )
         return Observation(
             {
                 "available": not result.executable_missing,
@@ -102,7 +116,7 @@ class EnolaSubject:
     ) -> Observation:
         result = self._run(
             context,
-            ("enola", "--generate", str(self._config(context))),
+            (self._executable(context), "--generate", str(self._config(context))),
         )
         return Observation(
             {
@@ -117,8 +131,7 @@ class EnolaSubject:
         return Observation({}, "")
 
     def mcp_exposure(self, context: TrialContext) -> McpExposure:
-        resolved = shutil.which("enola", path=context.environment.get("PATH"))
-        command = str(Path(resolved).resolve()) if resolved else "enola"
+        command = self._executable(context)
         return McpExposure(
             name="enola",
             command=command,
