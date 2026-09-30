@@ -1020,6 +1020,74 @@ class PilotExecutionTests(unittest.TestCase):
             self.assertEqual(exposure["command"][-1], "mcp")
             self.assertFalse((workspace / "opencode.json").exists())
 
+    def test_opencode_mcp_probe_failure_preserves_runtime_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            source = root / "hashmarks-source"
+            installed = source / ".venv" / "bin" / "hashmarks"
+            installed.parent.mkdir(parents=True)
+            installed.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            installed.chmod(0o755)
+            environment = _opencode_trial_environment(control, root)
+            environment["HASHMARKS_BENCH_SOURCE"] = str(source)
+            context = TrialContext(workspace, control, environment)
+            executable = Observation(
+                {
+                    "available": True,
+                    "version": "opencode 1",
+                    "executable_sha256": "a" * 64,
+                },
+                "opencode 1",
+            )
+            runtime_result = mock.Mock()
+            runtime_result.metrics.return_value = {"return_code": 0}
+            runtime_result.stderr = b""
+            runtime_result.stdout = b"{}"
+            reason = (
+                "benchmark OpenCode MCP connection hashmarks is not connected; "
+                "exit=7; mcp-list=\"hashmarks: failed\"; "
+                "stderr=\"Hashmarks MCP support requires the optional extra\""
+            )
+            with (
+                mock.patch(
+                    "benchmarks.adapters.opencode_native.observe_executable",
+                    return_value=executable,
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call",
+                    return_value=(
+                        {
+                            "status": "failed",
+                            "reason": reason,
+                            "inspection": {
+                                "model": "liteLLM/gemma4",
+                                "provider": "liteLLM",
+                                "config_sha256": "b" * 64,
+                                "mcp_shape": "flat",
+                                "mcp_servers": [],
+                            },
+                        },
+                        runtime_result,
+                    ),
+                ),
+            ):
+                prepared = OpenCodeNativeAgent().prepare(
+                    context,
+                    HashmarksSubject(),
+                )
+
+            self.assertFalse(prepared.payload["available"])
+            self.assertEqual(prepared.payload["reason"], reason)
+            self.assertIn("exit=7", prepared.payload["reason"])
+            self.assertIn("hashmarks: failed", prepared.payload["reason"])
+            self.assertIn(
+                "Hashmarks MCP support requires the optional extra",
+                prepared.payload["reason"],
+            )
+
     def test_opencode_unverified_native_workspace_binding_is_unavailable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
