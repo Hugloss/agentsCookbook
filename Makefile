@@ -62,7 +62,7 @@ benchmark-report: _benchmark-selected-campaign-env
 		--root "$(BENCHMARK_CAMPAIGN_ROOT)" \
 		--agent "$(BENCHMARK_AGENT)"
 
-_benchmark-score-env: _benchmark-campaign-env
+_benchmark-score-env: _benchmark-selected-campaign-env
 	@test -n "$(strip $(BENCHMARK_SCORE_SCRIPT_PATH))" || { \
 		echo "ERROR: BENCHMARK_SCORE_SCRIPT_PATH must name the selected suite's scorer in .env."; \
 		exit 2; \
@@ -75,4 +75,5 @@ _benchmark-score-env: _benchmark-campaign-env
 benchmark-score: _benchmark-score-env
 	@uv run --no-project python "$(BENCHMARK_SCORE_SCRIPT_PATH)" \
 		--results "$(BENCHMARK_CAMPAIGN_ROOT)/results" \
-		--output "$(BENCHMARK_SCORE_OUTPUT_PATH)"
+		--output "$(BENCHMARK_SCORE_OUTPUT_PATH)" \
+		--agent "$(BENCHMARK_AGENT)"
