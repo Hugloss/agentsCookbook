@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import shutil
 import tomllib
@@ -157,8 +156,8 @@ def seed_codex_auth(
         for name in _REMOTE_AUTH_VARIABLES:
             context.environment[name] = ""
         mode = "seeded-auth-file"
-    elif any(os.environ.get(name) for name in _REMOTE_AUTH_VARIABLES):
-        mode = "inherited-auth-environment"
+    elif any(context.environment.get(name) for name in _REMOTE_AUTH_VARIABLES):
+        mode = "explicit-auth-environment"
     else:
         mode = "none"
     context.environment["BENCHMARK_CODEX_AUTH_MODE"] = mode
@@ -325,6 +324,7 @@ class CodexAgent:
                 argv=(command, "mcp", "list", "--json"),
                 environment=context.environment,
                 limits=ProcessLimits(timeout_seconds=30, max_stdout_bytes=1_000_000),
+                inherit_environment=False,
             )
             if result.return_code != 0 or result.timed_out or result.stdout_truncated:
                 raise ValueError("native Codex MCP list did not complete")
@@ -489,6 +489,7 @@ class CodexAgent:
                 max_stdout_bytes=self.max_output_bytes,
                 max_stderr_bytes=5_000_000,
             ),
+            inherit_environment=False,
         )
         events, parse_errors = parse_codex_jsonl(result.stdout)
         terminal = next(
