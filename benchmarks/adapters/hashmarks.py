@@ -110,6 +110,7 @@ class HashmarksSubject:
                 max_stdout_bytes=10_000_000,
                 max_stderr_bytes=2_000_000,
             ),
+            inherit_environment=False,
         )
 
     def prepare(self, context: TrialContext) -> Observation:
