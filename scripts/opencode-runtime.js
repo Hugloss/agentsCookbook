@@ -735,20 +735,37 @@ function cleanDiagnosticText(value, maxBytes = 1200) {
 function selectedMcpLines(output, selectedSubject) {
   const lines = String(output || '').split(/\r?\n/);
   const normalized = lines.map((line) =>
-    line.replace(/\x1b\[[0-9;]*m/g, '').trim()
+    line.replace(/\x1b\[[0-9;]*m/g, '')
   );
   const index = normalized.findIndex((line) => {
-    const tokens = line
+    const tokens = line.trim()
       .split(/\s+/)
       .map((token) => token.replace(/:$/, ''));
     return tokens.includes(selectedSubject);
   });
   if (index < 0) return '';
-  return cleanDiagnosticText(
-    normalized.slice(index, Math.min(index + 4, normalized.length))
-      .filter(Boolean)
-      .join('\n'),
-  );
+
+  const selectedLine = normalized[index].trim();
+  const treeMode = /^[●○◉◆◇■□]/u.test(selectedLine);
+  if (!treeMode) {
+    return cleanDiagnosticText(selectedLine, 4096);
+  }
+
+  const block = [normalized[index].trimEnd()];
+  for (let cursor = index + 1; cursor < normalized.length; cursor += 1) {
+    const raw = normalized[cursor];
+    const trimmed = raw.trim();
+
+    if (/^[●○◉◆◇■□]/u.test(trimmed)) break;
+    if (!trimmed) {
+      block.push('');
+      continue;
+    }
+
+    block.push(raw.trimEnd());
+  }
+
+  return cleanDiagnosticText(block.join('\n'), 4096);
 }
 
 function connectedMcp(output, selectedSubject) {
