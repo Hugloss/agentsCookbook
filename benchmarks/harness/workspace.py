@@ -5,6 +5,7 @@ import hashlib
 import os
 from pathlib import Path
 
+from benchmarks.harness.runtime_authority import PROCESS_SUBSTRATE_ENV_KEYS
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
@@ -174,16 +175,7 @@ def isolated_environment(root: Path) -> dict[str, str]:
         "CODEX_HOME": str(codex_home),
         "ENOLA_NO_UPDATE_CHECK": "1",
     }
-    for name in (
-        "PATH",
-        "LANG",
-        "LC_ALL",
-        "TERM",
-        "SYSTEMROOT",
-        "WINDIR",
-        "COMSPEC",
-        "PATHEXT",
-    ):
+    for name in PROCESS_SUBSTRATE_ENV_KEYS:
         value = os.environ.get(name)
         if value:
             environment[name] = value
