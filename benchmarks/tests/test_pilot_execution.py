@@ -433,15 +433,24 @@ class PilotExecutionTests(unittest.TestCase):
                 "/already-exported",
             )
 
-    def test_selected_heldout_hashmarks_requires_source_at_startup(self) -> None:
-        suite = load_suite(HELDOUT_V1)
-        rows = select_definitions(
-            suite,
-            agents=("opencode-native",),
-            subjects=("hashmarks",),
-        )
-        self.assertTrue(_hashmarks_source_required(suite, rows))
+    def test_selected_hashmarks_requires_source_at_startup(self) -> None:
+        for suite_path, agent in (
+            (HELDOUT_V1, "opencode-native"),
+            (MATRIX_V2, "opencode-native"),
+            (PILOT, "codex"),
+        ):
+            suite = load_suite(suite_path)
+            rows = select_definitions(
+                suite,
+                agents=(agent,),
+                subjects=("hashmarks",),
+            )
+            self.assertTrue(
+                _hashmarks_source_required(suite, rows),
+                str(suite_path),
+            )
 
+        suite = load_suite(HELDOUT_V1)
         bare = select_definitions(
             suite,
             agents=("opencode-native",),
