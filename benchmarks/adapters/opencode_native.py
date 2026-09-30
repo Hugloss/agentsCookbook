@@ -379,7 +379,7 @@ class OpenCodeNativeAgent:
             context,
             args=args,
             environment=environment,
-            timeout_seconds=30,
+            timeout_seconds=min(30.0, float(self.timeout_seconds)),
             max_stdout_bytes=1_000_000,
         )
         if (
