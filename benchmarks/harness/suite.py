@@ -93,8 +93,7 @@ class SuiteDefinition:
         return rows
 
 
-def load_suite(root: Path) -> SuiteDefinition:
-    root = root.resolve()
+def _load_experiment(root: Path) -> dict[str, Any]:
     experiment_path = root / "experiment.json"
     experiment = _load_json(experiment_path)
     _validate_definition(
@@ -102,41 +101,30 @@ def load_suite(root: Path) -> SuiteDefinition:
         schema_name="experiment",
         source=experiment_path,
     )
+    return experiment
 
-    tasks: dict[str, dict[str, Any]] = {}
-    for path in sorted((root / "tasks").glob("*.json")):
+
+def _load_named_definitions(
+    root: Path,
+    directory: str,
+    schema_name: str,
+) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for path in sorted((root / directory).glob("*.json")):
         value = _load_json(path)
-        _validate_definition(value, schema_name="task", source=path)
-        task_id = str(value.get("id", ""))
-        if not task_id or task_id in tasks:
-            raise SuiteError(f"invalid or duplicate task id in {path}")
-        tasks[task_id] = value
+        _validate_definition(value, schema_name=schema_name, source=path)
+        definition_id = str(value.get("id", ""))
+        if not definition_id or definition_id in result:
+            raise SuiteError(f"invalid or duplicate {schema_name} id in {path}")
+        result[definition_id] = value
+    return result
 
-    subjects: dict[str, dict[str, Any]] = {}
-    for path in sorted((root / "subjects").glob("*.json")):
-        value = _load_json(path)
-        _validate_definition(value, schema_name="subject", source=path)
-        subject_id = str(value.get("id", ""))
-        if not subject_id or subject_id in subjects:
-            raise SuiteError(f"invalid or duplicate subject id in {path}")
-        subjects[subject_id] = value
 
-    agents: dict[str, dict[str, Any]] = {}
-    for path in sorted((root / "agents").glob("*.json")):
-        value = _load_json(path)
-        _validate_definition(value, schema_name="agent", source=path)
-        agent_id = str(value.get("id", ""))
-        if not agent_id or agent_id in agents:
-            raise SuiteError(f"invalid or duplicate agent id in {path}")
-        agents[agent_id] = value
-
-    if not tasks or not subjects or not agents:
-        raise SuiteError("suite requires tasks, subjects and agents")
-
-    for task_id in experiment.get("tasks", []):
-        if str(task_id) not in tasks:
-            raise SuiteError(f"experiment references missing task: {task_id}")
-
+def _validate_participant_references(
+    experiment: dict[str, Any],
+    subjects: dict[str, dict[str, Any]],
+    agents: dict[str, dict[str, Any]],
+) -> None:
     for condition in experiment.get("conditions", []):
         if condition.get("subject") not in subjects:
             raise SuiteError(
@@ -150,6 +138,40 @@ def load_suite(root: Path) -> SuiteDefinition:
             raise SuiteError(f"condition {condition.get('id')} has no trials")
         if "seed" not in condition:
             raise SuiteError(f"condition {condition.get('id')} has no seed")
+
+
+def load_runtime_suite(root: Path) -> SuiteDefinition:
+    """Load only experiment participant authority for runtime readiness."""
+    root = root.resolve()
+    experiment = _load_experiment(root)
+    subjects = _load_named_definitions(root, "subjects", "subject")
+    agents = _load_named_definitions(root, "agents", "agent")
+    if not subjects or not agents:
+        raise SuiteError("runtime suite requires subjects and agents")
+    _validate_participant_references(experiment, subjects, agents)
+    return SuiteDefinition(
+        root=root,
+        experiment=experiment,
+        tasks={},
+        subjects=subjects,
+        agents=agents,
+    )
+
+
+def load_suite(root: Path) -> SuiteDefinition:
+    runtime = load_runtime_suite(root)
+    root = runtime.root
+    experiment = runtime.experiment
+    subjects = runtime.subjects
+    agents = runtime.agents
+    tasks = _load_named_definitions(root, "tasks", "task")
+
+    if not tasks:
+        raise SuiteError("suite requires tasks")
+
+    for task_id in experiment.get("tasks", []):
+        if str(task_id) not in tasks:
+            raise SuiteError(f"experiment references missing task: {task_id}")
 
     for task in tasks.values():
         repository = task.get("repository", {})
