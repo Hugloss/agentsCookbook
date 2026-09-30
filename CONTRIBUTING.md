@@ -102,6 +102,18 @@ Runtime-specific code belongs only where it bridges the prompt library into a su
 
 The optional `scripts/agent_economics/` package may execute **explicitly named argv-array verification commands** from its versioned manifest. That narrow capability exists to compensate for missing host tools; it must remain bounded, non-autonomous, source-edit-free, and honest about host isolation. General shell execution, dependency installation, source repair, and replacement CI/certification authority remain out of scope.
 
+## Python runtime
+
+Repository-owned Python commands run through uv. Python 3.11 is pinned in `.python-version`.
+
+Use:
+
+```bash
+uv run --no-project python -m <module>
+```
+
+Do not add repository entrypoints, CI steps, or documentation that call `python` or `python3` directly. The current Python utilities are stdlib-only, so do not add a `pyproject.toml` or dependency wrapper merely to launch them.
+
 ## Validation
 
 Run the repository-owned structural checks before opening a PR:
@@ -113,7 +125,7 @@ scripts/smoke-opencode-scripts.sh
 scripts/smoke-run-artifacts.sh
 ```
 
-The GitHub workflow validates the prompt/adapters and the complete Agent Economics deterministic, adversarial, dogfood-corpus, and bounded stress qualification suite on Ubuntu with Python 3.11. The Agent Economics job has a 20-minute outer safety window; individual subprocesses keep their own smaller hard bounds. Real model-backed OpenCode/Pi qualification and empirical baseline-vs-bridge dogfood remain host-environment checks.
+The GitHub workflow validates the prompt/adapters and the complete Agent Economics deterministic, adversarial, dogfood-corpus, and bounded stress qualification suite on Ubuntu with uv-managed Python 3.11. The Agent Economics job has a 20-minute outer safety window; individual subprocesses keep their own smaller hard bounds. Real model-backed OpenCode/Pi qualification and empirical baseline-vs-bridge dogfood remain host-environment checks.
 
 ## Pull requests
 
