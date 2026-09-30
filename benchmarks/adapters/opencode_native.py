@@ -16,6 +16,7 @@ from typing import Any
 
 from benchmarks.adapters.runtime import observe_executable
 from benchmarks.harness.identity import canonical_json
+from benchmarks.harness.runtime_authority import PROCESS_SUBSTRATE_ENV_KEYS
 from benchmarks.harness.model import (
     Observation,
     ParticipantIdentity,
@@ -79,16 +80,7 @@ def _native_environment(context: TrialContext) -> dict[str, str]:
         "XDG_CACHE_HOME": context.environment["XDG_CACHE_HOME"],
         "XDG_STATE_HOME": context.environment["XDG_STATE_HOME"],
     }
-    for name in (
-        "PATH",
-        "LANG",
-        "LC_ALL",
-        "TERM",
-        "SYSTEMROOT",
-        "WINDIR",
-        "COMSPEC",
-        "PATHEXT",
-    ):
+    for name in PROCESS_SUBSTRATE_ENV_KEYS:
         value = context.environment.get(name)
         if value:
             environment[name] = value
