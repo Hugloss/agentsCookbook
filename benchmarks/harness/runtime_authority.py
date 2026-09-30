@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, MutableMapping
+import re
 from typing import Any
 
 from benchmarks.harness.suite import SuiteDefinition
@@ -16,6 +17,7 @@ RUNTIME_AUTHORITY_ENV_KEYS = (
     "BENCHMARK_OPENCODE_HOME",
     "BENCHMARK_OPENCODE_CONFIG_HOME",
     "BENCHMARK_OPENCODE_AGENT",
+    "BENCHMARK_PASSTHROUGH_ENV_KEYS",
 )
 
 
@@ -41,17 +43,19 @@ def required_runtime_authority(
         required.add("HASHMARKS_BENCH_SOURCE")
     if "enola" in subjects:
         required.add("ENOLA_BENCH_EXECUTABLE")
-    if any(
-        suite.agents[agent]["adapter"] == "codex"
+    codex_definitions = [
+        suite.agents[agent]
         for agent in agents
         if agent in suite.agents
+        and suite.agents[agent]["adapter"] == "codex"
+    ]
+    if codex_definitions:
+        required.add("BENCHMARK_CODEX_EXECUTABLE")
+    if any(
+        definition.get("configuration", {}).get("native_host") is True
+        for definition in codex_definitions
     ):
-        required.update(
-            {
-                "BENCHMARK_CODEX_EXECUTABLE",
-                "BENCHMARK_CODEX_HOME",
-            }
-        )
+        required.add("BENCHMARK_CODEX_HOME")
     if any(
         suite.agents[agent]["adapter"] == "opencode-native"
         for agent in agents
@@ -76,3 +80,28 @@ def transport_runtime_authority(
         value = source.get(name)
         if value:
             destination[name] = value
+
+    raw_passthrough = source.get("BENCHMARK_PASSTHROUGH_ENV_KEYS", "")
+    passthrough = tuple(
+        name.strip()
+        for name in raw_passthrough.split(",")
+        if name.strip()
+    )
+    invalid = [
+        name
+        for name in passthrough
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None
+    ]
+    if invalid:
+        raise ValueError(
+            "invalid BENCHMARK_PASSTHROUGH_ENV_KEYS name(s): "
+            + ", ".join(sorted(set(invalid)))
+        )
+    missing = [name for name in passthrough if not source.get(name)]
+    if missing:
+        raise ValueError(
+            "declared benchmark passthrough variable(s) are unset: "
+            + ", ".join(sorted(set(missing)))
+        )
+    for name in passthrough:
+        destination[name] = source[name]
