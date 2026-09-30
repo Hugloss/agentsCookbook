@@ -323,7 +323,10 @@ class CodexAgent:
                 repository_root=context.workspace,
                 argv=(command, "mcp", "list", "--json"),
                 environment=context.environment,
-                limits=ProcessLimits(timeout_seconds=30, max_stdout_bytes=1_000_000),
+                limits=ProcessLimits(
+                    timeout_seconds=min(30.0, float(self.timeout_seconds)),
+                    max_stdout_bytes=1_000_000,
+                ),
                 inherit_environment=False,
             )
             if result.return_code != 0 or result.timed_out or result.stdout_truncated:
