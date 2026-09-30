@@ -156,6 +156,7 @@ def run_bounded(
     limits: ProcessLimits = ProcessLimits(),
     environment: Mapping[str, str] | None = None,
     inherit_environment: bool = True,
+    stdin_bytes: bytes | None = None,
 ) -> ProcessResult:
     if not argv or not all(isinstance(item, str) and item for item in argv):
         raise BoundedProcessError("argv must contain non-empty strings")
@@ -183,6 +184,8 @@ def run_bounded(
         "shell": False,
         "env": child_environment,
     }
+    if stdin_bytes is not None:
+        popen_kwargs["stdin"] = subprocess.PIPE
     if os.name == "nt":
         popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
@@ -224,6 +227,20 @@ def run_bounded(
                 truncated.set()
                 terminate()
                 return
+
+    if stdin_bytes is not None:
+        assert process.stdin is not None
+        try:
+            if stdin_bytes:
+                process.stdin.write(stdin_bytes)
+                process.stdin.flush()
+        except BrokenPipeError:
+            pass
+        finally:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
 
     assert process.stdout is not None and process.stderr is not None
     threads = [
