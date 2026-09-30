@@ -34,7 +34,7 @@ class HashmarksSubject:
             )
         return str((root / ".venv" / "bin" / "hashmarks").resolve())
 
-    def _source_identity(
+    def source_identity(
         self, context: TrialContext
     ) -> tuple[dict[str, object] | None, str | None]:
         root = self._source_root(context)
@@ -125,7 +125,7 @@ class HashmarksSubject:
         )
         if not executable.payload["available"]:
             return executable
-        source_identity, source_error = self._source_identity(context)
+        source_identity, source_error = self.source_identity(context)
         if source_error:
             return Observation({"available": False, "reason": source_error}, "")
         sync = self._run(context, (*self._base(context), "map", "sync"))

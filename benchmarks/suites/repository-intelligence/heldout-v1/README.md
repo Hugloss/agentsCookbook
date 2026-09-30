@@ -77,13 +77,16 @@ agentsCookbook/
 
 ```sh
 make benchmark-check
+# Optional explicit exhaustive admission:
+make benchmark-check-all
 make benchmark
 make benchmark-report
 make benchmark-score
 ```
 
-- `benchmark-check` performs admission/preflight without invoking the coding agent.
-- `benchmark` executes/resumes the frozen campaign.
+- `benchmark-check` is a fast runtime/connectivity check. It uses one disposable smoke workspace, checks each unique host/subject pairing once, invokes no model, creates no trial, and exits.
+- `benchmark-check-all` explicitly preflights all 216 frozen definitions. It can be slow and is never run implicitly.
+- `benchmark` executes/resumes the frozen campaign and does not secretly run either check first.
 - `benchmark-report` is the generic framework report.
 - `benchmark-score` runs this suite's explicit language-separated held-out scorer.
 
@@ -93,7 +96,17 @@ Do not run `hashmarks install --opencode` for benchmark authority and do not pre
 
 ### Advanced direct CLI
 
-Most developers should use the Make targets. Direct callers must pass the env file and harness root explicitly:
+Most developers should use the Make targets. The fast readiness check needs only the suite and explicit env file:
+
+```sh
+uv run --no-project python -m benchmarks check \
+  --env-file .env \
+  --suite "$BENCHMARK_SUITE_PATH"
+```
+
+It does not need `BENCHMARK_CAMPAIGN_ROOT` or `BENCHMARK_HARNESS_REPO_ROOT`. It verifies Hashmarks/Enola runtime availability, Codex/OpenCode native configuration, Codex exact subject exposure, and live OpenCode MCP connections. It does not make an LLM request.
+
+For exhaustive trial admission, pass campaign and harness authority explicitly:
 
 ```sh
 uv run --no-project python -m benchmarks preflight \

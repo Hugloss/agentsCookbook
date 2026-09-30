@@ -15,6 +15,7 @@ from benchmarks.harness.campaign import (
     resolve_campaign_paths,
 )
 from benchmarks.harness.preflight import preflight_trial
+from benchmarks.harness.readiness import check_runtime_readiness
 from benchmarks.harness.runtime_authority import (
     RUNTIME_AUTHORITY_ENV_KEYS,
     required_runtime_authority,
@@ -22,7 +23,7 @@ from benchmarks.harness.runtime_authority import (
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
 from benchmarks.harness.selection import SelectionError, select_definitions
-from benchmarks.harness.suite import load_suite
+from benchmarks.harness.suite import load_runtime_suite, load_suite
 
 
 _BENCHMARK_ENV_KEYS = frozenset(RUNTIME_AUTHORITY_ENV_KEYS)
@@ -108,11 +109,22 @@ def _add_execution_inputs(command: argparse.ArgumentParser) -> None:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m benchmarks")
+    parser = argparse.ArgumentParser(
+        prog="uv run --no-project python -m benchmarks"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     validate = sub.add_parser("validate-suite")
     validate.add_argument("--suite", type=Path, required=True)
+
+    check = sub.add_parser("check")
+    check.add_argument("--suite", type=Path, required=True)
+    check.add_argument(
+        "--env-file",
+        type=Path,
+        required=True,
+        help="explicit benchmark environment file; no file is auto-discovered",
+    )
 
     plan = sub.add_parser("plan")
     plan.add_argument("--suite", type=Path, required=True)
@@ -195,7 +207,11 @@ def _selection_metadata(args, suite, rows) -> dict[str, object]:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    suite = load_suite(args.suite)
+    suite = (
+        load_runtime_suite(args.suite)
+        if args.command == "check"
+        else load_suite(args.suite)
+    )
 
     if args.command == "validate-suite":
         print(
@@ -213,6 +229,41 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
+
+    if args.command == "check":
+        _load_benchmark_env(
+            args.env_file,
+            os.environ,
+            require_file=True,
+        )
+        authority_rows = [
+            {"condition_id": str(condition["id"])}
+            for condition in suite.experiment["conditions"]
+        ]
+        missing = [
+            name
+            for name in required_runtime_authority(suite, authority_rows)
+            if not os.environ.get(name)
+        ]
+        if missing:
+            raise SystemExit(
+                "missing explicit benchmark runtime authority: "
+                + ", ".join(missing)
+                + "; set the value(s) in the file passed with --env-file "
+                "or export them explicitly"
+            )
+        try:
+            report = check_runtime_readiness(suite)
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"benchmark runtime check failed: {exc}") from exc
+        for item in report.checks:
+            print(item.line())
+        print(
+            "benchmark runtime: READY"
+            if report.ready
+            else "benchmark runtime: NOT READY"
+        )
+        return 0 if report.ready else 2
 
     rows = _select(args, suite)
 

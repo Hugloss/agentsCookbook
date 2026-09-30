@@ -86,6 +86,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
 
         for target in (
             "benchmark-check",
+            "benchmark-check-all",
             "benchmark",
             "benchmark-report",
             "benchmark-score",
@@ -116,6 +117,51 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             "uv run --no-project python -m benchmarks",
             heldout_docs,
         )
+
+    def test_fast_check_is_not_trial_preflight(self) -> None:
+        makefile = MAKEFILE.read_text(encoding="utf-8")
+
+        check_block = makefile.split(
+            "benchmark-check: _benchmark-suite-env", 1
+        )[1].split(
+            "benchmark-check-all: _benchmark-execution-env", 1
+        )[0]
+        self.assertIn(
+            "uv run --no-project python -m benchmarks check",
+            check_block,
+        )
+        self.assertIn("--env-file .env", check_block)
+        self.assertIn("--suite", check_block)
+        self.assertNotIn("--root", check_block)
+        self.assertNotIn("--harness-root", check_block)
+        self.assertNotIn("preflight", check_block)
+
+        exhaustive = makefile.split(
+            "benchmark-check-all: _benchmark-execution-env", 1
+        )[1].split(
+            "benchmark: _benchmark-execution-env", 1
+        )[0]
+        self.assertIn(
+            "uv run --no-project python -m benchmarks preflight",
+            exhaustive,
+        )
+        self.assertIn("--root", exhaustive)
+        self.assertIn("--harness-root", exhaustive)
+
+        benchmark_block = makefile.split(
+            "benchmark: _benchmark-execution-env", 1
+        )[1].split(
+            "benchmark-report: _benchmark-campaign-env", 1
+        )[0]
+        self.assertNotIn("benchmark-check", benchmark_block)
+        self.assertNotIn("preflight", benchmark_block)
+
+        report_block = makefile.split(
+            "benchmark-report: _benchmark-campaign-env", 1
+        )[1].split(
+            "_benchmark-score-env: _benchmark-campaign-env", 1
+        )[0]
+        self.assertNotIn("--harness-root", report_block)
 
     def test_make_benchmark_fails_before_execution_without_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

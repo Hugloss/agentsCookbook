@@ -28,6 +28,8 @@ Trial admission is single-owned by `benchmarks.harness.admission`:
 
 Both `preflight` and `run` use that same path. Preflight is diagnostic and never invokes the coding agent or publishes a trial result.
 
+Runtime readiness is deliberately separate from trial admission. `benchmark-check`/the `check` command never selects or materializes a task, applies a mutation, runs an oracle, derives a trial/execution identity, inspects receipts, or invokes a model. It creates one disposable smoke workspace, resolves the suite's unique native hosts and MCP subjects, verifies Hashmarks source authority, and checks each unique host/subject exposure once. The disposable workspace is deleted when the command exits; rerunning the check is always an explicit user action.
+
 Native tool discovery and benchmark-subject selection are separate authorities.
 
 Codex, OpenCode, and Enola are normal host-installed tools. The benchmark does not duplicate their standard Linux installation paths or config roots in `.env`. It resolves their executables from the native `PATH`, derives Codex/OpenCode config roots from the host's normal `HOME`, `XDG_CONFIG_HOME`, and `CODEX_HOME` conventions, then records the resolved executable hash, version, native config identity, and effective subject exposure. Native defaults are therefore **observed authority**, not hidden benchmark configuration.
@@ -38,7 +40,7 @@ For native OpenCode and Codex trials, ambient/global MCP registrations are disab
 
 Participant processes do not inherit arbitrary host environment variables. The harness carries one fixed process-substrate allowlist—`PATH`, locale variables, terminal identity, and equivalent Windows launch variables—so native tools can start. Provider variables must be named explicitly through `BENCHMARK_PASSTHROUGH_ENV_KEYS`. The resulting observed environment is bound into execution identity.
 
-There is no automatic `.env` discovery in the benchmark CLI and no default harness root. Local Make targets pass `--env-file .env`, `--suite`, `--root`, and `--harness-root` explicitly. Direct CLI callers must provide the same authorities themselves.
+There is no automatic `.env` discovery in the benchmark CLI and no default harness root. The fast readiness check needs only `--env-file` and `--suite`; campaign execution/preflight additionally receives the campaign root and harness root explicitly. Direct CLI callers must provide the authorities needed by the command they choose.
 
 Agent Economics remains a benchmark consumer/suite; shared process semantics remain single-owned until that module is promoted to a more generic repository location.
 
@@ -84,19 +86,34 @@ cp -n .env.example .env
 Then use:
 
 ```sh
-make benchmark-check
+make benchmark-check       # fast native runtime/MCP readiness only
+make benchmark-check-all   # explicit exhaustive frozen-definition preflight
 make benchmark
-make benchmark-report    # generic framework report
-make benchmark-score     # suite-specific scorer configured in .env
+make benchmark-report      # generic framework report
+make benchmark-score       # suite-specific scorer configured in .env
 ```
 
 The Makefile chooses no native executable or native config root. Codex, OpenCode, and Enola use their installed host conventions; the benchmark observes what resolves. The Makefile only transports deliberate benchmark choices such as the Hashmarks checkout, suite, campaign root, OpenCode agent persona, provider passthrough, and scorer. Missing explicit benchmark choices fail before work begins.
+
+`benchmark-check` answers only **“can the configured native hosts and benchmark subjects be wired on this machine right now?”** It checks each unique participant/pair once and exits. OpenCode's MCP probe supplies a live stdio connection check. Codex readiness proves its native config plus the exact ephemeral subject exposure without invoking a model; it is reported as ready rather than falsely labelled connected. No readiness command retries automatically.
+
+`benchmark-check-all` is the intentionally expensive command: it runs the existing `preflight` path across every frozen definition selected by the suite.
 
 ### Advanced direct CLI
 
 The benchmark CLI remains available for automation and explicit one-off selections. Repository Python is owned by uv: invoke it as `uv run --no-project python -m benchmarks ...`. The CLI does not discover `.env` and does not default `--harness-root`.
 
-For example:
+Fast runtime readiness:
+
+```bash
+uv run --no-project python -m benchmarks check \
+  --env-file .env \
+  --suite "$BENCHMARK_SUITE_PATH"
+```
+
+This command uses no campaign root or harness root and creates no benchmark trial.
+
+For exhaustive frozen-definition admission, use `make benchmark-check-all` or call preflight explicitly:
 
 ```bash
 uv run --no-project python -m benchmarks preflight \
@@ -199,6 +216,6 @@ A published `INCOMPLETE`, `INVALID`, or `CONTAMINATED` receipt is evidence and i
 
 ## Method
 
-Fresh authority -> frozen input -> preflight admission -> isolated execution -> observed execution identity -> independent oracle -> sealed events -> immutable verified receipt -> status/resume -> aggregate only valid evidence.
+Native runtime readiness (optional, explicit) -> frozen input -> preflight admission (optional, explicit) -> isolated execution -> observed execution identity -> independent oracle -> sealed events -> immutable verified receipt -> status/resume -> aggregate only valid evidence.
 
 Do not change a frozen task, mutation, oracle, or scoring contract after seeing a result. Create a new suite/experiment version instead.
