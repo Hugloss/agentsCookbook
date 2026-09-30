@@ -106,7 +106,7 @@ The Makefile chooses no native executable or native config root. Codex, OpenCode
 
 `benchmark-check` answers only **“can the explicitly selected native agent and benchmark subjects be wired on this machine right now?”** It checks each unique participant/pair for `BENCHMARK_AGENT` once and exits. OpenCode's MCP probe supplies a live stdio connection check. Only when that connection fails does readiness launch the selected MCP executable and args in the selected cwd and environment with stdin closed and a five-second bound, solely to capture a direct startup failure. A clean exit after stdin closes is inconclusive and adds no diagnostic. Codex readiness proves its native config plus the exact ephemeral subject exposure without invoking a model; it is reported as ready rather than falsely labelled connected. No readiness command retries automatically.
 
-`benchmark-check-all` is the intentionally expensive command: it runs the existing `preflight` path across every frozen definition selected by the suite.
+`benchmark-check-all` is the intentionally expensive command: it runs the existing `preflight` path across every frozen definition for the explicitly selected agent.
 
 ### Advanced direct CLI
 
@@ -185,7 +185,7 @@ Then run the exact same selection:
 uv run --no-project python -m benchmarks run \
   --suite "$suite" \
   --root "$root" \
-  --agent opencode-native \
+  --agent "$BENCHMARK_AGENT" \
   --subject hashmarks \
   --subject enola
 ```
@@ -198,7 +198,7 @@ Inspect resumability without invoking any agent:
 uv run --no-project python -m benchmarks status \
   --suite "$suite" \
   --root "$root" \
-  --agent opencode-native \
+  --agent "$BENCHMARK_AGENT" \
   --subject hashmarks \
   --subject enola
 ```
@@ -211,7 +211,7 @@ Finally:
 uv run --no-project python -m benchmarks report \
   --suite "$suite" \
   --root "$root" \
-  --agent opencode-native \
+  --agent "$BENCHMARK_AGENT" \
   --subject hashmarks \
   --subject enola
 ```
