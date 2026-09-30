@@ -39,6 +39,20 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             env_example,
         )
         self.assertIn("BENCHMARK_HARNESS_REPO_ROOT=.", env_example)
+        self.assertIn(
+            "ENOLA_BENCH_EXECUTABLE=/absolute/path/to/enola",
+            env_example,
+        )
+        self.assertIn(
+            "BENCHMARK_CODEX_EXECUTABLE=/absolute/path/to/codex",
+            env_example,
+        )
+        self.assertIn(
+            "BENCHMARK_OPENCODE_EXECUTABLE=/absolute/path/to/opencode",
+            env_example,
+        )
+        self.assertIn("BENCHMARK_OPENCODE_AGENT=build", env_example)
+        self.assertIn("BENCHMARK_PASSTHROUGH_ENV_KEYS=", env_example)
 
         # Do not drift back to ambiguous names that hide whether a path is
         # committed source/configuration or generated campaign state.
@@ -94,7 +108,8 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             )
 
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn(
+        self.assertIn("--env-file .env", result.stdout)
+        self.assertNotIn(
             'HASHMARKS_BENCH_SOURCE="/work/Hashmarks"',
             result.stdout,
         )
