@@ -15,6 +15,7 @@ from benchmarks.harness.campaign import (
     resolve_campaign_paths,
 )
 from benchmarks.harness.preflight import preflight_trial
+from benchmarks.harness.readiness import check_runtime_readiness
 from benchmarks.harness.runtime_authority import (
     RUNTIME_AUTHORITY_ENV_KEYS,
     required_runtime_authority,
@@ -113,6 +114,15 @@ def _parser() -> argparse.ArgumentParser:
 
     validate = sub.add_parser("validate-suite")
     validate.add_argument("--suite", type=Path, required=True)
+
+    check = sub.add_parser("check")
+    check.add_argument("--suite", type=Path, required=True)
+    check.add_argument(
+        "--env-file",
+        type=Path,
+        required=True,
+        help="explicit benchmark environment file; no file is auto-discovered",
+    )
 
     plan = sub.add_parser("plan")
     plan.add_argument("--suite", type=Path, required=True)
@@ -213,6 +223,38 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
+
+    if args.command == "check":
+        _load_benchmark_env(
+            args.env_file,
+            os.environ,
+            require_file=True,
+        )
+        authority_rows = [
+            {"condition_id": str(condition["id"])}
+            for condition in suite.experiment["conditions"]
+        ]
+        missing = [
+            name
+            for name in required_runtime_authority(suite, authority_rows)
+            if not os.environ.get(name)
+        ]
+        if missing:
+            raise SystemExit(
+                "missing explicit benchmark runtime authority: "
+                + ", ".join(missing)
+                + "; set the value(s) in the file passed with --env-file "
+                "or export them explicitly"
+            )
+        report = check_runtime_readiness(suite)
+        for item in report.checks:
+            print(item.line())
+        print(
+            "benchmark runtime: READY"
+            if report.ready
+            else "benchmark runtime: NOT READY"
+        )
+        return 0 if report.ready else 2
 
     rows = _select(args, suite)
 
