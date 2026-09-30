@@ -1,6 +1,6 @@
 -include .env
 
-.PHONY: benchmark-check benchmark benchmark-report _benchmark-env
+.PHONY: benchmark-check benchmark benchmark-report benchmark-score _benchmark-env _benchmark-score-env
 
 _benchmark-env:
 	@test -f .env || { \
@@ -38,3 +38,18 @@ benchmark-report: _benchmark-env
 	@python -m benchmarks report \
 		--suite "$(BENCHMARK_SUITE_PATH)" \
 		--root "$(BENCHMARK_CAMPAIGN_ROOT)"
+
+_benchmark-score-env: _benchmark-env
+	@test -n "$(strip $(BENCHMARK_SCORE_SCRIPT_PATH))" || { \
+		echo "ERROR: BENCHMARK_SCORE_SCRIPT_PATH must name the selected suite's scorer in .env."; \
+		exit 2; \
+	}
+	@test -n "$(strip $(BENCHMARK_SCORE_OUTPUT_PATH))" || { \
+		echo "ERROR: BENCHMARK_SCORE_OUTPUT_PATH must name the specialized score output in .env."; \
+		exit 2; \
+	}
+
+benchmark-score: _benchmark-score-env
+	@python "$(BENCHMARK_SCORE_SCRIPT_PATH)" \
+		--results "$(BENCHMARK_CAMPAIGN_ROOT)/results" \
+		--output "$(BENCHMARK_SCORE_OUTPUT_PATH)"
