@@ -184,7 +184,7 @@ def _mcp_startup_diagnostic(
             max_stderr_bytes=200_000,
         ),
         inherit_environment=False,
-        stdin_bytes=b"",
+        close_stdin=True,
     )
     stderr = result.stderr.decode("utf-8", errors="replace").strip()
     stdout = result.stdout.decode("utf-8", errors="replace").strip()
