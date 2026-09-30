@@ -32,7 +32,7 @@ from benchmarks.adapters.registry import (
     AdapterConfigurationError,
     build_agent,
 )
-from benchmarks.__main__ import _hashmarks_source_required, _load_benchmark_env
+from benchmarks.__main__ import _load_benchmark_env
 from benchmarks.harness.admission import TrialAdmissionError, admit_trial, harness_identity
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.campaign import (
@@ -53,6 +53,10 @@ from benchmarks.harness.preflight import preflight_trial
 from benchmarks.harness.receipt import is_complete_receipt
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
+from benchmarks.harness.runtime_authority import (
+    required_runtime_authority,
+    transport_runtime_authority,
+)
 from benchmarks.harness.selection import SelectionError, select_definitions
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.suite import SuiteDefinition, SuiteError, load_suite
@@ -266,13 +270,38 @@ class PilotExecutionTests(unittest.TestCase):
                 changed_untracked["working_copy_sha256"],
             )
 
-    def test_native_codex_uses_host_model_and_gates_unselected_mcp(self) -> None:
-        argv = CodexAgent(native_host=True)._exec_argv(
-            "find owner", ("hashmarks", "enola"), "hashmarks"
-        )
+    def test_native_codex_injects_exact_subject_and_disables_ambient_mcp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            environment = isolated_environment(control)
+            environment["BENCHMARK_CODEX_EXECUTABLE"] = "/tools/codex"
+            context = TrialContext(workspace, control, environment)
+            exposure = McpExposure(
+                name="hashmarks",
+                command="/work/Hashmarks/.venv/bin/hashmarks",
+                args=("--workspace", ".", "mcp"),
+                cwd=workspace,
+                semantic_identity={"name": "hashmarks"},
+            )
+
+            argv = CodexAgent(native_host=True)._exec_argv(
+                context,
+                "find owner",
+                ("hashmarks", "enola"),
+                exposure,
+            )
+
         self.assertIn("--approve-for-me", argv)
+        self.assertIn("mcp_servers.hashmarks.enabled=false", argv)
         self.assertIn("mcp_servers.enola.enabled=false", argv)
-        self.assertNotIn("mcp_servers.hashmarks.enabled=false", argv)
+        self.assertIn("mcp_servers.hashmarks.enabled=true", argv)
+        self.assertIn(
+            'mcp_servers.hashmarks.command="/work/Hashmarks/.venv/bin/hashmarks"',
+            argv,
+        )
         self.assertNotIn("--model", argv)
 
     def test_pilot_suite_freezes_nine_paired_trials(self) -> None:
@@ -319,20 +348,29 @@ class PilotExecutionTests(unittest.TestCase):
             "opencode-native",
         )
 
-    def test_matrix_selection_includes_one_matching_bare_control(self) -> None:
+    def test_matrix_selection_never_adds_bare_control_implicitly(self) -> None:
         suite = load_suite(MATRIX_V2)
         selected = select_definitions(
             suite, agents=("opencode-native",), subjects=("hashmarks",)
         )
-        self.assertEqual(len(selected), 6)
+        self.assertEqual(len(selected), 3)
         self.assertEqual(
             {row["condition_id"] for row in selected},
-            {"bare-opencode-native", "hashmarks-opencode-native"},
+            {"hashmarks-opencode-native"},
         )
         both = select_definitions(
             suite, agents=("codex-sol",), subjects=("hashmarks", "enola")
         )
-        self.assertEqual(len(both), 9)
+        self.assertEqual(len(both), 6)
+        explicit_control = select_definitions(
+            suite,
+            agents=("opencode-native",),
+            subjects=("hashmarks", "none"),
+        )
+        self.assertEqual(
+            {row["condition_id"] for row in explicit_control},
+            {"bare-opencode-native", "hashmarks-opencode-native"},
+        )
         with self.assertRaises(SelectionError):
             select_definitions(suite, agents=("unknown",))
         with self.assertRaises(SelectionError):
@@ -394,13 +432,15 @@ class PilotExecutionTests(unittest.TestCase):
         )
         self.assertNotEqual(original, altered)
 
-    def test_benchmark_env_file_loads_only_hashmarks_source(self) -> None:
+    def test_benchmark_env_file_loads_only_declared_runtime_authority(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             env_file = root / ".env"
             env_file.write_text(
                 "# benchmark local config\n"
                 "HASHMARKS_BENCH_SOURCE='/work/Hashmarks'\n"
+                "ENOLA_BENCH_EXECUTABLE=/tools/enola\n"
+                "BENCHMARK_OPENCODE_AGENT=build\n"
                 "UNRELATED=value\n",
                 encoding="utf-8",
             )
@@ -412,7 +452,11 @@ class PilotExecutionTests(unittest.TestCase):
             )
             self.assertEqual(
                 environment,
-                {"HASHMARKS_BENCH_SOURCE": "/work/Hashmarks"},
+                {
+                    "HASHMARKS_BENCH_SOURCE": "/work/Hashmarks",
+                    "ENOLA_BENCH_EXECUTABLE": "/tools/enola",
+                    "BENCHMARK_OPENCODE_AGENT": "build",
+                },
             )
 
     def test_benchmark_env_file_does_not_override_process_authority(self) -> None:
@@ -433,32 +477,39 @@ class PilotExecutionTests(unittest.TestCase):
                 "/already-exported",
             )
 
-    def test_selected_hashmarks_requires_source_at_startup(self) -> None:
-        for suite_path, agent in (
-            (HELDOUT_V1, "opencode-native"),
-            (MATRIX_V2, "opencode-native"),
-            (PILOT, "codex"),
-        ):
-            suite = load_suite(suite_path)
-            rows = select_definitions(
-                suite,
-                agents=(agent,),
-                subjects=("hashmarks",),
-            )
-            self.assertTrue(
-                _hashmarks_source_required(suite, rows),
-                str(suite_path),
-            )
-
+    def test_selected_conditions_require_exact_runtime_authority(self) -> None:
         suite = load_suite(HELDOUT_V1)
-        bare = select_definitions(
+        rows = select_definitions(
             suite,
             agents=("opencode-native",),
-            subjects=("none",),
+            subjects=("hashmarks",),
         )
-        self.assertFalse(_hashmarks_source_required(suite, bare))
+        self.assertEqual(
+            set(required_runtime_authority(suite, rows)),
+            {
+                "HASHMARKS_BENCH_SOURCE",
+                "BENCHMARK_OPENCODE_EXECUTABLE",
+                "BENCHMARK_OPENCODE_HOME",
+                "BENCHMARK_OPENCODE_CONFIG_HOME",
+                "BENCHMARK_OPENCODE_AGENT",
+            },
+        )
 
-    def test_hashmarks_adapter_uses_real_version_surface(self) -> None:
+        codex_rows = select_definitions(
+            suite,
+            agents=("codex-native",),
+            subjects=("enola",),
+        )
+        self.assertEqual(
+            set(required_runtime_authority(suite, codex_rows)),
+            {
+                "ENOLA_BENCH_EXECUTABLE",
+                "BENCHMARK_CODEX_EXECUTABLE",
+                "BENCHMARK_CODEX_HOME",
+            },
+        )
+
+    def test_hashmarks_adapter_has_no_path_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workspace = root / "workspace"
@@ -469,17 +520,13 @@ class PilotExecutionTests(unittest.TestCase):
                 control,
                 isolated_environment(control),
             )
-            unavailable = Observation({"available": False}, "")
             with mock.patch(
-                "benchmarks.adapters.hashmarks.observe_executable",
-                return_value=unavailable,
+                "benchmarks.adapters.hashmarks.observe_executable"
             ) as observed:
-                HashmarksSubject().prepare(context)
-            observed.assert_called_once_with(
-                context,
-                "hashmarks",
-                version_args=("version",),
-            )
+                prepared = HashmarksSubject().prepare(context)
+            observed.assert_not_called()
+            self.assertFalse(prepared.payload["available"])
+            self.assertIn("PATH lookup is not benchmark authority", prepared.payload["reason"])
 
     def test_hashmarks_source_selects_exact_executable_without_path_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -501,7 +548,7 @@ class PilotExecutionTests(unittest.TestCase):
                 "benchmarks.adapters.hashmarks.observe_executable",
                 return_value=unavailable,
             ) as observed:
-                HashmarksSubject(require_source=True).prepare(context)
+                HashmarksSubject().prepare(context)
 
             observed.assert_called_once_with(
                 context,
@@ -509,7 +556,7 @@ class PilotExecutionTests(unittest.TestCase):
                 version_args=("version",),
             )
             self.assertEqual(
-                HashmarksSubject(require_source=True).mcp_exposure(context).command,
+                HashmarksSubject().mcp_exposure(context).command,
                 str(executable.resolve()),
             )
 
@@ -537,9 +584,7 @@ class PilotExecutionTests(unittest.TestCase):
                 "benchmarks.adapters.hashmarks.subprocess.run",
                 side_effect=git_results,
             ):
-                identity, error = HashmarksSubject(
-                    require_source=True
-                )._source_identity(context)
+                identity, error = HashmarksSubject()._source_identity(context)
 
             self.assertIsNone(identity)
             self.assertEqual(
