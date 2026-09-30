@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,7 +21,6 @@ from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 @dataclass(frozen=True)
 class HashmarksSubject:
     timeout_seconds: int = 120
-    require_source: bool = False
 
     def _source_root(self, context: TrialContext) -> Path | None:
         source = context.environment.get("HASHMARKS_BENCH_SOURCE")
@@ -30,10 +28,11 @@ class HashmarksSubject:
 
     def _executable(self, context: TrialContext) -> str:
         root = self._source_root(context)
-        if root is not None:
-            return str((root / ".venv" / "bin" / "hashmarks").resolve())
-        resolved = shutil.which("hashmarks", path=context.environment.get("PATH"))
-        return str(Path(resolved).resolve()) if resolved else "hashmarks"
+        if root is None:
+            raise ValueError(
+                "HASHMARKS_BENCH_SOURCE is required; PATH lookup is not benchmark authority"
+            )
+        return str((root / ".venv" / "bin" / "hashmarks").resolve())
 
     def _source_identity(
         self, context: TrialContext
@@ -114,19 +113,18 @@ class HashmarksSubject:
         )
 
     def prepare(self, context: TrialContext) -> Observation:
+        try:
+            command = self._executable(context)
+        except ValueError as exc:
+            return Observation({"available": False, "reason": str(exc)}, "")
         executable = observe_executable(
             context,
-            self._executable(context),
+            command,
             version_args=("version",),
         )
         if not executable.payload["available"]:
             return executable
-        source_configured = self._source_root(context) is not None
-        source_identity, source_error = (
-            self._source_identity(context)
-            if self.require_source or source_configured
-            else (None, None)
-        )
+        source_identity, source_error = self._source_identity(context)
         if source_error:
             return Observation({"available": False, "reason": source_error}, "")
         sync = self._run(context, (*self._base(context), "map", "sync"))
