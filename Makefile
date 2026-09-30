@@ -1,14 +1,10 @@
 -include .env
 
-.PHONY: benchmark-check benchmark benchmark-report _benchmark-env
+.PHONY: benchmark-check benchmark benchmark-report benchmark-score _benchmark-env _benchmark-score-env
 
 _benchmark-env:
 	@test -f .env || { \
 		echo "ERROR: .env is required. Copy .env.example to .env and set all benchmark authority values."; \
-		exit 2; \
-	}
-	@test -n "$(strip $(HASHMARKS_BENCH_SOURCE))" || { \
-		echo "ERROR: HASHMARKS_BENCH_SOURCE must be set in .env."; \
 		exit 2; \
 	}
 	@test -n "$(strip $(BENCHMARK_SUITE_PATH))" || { \
@@ -25,15 +21,15 @@ _benchmark-env:
 	}
 
 benchmark-check: _benchmark-env
-	@HASHMARKS_BENCH_SOURCE="$(HASHMARKS_BENCH_SOURCE)" \
-	python -m benchmarks preflight \
+	@python -m benchmarks preflight \
+		--env-file .env \
 		--suite "$(BENCHMARK_SUITE_PATH)" \
 		--root "$(BENCHMARK_CAMPAIGN_ROOT)" \
 		--harness-root "$(BENCHMARK_HARNESS_REPO_ROOT)"
 
 benchmark: _benchmark-env
-	@HASHMARKS_BENCH_SOURCE="$(HASHMARKS_BENCH_SOURCE)" \
-	python -m benchmarks run \
+	@python -m benchmarks run \
+		--env-file .env \
 		--suite "$(BENCHMARK_SUITE_PATH)" \
 		--root "$(BENCHMARK_CAMPAIGN_ROOT)" \
 		--harness-root "$(BENCHMARK_HARNESS_REPO_ROOT)"
@@ -42,3 +38,18 @@ benchmark-report: _benchmark-env
 	@python -m benchmarks report \
 		--suite "$(BENCHMARK_SUITE_PATH)" \
 		--root "$(BENCHMARK_CAMPAIGN_ROOT)"
+
+_benchmark-score-env: _benchmark-env
+	@test -n "$(strip $(BENCHMARK_SCORE_SCRIPT_PATH))" || { \
+		echo "ERROR: BENCHMARK_SCORE_SCRIPT_PATH must name the selected suite's scorer in .env."; \
+		exit 2; \
+	}
+	@test -n "$(strip $(BENCHMARK_SCORE_OUTPUT_PATH))" || { \
+		echo "ERROR: BENCHMARK_SCORE_OUTPUT_PATH must name the specialized score output in .env."; \
+		exit 2; \
+	}
+
+benchmark-score: _benchmark-score-env
+	@python "$(BENCHMARK_SCORE_SCRIPT_PATH)" \
+		--results "$(BENCHMARK_CAMPAIGN_ROOT)/results" \
+		--output "$(BENCHMARK_SCORE_OUTPUT_PATH)"

@@ -10,14 +10,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from benchmarks.adapters.runtime import observe_executable
 from benchmarks.harness.identity import canonical_json
+from benchmarks.harness.runtime_authority import PROCESS_SUBSTRATE_ENV_KEYS
 from benchmarks.harness.model import (
     Observation,
     ParticipantIdentity,
@@ -44,7 +43,34 @@ def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
 
 
 def _native_environment(context: TrialContext) -> dict[str, str]:
+    required = (
+        "BENCHMARK_OPENCODE_EXECUTABLE",
+        "BENCHMARK_OPENCODE_HOME",
+        "BENCHMARK_OPENCODE_CONFIG_HOME",
+        "BENCHMARK_OPENCODE_AGENT",
+    )
+    missing = [name for name in required if not context.environment.get(name)]
+    if missing:
+        raise ValueError(
+            "missing explicit OpenCode benchmark authority: "
+            + ", ".join(missing)
+        )
     environment = {
+        "OPENCODE_BIN": str(
+            Path(context.environment["BENCHMARK_OPENCODE_EXECUTABLE"])
+            .expanduser()
+            .resolve()
+        ),
+        "HOME": str(
+            Path(context.environment["BENCHMARK_OPENCODE_HOME"])
+            .expanduser()
+            .resolve()
+        ),
+        "XDG_CONFIG_HOME": str(
+            Path(context.environment["BENCHMARK_OPENCODE_CONFIG_HOME"])
+            .expanduser()
+            .resolve()
+        ),
         "OPENCODE_DISABLE_AUTOUPDATE": "1",
         "OPENCODE_DISABLE_PRUNE": "1",
         "OPENCODE_AUTO_SHARE": "false",
@@ -52,7 +78,23 @@ def _native_environment(context: TrialContext) -> dict[str, str]:
         "TMP": context.environment["TMP"],
         "TEMP": context.environment["TEMP"],
         "XDG_CACHE_HOME": context.environment["XDG_CACHE_HOME"],
+        "XDG_STATE_HOME": context.environment["XDG_STATE_HOME"],
     }
+    for name in PROCESS_SUBSTRATE_ENV_KEYS:
+        value = context.environment.get(name)
+        if value:
+            environment[name] = value
+    for name in (
+        key.strip()
+        for key in context.environment.get(
+            "BENCHMARK_PASSTHROUGH_ENV_KEYS",
+            "",
+        ).split(",")
+        if key.strip()
+    ):
+        value = context.environment.get(name)
+        if value:
+            environment[name] = value
     return environment
 
 
@@ -235,6 +277,7 @@ def _runtime_call(
             max_stdout_bytes=max_stdout_bytes,
             max_stderr_bytes=2_000_000,
         ),
+        inherit_environment=False,
     )
     if (
         result.executable_missing
@@ -258,7 +301,6 @@ class OpenCodeNativeAgent:
     timeout_seconds: int = 600
     max_output_bytes: int = 50_000_000
     max_tool_calls: int | None = None
-    strict_executable: bool = False
 
     def subject_lifecycle_mode(self) -> SubjectLifecycleMode:
         return SubjectLifecycleMode.AGENT_NATIVE
@@ -320,16 +362,24 @@ class OpenCodeNativeAgent:
         selected_subject: str | None,
         exposure_path: Path | None,
     ) -> tuple[dict[str, Any], Observation]:
-        environment = _native_environment(context)
+        try:
+            environment = _native_environment(context)
+        except ValueError as exc:
+            return {}, Observation(
+                {"available": False, "reason": str(exc)},
+                "",
+            )
         executable = observe_executable(
             context,
-            "opencode",
+            environment["OPENCODE_BIN"],
             environment=environment,
         )
         args = (
             "inspect-config",
             "--repo",
             str(context.workspace),
+            "--agent",
+            context.environment["BENCHMARK_OPENCODE_AGENT"],
             "--benchmark-subject",
             selected_subject or "none",
         )
@@ -415,8 +465,7 @@ class OpenCodeNativeAgent:
             }
         binding_verified = selected is None or workspace_binding.get("verified") is True
         executable_verified = True
-        if selected and self.strict_executable:
-            configured = workspace_binding.get("command_executable")
+        if selected:
             expected = (
                 subject_exposure["command"][0]
                 if isinstance(subject_exposure, dict)
@@ -424,22 +473,16 @@ class OpenCodeNativeAgent:
                 and subject_exposure["command"]
                 else None
             )
-            configured_path = (
-                shutil.which(configured, path=context.environment.get("PATH"))
-                if isinstance(configured, str) and os.sep not in configured
-                else configured
-            )
-            expected_path = (
-                shutil.which(expected, path=context.environment.get("PATH"))
-                if isinstance(expected, str) and os.sep not in expected
-                else expected
+            native_identity = resolved.get("native_subject_identity")
+            observed_path = (
+                native_identity.get("executable_path")
+                if isinstance(native_identity, dict)
+                else None
             )
             executable_verified = bool(
-                isinstance(configured_path, str)
-                and isinstance(expected_path, str)
-                and Path(configured_path).is_file()
-                and Path(expected_path).is_file()
-                and Path(configured_path).samefile(expected_path)
+                isinstance(expected, str)
+                and isinstance(observed_path, str)
+                and Path(expected).resolve() == Path(observed_path).resolve()
             )
         overlay_identity = dict(resolved.get("overlay_identity", {}))
         native_subject_identity = resolved.get("native_subject_identity")
@@ -467,6 +510,7 @@ class OpenCodeNativeAgent:
             "native_config_sha256": inspection.get("config_sha256"),
             "model": model,
             "provider": provider,
+            "agent": context.environment["BENCHMARK_OPENCODE_AGENT"],
             "native_mcp_servers": sorted(
                 row["name"] for row in inspection.get("mcp_servers", [])
             ),
@@ -570,7 +614,7 @@ class OpenCodeNativeAgent:
             "--repo",
             str(context.workspace),
             "--agent",
-            "build",
+            context.environment["BENCHMARK_OPENCODE_AGENT"],
             "--title",
             title,
             "--prompt-file",

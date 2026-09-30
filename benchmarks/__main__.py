@@ -15,13 +15,17 @@ from benchmarks.harness.campaign import (
     resolve_campaign_paths,
 )
 from benchmarks.harness.preflight import preflight_trial
+from benchmarks.harness.runtime_authority import (
+    RUNTIME_AUTHORITY_ENV_KEYS,
+    required_runtime_authority,
+)
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
 from benchmarks.harness.selection import SelectionError, select_definitions
 from benchmarks.harness.suite import load_suite
 
 
-_BENCHMARK_ENV_KEYS = frozenset({"HASHMARKS_BENCH_SOURCE"})
+_BENCHMARK_ENV_KEYS = frozenset(RUNTIME_AUTHORITY_ENV_KEYS)
 
 
 def _load_benchmark_env(
@@ -62,19 +66,6 @@ def _load_benchmark_env(
             environment[key] = value
 
 
-def _hashmarks_source_required(suite, rows: list[dict[str, object]]) -> bool:
-    conditions = {
-        str(row["condition_id"])
-        for row in rows
-        if isinstance(row, dict) and "condition_id" in row
-    }
-    return any(
-        str(condition.get("subject")) == "hashmarks"
-        for condition in suite.experiment["conditions"]
-        if condition.get("id") in conditions
-    )
-
-
 def _add_selectors(command: argparse.ArgumentParser) -> None:
     command.add_argument("--task", action="append", default=[])
     command.add_argument("--agent", action="append", default=[])
@@ -102,11 +93,11 @@ def _add_campaign_paths(
 
 
 def _add_execution_inputs(command: argparse.ArgumentParser) -> None:
-    command.add_argument("--harness-root", type=Path, default=Path("."))
+    command.add_argument("--harness-root", type=Path, required=True)
     command.add_argument(
         "--env-file",
         type=Path,
-        help="benchmark environment file; defaults to .env when present",
+        help="explicit benchmark environment file; no file is auto-discovered",
     )
     command.add_argument("--source", type=Path)
     command.add_argument(
@@ -184,16 +175,21 @@ def _paths(args, *, need_execution: bool, results_optional: bool = False):
         raise SystemExit(str(exc)) from exc
 
 
-def _selection_metadata(args) -> dict[str, object]:
+def _selection_metadata(args, suite, rows) -> dict[str, object]:
+    conditions = {
+        str(condition["id"]): condition
+        for condition in suite.experiment["conditions"]
+    }
+    bare_control_included = any(
+        conditions.get(str(row["condition_id"]), {}).get("subject") == "none"
+        for row in rows
+    )
     return {
         "tasks": sorted(set(args.task)),
         "agents": sorted(set(args.agent)),
         "subjects": sorted(set(args.subject)),
         "condition": args.condition,
-        "bare_control_included": bool(
-            not args.condition
-            and any(subject != "none" for subject in args.subject)
-        ),
+        "bare_control_included": bare_control_included,
     }
 
 
@@ -221,18 +217,23 @@ def main(argv: list[str] | None = None) -> int:
     rows = _select(args, suite)
 
     if args.command in {"preflight", "run"}:
-        env_file = args.env_file or Path(".env")
-        _load_benchmark_env(
-            env_file,
-            os.environ,
-            require_file=args.env_file is not None,
-        )
-        if _hashmarks_source_required(suite, rows) and not os.environ.get(
-            "HASHMARKS_BENCH_SOURCE"
-        ):
+        if args.env_file is not None:
+            _load_benchmark_env(
+                args.env_file,
+                os.environ,
+                require_file=True,
+            )
+        missing = [
+            name
+            for name in required_runtime_authority(suite, rows)
+            if not os.environ.get(name)
+        ]
+        if missing:
             raise SystemExit(
-                "HASHMARKS_BENCH_SOURCE is required for the selected Hashmarks "
-                "benchmark; set it in .env, pass --env-file, or export it"
+                "missing explicit benchmark runtime authority: "
+                + ", ".join(missing)
+                + "; set the value(s) in the file passed with --env-file "
+                "or export them explicitly"
             )
 
     if args.command == "plan":
@@ -250,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
             },
         )
         status["paths"] = paths.as_dict()
-        status["selection"] = _selection_metadata(args)
+        status["selection"] = _selection_metadata(args, suite, rows)
         print(json.dumps(status, indent=2, sort_keys=True))
         return 2 if (
             status["conflicting_trials"]
@@ -271,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
                 results_root=paths.results,
                 require_complete=not args.allow_incomplete,
                 selected_definitions={str(row["definition_id"]) for row in rows},
-                selection=_selection_metadata(args),
+                selection=_selection_metadata(args, suite, rows),
             )
         except ReportError as exc:
             raise SystemExit(
@@ -317,7 +318,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         payload = {
             "paths": paths.as_dict(),
-            "selection": _selection_metadata(args),
+            "selection": _selection_metadata(args, suite, rows),
             "summary": dict(sorted(counts.items())),
             "ready": all(
                 row["status"] in {"READY", "COMPLETE"}

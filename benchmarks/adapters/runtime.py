@@ -40,6 +40,7 @@ def observe_executable(
             max_stdout_bytes=200_000,
             max_stderr_bytes=200_000,
         ),
+        inherit_environment=False,
     )
     path = Path(resolved).resolve() if resolved else None
     executable_sha256 = None

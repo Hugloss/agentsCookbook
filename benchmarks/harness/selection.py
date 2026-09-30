@@ -33,8 +33,6 @@ def select_definitions(
         raise SelectionError(f"unknown condition ID: {condition}")
 
     chosen_subjects = set(subjects)
-    if chosen_subjects and chosen_subjects != {"none"}:
-        chosen_subjects.add("none")
     rows = []
     for row in suite.trial_definitions():
         frozen = conditions[row["condition_id"]]

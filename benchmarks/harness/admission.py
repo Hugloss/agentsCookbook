@@ -21,6 +21,7 @@ from benchmarks.harness.model import (
     TrialStatus,
 )
 from benchmarks.harness.mutation import apply_mutation
+from benchmarks.harness.runtime_authority import transport_runtime_authority
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.suite import SuiteDefinition
 from benchmarks.harness.workspace import isolated_environment, snapshot
@@ -176,14 +177,42 @@ def harness_identity(root: Path) -> dict[str, Any]:
     }
 
 
-def runtime_environment_identity() -> dict[str, Any]:
+def runtime_environment_identity(
+    environment: dict[str, str],
+    *,
+    control_root: Path,
+) -> dict[str, Any]:
+    control_root = control_root.resolve()
+
+    def semantic_value(value: str) -> str:
+        candidate = Path(value)
+        if not candidate.is_absolute():
+            return value
+        try:
+            relative = candidate.resolve().relative_to(control_root)
+        except (OSError, ValueError):
+            return value
+        return "$CONTROL_ROOT/" + relative.as_posix()
+
+    semantic = {
+        key: semantic_value(value)
+        for key, value in sorted(environment.items())
+    }
+    digest = hashlib.sha256()
+    for key, value in semantic.items():
+        digest.update(key.encode())
+        digest.update(b"\0")
+        digest.update(value.encode())
+        digest.update(b"\0")
     return {
         "isolation_contract": (
-            "codex-isolated-or-opencode-native-config-v2"
+            "explicit-benchmark-environment-v3"
         ),
         "system": platform.system(),
         "machine": platform.machine(),
         "python": platform.python_version(),
+        "environment_sha256": digest.hexdigest(),
+        "environment_variables": sorted(semantic),
     }
 
 
@@ -342,7 +371,6 @@ def admit_trial(
     )
 
     harness_authority = harness_identity(harness_root)
-    environment_authority = runtime_environment_identity()
 
     work_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
@@ -359,10 +387,10 @@ def admit_trial(
         )
         control_root = run_root / "control"
         environment = isolated_environment(control_root)
-        if "HASHMARKS_BENCH_SOURCE" in os.environ:
-            environment["HASHMARKS_BENCH_SOURCE"] = os.environ[
-                "HASHMARKS_BENCH_SOURCE"
-            ]
+        try:
+            transport_runtime_authority(os.environ, environment)
+        except ValueError as exc:
+            raise TrialAdmissionError(str(exc)) from exc
         context = TrialContext(
             workspace=workspace,
             control_root=control_root,
@@ -384,15 +412,14 @@ def admit_trial(
             and agent_definition.get("configuration", {}).get("native_host") is True
         )
         if native_codex:
-            context.environment["HOME"] = str(Path.home())
+            codex_home = context.environment.get("BENCHMARK_CODEX_HOME")
+            if not codex_home:
+                raise TrialAdmissionError(
+                    "BENCHMARK_CODEX_HOME is required for native Codex"
+                )
             context.environment["CODEX_HOME"] = str(
-                Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex").resolve()
+                Path(codex_home).expanduser().resolve()
             )
-            for name in ("XDG_CONFIG_HOME", "XDG_STATE_HOME"):
-                if name in os.environ:
-                    context.environment[name] = os.environ[name]
-                else:
-                    context.environment.pop(name, None)
         auth_mode = (
             "native-host"
             if native_codex
@@ -404,6 +431,11 @@ def admit_trial(
         )
         if agent_definition["adapter"] == "codex":
             context.environment["BENCHMARK_CODEX_AUTH_MODE"] = auth_mode
+
+        environment_authority = runtime_environment_identity(
+            context.environment,
+            control_root=context.control_root,
+        )
 
         oracle = build_oracle(
             task["oracle"],

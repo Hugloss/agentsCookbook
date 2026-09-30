@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import shutil
 import tomllib
@@ -157,8 +156,8 @@ def seed_codex_auth(
         for name in _REMOTE_AUTH_VARIABLES:
             context.environment[name] = ""
         mode = "seeded-auth-file"
-    elif any(os.environ.get(name) for name in _REMOTE_AUTH_VARIABLES):
-        mode = "inherited-auth-environment"
+    elif any(context.environment.get(name) for name in _REMOTE_AUTH_VARIABLES):
+        mode = "explicit-auth-environment"
     else:
         mode = "none"
     context.environment["BENCHMARK_CODEX_AUTH_MODE"] = mode
@@ -174,60 +173,46 @@ def _final_message(events: list[dict[str, Any]]) -> str | None:
     return messages[-1] if messages else None
 
 
-def _verify_native_binding(
-    server: dict[str, Any], name: str, workspace: Path, path: str | None
+def _exposure_payload(exposure: McpExposure | None) -> dict[str, Any] | None:
+    if exposure is None:
+        return None
+    return {
+        "name": exposure.name,
+        "command": exposure.command,
+        "args": list(exposure.args),
+        "cwd": str(exposure.cwd.resolve()),
+        "environment": dict(sorted(exposure.environment.items())),
+        "semantic_identity": dict(exposure.semantic_identity),
+    }
+
+
+def _exposure_sha256(exposure: McpExposure | None) -> str | None:
+    payload = _exposure_payload(exposure)
+    if payload is None:
+        return None
+    raw = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _validate_native_exposure(
+    context: TrialContext,
+    exposure: McpExposure | None,
 ) -> None:
-    transport = server.get("transport")
-    if not isinstance(transport, dict) or transport.get("type") != "stdio":
-        raise ValueError(f"native Codex MCP server {name} is not stdio")
-    command = transport.get("command")
-    args = transport.get("args")
-    cwd = transport.get("cwd")
-    if (
-        not isinstance(command, str)
-        or not isinstance(args, list)
-        or not all(isinstance(x, str) for x in args)
-    ):
-        raise ValueError(f"native Codex MCP server {name} has an unverified command")
-    expected = shutil.which(name, path=path)
-    configured = shutil.which(command, path=path) if os.sep not in command else command
-    if (
-        Path(command).name != name
-        or not expected
-        or not configured
-        or not Path(configured).is_file()
-        or not Path(configured).samefile(expected)
-    ):
+    if exposure is None:
+        return
+    executable = Path(exposure.command).expanduser().resolve()
+    if not executable.is_file():
         raise ValueError(
-            f"native Codex MCP server {name} must use the selected {name} executable"
+            f"benchmark MCP executable does not exist: {executable}"
         )
-    root = workspace.resolve()
-    current = (root / cwd).resolve() if isinstance(cwd, str) else root
-    if current != root:
-        raise ValueError(f"native Codex MCP server {name} runs outside trial workspace")
-    if name == "enola":
-        if args:
-            raise ValueError("native Enola MCP must use its workspace-default command")
-        return
-    if name == "hashmarks":
-        values = [
-            args[index + 1]
-            for index, value in enumerate(args[:-1])
-            if value == "--workspace"
-        ]
-        values += [
-            value.split("=", 1)[1] for value in args if value.startswith("--workspace=")
-        ]
-        if (
-            len(values) != 1
-            or args[-1:] != ["mcp"]
-            or (root / values[0]).resolve() != root
-        ):
-            raise ValueError(
-                "native Hashmarks MCP must bind --workspace to the trial repository"
-            )
-        return
-    raise ValueError(f"unsupported native benchmark subject: {name}")
+    if exposure.cwd.resolve() != context.workspace.resolve():
+        raise ValueError(
+            f"benchmark MCP {exposure.name} runs outside trial workspace"
+        )
 
 
 @dataclass(frozen=True)
@@ -264,6 +249,14 @@ class CodexAgent:
             return None
         return subject.mcp_exposure(context)
 
+    def _executable(self, context: TrialContext) -> str:
+        configured = context.environment.get("BENCHMARK_CODEX_EXECUTABLE")
+        if not configured:
+            raise ValueError(
+                "BENCHMARK_CODEX_EXECUTABLE is required; PATH lookup is not benchmark authority"
+            )
+        return str(Path(configured).expanduser().resolve())
+
     def _config_path(self, context: TrialContext) -> Path:
         return Path(context.environment["CODEX_HOME"]) / "config.toml"
 
@@ -284,7 +277,11 @@ class CodexAgent:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(config, encoding="utf-8")
 
-        observed = observe_executable(context, "codex")
+        try:
+            command = self._executable(context)
+        except ValueError as exc:
+            return Observation({"available": False, "reason": str(exc)}, "")
+        observed = observe_executable(context, command)
         payload = dict(observed.payload)
         payload.update(
             {
@@ -307,7 +304,11 @@ class CodexAgent:
     def _prepare_native(
         self, context: TrialContext, exposure: McpExposure | None
     ) -> Observation:
-        observed = observe_executable(context, "codex")
+        try:
+            command = self._executable(context)
+        except ValueError as exc:
+            return Observation({"available": False, "reason": str(exc)}, "")
+        observed = observe_executable(context, command)
         config_path = self._config_path(context)
         try:
             raw = config_path.read_bytes()
@@ -320,9 +321,10 @@ class CodexAgent:
                 )
             result = run_bounded(
                 repository_root=context.workspace,
-                argv=("codex", "mcp", "list", "--json"),
+                argv=(command, "mcp", "list", "--json"),
                 environment=context.environment,
                 limits=ProcessLimits(timeout_seconds=30, max_stdout_bytes=1_000_000),
+                inherit_environment=False,
             )
             if result.return_code != 0 or result.timed_out or result.stdout_truncated:
                 raise ValueError("native Codex MCP list did not complete")
@@ -338,18 +340,17 @@ class CodexAgent:
             ) or len(names) != len(set(names)):
                 raise ValueError("native Codex MCP names are invalid or duplicated")
             selected = exposure.name if exposure else None
-            if selected:
-                server = next((row for row in servers if row["name"] == selected), None)
-                if not server or server.get("enabled") is not True:
-                    raise ValueError(
-                        f"native Codex MCP server {selected} is not enabled"
-                    )
-                _verify_native_binding(
-                    server, selected, context.workspace, context.environment.get("PATH")
-                )
+            _validate_native_exposure(context, exposure)
+            exposure_sha256 = _exposure_sha256(exposure)
             (context.control_root / "codex-native-servers.json").write_text(
                 json.dumps(
-                    {"names": names, "config_sha256": hashlib.sha256(raw).hexdigest()}
+                    {
+                        "names": names,
+                        "config_sha256": hashlib.sha256(raw).hexdigest(),
+                        "selected_subject": selected,
+                        "subject_exposure_sha256": exposure_sha256,
+                    },
+                    sort_keys=True,
                 )
             )
             reason = None
@@ -378,7 +379,16 @@ class CodexAgent:
                 if raw
                 else None,
                 "native_mcp_servers": sorted(names),
-                "mcp_exposure": exposure.semantic_identity if exposure else None,
+                "mcp_exposure": (
+                    {
+                        "source": "benchmark-subject-exposure",
+                        "subject": exposure.name,
+                        "sha256": _exposure_sha256(exposure),
+                        "semantic_identity": exposure.semantic_identity,
+                    }
+                    if exposure
+                    else None
+                ),
                 "observed_identity": {
                     "version": observed.payload.get("version"),
                     "executable_sha256": observed.payload.get("executable_sha256"),
@@ -387,22 +397,48 @@ class CodexAgent:
                     "native_config_sha256": hashlib.sha256(raw).hexdigest()
                     if raw
                     else None,
+                    "subject_exposure_sha256": _exposure_sha256(exposure),
                 },
             }
         )
         return Observation(payload, observed.raw, observed.measurements)
 
     def _exec_argv(
-        self, prompt: str, names: tuple[str, ...] = (), selected: str | None = None
+        self,
+        context: TrialContext,
+        prompt: str,
+        names: tuple[str, ...] = (),
+        exposure: McpExposure | None = None,
     ) -> tuple[str, ...]:
-        argv = ["codex", "exec", "--json"]
+        argv = [self._executable(context), "exec", "--json"]
         if self.native_host:
             argv.extend(
                 ("--sandbox", "workspace-write", "--approve-for-me", "--ephemeral")
             )
             for name in names:
-                if name != selected:
-                    argv.extend(("-c", f"mcp_servers.{name}.enabled=false"))
+                argv.extend(("-c", f"mcp_servers.{name}.enabled=false"))
+            if exposure is not None:
+                prefix = f"mcp_servers.{exposure.name}"
+                argv.extend(
+                    (
+                        "-c",
+                        f"{prefix}.command={_toml_string(exposure.command)}",
+                        "-c",
+                        f"{prefix}.args="
+                        + json.dumps(list(exposure.args), ensure_ascii=False),
+                        "-c",
+                        f"{prefix}.cwd={_toml_string(str(exposure.cwd.resolve()))}",
+                        "-c",
+                        f"{prefix}.enabled=true",
+                    )
+                )
+                for key, value in sorted(exposure.environment.items()):
+                    argv.extend(
+                        (
+                            "-c",
+                            f"{prefix}.env.{key}={_toml_string(value)}",
+                        )
+                    )
         else:
             argv.append("--full-auto")
         if self.model:
@@ -433,16 +469,27 @@ class CodexAgent:
                     },
                     "",
                 )
+            if _exposure_sha256(exposure) != prepared.get(
+                "subject_exposure_sha256"
+            ):
+                return Observation(
+                    {
+                        "terminal_event": None,
+                        "reason": "benchmark subject exposure changed during trial",
+                    },
+                    "",
+                )
             names = tuple(prepared["names"])
         result = run_bounded(
             repository_root=context.workspace,
-            argv=self._exec_argv(prompt, names, exposure.name if exposure else None),
+            argv=self._exec_argv(context, prompt, names, exposure),
             environment=context.environment,
             limits=ProcessLimits(
                 timeout_seconds=self.timeout_seconds,
                 max_stdout_bytes=self.max_output_bytes,
                 max_stderr_bytes=5_000_000,
             ),
+            inherit_environment=False,
         )
         events, parse_errors = parse_codex_jsonl(result.stdout)
         terminal = next(

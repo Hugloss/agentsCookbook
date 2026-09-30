@@ -27,10 +27,14 @@ function testConfigInspection() {
   const second = JSON.parse(JSON.stringify(first));
   second.provider.liteLLM.options.apiKey = 'secret-two';
 
+  first.agent = { reviewer: { model: 'liteLLM/reviewer-model' } };
+  second.agent = { reviewer: { model: 'liteLLM/reviewer-model' } };
   const left = runtime.inspectConfig(first);
   const right = runtime.inspectConfig(second);
+  const reviewer = runtime.inspectConfig(first, 'reviewer');
   assert.strictEqual(left.model, 'liteLLM/gemma4');
   assert.strictEqual(left.provider, 'liteLLM');
+  assert.strictEqual(reviewer.model, 'liteLLM/reviewer-model');
   assert.strictEqual(left.config_sha256, right.config_sha256);
   assert.deepStrictEqual(left.mcp_servers, [
     { name: 'enola', enabled: false },
@@ -250,6 +254,7 @@ async function testSharedLifecycle() {
       const prepared = runtime.prepareBenchmarkConfig({
         opencodeBin: fake,
         repoDir: root,
+        agentName: 'build',
         env: {
           ...env,
           FAKE_MCP_SHAPE: shape,
@@ -311,6 +316,7 @@ async function testSharedLifecycle() {
     const firstHashmarksIdentity = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
+      agentName: 'build',
       env,
       selectedSubject: 'hashmarks',
       subjectExposure: exposure,
@@ -319,6 +325,7 @@ async function testSharedLifecycle() {
     const secondHashmarksIdentity = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
+      agentName: 'build',
       env,
       selectedSubject: 'hashmarks',
       subjectExposure: exposure,
@@ -333,6 +340,7 @@ async function testSharedLifecycle() {
     const withoutProjectRegistration = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
+      agentName: 'build',
       env: { ...env, FAKE_NO_HASHMARKS: '1' },
       selectedSubject: 'hashmarks',
       subjectExposure: exposure,
@@ -351,6 +359,7 @@ async function testSharedLifecycle() {
     const enola = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
+      agentName: 'build',
       env,
       selectedSubject: 'enola',
       subjectExposure: enolaExposure,
@@ -367,6 +376,7 @@ async function testSharedLifecycle() {
     const bare = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
+      agentName: 'build',
       env,
     });
     assert.strictEqual(bare.status, 'completed', bare.reason);
@@ -379,6 +389,7 @@ async function testSharedLifecycle() {
     const disconnected = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
+      agentName: 'build',
       env: { ...env, FAKE_MCP_DISCONNECTED: 'hashmarks' },
       selectedSubject: 'hashmarks',
       subjectExposure: exposure,
@@ -389,6 +400,7 @@ async function testSharedLifecycle() {
     const nativeTree = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
+      agentName: 'build',
       env: { ...env, FAKE_MCP_TREE: '1' },
       selectedSubject: 'hashmarks',
       subjectExposure: exposure,
@@ -399,6 +411,7 @@ async function testSharedLifecycle() {
       const misleading = runtime.prepareBenchmarkConfig({
         opencodeBin: fake,
         repoDir: root,
+        agentName: 'build',
         env: {
           ...env,
           FAKE_MCP_DISCONNECTED: 'hashmarks',
@@ -414,6 +427,7 @@ async function testSharedLifecycle() {
     const drifted = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
+      agentName: 'build',
       env: { ...env, FAKE_EFFECTIVE_MCP_DRIFT: '1' },
       selectedSubject: 'hashmarks',
       subjectExposure: exposure,
@@ -424,6 +438,7 @@ async function testSharedLifecycle() {
     const wrongExecutable = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
+      agentName: 'build',
       env,
       selectedSubject: 'hashmarks',
       subjectExposure: {
@@ -446,6 +461,7 @@ async function testSharedLifecycle() {
     const admitted = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
+      agentName: 'build',
       env,
       selectedSubject: 'hashmarks',
       subjectExposure: exposure,
@@ -457,6 +473,8 @@ async function testSharedLifecycle() {
         'run-export',
         '--repo',
         root,
+        '--agent',
+        'build',
         '--title',
         'blocked',
         '--prompt-file',

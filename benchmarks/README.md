@@ -28,62 +28,109 @@ Trial admission is single-owned by `benchmarks.harness.admission`:
 
 Both `preflight` and `run` use that same path. Preflight is diagnostic and never invokes the coding agent or publishes a trial result.
 
-For native OpenCode trials, OpenCode remains the authority for model, provider, authentication, permissions, and user configuration. The selected benchmark subject is different authority: its adapter supplies the exact MCP executable and invocation. The harness overlays only that subject exposure and tool gating through OpenCode's native runtime configuration, proves the effective executable/workspace binding before agent work, and binds the exposure digest into execution authority. A repository-local OpenCode MCP entry may therefore be observed and shadowed for the trial, but it never chooses which Hashmarks or Enola executable is benchmarked.
+Native agent configuration and benchmark-subject execution are separate authorities.
 
-The benchmark never creates or edits repository-local `opencode.json` to register a subject, and an ambient/global Hashmarks MCP registration is never benchmark execution authority. For source-bound Hashmarks runs, `HASHMARKS_BENCH_SOURCE` directly selects that checkout's `.venv/bin/hashmarks`; changing `PATH` is neither required nor authoritative.
+For native OpenCode trials, the explicitly configured OpenCode executable, home, config root, and agent persona own the native model/provider/auth/permission configuration. The selected benchmark subject is injected ephemerally from its adapter's exact executable, arguments, cwd, and environment. The harness proves the effective subject executable and workspace binding before agent work and binds that exposure into execution authority. Ambient/global OpenCode MCP registrations may be observed and disabled, but they never choose the Hashmarks or Enola executable under test.
 
-For local runs, copy `.env.example` to the ignored `.env` file and set `HASHMARKS_BENCH_SOURCE` there. `preflight` and `run` load only that benchmark-owned variable from `.env` by default; use `--env-file PATH` for another file. An already exported process value takes precedence. Every selected Hashmarks benchmark condition requires this source authority and fails before trial admission if the value is still missing.
+For native Codex trials, the explicitly configured Codex executable and `CODEX_HOME` own the native model/auth configuration. Ambient Codex MCP registrations are disabled for the trial. The selected Hashmarks or Enola subject is injected ephemerally from the same adapter-owned exact exposure used by other agents, so a global Codex MCP registration cannot substitute another product installation.
+
+The benchmark never creates or edits repository-local `opencode.json` to register a subject. Hashmarks is selected only from `HASHMARKS_BENCH_SOURCE/.venv/bin/hashmarks`; Enola is selected only from `ENOLA_BENCH_EXECUTABLE`. Participant processes do not inherit arbitrary host environment variables. The harness carries one fixed process-substrate allowlist—`PATH`, locale variables, terminal identity, and the equivalent Windows process-launch variables—so native tools and agent shell commands can start. Those observed values are bound into execution identity; they are not product or model-selection authority. Provider variables must be named explicitly through `BENCHMARK_PASSTHROUGH_ENV_KEYS`, and the resulting explicit environment is also bound into execution identity.
+
+There is no automatic `.env` discovery in the benchmark CLI and no default harness root. Local Make targets pass `--env-file .env`, `--suite`, `--root`, and `--harness-root` explicitly. Direct CLI callers must provide the same authorities themselves.
 
 Agent Economics remains a benchmark consumer/suite; shared process semantics remain single-owned until that module is promoted to a more generic repository location.
 
 ## Recommended campaign workflow
 
-### Path vocabulary
+### Authority vocabulary
 
-Keep these roles separate:
+Keep source, runtime, and output roles separate:
 
-| Setting | Meaning | Lifetime |
+| Setting | Meaning | Authority/lifetime |
 | --- | --- | --- |
 | `HASHMARKS_BENCH_SOURCE` | Clean committed Hashmarks checkout being measured | Product source authority |
-| `BENCHMARK_SUITE_PATH` | Committed suite definition inside agentsCookbook: tasks, conditions, agents, subjects, budgets, and scoring inputs | Benchmark source/configuration |
-| `BENCHMARK_CAMPAIGN_ROOT` | Writable runtime directory for this campaign's `cache/`, `work/`, and `results/` | Generated campaign evidence |
-| `BENCHMARK_HARNESS_REPO_ROOT` | agentsCookbook checkout containing the benchmark runner code | Harness source authority |
+| `ENOLA_BENCH_EXECUTABLE` | Exact Enola executable being measured | Product executable authority |
+| `BENCHMARK_CODEX_EXECUTABLE` | Exact Codex executable | Native-agent executable authority |
+| `BENCHMARK_CODEX_HOME` | Explicit Codex config/auth root | Native Codex configuration authority |
+| `BENCHMARK_OPENCODE_EXECUTABLE` | Exact OpenCode executable | Native-agent executable authority |
+| `BENCHMARK_OPENCODE_HOME` | Explicit OpenCode home | Native OpenCode user/config authority |
+| `BENCHMARK_OPENCODE_CONFIG_HOME` | Explicit OpenCode XDG config root | Native OpenCode configuration authority |
+| `BENCHMARK_OPENCODE_AGENT` | Exact OpenCode agent persona to execute | Native OpenCode agent authority |
+| `BENCHMARK_PASSTHROUGH_ENV_KEYS` | Comma-separated host variable names explicitly admitted into participant processes | Optional provider environment authority |
+| `BENCHMARK_SUITE_PATH` | Committed suite definition inside agentsCookbook | Benchmark source/configuration |
+| `BENCHMARK_CAMPAIGN_ROOT` | Writable campaign directory containing `cache/`, `work/`, and `results/` | Generated campaign evidence |
+| `BENCHMARK_HARNESS_REPO_ROOT` | agentsCookbook checkout containing the runner | Harness source authority |
+| `BENCHMARK_SCORE_SCRIPT_PATH` | Optional suite-specific scorer | Specialized reporting authority |
+| `BENCHMARK_SCORE_OUTPUT_PATH` | Output file for the suite-specific score | Generated report |
 
-A **suite path is not an output directory**. A **campaign root is not source configuration**. Keeping those concepts separate makes it clear what is committed and what is disposable/generated.
+A **suite path is not an output directory**. A **campaign root is not source configuration**. A native agent's config root is not subject executable authority. These distinctions are enforced so one configured authority cannot silently stand in for another.
 
-For local human-driven campaigns, configure authority once:
+For local human-driven campaigns:
 
 ```sh
 cp -n .env.example .env
-# edit .env and set:
-# HASHMARKS_BENCH_SOURCE=...
-# BENCHMARK_SUITE_PATH=...
-# BENCHMARK_CAMPAIGN_ROOT=...
-# BENCHMARK_HARNESS_REPO_ROOT=...
+# edit .env and set the authorities used by the selected suite
 ```
 
-Then use the thin Make entrypoints:
+Then use:
 
 ```sh
 make benchmark-check
 make benchmark
-make benchmark-report
+make benchmark-report    # generic framework report
+make benchmark-score     # suite-specific scorer configured in .env
 ```
 
-The Makefile has no fallback suite path, campaign root, harness repository root, or Hashmarks checkout. It only transports the explicit values from `.env` and fails before benchmark execution when any required value is absent.
+The Makefile chooses no suite, campaign path, harness path, product executable, native config root, provider environment, agent persona, or specialized scorer. Missing authority fails before benchmark work begins.
 
-The underlying CLI remains available for automation and explicit one-off selections. Use one external campaign root to avoid repeating cache/work/results paths:
+### Advanced direct CLI
+
+The Python CLI remains available for automation and explicit one-off selections. It does not discover `.env` and does not default `--harness-root`.
+
+For example:
 
 ```bash
-suite="benchmarks/suites/repository-intelligence/agent-matrix-v2"
-root="${TMPDIR:-/tmp}/ri-live"
-
 python -m benchmarks preflight \
-  --suite "$suite" \
-  --root "$root" \
+  --env-file .env \
+  --suite "$BENCHMARK_SUITE_PATH" \
+  --root "$BENCHMARK_CAMPAIGN_ROOT" \
+  --harness-root "$BENCHMARK_HARNESS_REPO_ROOT" \
   --agent opencode-native \
   --subject hashmarks \
-  --subject enola
+  --subject none
+```
+
+Selecting `--subject hashmarks` selects only Hashmarks conditions. If a paired bare control is wanted, request `--subject none` explicitly; the selection layer never adds controls implicitly.
+
+Then run the exact same explicit selection:
+
+```bash
+python -m benchmarks run \
+  --env-file .env \
+  --suite "$BENCHMARK_SUITE_PATH" \
+  --root "$BENCHMARK_CAMPAIGN_ROOT" \
+  --harness-root "$BENCHMARK_HARNESS_REPO_ROOT" \
+  --agent opencode-native \
+  --subject hashmarks \
+  --subject none
+```
+
+Status and report do not execute participants, so they need only the suite, campaign results, and the same explicit selection:
+
+```bash
+python -m benchmarks status \
+  --suite "$BENCHMARK_SUITE_PATH" \
+  --root "$BENCHMARK_CAMPAIGN_ROOT" \
+  --agent opencode-native \
+  --subject hashmarks \
+  --subject none
+
+python -m benchmarks report \
+  --suite "$BENCHMARK_SUITE_PATH" \
+  --root "$BENCHMARK_CAMPAIGN_ROOT" \
+  --agent opencode-native \
+  --subject hashmarks \
+  --subject none
 ```
 
 Preflight reports every selected frozen definition as one of:
@@ -133,7 +180,7 @@ python -m benchmarks report \
   --subject enola
 ```
 
-The same selectors should be used across preflight, run, status, and report. Assisted subject selection automatically includes the matching bare control.
+The same selectors should be used across preflight, run, status, and report. Bare controls are included only when explicitly selected or when the full frozen suite is run without subject filters.
 
 ### Immutable non-outcome receipts
 

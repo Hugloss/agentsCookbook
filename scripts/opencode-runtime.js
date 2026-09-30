@@ -136,17 +136,18 @@ function sha256Text(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
-function configuredModel(config) {
-  const build =
+function configuredModel(config, agentName = null) {
+  const agent =
+    agentName &&
     config &&
     config.agent &&
     typeof config.agent === 'object' &&
-    config.agent.build &&
-    typeof config.agent.build === 'object'
-      ? config.agent.build
+    config.agent[agentName] &&
+    typeof config.agent[agentName] === 'object'
+      ? config.agent[agentName]
       : null;
-  if (build && typeof build.model === 'string' && build.model) {
-    return build.model;
+  if (agent && typeof agent.model === 'string' && agent.model) {
+    return agent.model;
   }
   return typeof config.model === 'string' && config.model
     ? config.model
@@ -185,8 +186,8 @@ function inspectMcp(config) {
   };
 }
 
-function inspectConfig(config) {
-  const model = configuredModel(config);
+function inspectConfig(config, agentName = null) {
+  const model = configuredModel(config, agentName);
   const mcp = inspectMcp(config);
   return {
     model,
@@ -305,7 +306,7 @@ function mcpEntries(config, shape) {
   return shape === 'nested-servers' ? (mcp.servers || {}) : mcp;
 }
 
-function benchmarkOverlay(config, subjectExposure) {
+function benchmarkOverlay(config, subjectExposure, agentName) {
   const inspected = inspectMcp(config);
   const nested = inspected.shape === 'nested-servers';
   const source = mcpEntries(config, inspected.shape);
@@ -353,15 +354,21 @@ function benchmarkOverlay(config, subjectExposure) {
       mcp: nested ? { servers } : servers,
       ...(nested ? {} : {
         tools,
-        agent: { build: { tools } },
+        agent: { [agentName]: { tools } },
       }),
     },
   };
 }
 
-function verifyBenchmarkConfig(base, effective, overlay, subjectExposure) {
-  const original = inspectConfig(base);
-  const resolved = inspectConfig(effective);
+function verifyBenchmarkConfig(
+  base,
+  effective,
+  overlay,
+  subjectExposure,
+  agentName,
+) {
+  const original = inspectConfig(base, agentName);
+  const resolved = inspectConfig(effective, agentName);
   if (original.model !== resolved.model || original.provider !== resolved.provider) {
     throw new Error('benchmark overlay changed native OpenCode model/provider');
   }
@@ -409,9 +416,9 @@ function verifyBenchmarkConfig(base, effective, overlay, subjectExposure) {
 
   if (overlay.shape === 'flat') {
     const tools = effective.tools || {};
-    const buildTools = ((effective.agent || {}).build || {}).tools || {};
+    const agentTools = ((effective.agent || {})[agentName] || {}).tools || {};
     for (const [name, expected] of Object.entries(overlay.config.tools)) {
-      if (tools[name] !== expected || buildTools[name] !== expected) {
+      if (tools[name] !== expected || agentTools[name] !== expected) {
         throw new Error(`benchmark MCP tool gate did not resolve for ${name}`);
       }
     }
@@ -841,8 +848,9 @@ function resolveNativeConfig({
   repoDir,
   env = {},
   pure = true,
+  agentName = null,
 }) {
-  const resolved = readNativeConfig({ opencodeBin, repoDir, env, pure });
+  const resolved = readNativeConfig({ opencodeBin, repoDir, env, pure, agentName });
   const { config, ...safe } = resolved;
   return safe;
 }
@@ -852,6 +860,7 @@ function readNativeConfig({
   repoDir,
   env = {},
   pure = true,
+  agentName = null,
 }) {
   const command = runCommand(
     opencodeBin,
@@ -880,7 +889,7 @@ function readNativeConfig({
     return {
       status: 'completed',
       command: commandEvidence,
-      inspection: inspectConfig(config),
+      inspection: inspectConfig(config, agentName),
       config,
     };
   } catch (error) {
@@ -902,8 +911,18 @@ function prepareBenchmarkConfig({
   subjectExposure = null,
   pure = true,
   probe = true,
+  agentName,
 }) {
-  const base = readNativeConfig({ opencodeBin, repoDir, env, pure });
+  if (typeof agentName !== 'string' || !agentName) {
+    throw new Error('benchmark OpenCode agent name is required');
+  }
+  const base = readNativeConfig({
+    opencodeBin,
+    repoDir,
+    env,
+    pure,
+    agentName,
+  });
   if (base.status !== 'completed') {
     return {
       status: 'failed',
@@ -918,7 +937,7 @@ function prepareBenchmarkConfig({
     if (!selectedSubject && subjectExposure) {
       throw new Error('bare benchmark must not expose a subject');
     }
-    const overlay = benchmarkOverlay(base.config, subjectExposure);
+    const overlay = benchmarkOverlay(base.config, subjectExposure, agentName);
     const content = mergeObjects(inlineConfig(env), overlay.config);
     const commandEnv = {
       ...env,
@@ -929,6 +948,7 @@ function prepareBenchmarkConfig({
       repoDir,
       env: commandEnv,
       pure,
+      agentName,
     });
     if (effective.status !== 'completed') {
       throw new Error('OpenCode rejected the composed benchmark configuration');
@@ -938,6 +958,7 @@ function prepareBenchmarkConfig({
       effective.config,
       overlay,
       subjectExposure,
+      agentName,
     );
     const workspaceBinding = verifyWorkspaceBinding(
       effective.config,
@@ -1130,6 +1151,9 @@ async function main(argv) {
   const { command, options } = parseCli(argv);
   const repoDir = path.resolve(options.repo || process.cwd());
   const benchmarkMode = Object.hasOwn(options, 'benchmark-subject');
+  if (benchmarkMode && (!options.agent || typeof options.agent !== 'string')) {
+    throw new Error('benchmark mode requires --agent');
+  }
   const selectedSubject = benchmarkMode && options['benchmark-subject'] !== 'none'
     ? options['benchmark-subject']
     : null;
@@ -1147,6 +1171,7 @@ async function main(argv) {
         env: process.env,
         selectedSubject,
         subjectExposure,
+        agentName: options.agent,
       })
       : resolveNativeConfig({ repoDir, env: process.env });
     const { environment, ...safe } = result;
@@ -1174,6 +1199,7 @@ async function main(argv) {
         env: process.env,
         selectedSubject,
         subjectExposure,
+        agentName: options.agent,
       });
       if (
         prepared.status !== 'completed' ||
@@ -1198,7 +1224,7 @@ async function main(argv) {
     const result = await runSessionAndExport({
       repoDir,
       title: options.title,
-      agent: options.agent || 'build',
+      agent: benchmarkMode ? options.agent : (options.agent || 'build'),
       prompt,
       env,
       deleteAfterExport: options['keep-session'] !== 'true',

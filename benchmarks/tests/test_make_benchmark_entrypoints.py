@@ -39,6 +39,28 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             env_example,
         )
         self.assertIn("BENCHMARK_HARNESS_REPO_ROOT=.", env_example)
+        self.assertIn(
+            "ENOLA_BENCH_EXECUTABLE=/absolute/path/to/enola",
+            env_example,
+        )
+        self.assertIn(
+            "BENCHMARK_CODEX_EXECUTABLE=/absolute/path/to/codex",
+            env_example,
+        )
+        self.assertIn(
+            "BENCHMARK_OPENCODE_EXECUTABLE=/absolute/path/to/opencode",
+            env_example,
+        )
+        self.assertIn("BENCHMARK_OPENCODE_AGENT=build", env_example)
+        self.assertIn("BENCHMARK_PASSTHROUGH_ENV_KEYS=", env_example)
+        self.assertIn(
+            "BENCHMARK_SCORE_SCRIPT_PATH=benchmarks/suites/repository-intelligence/heldout-v1/score.py",
+            env_example,
+        )
+        self.assertIn(
+            "BENCHMARK_SCORE_OUTPUT_PATH=/tmp/agentscookbook-heldout-v1/heldout-report.json",
+            env_example,
+        )
 
         # Do not drift back to ambiguous names that hide whether a path is
         # committed source/configuration or generated campaign state.
@@ -94,13 +116,52 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             )
 
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn(
+        self.assertIn("--env-file .env", result.stdout)
+        self.assertNotIn(
             'HASHMARKS_BENCH_SOURCE="/work/Hashmarks"',
             result.stdout,
         )
         self.assertIn('--suite "benchmarks/suites/example"', result.stdout)
         self.assertIn('--root "/work/campaign"', result.stdout)
         self.assertIn('--harness-root "/work/agentsCookbook"', result.stdout)
+
+    def test_make_score_transports_explicit_score_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".env").write_text(
+                "BENCHMARK_SUITE_PATH=benchmarks/suites/example\n"
+                "BENCHMARK_CAMPAIGN_ROOT=/work/campaign\n"
+                "BENCHMARK_HARNESS_REPO_ROOT=/work/agentsCookbook\n"
+                "BENCHMARK_SCORE_SCRIPT_PATH=benchmarks/suites/example/score.py\n"
+                "BENCHMARK_SCORE_OUTPUT_PATH=/work/campaign/special-report.json\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                (
+                    "make",
+                    "--no-print-directory",
+                    "-n",
+                    "-f",
+                    str(MAKEFILE),
+                    "benchmark-score",
+                ),
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn(
+            'python "benchmarks/suites/example/score.py"',
+            result.stdout,
+        )
+        self.assertIn('--results "/work/campaign/results"', result.stdout)
+        self.assertIn(
+            '--output "/work/campaign/special-report.json"',
+            result.stdout,
+        )
 
 
 if __name__ == "__main__":
