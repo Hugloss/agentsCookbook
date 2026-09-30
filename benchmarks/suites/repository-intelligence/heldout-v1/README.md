@@ -12,6 +12,7 @@ cp -n .env.example .env
 # HASHMARKS_BENCH_SOURCE=/absolute/path/to/Hashmarks
 # BENCHMARK_SUITE=benchmarks/suites/repository-intelligence/heldout-v1
 # BENCHMARK_ROOT=/tmp/agentscookbook-heldout-v1
+# BENCHMARK_HARNESS_ROOT=.
 ```
 
 `.env` is ignored by Git. The normal local workflow is:
@@ -22,7 +23,7 @@ make benchmark
 make benchmark-report
 ```
 
-The Makefile provides no hidden fallback values for the source checkout, suite, or campaign root. Each must be explicit in `.env`. The underlying benchmark CLI remains available for automation and one-off selections; an already exported `HASHMARKS_BENCH_SOURCE` still takes precedence when invoking it directly.
+The Makefile provides no hidden fallback values for the source checkout, suite, campaign root, or harness root. Each must be explicit in `.env`. The underlying benchmark CLI remains available for automation and one-off selections; an already exported `HASHMARKS_BENCH_SOURCE` still takes precedence when invoking it directly.
 
 Do not run `hashmarks install --opencode` for the benchmark and do not prepend the checkout to `PATH`. The source must be a clean committed checkout. The harness directly selects `$HASHMARKS_BENCH_SOURCE/.venv/bin/hashmarks`, records its Git commit/tree, and injects that exact executable into the ephemeral OpenCode benchmark exposure. Repository-local `opencode.json` is not created or modified. A Hashmarks-assisted run fails at benchmark startup if no source path is configured.
 
