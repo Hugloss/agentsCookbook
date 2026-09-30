@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from benchmarks.adapters.runtime import observe_executable
+from benchmarks.adapters.runtime import observe_executable, resolve_native_executable
 from benchmarks.harness.identity import canonical_json
 from benchmarks.harness.runtime_authority import PROCESS_SUBSTRATE_ENV_KEYS
 from benchmarks.harness.model import (
@@ -44,33 +44,23 @@ def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
 
 def _native_environment(context: TrialContext) -> dict[str, str]:
     required = (
-        "BENCHMARK_OPENCODE_EXECUTABLE",
-        "BENCHMARK_OPENCODE_HOME",
-        "BENCHMARK_OPENCODE_CONFIG_HOME",
+        "BENCHMARK_NATIVE_HOME",
+        "BENCHMARK_NATIVE_XDG_CONFIG_HOME",
         "BENCHMARK_OPENCODE_AGENT",
     )
     missing = [name for name in required if not context.environment.get(name)]
     if missing:
         raise ValueError(
-            "missing explicit OpenCode benchmark authority: "
+            "native OpenCode environment could not be established: "
             + ", ".join(missing)
         )
+    resolved = resolve_native_executable(context, "opencode")
+    if resolved is None:
+        raise ValueError("opencode is not available on the native PATH")
     environment = {
-        "OPENCODE_BIN": str(
-            Path(context.environment["BENCHMARK_OPENCODE_EXECUTABLE"])
-            .expanduser()
-            .resolve()
-        ),
-        "HOME": str(
-            Path(context.environment["BENCHMARK_OPENCODE_HOME"])
-            .expanduser()
-            .resolve()
-        ),
-        "XDG_CONFIG_HOME": str(
-            Path(context.environment["BENCHMARK_OPENCODE_CONFIG_HOME"])
-            .expanduser()
-            .resolve()
-        ),
+        "OPENCODE_BIN": resolved,
+        "HOME": context.environment["BENCHMARK_NATIVE_HOME"],
+        "XDG_CONFIG_HOME": context.environment["BENCHMARK_NATIVE_XDG_CONFIG_HOME"],
         "OPENCODE_DISABLE_AUTOUPDATE": "1",
         "OPENCODE_DISABLE_PRUNE": "1",
         "OPENCODE_AUTO_SHARE": "false",
