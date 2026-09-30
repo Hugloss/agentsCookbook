@@ -13,27 +13,33 @@ cp -n .env.example .env
 
 ### What the local settings mean
 
-The held-out suite uses four different authority groups.
+The local file contains **benchmark choices**, not a mirror of Linux installation defaults.
 
-**Products being measured**
+**Explicit product choice**
 
 | Setting | What it points to |
 | --- | --- |
 | `HASHMARKS_BENCH_SOURCE` | Clean committed Hashmarks checkout; the benchmark executes its exact `.venv/bin/hashmarks` |
-| `ENOLA_BENCH_EXECUTABLE` | Exact Enola executable; no PATH fallback |
 
-**Native agents**
+Hashmarks is explicit because we are actively developing it and may have several local checkouts/installations.
 
-| Setting | What it points to |
-| --- | --- |
-| `BENCHMARK_CODEX_EXECUTABLE` | Exact Codex executable |
-| `BENCHMARK_CODEX_HOME` | Codex model/auth configuration root |
-| `BENCHMARK_OPENCODE_EXECUTABLE` | Exact OpenCode executable |
-| `BENCHMARK_OPENCODE_HOME` | OpenCode home |
-| `BENCHMARK_OPENCODE_CONFIG_HOME` | OpenCode XDG configuration root |
-| `BENCHMARK_OPENCODE_AGENT` | Exact OpenCode agent persona, such as `build` |
+**Native-installed tools**
 
-The benchmark does **not** trust global Hashmarks/Enola MCP registrations in Codex or OpenCode as subject authority. Ambient MCP servers are disabled for the trial and the selected subject is injected ephemerally from the exact product authority above.
+Enola, Codex, and OpenCode use their normal host installation/config conventions:
+
+```text
+command -v enola
+command -v codex
+command -v opencode
+```
+
+The benchmark resolves those commands through native `PATH`, fingerprints the executable actually found, and records its version. Codex config is discovered from native `CODEX_HOME` or `$HOME/.codex`; OpenCode uses native `HOME` and `XDG_CONFIG_HOME`/ `$HOME/.config`.
+
+These paths are deliberately **not repeated in `.env`**. If the host's native installation changes, the observed execution identity changes.
+
+`BENCHMARK_OPENCODE_AGENT` remains explicit because choosing `build` (or another persona) changes benchmark semantics; it is not a filesystem default.
+
+Global Hashmarks/Enola MCP registrations in Codex/OpenCode are still not benchmark subject authority. Ambient MCP servers are disabled for the trial and the selected benchmark subject is injected ephemerally.
 
 **Optional provider environment**
 
@@ -81,9 +87,9 @@ make benchmark-score
 - `benchmark-report` is the generic framework report.
 - `benchmark-score` runs this suite's explicit language-separated held-out scorer.
 
-The Makefile provides no hidden fallback values for these authorities.
+The Makefile provides no hidden benchmark-path fallbacks. Native-installed tool paths are intentionally delegated to Linux/tool discovery and then recorded as observed authority.
 
-Do not run `hashmarks install --opencode` for this benchmark and do not prepend Hashmarks or Enola to `PATH`. Native Codex also does not need a global Hashmarks or Enola MCP registration for benchmark subject execution. The selected subject exposure is injected for the trial and bound to the exact executable.
+Do not run `hashmarks install --opencode` for benchmark authority and do not prepend the local Hashmarks checkout to `PATH`. Enola should be installed normally (for example with its official installer) so `command -v enola` resolves it. Codex and OpenCode likewise use their normal installed commands. Global MCP registrations may exist for everyday development, but the benchmark does not use them to choose the subject executable.
 
 ### Advanced direct CLI
 
