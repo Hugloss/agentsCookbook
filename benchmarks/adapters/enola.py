@@ -56,6 +56,7 @@ class EnolaSubject:
                 max_stdout_bytes=20_000_000,
                 max_stderr_bytes=5_000_000,
             ),
+            inherit_environment=False,
         )
 
     def prepare(self, context: TrialContext) -> Observation:
