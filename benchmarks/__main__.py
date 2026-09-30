@@ -63,12 +63,6 @@ def _load_benchmark_env(
 
 
 def _hashmarks_source_required(suite, rows: list[dict[str, object]]) -> bool:
-    subject = suite.subjects.get("hashmarks")
-    if not isinstance(subject, dict):
-        return False
-    configuration = subject.get("configuration")
-    if not isinstance(configuration, dict) or configuration.get("require_source") is not True:
-        return False
     conditions = {
         str(row["condition_id"])
         for row in rows
