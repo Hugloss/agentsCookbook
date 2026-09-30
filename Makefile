@@ -19,20 +19,24 @@ _benchmark-env:
 		echo "ERROR: BENCHMARK_ROOT must be set in .env."; \
 		exit 2; \
 	}
+	@test -n "$(strip $(BENCHMARK_HARNESS_ROOT))" || { \
+		echo "ERROR: BENCHMARK_HARNESS_ROOT must be set in .env."; \
+		exit 2; \
+	}
 
 benchmark-check: _benchmark-env
 	@HASHMARKS_BENCH_SOURCE="$(HASHMARKS_BENCH_SOURCE)" \
 	python -m benchmarks preflight \
 		--suite "$(BENCHMARK_SUITE)" \
 		--root "$(BENCHMARK_ROOT)" \
-		--harness-root .
+		--harness-root "$(BENCHMARK_HARNESS_ROOT)"
 
 benchmark: _benchmark-env
 	@HASHMARKS_BENCH_SOURCE="$(HASHMARKS_BENCH_SOURCE)" \
 	python -m benchmarks run \
 		--suite "$(BENCHMARK_SUITE)" \
 		--root "$(BENCHMARK_ROOT)" \
-		--harness-root .
+		--harness-root "$(BENCHMARK_HARNESS_ROOT)"
 
 benchmark-report: _benchmark-env
 	@python -m benchmarks report \
