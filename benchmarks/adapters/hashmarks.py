@@ -68,12 +68,15 @@ class HashmarksSubject:
                 fingerprint.update((root / os.fsdecode(path)).read_bytes())
         except (OSError, subprocess.TimeoutExpired):
             return None, "cannot fingerprint Hashmarks source checkout"
+        working_copy_clean = not values[2] and not untracked
+        if not working_copy_clean:
+            return None, "Hashmarks benchmark source must be a clean committed checkout"
         return {
             "root": str(root),
             "commit": values[0].decode().strip(),
             "tree": values[1].decode().strip(),
             "working_copy_sha256": fingerprint.hexdigest(),
-            "working_copy_clean": not values[2] and not untracked,
+            "working_copy_clean": True,
         }, None
 
     def identity(self) -> ParticipantIdentity:
