@@ -607,7 +607,7 @@ class PilotExecutionTests(unittest.TestCase):
                 "benchmarks.adapters.hashmarks.subprocess.run",
                 side_effect=git_results,
             ):
-                identity, error = HashmarksSubject()._source_identity(context)
+                identity, error = HashmarksSubject().source_identity(context)
 
             self.assertIsNone(identity)
             self.assertEqual(
