@@ -10,6 +10,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 ENV_EXAMPLE = ROOT / ".env.example"
+PYTHON_VERSION = ROOT / ".python-version"
+VALIDATE_WORKFLOW = ROOT / ".github" / "workflows" / "validate.yml"
+BENCHMARK_README = ROOT / "benchmarks" / "README.md"
+HELDOUT_README = (
+    ROOT
+    / "benchmarks"
+    / "suites"
+    / "repository-intelligence"
+    / "heldout-v1"
+    / "README.md"
+)
 
 
 @unittest.skipUnless(shutil.which("make"), "make is required for Makefile regressions")
@@ -65,6 +76,47 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         self.assertNotIn("\nBENCHMARK_ROOT=", env_example)
         self.assertNotIn("\nBENCHMARK_HARNESS_ROOT=", env_example)
 
+    def test_repository_python_entrypoints_are_uv_owned(self) -> None:
+        makefile = MAKEFILE.read_text(encoding="utf-8")
+        workflow = VALIDATE_WORKFLOW.read_text(encoding="utf-8")
+        benchmark_docs = BENCHMARK_README.read_text(encoding="utf-8")
+        heldout_docs = HELDOUT_README.read_text(encoding="utf-8")
+
+        self.assertEqual(PYTHON_VERSION.read_text(encoding="utf-8"), "3.11\n")
+
+        for target in (
+            "benchmark-check",
+            "benchmark",
+            "benchmark-report",
+            "benchmark-score",
+        ):
+            self.assertIn(target, makefile)
+        self.assertIn("uv run --no-project python -m benchmarks", makefile)
+        self.assertIn(
+            'uv run --no-project python "$(BENCHMARK_SCORE_SCRIPT_PATH)"',
+            makefile,
+        )
+        self.assertNotIn("\n\t@python ", makefile)
+
+        self.assertIn("uses: astral-sh/setup-uv@", workflow)
+        self.assertIn("run: uv python install", workflow)
+        self.assertNotIn("uses: actions/setup-python@", workflow)
+        self.assertNotIn("run: python ", workflow)
+        self.assertNotIn("\n          python ", workflow)
+        self.assertNotIn('PYTHONPATH="$PWD/scripts" python ', workflow)
+        self.assertNotIn(' STAGE="$stage/agent-economics" python ', workflow)
+
+        self.assertNotIn("\npython -m benchmarks", benchmark_docs)
+        self.assertNotIn("\npython -m benchmarks", heldout_docs)
+        self.assertIn(
+            "uv run --no-project python -m benchmarks",
+            benchmark_docs,
+        )
+        self.assertIn(
+            "uv run --no-project python -m benchmarks",
+            heldout_docs,
+        )
+
     def test_make_benchmark_fails_before_execution_without_env(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             result = subprocess.run(
@@ -84,7 +136,10 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("ERROR: .env is required.", result.stdout)
-        self.assertNotIn("python -m benchmarks run", result.stdout)
+        self.assertNotIn(
+            "uv run --no-project python -m benchmarks run",
+            result.stdout,
+        )
 
     def test_make_dry_run_transports_explicit_env_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -113,6 +168,10 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             )
 
         self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn(
+            "uv run --no-project python -m benchmarks run",
+            result.stdout,
+        )
         self.assertIn("--env-file .env", result.stdout)
         self.assertNotIn(
             'HASHMARKS_BENCH_SOURCE="/work/Hashmarks"',
@@ -151,7 +210,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn(
-            'python "benchmarks/suites/example/score.py"',
+            'uv run --no-project python "benchmarks/suites/example/score.py"',
             result.stdout,
         )
         self.assertIn('--results "/work/campaign/results"', result.stdout)
