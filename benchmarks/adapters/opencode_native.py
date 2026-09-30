@@ -54,7 +54,7 @@ def _native_environment(context: TrialContext) -> dict[str, str]:
             "missing explicit OpenCode benchmark authority: "
             + ", ".join(missing)
         )
-    return {
+    environment = {
         "OPENCODE_BIN": str(
             Path(context.environment["BENCHMARK_OPENCODE_EXECUTABLE"])
             .expanduser()
@@ -79,6 +79,31 @@ def _native_environment(context: TrialContext) -> dict[str, str]:
         "XDG_CACHE_HOME": context.environment["XDG_CACHE_HOME"],
         "XDG_STATE_HOME": context.environment["XDG_STATE_HOME"],
     }
+    for name in (
+        "PATH",
+        "LANG",
+        "LC_ALL",
+        "TERM",
+        "SYSTEMROOT",
+        "WINDIR",
+        "COMSPEC",
+        "PATHEXT",
+    ):
+        value = context.environment.get(name)
+        if value:
+            environment[name] = value
+    for name in (
+        key.strip()
+        for key in context.environment.get(
+            "BENCHMARK_PASSTHROUGH_ENV_KEYS",
+            "",
+        ).split(",")
+        if key.strip()
+    ):
+        value = context.environment.get(name)
+        if value:
+            environment[name] = value
+    return environment
 
 
 def _assistant_messages(exported: dict[str, Any]) -> list[dict[str, Any]]:
