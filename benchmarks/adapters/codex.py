@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from benchmarks.adapters.runtime import observe_executable
+from benchmarks.adapters.runtime import observe_executable, resolve_native_executable
 from benchmarks.harness.model import (
     McpExposure,
     Observation,
@@ -250,12 +250,12 @@ class CodexAgent:
         return subject.mcp_exposure(context)
 
     def _executable(self, context: TrialContext) -> str:
-        configured = context.environment.get("BENCHMARK_CODEX_EXECUTABLE")
-        if not configured:
+        resolved = resolve_native_executable(context, "codex")
+        if resolved is None:
             raise ValueError(
-                "BENCHMARK_CODEX_EXECUTABLE is required; PATH lookup is not benchmark authority"
+                "codex is not available on the native PATH"
             )
-        return str(Path(configured).expanduser().resolve())
+        return resolved
 
     def _config_path(self, context: TrialContext) -> Path:
         return Path(context.environment["CODEX_HOME"]) / "config.toml"

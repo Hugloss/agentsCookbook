@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from benchmarks.adapters.runtime import observe_executable
+from benchmarks.adapters.runtime import observe_executable, resolve_native_executable
 from benchmarks.harness.model import (
     McpExposure,
     Observation,
@@ -29,12 +29,12 @@ class EnolaSubject:
         )
 
     def _executable(self, context: TrialContext) -> str:
-        configured = context.environment.get("ENOLA_BENCH_EXECUTABLE")
-        if not configured:
+        resolved = resolve_native_executable(context, "enola")
+        if resolved is None:
             raise ValueError(
-                "ENOLA_BENCH_EXECUTABLE is required; PATH lookup is not benchmark authority"
+                "enola is not available on the native PATH"
             )
-        return str(Path(configured).expanduser().resolve())
+        return resolved
 
     def _config(self, context: TrialContext) -> Path:
         path = context.control_root / "enola-benchmark.yaml"

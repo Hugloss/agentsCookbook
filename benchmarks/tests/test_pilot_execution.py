@@ -86,11 +86,16 @@ MATRIX_V2_TREE = "1e253d251f8e0a874aeca0b05358b36253a714cc"
 
 def _opencode_trial_environment(control: Path, root: Path) -> dict[str, str]:
     environment = isolated_environment(control)
+    bin_dir = root / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    executable = bin_dir / "opencode"
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(0o755)
     environment.update(
         {
-            "BENCHMARK_OPENCODE_EXECUTABLE": str(root / "bin" / "opencode"),
-            "BENCHMARK_OPENCODE_HOME": str(root / "opencode-home"),
-            "BENCHMARK_OPENCODE_CONFIG_HOME": str(root / "opencode-config"),
+            "PATH": str(bin_dir),
+            "BENCHMARK_NATIVE_HOME": str(root / "opencode-home"),
+            "BENCHMARK_NATIVE_XDG_CONFIG_HOME": str(root / "opencode-config"),
             "BENCHMARK_OPENCODE_AGENT": "build",
         }
     )
@@ -296,7 +301,12 @@ class PilotExecutionTests(unittest.TestCase):
             workspace.mkdir()
             control = root / "control"
             environment = isolated_environment(control)
-            environment["BENCHMARK_CODEX_EXECUTABLE"] = "/tools/codex"
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            codex = bin_dir / "codex"
+            codex.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            codex.chmod(0o755)
+            environment["PATH"] = str(bin_dir)
             context = TrialContext(workspace, control, environment)
             exposure = McpExposure(
                 name="hashmarks",
@@ -459,6 +469,8 @@ class PilotExecutionTests(unittest.TestCase):
                 "# benchmark local config\n"
                 "HASHMARKS_BENCH_SOURCE='/work/Hashmarks'\n"
                 "ENOLA_BENCH_EXECUTABLE=/tools/enola\n"
+                "BENCHMARK_CODEX_EXECUTABLE=/tools/codex\n"
+                "BENCHMARK_OPENCODE_EXECUTABLE=/tools/opencode\n"
                 "BENCHMARK_OPENCODE_AGENT=build\n"
                 "UNRELATED=value\n",
                 encoding="utf-8",
@@ -473,7 +485,6 @@ class PilotExecutionTests(unittest.TestCase):
                 environment,
                 {
                     "HASHMARKS_BENCH_SOURCE": "/work/Hashmarks",
-                    "ENOLA_BENCH_EXECUTABLE": "/tools/enola",
                     "BENCHMARK_OPENCODE_AGENT": "build",
                 },
             )
@@ -507,9 +518,6 @@ class PilotExecutionTests(unittest.TestCase):
             set(required_runtime_authority(suite, rows)),
             {
                 "HASHMARKS_BENCH_SOURCE",
-                "BENCHMARK_OPENCODE_EXECUTABLE",
-                "BENCHMARK_OPENCODE_HOME",
-                "BENCHMARK_OPENCODE_CONFIG_HOME",
                 "BENCHMARK_OPENCODE_AGENT",
             },
         )
@@ -520,12 +528,8 @@ class PilotExecutionTests(unittest.TestCase):
             subjects=("enola",),
         )
         self.assertEqual(
-            set(required_runtime_authority(suite, codex_rows)),
-            {
-                "ENOLA_BENCH_EXECUTABLE",
-                "BENCHMARK_CODEX_EXECUTABLE",
-                "BENCHMARK_CODEX_HOME",
-            },
+            required_runtime_authority(suite, codex_rows),
+            (),
         )
 
     def test_hashmarks_adapter_has_no_path_fallback(self) -> None:
@@ -625,26 +629,24 @@ class PilotExecutionTests(unittest.TestCase):
             self.assertEqual(value["output"]["dir"], ".benchmark-enola")
             self.assertFalse(path.is_relative_to(workspace))
 
-    def test_enola_adapter_has_no_path_fallback(self) -> None:
+    def test_enola_adapter_uses_native_path_discovery(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workspace = root / "workspace"
             workspace.mkdir()
             control = root / "control"
-            context = TrialContext(
-                workspace,
-                control,
-                isolated_environment(control),
-            )
-            with mock.patch(
-                "benchmarks.adapters.enola.observe_executable"
-            ) as observed:
-                prepared = EnolaSubject().prepare(context)
-            observed.assert_not_called()
-            self.assertFalse(prepared.payload["available"])
-            self.assertIn(
-                "PATH lookup is not benchmark authority",
-                prepared.payload["reason"],
+            environment = isolated_environment(control)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            executable = bin_dir / "enola"
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(0o755)
+            environment["PATH"] = str(bin_dir)
+            context = TrialContext(workspace, control, environment)
+
+            self.assertEqual(
+                EnolaSubject()._executable(context),
+                str(executable.resolve()),
             )
 
     def test_environment_identity_normalizes_disposable_control_paths(self) -> None:
@@ -784,7 +786,7 @@ class PilotExecutionTests(unittest.TestCase):
         with self.assertRaises(AdapterConfigurationError):
             build_agent(forbidden, budgets=task["budgets"])
 
-    def test_opencode_native_environment_uses_explicit_config_authority(self) -> None:
+    def test_opencode_native_environment_uses_discovered_native_authority(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workspace = root / "workspace"
