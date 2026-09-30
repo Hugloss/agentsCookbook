@@ -120,8 +120,17 @@ if (command === 'mcp' && filtered[1] === 'list') {
       process.env.FAKE_MCP_DISCONNECTED === name
       ? (process.env.FAKE_MCP_STATUS || 'disabled') : 'connected';
     process.stdout.write(process.env.FAKE_MCP_TREE === '1'
-      ? '●  ✓ ' + name + ' ' + status + '\\n'
+      ? '●  ' + (status === 'connected' ? '✓' : '✗') + ' ' + name + ' ' + status + '\\n'
       : name + ': ' + status + '\\n');
+    if (
+      process.env.FAKE_MCP_TREE === '1' &&
+      process.env.FAKE_MCP_DISCONNECTED === name &&
+      process.env.FAKE_MCP_DETAIL
+    ) {
+      for (const line of process.env.FAKE_MCP_DETAIL.split('\\n')) {
+        process.stdout.write('│      ' + line + '\\n');
+      }
+    }
   }
   if (process.env.FAKE_MCP_DISTRACTOR === '1') {
     process.stdout.write('backup_hashmarks: connected\\n');
@@ -220,6 +229,23 @@ function subjectExposure(root, name) {
     };
   }
   throw new Error(`unsupported test subject: ${name}`);
+}
+
+function testSelectedMcpFailureBlock() {
+  const output = [
+    '●  ✗ hashmarks failed',
+    '│      MCP error -32000: Connection closed',
+    '│      /work/Hashmarks/.venv/bin/hashmarks --workspace . mcp',
+    '│      Traceback (most recent call last):',
+    '│      ModuleNotFoundError: No module named \'mcp\'',
+    '●  ✓ enola connected',
+    '│      /home/user/.local/bin/enola',
+  ].join('\n');
+
+  const selected = runtime.selectedMcpLines(output, 'hashmarks');
+  assert.match(selected, /ModuleNotFoundError: No module named 'mcp'/);
+  assert.doesNotMatch(selected, /enola connected/);
+  assert.doesNotMatch(selected, /\.local\/bin\/enola/);
 }
 
 async function testSharedLifecycle() {
@@ -397,6 +423,13 @@ async function testSharedLifecycle() {
         ...env,
         FAKE_MCP_DISCONNECTED: 'hashmarks',
         FAKE_MCP_STATUS: 'failed',
+        FAKE_MCP_TREE: '1',
+        FAKE_MCP_DETAIL: [
+          'MCP error -32000: Connection closed',
+          '/work/Hashmarks/.venv/bin/hashmarks --workspace . mcp',
+          'Traceback (most recent call last):',
+          "ModuleNotFoundError: No module named 'mcp'",
+        ].join('\\n'),
         FAKE_MCP_STDERR:
           'Hashmarks MCP support requires the optional extra: install hashmarks[mcp]',
         FAKE_MCP_EXIT: '7',
@@ -407,7 +440,12 @@ async function testSharedLifecycle() {
     assert.strictEqual(disconnected.status, 'failed');
     assert.match(disconnected.reason, /is not connected/);
     assert.match(disconnected.reason, /exit=7/);
-    assert.match(disconnected.reason, /hashmarks: failed/);
+    assert.match(disconnected.reason, /hashmarks failed/);
+    assert.match(
+      disconnected.reason,
+      /ModuleNotFoundError: No module named 'mcp'/,
+    );
+    assert.doesNotMatch(disconnected.reason, /enola connected/);
     assert.match(
       disconnected.reason,
       /Hashmarks MCP support requires the optional extra/,
@@ -547,6 +585,7 @@ async function testSharedLifecycle() {
 
 async function main() {
   testConfigInspection();
+  testSelectedMcpFailureBlock();
   const parsed = runtime.extractFinalAnswer(
     JSON.stringify({
       messages: [{
