@@ -231,6 +231,10 @@ async function testSharedLifecycle() {
       FAKE_OPENCODE_STATE: statePath,
       PATH: root + path.delimiter + (process.env.PATH || ''),
     };
+    const projectConfigPath = path.join(root, 'opencode.json');
+    const projectConfigText =
+      '{"mcp":{"hashmarks":{"command":["ambient-hashmarks"]}}}\n';
+    fs.writeFileSync(projectConfigPath, projectConfigText, 'utf8');
 
     const resolved = runtime.resolveNativeConfig({
       opencodeBin: fake,
@@ -278,6 +282,10 @@ async function testSharedLifecycle() {
       assert.notStrictEqual(servers.hashmarks.command[0], 'uv');
       assert.strictEqual(prepared.workspace_binding.verified, true);
       assert.strictEqual(prepared.native_subject_identity.verified, true);
+      assert.strictEqual(
+        fs.readFileSync(projectConfigPath, 'utf8'),
+        projectConfigText,
+      );
       assert.strictEqual(
         prepared.native_subject_identity.executable_path,
         fs.realpathSync(path.join(root, 'hashmarks')),

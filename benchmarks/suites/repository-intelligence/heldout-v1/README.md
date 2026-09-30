@@ -4,12 +4,13 @@ This agentsCookbook suite measures what native Codex and native OpenCode do with
 
 The runner owns process execution, isolation, contamination checks, receipts, and scoring. Hashmarks supplies repository evidence only. Expected JSON answers and the repair oracle live in the suite definitions and are never supplied to the agent prompt. The repair mutation and its focused test come from the already validated native matrix v3.
 
-From the agentsCookbook root, bind the Hashmarks subject first:
+From the agentsCookbook root, bind the Hashmarks checkout under test:
 
 ```sh
 export HASHMARKS_BENCH_SOURCE=/absolute/path/to/Hashmarks
-export PATH="$HASHMARKS_BENCH_SOURCE/.venv/bin:$PATH"
 ```
+
+Do not run `hashmarks install --opencode` for the benchmark and do not prepend the checkout to `PATH`. The source must be a clean committed checkout. The harness directly selects `$HASHMARKS_BENCH_SOURCE/.venv/bin/hashmarks`, records its Git commit/tree, and injects that exact executable into the ephemeral OpenCode benchmark exposure. Repository-local `opencode.json` is not created or modified.
 
 Then validate and preflight:
 

@@ -24,17 +24,26 @@ class HashmarksSubject:
     timeout_seconds: int = 120
     require_source: bool = False
 
+    def _source_root(self, context: TrialContext) -> Path | None:
+        source = context.environment.get("HASHMARKS_BENCH_SOURCE")
+        return Path(source).resolve() if source else None
+
+    def _executable(self, context: TrialContext) -> str:
+        root = self._source_root(context)
+        if root is not None:
+            return str((root / ".venv" / "bin" / "hashmarks").resolve())
+        resolved = shutil.which("hashmarks", path=context.environment.get("PATH"))
+        return str(Path(resolved).resolve()) if resolved else "hashmarks"
+
     def _source_identity(
         self, context: TrialContext
     ) -> tuple[dict[str, object] | None, str | None]:
-        source = context.environment.get("HASHMARKS_BENCH_SOURCE")
-        if not source:
+        root = self._source_root(context)
+        if root is None:
             return None, "HASHMARKS_BENCH_SOURCE is required for scored native runs"
-        root = Path(source).resolve()
-        expected = root / ".venv" / "bin" / "hashmarks"
-        actual = shutil.which("hashmarks", path=context.environment.get("PATH"))
-        if not actual or not expected.is_file() or not Path(actual).samefile(expected):
-            return None, f"hashmarks on PATH must be {expected}"
+        expected = Path(self._executable(context))
+        if not expected.is_file():
+            return None, f"Hashmarks benchmark executable does not exist: {expected}"
         try:
             values = []
             for args in (
@@ -59,12 +68,15 @@ class HashmarksSubject:
                 fingerprint.update((root / os.fsdecode(path)).read_bytes())
         except (OSError, subprocess.TimeoutExpired):
             return None, "cannot fingerprint Hashmarks source checkout"
+        working_copy_clean = not values[2] and not untracked
+        if not working_copy_clean:
+            return None, "Hashmarks benchmark source must be a clean committed checkout"
         return {
             "root": str(root),
             "commit": values[0].decode().strip(),
             "tree": values[1].decode().strip(),
             "working_copy_sha256": fingerprint.hexdigest(),
-            "working_copy_clean": not values[2] and not untracked,
+            "working_copy_clean": True,
         }, None
 
     def identity(self) -> ParticipantIdentity:
@@ -82,7 +94,7 @@ class HashmarksSubject:
 
     def _base(self, context: TrialContext) -> tuple[str, ...]:
         return (
-            "hashmarks",
+            self._executable(context),
             "--workspace",
             ".",
             "--state-dir",
@@ -102,7 +114,11 @@ class HashmarksSubject:
         )
 
     def prepare(self, context: TrialContext) -> Observation:
-        executable = observe_executable(context, "hashmarks", version_args=("version",))
+        executable = observe_executable(
+            context,
+            self._executable(context),
+            version_args=("version",),
+        )
         if not executable.payload["available"]:
             return executable
         source_identity, source_error = (
@@ -176,11 +192,9 @@ class HashmarksSubject:
         return Observation({}, "")
 
     def mcp_exposure(self, context: TrialContext) -> McpExposure:
-        resolved = shutil.which("hashmarks", path=context.environment.get("PATH"))
-        command = str(Path(resolved).resolve()) if resolved else "hashmarks"
         return McpExposure(
             name="hashmarks",
-            command=command,
+            command=self._executable(context),
             args=(
                 "--workspace",
                 ".",

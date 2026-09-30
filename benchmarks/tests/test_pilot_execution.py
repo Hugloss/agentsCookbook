@@ -413,6 +413,72 @@ class PilotExecutionTests(unittest.TestCase):
                 version_args=("version",),
             )
 
+    def test_hashmarks_source_selects_exact_executable_without_path_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            source = root / "hashmarks-source"
+            executable = source / ".venv" / "bin" / "hashmarks"
+            executable.parent.mkdir(parents=True)
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(0o755)
+            environment = isolated_environment(control)
+            environment["HASHMARKS_BENCH_SOURCE"] = str(source)
+            context = TrialContext(workspace, control, environment)
+            unavailable = Observation({"available": False}, "")
+
+            with mock.patch(
+                "benchmarks.adapters.hashmarks.observe_executable",
+                return_value=unavailable,
+            ) as observed:
+                HashmarksSubject(require_source=True).prepare(context)
+
+            observed.assert_called_once_with(
+                context,
+                str(executable.resolve()),
+                version_args=("version",),
+            )
+            self.assertEqual(
+                HashmarksSubject(require_source=True).mcp_exposure(context).command,
+                str(executable.resolve()),
+            )
+
+    def test_hashmarks_scored_source_rejects_uncommitted_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            source = root / "hashmarks-source"
+            executable = source / ".venv" / "bin" / "hashmarks"
+            executable.parent.mkdir(parents=True)
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            environment = isolated_environment(control)
+            environment["HASHMARKS_BENCH_SOURCE"] = str(source)
+            context = TrialContext(workspace, control, environment)
+            git_results = [
+                SimpleNamespace(returncode=0, stdout=b"1" * 40 + b"\n"),
+                SimpleNamespace(returncode=0, stdout=b"2" * 40 + b"\n"),
+                SimpleNamespace(returncode=0, stdout=b"dirty diff"),
+                SimpleNamespace(returncode=0, stdout=b""),
+            ]
+
+            with mock.patch(
+                "benchmarks.adapters.hashmarks.subprocess.run",
+                side_effect=git_results,
+            ):
+                identity, error = HashmarksSubject(
+                    require_source=True
+                )._source_identity(context)
+
+            self.assertIsNone(identity)
+            self.assertEqual(
+                error,
+                "Hashmarks benchmark source must be a clean committed checkout",
+            )
+
     def test_enola_adapter_writes_explicit_trial_output_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -590,13 +656,17 @@ class PilotExecutionTests(unittest.TestCase):
             workspace = root / "workspace"
             workspace.mkdir()
             control = root / "control"
-            installed = root / "bin" / "hashmarks"
-            installed.parent.mkdir()
+            source = root / "hashmarks-source"
+            installed = source / ".venv" / "bin" / "hashmarks"
+            installed.parent.mkdir(parents=True)
             installed.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            installed.chmod(0o755)
+            environment = isolated_environment(control)
+            environment["HASHMARKS_BENCH_SOURCE"] = str(source)
             context = TrialContext(
                 workspace,
                 control,
-                isolated_environment(control),
+                environment,
             )
             executable = Observation(
                 {
@@ -626,10 +696,6 @@ class PilotExecutionTests(unittest.TestCase):
                 mock.patch(
                     "benchmarks.adapters.opencode_native.observe_executable",
                     return_value=executable,
-                ),
-                mock.patch(
-                    "benchmarks.adapters.hashmarks.shutil.which",
-                    return_value=str(installed),
                 ),
                 mock.patch(
                     "benchmarks.adapters.opencode_native._runtime_call",
@@ -708,6 +774,7 @@ class PilotExecutionTests(unittest.TestCase):
             exposure = json.loads(exposure_path.read_text(encoding="utf-8"))
             self.assertEqual(exposure["command"][0], str(installed.resolve()))
             self.assertEqual(exposure["command"][-1], "mcp")
+            self.assertFalse((workspace / "opencode.json").exists())
 
     def test_opencode_unverified_native_workspace_binding_is_unavailable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
