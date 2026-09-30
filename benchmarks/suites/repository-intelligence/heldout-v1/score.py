@@ -66,7 +66,7 @@ def main() -> int:
         "selection": {"agent": args.agent},
         "authority": {
             "overall_winner": None,
-            "cross_agent_comparison": "descriptive-only",
+            "cross_agent_comparison": "not-applicable-single-agent-selection",
             "assistance_comparison": "within-agent-paired-trials",
         },
     }
