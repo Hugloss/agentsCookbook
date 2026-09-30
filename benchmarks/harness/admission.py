@@ -21,7 +21,10 @@ from benchmarks.harness.model import (
     TrialStatus,
 )
 from benchmarks.harness.mutation import apply_mutation
-from benchmarks.harness.runtime_authority import transport_runtime_authority
+from benchmarks.harness.runtime_authority import (
+    native_host_paths,
+    transport_runtime_authority,
+)
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.suite import SuiteDefinition
 from benchmarks.harness.workspace import isolated_environment, snapshot
@@ -411,15 +414,16 @@ def admit_trial(
             agent_definition["adapter"] == "codex"
             and agent_definition.get("configuration", {}).get("native_host") is True
         )
-        if native_codex:
-            codex_home = context.environment.get("BENCHMARK_CODEX_HOME")
-            if not codex_home:
-                raise TrialAdmissionError(
-                    "BENCHMARK_CODEX_HOME is required for native Codex"
+        native_opencode = agent_definition["adapter"] == "opencode-native"
+        if native_codex or native_opencode:
+            native_paths = native_host_paths(os.environ)
+            if native_codex:
+                context.environment["CODEX_HOME"] = native_paths["codex_home"]
+            if native_opencode:
+                context.environment["BENCHMARK_NATIVE_HOME"] = native_paths["home"]
+                context.environment["BENCHMARK_NATIVE_XDG_CONFIG_HOME"] = (
+                    native_paths["xdg_config_home"]
                 )
-            context.environment["CODEX_HOME"] = str(
-                Path(codex_home).expanduser().resolve()
-            )
         auth_mode = (
             "native-host"
             if native_codex
