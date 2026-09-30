@@ -11,21 +11,54 @@ cp -n .env.example .env
 # edit .env
 ```
 
-The four local settings deliberately name different things:
+### What the local settings mean
 
-| Setting | What it points to | Example |
-| --- | --- | --- |
-| `HASHMARKS_BENCH_SOURCE` | The clean committed **Hashmarks checkout being measured** | `/home/me/code/Hashmarks` |
-| `BENCHMARK_SUITE_PATH` | The committed **benchmark definition inside agentsCookbook** | `benchmarks/suites/repository-intelligence/heldout-v1` |
-| `BENCHMARK_CAMPAIGN_ROOT` | The writable **runtime/output directory for one campaign** | `/tmp/agentscookbook-heldout-v1` |
-| `BENCHMARK_HARNESS_REPO_ROOT` | The **agentsCookbook checkout** that owns the runner | `.` when running from the repository root |
+The held-out suite uses four different authority groups.
 
-In particular:
+**Products being measured**
+
+| Setting | What it points to |
+| --- | --- |
+| `HASHMARKS_BENCH_SOURCE` | Clean committed Hashmarks checkout; the benchmark executes its exact `.venv/bin/hashmarks` |
+| `ENOLA_BENCH_EXECUTABLE` | Exact Enola executable; no PATH fallback |
+
+**Native agents**
+
+| Setting | What it points to |
+| --- | --- |
+| `BENCHMARK_CODEX_EXECUTABLE` | Exact Codex executable |
+| `BENCHMARK_CODEX_HOME` | Codex model/auth configuration root |
+| `BENCHMARK_OPENCODE_EXECUTABLE` | Exact OpenCode executable |
+| `BENCHMARK_OPENCODE_HOME` | OpenCode home |
+| `BENCHMARK_OPENCODE_CONFIG_HOME` | OpenCode XDG configuration root |
+| `BENCHMARK_OPENCODE_AGENT` | Exact OpenCode agent persona, such as `build` |
+
+The benchmark does **not** trust global Hashmarks/Enola MCP registrations in Codex or OpenCode as subject authority. Ambient MCP servers are disabled for the trial and the selected subject is injected ephemerally from the exact product authority above.
+
+**Optional provider environment**
+
+`BENCHMARK_PASSTHROUGH_ENV_KEYS` is a comma-separated allowlist of host environment variable names that a native provider needs, for example:
+
+```dotenv
+BENCHMARK_PASSTHROUGH_ENV_KEYS=OPENAI_API_KEY
+```
+
+Only named variables are transported. Participant processes do not otherwise inherit arbitrary host environment state. A declared passthrough variable that is unset causes admission to fail.
+
+**Benchmark source and generated evidence**
+
+| Setting | What it points to |
+| --- | --- |
+| `BENCHMARK_SUITE_PATH` | Committed benchmark definition inside agentsCookbook |
+| `BENCHMARK_CAMPAIGN_ROOT` | Writable runtime/output directory for one campaign |
+| `BENCHMARK_HARNESS_REPO_ROOT` | agentsCookbook checkout owning the benchmark runner |
+| `BENCHMARK_SCORE_SCRIPT_PATH` | This suite's specialized scorer |
+| `BENCHMARK_SCORE_OUTPUT_PATH` | Output path for the specialized held-out score |
 
 ```text
 agentsCookbook/
 └── benchmarks/suites/.../heldout-v1    <- BENCHMARK_SUITE_PATH
-                                           committed definition; do not write results here
+                                           committed definition; never campaign output
 
 /tmp/agentscookbook-heldout-v1/          <- BENCHMARK_CAMPAIGN_ROOT
 ├── cache/
@@ -34,24 +67,55 @@ agentsCookbook/
                                            generated campaign state/evidence
 ```
 
-A suite path answers **"what benchmark definition are we running?"**. A campaign root answers **"where does this run store generated work and evidence?"**. They are intentionally different authorities.
-
-`.env` is ignored by Git. The normal local workflow is only:
+### Normal local workflow
 
 ```sh
 make benchmark-check
 make benchmark
 make benchmark-report
+make benchmark-score
 ```
 
-The Makefile provides no hidden fallback values for the product checkout, suite path, campaign root, or harness repository root. If a required value is absent, the command fails before benchmark execution.
+- `benchmark-check` performs admission/preflight without invoking the coding agent.
+- `benchmark` executes/resumes the frozen campaign.
+- `benchmark-report` is the generic framework report.
+- `benchmark-score` runs this suite's explicit language-separated held-out scorer.
 
-Do not run `hashmarks install --opencode` for the benchmark and do not prepend the checkout to `PATH`. The source must be a clean committed checkout. The harness directly selects `$HASHMARKS_BENCH_SOURCE/.venv/bin/hashmarks`, records its Git commit/tree, and injects that exact executable into the ephemeral OpenCode benchmark exposure. Repository-local `opencode.json` is not created or modified.
+The Makefile provides no hidden fallback values for these authorities.
+
+Do not run `hashmarks install --opencode` for this benchmark and do not prepend Hashmarks or Enola to `PATH`. Native Codex also does not need a global Hashmarks or Enola MCP registration for benchmark subject execution. The selected subject exposure is injected for the trial and bound to the exact executable.
 
 ### Advanced direct CLI
 
-The Python CLI is the underlying execution interface for automation and one-off selections. Most developers should use the Make targets above. When invoking the CLI directly, pass the same authorities explicitly rather than inventing alternate defaults.
+Most developers should use the Make targets. Direct callers must pass the env file and harness root explicitly:
 
-Use a fresh campaign root for each Hashmarks candidate and native agent/model configuration. The selected Hashmarks executable must be bound to the checkout under test. Native Codex requires enabled Hashmarks and Enola MCP registrations; native OpenCode requires a resolvable model/provider configuration. The existing native matrix v3 README documents subject registration and authentication preflight. A failed preflight or incomplete receipt is not a scored trial. The score script requires all 216 valid bundles and reports Python and TypeScript separately, with within-agent paired assistance and descriptive cross-agent observations. It does not rank the products into one winner.
+```sh
+python -m benchmarks preflight \
+  --env-file .env \
+  --suite "$BENCHMARK_SUITE_PATH" \
+  --root "$BENCHMARK_CAMPAIGN_ROOT" \
+  --harness-root "$BENCHMARK_HARNESS_REPO_ROOT"
+
+python -m benchmarks run \
+  --env-file .env \
+  --suite "$BENCHMARK_SUITE_PATH" \
+  --root "$BENCHMARK_CAMPAIGN_ROOT" \
+  --harness-root "$BENCHMARK_HARNESS_REPO_ROOT"
+```
+
+When filtering subjects, controls are never added automatically. For a Hashmarks-vs-bare paired subset, request both explicitly:
+
+```sh
+python -m benchmarks preflight \
+  --env-file .env \
+  --suite "$BENCHMARK_SUITE_PATH" \
+  --root "$BENCHMARK_CAMPAIGN_ROOT" \
+  --harness-root "$BENCHMARK_HARNESS_REPO_ROOT" \
+  --agent opencode-native \
+  --subject hashmarks \
+  --subject none
+```
+
+Use a fresh campaign root for each independent Hashmarks candidate or native agent/model configuration. A failed preflight or incomplete receipt is not a scored trial. The specialized score requires all 216 valid bundles and reports Python and TypeScript separately, with within-agent paired assistance and descriptive cross-agent observations. It does not rank the products into one winner.
 
 The permanent drift gate lives in Hashmarks tests. This suite measures downstream agent behavior and must not replace Hashmarks' owner, ambiguity, provenance, freshness, or verification regressions.
