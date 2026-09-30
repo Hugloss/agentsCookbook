@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,7 +10,12 @@ from unittest import mock
 from benchmarks.adapters.hashmarks import HashmarksSubject
 from benchmarks.harness.model import McpExposure, Observation
 from benchmarks.harness.readiness import check_runtime_readiness
-from benchmarks.harness.suite import SuiteDefinition
+from benchmarks.harness.suite import (
+    SuiteDefinition,
+    SuiteError,
+    load_runtime_suite,
+    load_suite,
+)
 
 
 class FakeSubject:
@@ -114,7 +120,25 @@ def fake_suite() -> SuiteDefinition:
     )
 
 
+ROOT = Path(__file__).resolve().parents[2]
+HELDOUT = ROOT / "benchmarks" / "suites" / "repository-intelligence" / "heldout-v1"
+
+
 class RuntimeReadinessTests(unittest.TestCase):
+    def test_runtime_suite_does_not_load_task_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            copied = Path(tmp) / "heldout"
+            shutil.copytree(HELDOUT, copied)
+            shutil.rmtree(copied / "tasks")
+
+            runtime = load_runtime_suite(copied)
+            self.assertEqual(runtime.tasks, {})
+            self.assertIn("hashmarks", runtime.subjects)
+            self.assertIn("codex-native", runtime.agents)
+
+            with self.assertRaises(SuiteError):
+                load_suite(copied)
+
     def test_readiness_has_no_trial_admission_dependencies(self) -> None:
         source = (
             Path(__file__).resolve().parents[1]
