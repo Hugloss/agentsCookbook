@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -84,8 +85,12 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             absolute = (context.workspace / EXPECTED["path"]).resolve()
             grade = self._grade(
                 context,
-                '{"path":' + repr(str(absolute)).replace("'", '"') + ','
-                '"symbol":"paths_under"}',
+                json.dumps(
+                    {
+                        "path": str(absolute),
+                        "symbol": "paths_under",
+                    }
+                ),
             )
             self.assertTrue(grade.payload["semantic_success"])
             self.assertEqual(grade.payload["normalized_actual"], EXPECTED)
@@ -113,6 +118,18 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             self.assertFalse(grade.payload["semantic_success"])
             self.assertFalse(grade.payload["format_compliant"])
             self.assertIn("actual_text", grade.payload)
+
+    def test_malformed_json_fence_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            context = self._context(Path(tmp))
+            grade = self._grade(
+                context,
+                '```json\n'
+                '{"path":"hashmarks/codemap/repository_index_store.py",'
+                '"symbol":"paths_under"}',
+            )
+            self.assertFalse(grade.payload["semantic_success"])
+            self.assertFalse(grade.payload["format_compliant"])
 
     def test_multiple_objects_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
