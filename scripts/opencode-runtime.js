@@ -3,6 +3,7 @@
 
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
@@ -36,6 +37,36 @@ function runCommand(command, args, options = {}) {
     error: result.error ? String(result.error.message || result.error) : null,
     signal: result.signal || null,
   };
+}
+
+function runCommandToFile(command, args, options = {}) {
+  const executable = Array.isArray(command) ? command[0] : command;
+  const argv = Array.isArray(command) ? [...command.slice(1), ...args] : args;
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'agents-cookbook-opencode-export-'),
+  );
+  const outputPath = path.join(directory, 'stdout.json');
+  const output = fs.openSync(outputPath, 'w');
+  try {
+    const result = spawnSync(executable, argv, {
+      cwd: options.cwd || process.cwd(),
+      env: { ...process.env, ...(options.env || {}) },
+      encoding: 'utf8',
+      stdio: ['ignore', output, 'pipe'],
+      maxBuffer: options.maxBuffer || 50 * 1024 * 1024,
+    });
+    const stdout = fs.readFileSync(outputPath, 'utf8');
+    return {
+      status: result.error ? 1 : typeof result.status === 'number' ? result.status : 1,
+      stdout,
+      stderr: result.stderr || '',
+      error: result.error ? String(result.error.message || result.error) : null,
+      signal: result.signal || null,
+    };
+  } finally {
+    fs.closeSync(output);
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 function sleep(ms) {
@@ -882,7 +913,7 @@ function exportSession({
   env = {},
   pure = true,
 }) {
-  return runCommand(
+  return runCommandToFile(
     opencodeBin,
     [...commandPrefix(pure), 'export', sessionId],
     {
@@ -1325,6 +1356,7 @@ module.exports = {
   readJsonText,
   resolveNativeConfig,
   runCommand,
+  runCommandToFile,
   runSession,
   runSessionAndExport,
   sanitize,
