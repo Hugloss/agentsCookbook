@@ -9,7 +9,11 @@ from benchmarks.adapters.codex import CodexAgent
 from benchmarks.adapters.enola import EnolaSubject
 from benchmarks.adapters.hashmarks import HashmarksSubject
 from benchmarks.adapters.opencode_native import OpenCodeNativeAgent
-from benchmarks.adapters.oracles import CommandOracle, ExpectedJsonOracle
+from benchmarks.adapters.oracles import (
+    CommandOracle,
+    ExpectedJsonOracle,
+    RepositoryLocationOracle,
+)
 from benchmarks.adapters.subjects import NoneSubject
 
 
@@ -123,6 +127,17 @@ def build_oracle(definition: dict[str, Any], *, timeout_seconds: int, suite_root
                 "expected-json oracle requires object configuration.expected"
             )
         return ExpectedJsonOracle(
+            str(identity["id"]),
+            str(identity["version"]),
+            expected,
+        )
+    if adapter == "repository-location-json":
+        expected = config.get("expected")
+        if not isinstance(expected, dict):
+            raise AdapterConfigurationError(
+                "repository-location-json oracle requires object configuration.expected"
+            )
+        return RepositoryLocationOracle(
             str(identity["id"]),
             str(identity["version"]),
             expected,
