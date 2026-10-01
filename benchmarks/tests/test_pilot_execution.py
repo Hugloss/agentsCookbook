@@ -2625,8 +2625,20 @@ class PilotExecutionTests(unittest.TestCase):
                 (first.result_dir / "result.json").read_text(encoding="utf-8")
             )
             self.assertEqual(
-                first_receipt["execution"]["oracle_grade"],
+                first_receipt["scoring"]["oracle_grade"],
                 {"valid": True, "passed": True},
+            )
+            self.assertIsInstance(
+                first_receipt["execution"]["agent_answer"],
+                str,
+            )
+            self.assertRegex(
+                first_receipt["execution"]["evidence_identity"],
+                r"^[0-9a-f]{64}$",
+            )
+            self.assertRegex(
+                first_receipt["scoring"]["projection_identity"],
+                r"^[0-9a-f]{64}$",
             )
 
             second = run_trial(**kwargs)
