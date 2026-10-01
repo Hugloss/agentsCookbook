@@ -129,6 +129,12 @@ def _reason_for_agent(observation: Observation) -> str | None:
     if not isinstance(terminal, dict):
         return "agent emitted no terminal event"
     if terminal.get("type") != "turn.completed":
+        reason = terminal.get("reason")
+        if isinstance(reason, str) and reason:
+            return (
+                f"agent terminal event was {terminal.get('type')}: "
+                f"{reason}"
+            )
         return f"agent terminal event was {terminal.get('type')}"
     return None
 
