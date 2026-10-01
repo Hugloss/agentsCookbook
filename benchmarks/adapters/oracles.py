@@ -17,6 +17,140 @@ def _text(payload: bytes) -> str:
     return payload.decode("utf-8", errors="replace")
 
 
+def _parse_repository_location_message(
+    value: str,
+) -> tuple[dict[str, Any] | None, bool, str]:
+    stripped = value.strip()
+    format_compliant = True
+    payload = stripped
+    if stripped.startswith("```"):
+        format_compliant = False
+        lines = stripped.splitlines()
+        if len(lines) < 3 or lines[0] != "```json" or lines[-1] != "```":
+            return None, False, "answer is not one bare JSON object or one json fence"
+        payload = "\n".join(lines[1:-1]).strip()
+        if "```" in payload:
+            return None, False, "answer contains nested or multiple code fences"
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        return None, format_compliant, f"agent final_message is not JSON: {exc.msg}"
+    if not isinstance(parsed, dict):
+        return None, format_compliant, "agent final_message JSON is not an object"
+    return parsed, format_compliant, ""
+
+
+def _normalize_repository_location(
+    actual: dict[str, Any],
+    *,
+    workspace: Path,
+) -> tuple[dict[str, str] | None, str | None]:
+    if set(actual) != {"path", "symbol"}:
+        return None, "repository location must contain exactly path and symbol"
+    raw_path = actual.get("path")
+    raw_symbol = actual.get("symbol")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        return None, "repository location path must be a non-empty string"
+    if not isinstance(raw_symbol, str) or not raw_symbol.strip():
+        return None, "repository location symbol must be a non-empty string"
+
+    workspace_root = workspace.resolve()
+    candidate = Path(raw_path.strip())
+    resolved = candidate.resolve() if candidate.is_absolute() else (workspace_root / candidate).resolve()
+    try:
+        relative = resolved.relative_to(workspace_root)
+    except ValueError:
+        return None, "repository location path escapes the trial workspace"
+    if relative == Path("."):
+        return None, "repository location path must identify a repository file"
+
+    symbol = raw_symbol.strip().rsplit(".", 1)[-1]
+    if not symbol:
+        return None, "repository location symbol is empty after qualification"
+    return {"path": relative.as_posix(), "symbol": symbol}, None
+
+
+@dataclass(frozen=True)
+class RepositoryLocationOracle:
+    participant_id: str
+    version: str
+    expected: dict[str, Any]
+
+    def identity(self) -> ParticipantIdentity:
+        return ParticipantIdentity(
+            self.participant_id,
+            "oracle",
+            self.version,
+            {"kind": "repository-location-json", "expected": self.expected},
+        )
+
+    def healthcheck(self, context: TrialContext) -> Observation:
+        normalized, reason = _normalize_repository_location(
+            self.expected,
+            workspace=context.workspace,
+        )
+        healthy = normalized == self.expected and reason is None
+        return Observation(
+            {
+                "healthy": healthy,
+                "reason": None if healthy else reason or "expected repository location is not canonical",
+            },
+            "",
+        )
+
+    def grade(self, context: TrialContext, observation: Observation) -> Observation:
+        final_message = observation.payload.get("final_message")
+        if not isinstance(final_message, str):
+            return Observation(
+                {
+                    "passed": False,
+                    "valid": True,
+                    "semantic_success": False,
+                    "format_compliant": False,
+                    "reason": "agent final_message is missing",
+                },
+                "",
+            )
+
+        actual, format_compliant, parse_reason = _parse_repository_location_message(
+            final_message
+        )
+        if actual is None:
+            return Observation(
+                {
+                    "passed": False,
+                    "valid": True,
+                    "semantic_success": False,
+                    "format_compliant": format_compliant,
+                    "reason": parse_reason,
+                    "actual_text": final_message,
+                },
+                "",
+            )
+
+        normalized_actual, normalize_reason = _normalize_repository_location(
+            actual,
+            workspace=context.workspace,
+        )
+        semantic_success = normalized_actual == self.expected
+        reason = None if semantic_success else (
+            normalize_reason or "repository location differs from frozen oracle"
+        )
+        return Observation(
+            {
+                "passed": semantic_success,
+                "valid": True,
+                "semantic_success": semantic_success,
+                "format_compliant": format_compliant,
+                "expected": self.expected,
+                "actual": actual,
+                "normalized_actual": normalized_actual,
+                "reason": reason,
+            },
+            json.dumps(normalized_actual or actual, sort_keys=True),
+        )
+
+
 @dataclass(frozen=True)
 class ExpectedJsonOracle:
     participant_id: str
