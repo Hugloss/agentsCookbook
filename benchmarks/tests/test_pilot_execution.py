@@ -1248,6 +1248,10 @@ class PilotExecutionTests(unittest.TestCase):
                 "provider": "test-provider",
                 "runtime_contract": "agents-cookbook-opencode-runtime/v2",
             }
+            (control / "opencode-native-evidence.json").write_text(
+                json.dumps(evidence),
+                encoding="utf-8",
+            )
             runtime_result = mock.Mock(
                 elapsed_ms=100,
                 stdout=b"{}",
@@ -1280,7 +1284,6 @@ class PilotExecutionTests(unittest.TestCase):
             }
             agent = OpenCodeNativeAgent()
             with (
-                mock.patch.object(agent, "_load_prepared", return_value=evidence),
                 mock.patch(
                     "benchmarks.adapters.opencode_native._native_environment",
                     return_value={"OPENCODE_BIN": "/bin/opencode"},
@@ -1323,6 +1326,10 @@ class PilotExecutionTests(unittest.TestCase):
                 "provider": "test-provider",
                 "runtime_contract": "agents-cookbook-opencode-runtime/v2",
             }
+            (control / "opencode-native-evidence.json").write_text(
+                json.dumps(evidence),
+                encoding="utf-8",
+            )
             runtime_result = mock.Mock(
                 elapsed_ms=100,
                 stdout=b"{}",
@@ -1360,7 +1367,6 @@ class PilotExecutionTests(unittest.TestCase):
             }
             agent = OpenCodeNativeAgent()
             with (
-                mock.patch.object(agent, "_load_prepared", return_value=evidence),
                 mock.patch(
                     "benchmarks.adapters.opencode_native._native_environment",
                     return_value={"OPENCODE_BIN": "/bin/opencode"},
