@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from benchmarks.adapters.oracles import RepositoryLocationOracle
+from benchmarks.adapters.registry import build_oracle
 from benchmarks.harness.model import Observation, TrialContext
 from benchmarks.harness.report import _aggregate_condition
 
@@ -38,6 +39,17 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             context,
             Observation({"final_message": final_message}, ""),
         )
+
+    def test_registry_builds_repository_location_oracle(self) -> None:
+        oracle = build_oracle(
+            {
+                "adapter": "repository-location-json",
+                "identity": {"id": "location", "version": "2"},
+                "configuration": {"expected": EXPECTED},
+            },
+            timeout_seconds=30,
+        )
+        self.assertIsInstance(oracle, RepositoryLocationOracle)
 
     def test_bare_json_is_semantically_correct_and_format_compliant(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
