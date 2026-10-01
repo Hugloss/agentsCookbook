@@ -34,9 +34,9 @@ def _parse_repository_location_message(
     try:
         parsed = json.loads(payload)
     except json.JSONDecodeError as exc:
-        return None, format_compliant, f"agent final_message is not JSON: {exc.msg}"
+        return None, False, f"agent final_message is not JSON: {exc.msg}"
     if not isinstance(parsed, dict):
-        return None, format_compliant, "agent final_message JSON is not an object"
+        return None, False, "agent final_message JSON is not an object"
     return parsed, format_compliant, ""
 
 
@@ -128,6 +128,14 @@ class RepositoryLocationOracle:
                 "",
             )
 
+        structure_compliant = (
+            set(actual) == {"path", "symbol"}
+            and isinstance(actual.get("path"), str)
+            and bool(actual["path"].strip())
+            and isinstance(actual.get("symbol"), str)
+            and bool(actual["symbol"].strip())
+        )
+        format_compliant = format_compliant and structure_compliant
         normalized_actual, normalize_reason = _normalize_repository_location(
             actual,
             workspace=context.workspace,
