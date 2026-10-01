@@ -42,6 +42,51 @@ def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
     return value
 
 
+def _bounded_diagnostic(value: Any, *, limit: int = 2_000) -> str | None:
+    if not isinstance(value, str):
+        return None
+    rendered = value.strip()
+    if not rendered:
+        return None
+    if len(rendered) <= limit:
+        return rendered
+    return rendered[:limit] + "…"
+
+
+def _run_failure_reason(
+    run_evidence: dict[str, Any] | None,
+    *,
+    export_error: str | None,
+    final_text: str | None,
+) -> str | None:
+    if run_evidence is None:
+        return export_error or "OpenCode runtime emitted no run result"
+
+    run_status = run_evidence.get("status")
+    if run_status != 0:
+        if run_status is None:
+            reason = "OpenCode runtime emitted no run status"
+        else:
+            reason = f"OpenCode run exited with status {run_status}"
+        details: list[str] = []
+        stderr = _bounded_diagnostic(run_evidence.get("stderr"))
+        if stderr:
+            details.append(f"stderr={stderr!r}")
+        error = _bounded_diagnostic(run_evidence.get("error"))
+        if error:
+            details.append(f"error={error!r}")
+        signal = run_evidence.get("signal")
+        if isinstance(signal, str) and signal:
+            details.append(f"signal={signal}")
+        return "; ".join((reason, *details))
+
+    if export_error is not None:
+        return export_error
+    if final_text is None:
+        return "OpenCode completed without a final assistant message"
+    return None
+
+
 def _native_environment(context: TrialContext) -> dict[str, str]:
     required = (
         "BENCHMARK_NATIVE_HOME",
@@ -715,21 +760,18 @@ class OpenCodeNativeAgent:
                 f"{observed_model} != {evidence.get('model')}"
             )
 
-        run_status = (
-            run_evidence.get("status") if isinstance(run_evidence, dict) else None
+        failure_reason = _run_failure_reason(
+            run_evidence,
+            export_error=export_error,
+            final_text=final_text,
         )
-        complete = (
-            envelope is not None
-            and run_status == 0
-            and export_error is None
-            and final_text is not None
-        )
+        complete = envelope is not None and failure_reason is None
         terminal = (
             {"type": "turn.completed"}
             if complete
             else {
                 "type": "turn.failed",
-                "reason": export_error or "opencode run failed",
+                "reason": failure_reason or "OpenCode run failed",
             }
         )
         tool_calls = int(metrics.get("tool_calls", 0))
