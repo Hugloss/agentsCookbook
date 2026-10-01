@@ -1,8 +1,24 @@
 # Held-out repository observer outcomes v1
 
-This agentsCookbook suite measures what native Codex and native OpenCode do with bare tools, Hashmarks MCP, or Enola MCP. It contains twelve pinned tasks: five Python localization tasks on Hashmarks, one Python defect repair on agentsCookbook, and six TypeScript localization tasks on UV Fleet. Each of six agent/subject conditions runs three paired seeds per task: 216 frozen trials. The source commits predate this suite, so task answers are absent from each trial repository.
+This agentsCookbook suite measures what native Codex and native OpenCode do with bare tools, Hashmarks MCP, or Enola MCP. It contains twelve pinned tasks: five Python localization tasks on Hashmarks, one Python defect repair on agentsCookbook, and six TypeScript localization tasks on UV Fleet. Each of six agent/subject conditions runs three paired seeds per task: 216 trials. The source commits predate this suite, so task answers are absent from each trial repository.
 
-The runner owns process execution, isolation, contamination checks, receipts, and scoring. Hashmarks supplies repository evidence only. Expected JSON answers and the repair oracle live in the suite definitions and are never supplied to the agent prompt. The repair mutation and its focused test come from the already validated native matrix v3.
+**Status:** heldout-v1 is still being qualified. Its repository/source pins are deliberate, but the benchmark is not considered frozen until its oracle semantics and a complete campaign are qualified. Benchmark defects found during qualification are repaired in v1; results produced under superseded v1 authority must not be mixed with or reused by the repaired authority.
+
+The runner owns process execution, isolation, contamination checks, receipts, and scoring. Hashmarks supplies repository evidence only. Localization tasks use a deterministic repository-location oracle; the repair task keeps its independent command oracle. Expected answers and repair checks live in the suite definitions and are never supplied to the agent prompt.
+
+### Localization grading
+
+Localization PASS/FAIL measures whether the agent identified the frozen repository location. Instruction-format compliance remains separately observable.
+
+The repository-location oracle accepts only:
+
+- one bare JSON object, or one `json` fenced JSON object, with exactly `path` and `symbol`
+- a repository-relative path, or an absolute path that resolves inside the isolated trial workspace
+- an unqualified symbol or a qualified callable name whose terminal symbol identifies the same target
+
+It never extracts JSON from surrounding prose, never chooses among multiple objects, and rejects paths escaping the trial workspace. A single JSON fence is semantically gradeable but records `format_compliant=false`; the task prompt still requires a bare JSON object. Qualified symbols such as `WorkspaceMapStore.paths_under` normalize to `paths_under` for localization comparison without weakening the expected repository target.
+
+The result receipt persists the oracle grade, and reports expose both `semantic_success_rate` and `format_compliance_rate`. Task PASS for localization follows semantic success; formatting remains a separate instruction-following signal.
 
 From the agentsCookbook root, configure the benchmark authority once:
 
@@ -99,6 +115,7 @@ make benchmark-score
 - `benchmark` executes/resumes the frozen campaign and does not secretly run either check first.
 - `benchmark-report` is the generic framework report.
 - `benchmark-score` runs this suite's explicit language-separated held-out scorer.
+- Before a new full campaign after benchmark-authority changes, use the focused localization qualification target documented in the repository Makefile. It uses a separate campaign root and must not be treated as the full score.
 
 The Makefile passes `.env` to the benchmark CLI, whose single configuration loader validates required settings. Native-installed tool paths are intentionally delegated to Linux/tool discovery and then recorded as observed authority.
 
@@ -155,6 +172,6 @@ uv run --no-project python -m benchmarks preflight \
   --subject none
 ```
 
-Use a fresh campaign root for each independent Hashmarks candidate or native agent/model configuration. A failed preflight or incomplete receipt is not a scored trial. The specialized score writes one report for the selected population: 108 valid bundles for one agent or 216 for both, split evenly between Python and TypeScript. Its v2 JSON records `selection.agents` as a list. It compares assistance within each agent and reports cross-agent observations descriptively when both are selected. It does not rank the products into one winner.
+Use a fresh campaign root for each independent Hashmarks candidate, native agent/model configuration, or benchmark-authority revision. Do not resume a campaign created before a task/oracle/scoring change even when the directory is still named heldout-v1. A failed preflight or incomplete receipt is not a scored trial. The specialized score writes one report for the selected population: 108 valid bundles for one agent or 216 for both, split evenly between Python and TypeScript. Its v2 JSON records `selection.agents` as a list. It compares assistance within each agent and reports cross-agent observations descriptively when both are selected. It does not rank the products into one winner.
 
 The permanent drift gate lives in Hashmarks tests. This suite measures downstream agent behavior and must not replace Hashmarks' owner, ambiguity, provenance, freshness, or verification regressions.
