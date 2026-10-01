@@ -6,6 +6,10 @@ import json
 from typing import Any
 
 
+EXECUTION_EVIDENCE_CONTRACT = "benchmark-execution-evidence.v2"
+SCORE_PROJECTION_CONTRACT = "benchmark-score-projection.v2"
+
+
 def canonical_json(value: Any) -> bytes:
     return (
         json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
@@ -58,20 +62,9 @@ def execution_id(
     )
 
 
-def execution_evidence_id(
-    *,
-    task: dict[str, Any],
-    condition: dict[str, Any],
-    trial: int,
-    seed: int,
-    subject_identity: dict[str, Any],
-    agent_identity: dict[str, Any],
-    harness_identity: dict[str, Any],
-    environment_identity: dict[str, Any],
-    mutation_identity: dict[str, Any] | None,
-) -> str:
-    """Identify frozen execution evidence independently of scoring authority."""
-    execution_task = {
+def execution_task_contract(task: dict[str, Any]) -> dict[str, Any]:
+    """Task inputs that can affect an agent execution, excluding score authority."""
+    return {
         key: task[key]
         for key in (
             "id",
@@ -86,10 +79,29 @@ def execution_evidence_id(
         )
         if key in task
     }
+
+
+def execution_evidence_id(
+    *,
+    task: dict[str, Any],
+    condition: dict[str, Any],
+    trial: int,
+    seed: int,
+    subject_identity: dict[str, Any],
+    agent_identity: dict[str, Any],
+    harness_identity: dict[str, Any],
+    environment_identity: dict[str, Any],
+    mutation_identity: dict[str, Any] | None,
+    agent_answer: str | None,
+    workspace_root: str,
+    location_observation: dict[str, Any] | None,
+    agent_trace_sha256: str,
+) -> str:
+    """Identify frozen execution evidence independently of scoring authority."""
     return digest(
         {
-            "contract": "benchmark-execution-evidence.v1",
-            "task": execution_task,
+            "contract": EXECUTION_EVIDENCE_CONTRACT,
+            "task": execution_task_contract(task),
             "condition": condition,
             "trial": trial,
             "seed": seed,
@@ -98,6 +110,10 @@ def execution_evidence_id(
             "harness": harness_identity,
             "environment": environment_identity,
             "mutation": mutation_identity,
+            "agent_answer": agent_answer,
+            "workspace_root": workspace_root,
+            "location_observation": location_observation,
+            "agent_trace_sha256": agent_trace_sha256,
         }
     )
 
@@ -110,7 +126,7 @@ def score_projection_id(
     """Identify one deterministic score projection over frozen execution evidence."""
     return digest(
         {
-            "contract": "benchmark-score-projection.v1",
+            "contract": SCORE_PROJECTION_CONTRACT,
             "execution_evidence_id": execution_evidence,
             "oracle": oracle_identity,
         }

@@ -18,13 +18,23 @@ benchmark-smoke:
 		--task semantics-00 --task identities-00 --task code_owners-00
 
 benchmark-qualify-localization:
-	@uv run --no-project python -m benchmarks run --env-file .env \
-		--root /tmp/agentscookbook-heldout-v1-localization-qualification \
-		--subject none --subject hashmarks --subject enola \
-		--task locate-prefix-path-enumerator \
-		--task locate-stale-index-removal \
-		--task locate-directory-pruning \
-		--task locate-mcp-task-evidence
+	@qualification_root=$$(mktemp -d /tmp/agentscookbook-heldout-v1-localization-qualification.XXXXXX) || exit 2; \
+		printf 'qualification root: %s\n' "$$qualification_root"; \
+		uv run --no-project python -m benchmarks run --env-file .env \
+			--root "$$qualification_root" \
+			--subject none --subject hashmarks --subject enola \
+			--task locate-prefix-path-enumerator \
+			--task locate-stale-index-removal \
+			--task locate-directory-pruning \
+			--task locate-mcp-task-evidence; run_status=$$?; \
+		uv run --no-project python -m benchmarks status --env-file .env \
+			--root "$$qualification_root" --require-qualified \
+			--subject none --subject hashmarks --subject enola \
+			--task locate-prefix-path-enumerator \
+			--task locate-stale-index-removal \
+			--task locate-directory-pruning \
+			--task locate-mcp-task-evidence; status_status=$$?; \
+		test $$run_status -eq 0 && test $$status_status -eq 0
 
 benchmark-evidence-validate:
 	@uv run --no-project python -m benchmarks.evidence validate \

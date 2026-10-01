@@ -8,6 +8,11 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
+from benchmarks.adapters.oracles import (
+    REPOSITORY_LOCATION_NORMALIZATION_POLICY,
+    REPOSITORY_LOCATION_SCORING_POLICY,
+    score_repository_location,
+)
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.suite import SuiteDefinition
 
@@ -129,17 +134,17 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     )
     semantic_rows = [
         value
-        for row in receipts
+        for row in valid
         if (value := _oracle_bool(row, "semantic_success")) is not None
     ]
     gradeable_rows = [
         value
-        for row in receipts
+        for row in valid
         if (value := _oracle_bool(row, "semantic_gradeable")) is not None
     ]
     semantic_statuses = Counter(
         value
-        for row in receipts
+        for row in valid
         if isinstance(
             (
                 value := row.get("scoring", {})
@@ -151,7 +156,7 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     )
     format_rows = [
         value
-        for row in receipts
+        for row in valid
         if (value := _oracle_bool(row, "format_compliant")) is not None
     ]
     return {
@@ -225,6 +230,42 @@ def validate_comparability(receipts: list[dict[str, Any]]) -> None:
     _check_comparable_agents(receipts)
     _check_comparable_evidence(receipts)
     _check_comparable_localization_scoring(receipts)
+    _check_localization_grades(receipts)
+
+
+def _check_localization_grades(receipts: list[dict[str, Any]]) -> None:
+    for receipt in receipts:
+        if receipt.get("status") not in _VALID_OUTCOMES:
+            continue
+        task = receipt.get("task", {})
+        if task.get("oracle", {}).get("adapter") != "repository-location-json":
+            continue
+        grade = receipt.get("scoring", {}).get("oracle_grade")
+        declared = receipt.get("authority", {}).get("oracle", {}).get("declared", {})
+        policy = declared.get("provenance", {})
+        observed = receipt.get("execution", {}).get("location_observation")
+        if not isinstance(grade, dict) or not all(
+            isinstance(grade.get(key), bool)
+            for key in ("semantic_success", "semantic_gradeable", "format_compliant")
+        ):
+            raise ReportError("valid localization receipt has incomplete oracle grade")
+        if (
+            grade.get("semantic_status") not in {"CORRECT", "INCORRECT", "UNSCORABLE"}
+            or grade.get("normalization_policy") != policy.get("normalization_policy")
+            or grade.get("scoring_policy") != policy.get("scoring_policy")
+            or policy.get("normalization_policy") != REPOSITORY_LOCATION_NORMALIZATION_POLICY
+            or policy.get("scoring_policy") != REPOSITORY_LOCATION_SCORING_POLICY
+            or grade.get("expected") != task["oracle"]["configuration"]["expected"]
+            or grade.get("semantic_success") != (grade.get("semantic_status") == "CORRECT")
+            or grade.get("semantic_gradeable") != (grade.get("semantic_status") != "UNSCORABLE")
+            or not isinstance(observed, dict)
+            or observed.get("normalization_policy") != REPOSITORY_LOCATION_NORMALIZATION_POLICY
+            or grade != score_repository_location(
+                observed, expected=task["oracle"]["configuration"]["expected"]
+            )
+            or receipt["status"] != ("PASS" if grade.get("passed") else "FAIL")
+        ):
+            raise ReportError("valid localization receipt has inconsistent oracle grade")
 
 
 def _check_comparable_localization_scoring(
@@ -422,8 +463,9 @@ def build_report(
     require_complete: bool = True,
     selected_definitions: set[str] | None = None,
     selection: dict[str, Any] | None = None,
+    projected_receipts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    receipts = _receipts(results_root)
+    receipts = _receipts(results_root) if projected_receipts is None else projected_receipts
     all_expected = {str(row["definition_id"]): row for row in suite.trial_definitions()}
     expected = (
         all_expected
@@ -483,7 +525,7 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 3,
+            "version": 4,
         },
         "suite": suite.experiment["suite"],
         "experiment": {

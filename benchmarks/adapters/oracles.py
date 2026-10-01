@@ -17,10 +17,21 @@ def _text(payload: bytes) -> str:
     return payload.decode("utf-8", errors="replace")
 
 
-REPOSITORY_LOCATION_NORMALIZATION_POLICY = (
-    "repository-location-normalization.v1"
-)
-REPOSITORY_LOCATION_SCORING_POLICY = "repository-location-score.v1"
+REPOSITORY_LOCATION_NORMALIZATION_POLICY = "repository-location-normalization.v2"
+REPOSITORY_LOCATION_SCORING_POLICY = "repository-location-score.v2"
+
+
+class DuplicateLocationKeyError(ValueError):
+    pass
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise DuplicateLocationKeyError(key)
+        result[key] = value
+    return result
 
 
 def _normalize_repository_location(
@@ -132,7 +143,12 @@ def observe_repository_location(
             return observed
 
     try:
-        actual = json.loads(payload)
+        actual = json.loads(payload, object_pairs_hook=_unique_json_object)
+    except DuplicateLocationKeyError as exc:
+        observed["format_compliant"] = False
+        observed["reason"] = f"agent final_message JSON has duplicate key: {exc}"
+        observed["actual_text"] = final_message
+        return observed
     except json.JSONDecodeError as exc:
         observed["answer_shape"] = (
             "PROSE_OR_MALFORMED"
@@ -255,14 +271,19 @@ class RepositoryLocationOracle:
             "",
         )
 
-    def grade(self, context: TrialContext, observation: Observation) -> Observation:
-        observed = observe_repository_location(
+    def observe(self, context: TrialContext, observation: Observation) -> dict[str, Any]:
+        return observe_repository_location(
             observation.payload.get("final_message"),
             workspace=context.workspace,
         )
+
+    def grade_observed(self, observed: dict[str, Any]) -> Observation:
         grade = score_repository_location(observed, expected=self.expected)
         raw = grade.get("normalized_actual") or grade.get("actual") or {}
         return Observation(grade, json.dumps(raw, sort_keys=True))
+
+    def grade(self, context: TrialContext, observation: Observation) -> Observation:
+        return self.grade_observed(self.observe(context, observation))
 
 
 @dataclass(frozen=True)

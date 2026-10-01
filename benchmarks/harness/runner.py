@@ -16,7 +16,12 @@ from benchmarks.harness.admission import TrialAdmissionError, admit_trial
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.events import append_event, seal_events
-from benchmarks.harness.identity import execution_evidence_id, score_projection_id
+from benchmarks.harness.identity import (
+    EXECUTION_EVIDENCE_CONTRACT,
+    execution_evidence_id,
+    score_projection_id,
+)
+from benchmarks.adapters.oracles import RepositoryLocationOracle
 from benchmarks.harness.model import Observation, TrialStatus
 from benchmarks.harness.receipt import write_receipt
 from benchmarks.harness.schema_validation import (
@@ -274,6 +279,7 @@ def run_trial(
                 "",
                 {},
             )
+            location_observation: dict[str, Any] | None = None
             status, reason = admission.initial_outcome()
 
             if status is None:
@@ -287,6 +293,8 @@ def run_trial(
                     },
                 )
                 agent_observation = agent.run(context, task["prompt"], subject)
+                if isinstance(oracle, RepositoryLocationOracle):
+                    location_observation = oracle.observe(context, agent_observation)
                 emit(
                     "agent.completed",
                     {
@@ -303,7 +311,12 @@ def run_trial(
                     status = TrialStatus.INCOMPLETE
                     reason = agent_reason
                 else:
-                    grade = oracle.grade(context, agent_observation)
+                    grade = (
+                        oracle.grade_observed(location_observation)
+                        if isinstance(oracle, RepositoryLocationOracle)
+                        and location_observation is not None
+                        else oracle.grade(context, agent_observation)
+                    )
                     emit(
                         "oracle.graded",
                         {
@@ -366,6 +379,9 @@ def run_trial(
             event_evidence = seal_events(event_path, trial_id=trial_id)
             event_seal_path = event_path.with_name(event_path.name + ".seal.json")
 
+            agent_answer = agent_observation.payload.get("final_message")
+            workspace_root = str(context.workspace.resolve())
+            trace_sha256 = hashlib.sha256(agent_observation.raw.encode("utf-8")).hexdigest()
             execution_evidence = execution_evidence_id(
                 task=task,
                 condition=expanded_condition,
@@ -376,6 +392,10 @@ def run_trial(
                 harness_identity=harness_authority,
                 environment_identity=environment_authority,
                 mutation_identity=mutation_authority,
+                agent_answer=agent_answer,
+                workspace_root=workspace_root,
+                location_observation=location_observation,
+                agent_trace_sha256=trace_sha256,
             )
             score_projection = score_projection_id(
                 execution_evidence=execution_evidence,
@@ -402,8 +422,10 @@ def run_trial(
                     "trial_index": trial_index,
                     "events": event_evidence,
                     "agent_terminal": agent_observation.payload.get("terminal_event"),
-                    "agent_answer": agent_observation.payload.get("final_message"),
-                    "workspace_root": str(context.workspace.resolve()),
+                    "agent_answer": agent_answer,
+                    "workspace_root": workspace_root,
+                    "location_observation": location_observation,
+                    "evidence_contract": EXECUTION_EVIDENCE_CONTRACT,
                     "evidence_identity": execution_evidence,
                 },
                 "scoring": {
