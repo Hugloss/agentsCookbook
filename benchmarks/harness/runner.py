@@ -385,6 +385,7 @@ def run_trial(
                     "trial_index": trial_index,
                     "events": event_evidence,
                     "agent_terminal": agent_observation.payload.get("terminal_event"),
+                    "oracle_grade": grade.payload,
                 },
                 "measurements": {
                     "subject_prepare": subject_prepare.measurements,
