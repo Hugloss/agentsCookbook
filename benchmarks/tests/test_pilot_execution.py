@@ -2652,6 +2652,15 @@ class PilotExecutionTests(unittest.TestCase):
             )
             self.assertEqual(report["observed_trials"], 1)
             self.assertEqual(report["status_counts"], {"PASS": 1})
+            self.assertEqual(
+                report["campaign_qualification"]["status"],
+                "QUALIFIED",
+            )
+            self.assertTrue(report["campaign_qualification"]["complete"])
+            self.assertEqual(
+                report["campaign_qualification"]["invalid_outcomes"],
+                0,
+            )
             self.assertFalse(report["authority"]["ranking_performed"])
             valid, reason = verify_bundle(first.result_dir)
             self.assertTrue(valid, reason)
