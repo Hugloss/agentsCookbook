@@ -74,7 +74,7 @@ def _agent_metric(receipt: dict[str, Any], name: str) -> int | float | None:
 
 
 def _oracle_bool(receipt: dict[str, Any], name: str) -> bool | None:
-    value = receipt.get("execution", {}).get("oracle_grade", {}).get(name)
+    value = receipt.get("scoring", {}).get("oracle_grade", {}).get(name)
     return value if isinstance(value, bool) else None
 
 
@@ -430,6 +430,12 @@ def build_report(
         by_agent[_agent_id(receipt)].append(receipt)
 
     statuses = Counter(str(row.get("status")) for row in receipts)
+    invalid_outcomes = sum(
+        statuses.get(status, 0)
+        for status in ("INCOMPLETE", "INVALID", "CONTAMINATED")
+    )
+    campaign_complete = not missing
+    campaign_qualified = campaign_complete and invalid_outcomes == 0
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
@@ -462,6 +468,13 @@ def build_report(
             for agent, rows in sorted(by_agent.items())
         },
         "cross_agent_observations": _cross_agent_observations(receipts),
+        "campaign_qualification": {
+            "status": "QUALIFIED" if campaign_qualified else "NOT_QUALIFIED",
+            "complete": campaign_complete,
+            "invalid_outcomes": invalid_outcomes,
+            "mixed_execution_authority": False,
+            "mixed_scoring_policy": False,
+        },
         "authority": {
             "overall_winner": None,
             "ranking_performed": False,
