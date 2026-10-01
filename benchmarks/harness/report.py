@@ -202,6 +202,28 @@ def _comparison_identity(receipt: dict[str, Any]) -> dict[str, Any]:
 def validate_comparability(receipts: list[dict[str, Any]]) -> None:
     _check_comparable_agents(receipts)
     _check_comparable_evidence(receipts)
+    _check_comparable_localization_scoring(receipts)
+
+
+def _check_comparable_localization_scoring(
+    receipts: list[dict[str, Any]],
+) -> None:
+    policies = {
+        value
+        for receipt in receipts
+        if isinstance(
+            (
+                value := receipt.get("scoring", {})
+                .get("oracle_grade", {})
+                .get("scoring_policy")
+            ),
+            str,
+        )
+    }
+    if len(policies) > 1:
+        raise ReportError(
+            "mixed localization scoring policy; use separate result campaigns"
+        )
 
 
 def _check_comparable_agents(receipts: list[dict[str, Any]]) -> None:
@@ -473,7 +495,7 @@ def build_report(
             "complete": campaign_complete,
             "invalid_outcomes": invalid_outcomes,
             "mixed_execution_authority": False,
-            "mixed_scoring_policy": False,
+            "mixed_localization_scoring_policy": False,
         },
         "authority": {
             "overall_winner": None,
