@@ -72,3 +72,12 @@ await independent review; the reports disclose that state. It is never invoked
 by Hashmarks release or ordinary test workflows. See its README for exact commands.
 
 `native-matrix-v3/` is the current native Codex/OpenCode comparison, with one paired smoke task by default from Hashmarks. It pins a source revision without checked-in answers. `enola-cycle-reproduction-v1/` adapts the published TypeScript cycle example and reports functional success and cycle introduction separately. Both are development-only experiments in agentsCookbook; neither enters the installed Hashmarks product.
+
+## behavioral-v3
+
+`behavioral-v3/` adds independent agent-outcome challenges for post-edit refresh,
+change impact, focused verification, and dependency-delta semantics. Its edit tasks
+start with the subject prepared against the frozen synthetic mini-project and then let
+the agent change only the declared owner path, so post-change behavior is exercised
+without copying Hashmarks unit tests into the benchmark. It is research-only and has
+no release authority.

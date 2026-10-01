@@ -85,13 +85,15 @@ class CommandOracle:
     grade_argv: tuple[str, ...]
     timeout_seconds: int = 60
     valid_exit_codes: tuple[int, ...] | None = None
+    result_format: str = "text"
 
     def identity(self) -> ParticipantIdentity:
         return ParticipantIdentity(
             self.participant_id,
             "oracle",
             self.version,
-            {"health_argv": self.health_argv, "grade_argv": self.grade_argv},
+            {"health_argv": self.health_argv, "grade_argv": self.grade_argv,
+             "result_format": self.result_format},
         )
 
     def _run(
@@ -167,10 +169,28 @@ class CommandOracle:
             )
         )
         passed = valid and result.return_code == 0
+        detail: dict[str, Any] = {}
+        if valid and self.result_format == "lexigram-v1":
+            try:
+                value = json.loads(_text(result.stdout))
+                if (
+                    not isinstance(value, dict)
+                    or value.get("schema") != "agents-cookbook-lexigram-oracle.v1"
+                    or not isinstance(value.get("passed"), bool)
+                    or value["passed"] != passed
+                    or not isinstance(value.get("rubric"), dict)
+                    or not isinstance(value.get("reason"), str)
+                ):
+                    raise ValueError("invalid structured oracle result")
+                detail = {"rubric": value["rubric"], "reason": value["reason"]}
+            except (ValueError, json.JSONDecodeError):
+                valid = False
+                passed = False
         return Observation(
             {
                 "passed": passed,
                 "valid": valid,
+                **detail,
                 "process": result.metrics(),
                 "stderr": _text(result.stderr),
             },

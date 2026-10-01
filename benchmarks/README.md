@@ -13,6 +13,11 @@ adds frozen external fixtures and a separate model-free evidence diagnostic. It
 runs only when explicitly requested. No benchmark target is a dependency of the
 Hashmarks release workflow.
 
+The [behavioral v4 suite](suites/repository-intelligence/behavioral-v4/README.md)
+adds eight repository-intelligence dimensions and reports ordered lexigram grades for
+authority, resolution, evidence preservation, and paired assistance. It is an explicit
+research suite and is not a release gate.
+
 ## Model
 
 `suite -> experiment -> condition -> trial definition -> observed execution`
