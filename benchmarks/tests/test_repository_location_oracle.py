@@ -192,6 +192,8 @@ class RepositoryLocationOracleTests(unittest.TestCase):
                 "scoring": {
                     "oracle_grade": {
                         "semantic_success": True,
+                        "semantic_gradeable": True,
+                        "semantic_status": "CORRECT",
                         "format_compliant": False,
                     }
                 },
@@ -204,6 +206,8 @@ class RepositoryLocationOracleTests(unittest.TestCase):
                 "scoring": {
                     "oracle_grade": {
                         "semantic_success": False,
+                        "semantic_gradeable": True,
+                        "semantic_status": "INCORRECT",
                         "format_compliant": True,
                     }
                 },
@@ -219,7 +223,7 @@ class RepositoryLocationOracleTests(unittest.TestCase):
         self.assertEqual(report["semantic_gradeable_denominator"], 2)
         self.assertEqual(
             report["semantic_statuses"],
-            {},
+            {"CORRECT": 1, "INCORRECT": 1},
         )
         self.assertEqual(report["format_compliance_rate"], 0.5)
         self.assertEqual(report["format_compliance_denominator"], 2)
