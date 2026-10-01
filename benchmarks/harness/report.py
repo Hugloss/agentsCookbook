@@ -73,6 +73,11 @@ def _agent_metric(receipt: dict[str, Any], name: str) -> int | float | None:
     return value
 
 
+def _oracle_bool(receipt: dict[str, Any], name: str) -> bool | None:
+    value = receipt.get("execution", {}).get("oracle_grade", {}).get(name)
+    return value if isinstance(value, bool) else None
+
+
 def _metric_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     metrics: dict[str, Any] = {}
     for name in _NUMERIC_AGENT_METRICS:
@@ -122,11 +127,29 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
             )
         }
     )
+    semantic_rows = [
+        value
+        for row in receipts
+        if (value := _oracle_bool(row, "semantic_success")) is not None
+    ]
+    format_rows = [
+        value
+        for row in receipts
+        if (value := _oracle_bool(row, "format_compliant")) is not None
+    ]
     return {
         "trials": len(receipts),
         "valid_outcomes": len(valid),
         "statuses": dict(sorted(statuses.items())),
         "task_success_rate": len(passed) / len(valid) if valid else None,
+        "semantic_success_rate": (
+            sum(semantic_rows) / len(semantic_rows) if semantic_rows else None
+        ),
+        "semantic_success_denominator": len(semantic_rows),
+        "format_compliance_rate": (
+            sum(format_rows) / len(format_rows) if format_rows else None
+        ),
+        "format_compliance_denominator": len(format_rows),
         "subject_tool_adoption_rate": (
             len(invoked) / len(tool_available) if tool_available else None
         ),
