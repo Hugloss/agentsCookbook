@@ -17,42 +17,38 @@ def _text(payload: bytes) -> str:
     return payload.decode("utf-8", errors="replace")
 
 
-def _parse_repository_location_message(
-    value: str,
-) -> tuple[dict[str, Any] | None, bool, str]:
-    stripped = value.strip()
-    format_compliant = True
-    payload = stripped
-    if stripped.startswith("```"):
-        format_compliant = False
-        lines = stripped.splitlines()
-        if len(lines) < 3 or lines[0] != "```json" or lines[-1] != "```":
-            return None, False, "answer is not one bare JSON object or one json fence"
-        payload = "\n".join(lines[1:-1]).strip()
-        if "```" in payload:
-            return None, False, "answer contains nested or multiple code fences"
-    try:
-        parsed = json.loads(payload)
-    except json.JSONDecodeError as exc:
-        return None, False, f"agent final_message is not JSON: {exc.msg}"
-    if not isinstance(parsed, dict):
-        return None, False, "agent final_message JSON is not an object"
-    return parsed, format_compliant, ""
+REPOSITORY_LOCATION_NORMALIZATION_POLICY = (
+    "repository-location-normalization.v1"
+)
+REPOSITORY_LOCATION_SCORING_POLICY = "repository-location-score.v1"
 
 
 def _normalize_repository_location(
     actual: dict[str, Any],
     *,
     workspace: Path,
-) -> tuple[dict[str, str] | None, str | None]:
+) -> tuple[dict[str, str] | None, list[str], str | None]:
+    normalizations: list[str] = []
     if set(actual) != {"path", "symbol"}:
-        return None, "repository location must contain exactly path and symbol"
+        return (
+            None,
+            normalizations,
+            "repository location must contain exactly path and symbol",
+        )
     raw_path = actual.get("path")
     raw_symbol = actual.get("symbol")
     if not isinstance(raw_path, str) or not raw_path.strip():
-        return None, "repository location path must be a non-empty string"
+        return (
+            None,
+            normalizations,
+            "repository location path must be a non-empty string",
+        )
     if not isinstance(raw_symbol, str) or not raw_symbol.strip():
-        return None, "repository location symbol must be a non-empty string"
+        return (
+            None,
+            normalizations,
+            "repository location symbol must be a non-empty string",
+        )
 
     workspace_root = workspace.resolve()
     candidate = Path(raw_path.strip())
@@ -64,14 +60,159 @@ def _normalize_repository_location(
     try:
         relative = resolved.relative_to(workspace_root)
     except ValueError:
-        return None, "repository location path escapes the trial workspace"
+        return (
+            None,
+            normalizations,
+            "repository location path escapes the trial workspace",
+        )
     if relative == Path("."):
-        return None, "repository location path must identify a repository file"
+        return (
+            None,
+            normalizations,
+            "repository location path must identify a repository file",
+        )
+    normalized_path = relative.as_posix()
+    if candidate.is_absolute():
+        normalizations.append("workspace-absolute-path-to-relative")
+    elif raw_path.strip() != normalized_path:
+        normalizations.append("repository-relative-path-canonicalized")
 
-    symbol = raw_symbol.strip().rsplit(".", 1)[-1]
+    raw_symbol = raw_symbol.strip()
+    symbol = raw_symbol.rsplit(".", 1)[-1]
     if not symbol:
-        return None, "repository location symbol is empty after qualification"
-    return {"path": relative.as_posix(), "symbol": symbol}, None
+        return (
+            None,
+            normalizations,
+            "repository location symbol is empty after qualification",
+        )
+    if symbol != raw_symbol:
+        normalizations.append("qualified-symbol-to-terminal")
+
+    return {"path": normalized_path, "symbol": symbol}, normalizations, None
+
+
+def observe_repository_location(
+    final_message: Any,
+    *,
+    workspace: Path,
+) -> dict[str, Any]:
+    """Parse and normalize execution evidence without deciding correctness."""
+    observed: dict[str, Any] = {
+        "answer_shape": "MISSING",
+        "semantic_gradeable": False,
+        "format_compliant": False,
+        "actual": None,
+        "normalized_actual": None,
+        "normalizations": [],
+        "reason": "agent final_message is missing",
+        "normalization_policy": REPOSITORY_LOCATION_NORMALIZATION_POLICY,
+    }
+    if not isinstance(final_message, str):
+        return observed
+
+    stripped = final_message.strip()
+    payload = stripped
+    observed["answer_shape"] = "BARE_JSON"
+    observed["format_compliant"] = True
+    if stripped.startswith("```"):
+        observed["answer_shape"] = "JSON_FENCE"
+        observed["format_compliant"] = False
+        lines = stripped.splitlines()
+        if len(lines) < 3 or lines[0] != "```json" or lines[-1] != "```":
+            observed["reason"] = (
+                "answer is not one bare JSON object or one json fence"
+            )
+            observed["actual_text"] = final_message
+            return observed
+        payload = "\n".join(lines[1:-1]).strip()
+        observed["normalizations"].append("json-fence-unwrapped")
+        if "```" in payload:
+            observed["reason"] = "answer contains nested or multiple code fences"
+            observed["actual_text"] = final_message
+            return observed
+
+    try:
+        actual = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        observed["answer_shape"] = (
+            "PROSE_OR_MALFORMED"
+            if observed["answer_shape"] == "BARE_JSON"
+            else observed["answer_shape"]
+        )
+        observed["format_compliant"] = False
+        observed["reason"] = f"agent final_message is not JSON: {exc.msg}"
+        observed["actual_text"] = final_message
+        return observed
+    if not isinstance(actual, dict):
+        observed["format_compliant"] = False
+        observed["reason"] = "agent final_message JSON is not an object"
+        observed["actual_text"] = final_message
+        return observed
+
+    observed["actual"] = actual
+    structure_compliant = (
+        set(actual) == {"path", "symbol"}
+        and isinstance(actual.get("path"), str)
+        and bool(actual["path"].strip())
+        and isinstance(actual.get("symbol"), str)
+        and bool(actual["symbol"].strip())
+    )
+    observed["format_compliant"] = (
+        observed["format_compliant"] and structure_compliant
+    )
+    normalized, normalizations, reason = _normalize_repository_location(
+        actual,
+        workspace=workspace,
+    )
+    observed["normalizations"].extend(normalizations)
+    observed["normalized_actual"] = normalized
+    observed["semantic_gradeable"] = normalized is not None
+    observed["reason"] = reason
+    return observed
+
+
+def score_repository_location(
+    observed: dict[str, Any],
+    *,
+    expected: dict[str, Any],
+) -> dict[str, Any]:
+    """Apply deterministic repository-location scoring to one observation."""
+    gradeable = observed.get("semantic_gradeable") is True
+    normalized = observed.get("normalized_actual")
+    if not gradeable:
+        semantic_status = "UNSCORABLE"
+        semantic_success = False
+        reason = observed.get("reason") or "repository location is unscorable"
+    elif normalized == expected:
+        semantic_status = "CORRECT"
+        semantic_success = True
+        reason = None
+    else:
+        semantic_status = "INCORRECT"
+        semantic_success = False
+        reason = "repository location differs from frozen oracle"
+
+    grade = {
+        "passed": semantic_success,
+        "valid": True,
+        "oracle_truth_status": "VALID",
+        "semantic_status": semantic_status,
+        "semantic_success": semantic_success,
+        "semantic_gradeable": gradeable,
+        "format_compliant": observed.get("format_compliant") is True,
+        "answer_shape": observed.get("answer_shape"),
+        "expected": expected,
+        "actual": observed.get("actual"),
+        "normalized_actual": normalized,
+        "normalizations": list(observed.get("normalizations", [])),
+        "normalization_policy": REPOSITORY_LOCATION_NORMALIZATION_POLICY,
+        "scoring_policy": REPOSITORY_LOCATION_SCORING_POLICY,
+        "reason": reason,
+    }
+    actual_text = observed.get("actual_text")
+    if isinstance(actual_text, str):
+        grade["actual_text"] = actual_text
+    return grade
 
 
 @dataclass(frozen=True)
@@ -85,11 +226,16 @@ class RepositoryLocationOracle:
             self.participant_id,
             "oracle",
             self.version,
-            {"kind": "repository-location-json", "expected": self.expected},
+            {
+                "kind": "repository-location-json",
+                "expected": self.expected,
+                "normalization_policy": REPOSITORY_LOCATION_NORMALIZATION_POLICY,
+                "scoring_policy": REPOSITORY_LOCATION_SCORING_POLICY,
+            },
         )
 
     def healthcheck(self, context: TrialContext) -> Observation:
-        normalized, reason = _normalize_repository_location(
+        normalized, _normalizations, reason = _normalize_repository_location(
             self.expected,
             workspace=context.workspace,
         )
@@ -97,74 +243,26 @@ class RepositoryLocationOracle:
         return Observation(
             {
                 "healthy": healthy,
+                "oracle_truth_status": "VALID" if healthy else "INVALID",
                 "reason": (
                     None
                     if healthy
                     else reason or "expected repository location is not canonical"
                 ),
+                "normalization_policy": REPOSITORY_LOCATION_NORMALIZATION_POLICY,
+                "scoring_policy": REPOSITORY_LOCATION_SCORING_POLICY,
             },
             "",
         )
 
     def grade(self, context: TrialContext, observation: Observation) -> Observation:
-        final_message = observation.payload.get("final_message")
-        if not isinstance(final_message, str):
-            return Observation(
-                {
-                    "passed": False,
-                    "valid": True,
-                    "semantic_success": False,
-                    "format_compliant": False,
-                    "reason": "agent final_message is missing",
-                },
-                "",
-            )
-
-        actual, format_compliant, parse_reason = _parse_repository_location_message(
-            final_message
-        )
-        if actual is None:
-            return Observation(
-                {
-                    "passed": False,
-                    "valid": True,
-                    "semantic_success": False,
-                    "format_compliant": format_compliant,
-                    "reason": parse_reason,
-                    "actual_text": final_message,
-                },
-                "",
-            )
-
-        structure_compliant = (
-            set(actual) == {"path", "symbol"}
-            and isinstance(actual.get("path"), str)
-            and bool(actual["path"].strip())
-            and isinstance(actual.get("symbol"), str)
-            and bool(actual["symbol"].strip())
-        )
-        format_compliant = format_compliant and structure_compliant
-        normalized_actual, normalize_reason = _normalize_repository_location(
-            actual,
+        observed = observe_repository_location(
+            observation.payload.get("final_message"),
             workspace=context.workspace,
         )
-        semantic_success = normalized_actual == self.expected
-        reason = None if semantic_success else (
-            normalize_reason or "repository location differs from frozen oracle"
-        )
-        return Observation(
-            {
-                "passed": semantic_success,
-                "valid": True,
-                "semantic_success": semantic_success,
-                "format_compliant": format_compliant,
-                "expected": self.expected,
-                "actual": actual,
-                "normalized_actual": normalized_actual,
-                "reason": reason,
-            },
-            json.dumps(normalized_actual or actual, sort_keys=True),
-        )
+        grade = score_repository_location(observed, expected=self.expected)
+        raw = grade.get("normalized_actual") or grade.get("actual") or {}
+        return Observation(grade, json.dumps(raw, sort_keys=True))
 
 
 @dataclass(frozen=True)
