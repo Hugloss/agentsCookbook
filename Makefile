@@ -1,6 +1,6 @@
 export PYTHONPATH := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))):$(PYTHONPATH)
 
-.PHONY: benchmark-check benchmark-check-all benchmark benchmark-smoke benchmark-report benchmark-score benchmark-evidence-validate
+.PHONY: benchmark-check benchmark-check-all benchmark benchmark-smoke benchmark-qualify-localization benchmark-report benchmark-score benchmark-evidence-validate
 
 benchmark-check:
 	@uv run --no-project python -m benchmarks check --env-file .env
@@ -16,6 +16,15 @@ benchmark-smoke:
 		--subject none --subject hashmarks \
 		--task logs-00 --task splunk-00 --task dependencies-00 \
 		--task semantics-00 --task identities-00 --task code_owners-00
+
+benchmark-qualify-localization:
+	@uv run --no-project python -m benchmarks run --env-file .env \
+		--root /tmp/agentscookbook-heldout-v1-localization-qualification \
+		--subject none --subject hashmarks --subject enola \
+		--task locate-prefix-path-enumerator \
+		--task locate-stale-index-removal \
+		--task locate-directory-pruning \
+		--task locate-mcp-task-evidence
 
 benchmark-evidence-validate:
 	@uv run --no-project python -m benchmarks.evidence validate \
