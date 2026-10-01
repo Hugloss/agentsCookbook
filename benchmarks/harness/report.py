@@ -132,6 +132,23 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
         for row in receipts
         if (value := _oracle_bool(row, "semantic_success")) is not None
     ]
+    gradeable_rows = [
+        value
+        for row in receipts
+        if (value := _oracle_bool(row, "semantic_gradeable")) is not None
+    ]
+    semantic_statuses = Counter(
+        value
+        for row in receipts
+        if isinstance(
+            (
+                value := row.get("scoring", {})
+                .get("oracle_grade", {})
+                .get("semantic_status")
+            ),
+            str,
+        )
+    )
     format_rows = [
         value
         for row in receipts
@@ -146,6 +163,11 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
             sum(semantic_rows) / len(semantic_rows) if semantic_rows else None
         ),
         "semantic_success_denominator": len(semantic_rows),
+        "semantic_gradeable_rate": (
+            sum(gradeable_rows) / len(gradeable_rows) if gradeable_rows else None
+        ),
+        "semantic_gradeable_denominator": len(gradeable_rows),
+        "semantic_statuses": dict(sorted(semantic_statuses.items())),
         "format_compliance_rate": (
             sum(format_rows) / len(format_rows) if format_rows else None
         ),
