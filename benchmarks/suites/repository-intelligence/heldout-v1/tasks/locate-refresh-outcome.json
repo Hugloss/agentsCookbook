@@ -1,6 +1,6 @@
 {
   "id": "locate-refresh-outcome",
-  "version": 1,
+  "version": 2,
   "family": "typescript-localization",
   "mode": "read_only",
   "repository": {
@@ -11,10 +11,10 @@
   "prompt": "Without editing files, identify the frontend function that turns a saved write into a saved-refresh-required result when the following refresh fails. Return exactly one JSON object with keys path and symbol, and nothing else.",
   "mutation": null,
   "oracle": {
-    "adapter": "expected-json",
+    "adapter": "repository-location-json",
     "identity": {
       "id": "locate-refresh-outcome-oracle",
-      "version": "1"
+      "version": "2"
     },
     "configuration": {
       "expected": {
