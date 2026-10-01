@@ -1,6 +1,6 @@
 {
   "id": "locate-directory-pruning",
-  "version": 1,
+  "version": 2,
   "family": "python-localization",
   "mode": "read_only",
   "repository": {
@@ -11,10 +11,10 @@
   "prompt": "Without editing files, identify the function that prunes directory names before repository file discovery descends into them. Return exactly one JSON object with keys path and symbol, and nothing else.",
   "mutation": null,
   "oracle": {
-    "adapter": "expected-json",
+    "adapter": "repository-location-json",
     "identity": {
       "id": "locate-directory-pruning-oracle",
-      "version": "1"
+      "version": "2"
     },
     "configuration": {
       "expected": {
