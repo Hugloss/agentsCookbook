@@ -114,6 +114,26 @@ def _publish_bundle(
     return final_dir
 
 
+def _bounded_preview(value: Any, *, limit: int = 240) -> str | None:
+    if not isinstance(value, str):
+        return None
+    rendered = value.strip()
+    if not rendered:
+        return None
+    if len(rendered) > limit:
+        rendered = rendered[:limit] + "…"
+    return repr(rendered)
+
+
+def _reason_for_oracle_failure(grade: Observation) -> str:
+    reason = grade.payload.get("reason")
+    rendered = str(reason) if reason else "independent oracle rejected outcome"
+    actual = _bounded_preview(grade.payload.get("actual_text"))
+    if actual is not None:
+        return f"{rendered}; actual={actual}"
+    return rendered
+
+
 def _reason_for_agent(observation: Observation) -> str | None:
     process = observation.payload.get("process")
     if isinstance(process, dict):
@@ -300,12 +320,7 @@ def run_trial(
                             else TrialStatus.FAIL
                         )
                         if status is TrialStatus.FAIL:
-                            grade_reason = grade.payload.get("reason")
-                            reason = (
-                                str(grade_reason)
-                                if grade_reason
-                                else "independent oracle rejected outcome"
-                            )
+                            reason = _reason_for_oracle_failure(grade)
 
             observed_state = snapshot(context.workspace)
             contamination_config = task["contamination"]

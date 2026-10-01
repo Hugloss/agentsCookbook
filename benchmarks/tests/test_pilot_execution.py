@@ -58,7 +58,11 @@ from benchmarks.harness.mutation import apply_mutation
 from benchmarks.harness.preflight import preflight_trial
 from benchmarks.harness.receipt import is_complete_receipt
 from benchmarks.harness.report import ReportError, build_report
-from benchmarks.harness.runner import _reason_for_agent, run_trial
+from benchmarks.harness.runner import (
+    _reason_for_agent,
+    _reason_for_oracle_failure,
+    run_trial,
+)
 from benchmarks.harness.runtime_authority import (
     required_runtime_authority,
     transport_runtime_authority,
@@ -1226,6 +1230,47 @@ class PilotExecutionTests(unittest.TestCase):
                 "OpenCode completed without a final assistant message"
             ),
         )
+
+    def test_runner_surfaces_bounded_oracle_actual_text_preview(self) -> None:
+        grade = Observation(
+            {
+                "passed": False,
+                "valid": True,
+                "reason": "agent final_message is not JSON: Expecting value",
+                "actual_text": (
+                    "```json\n"
+                    "{\n"
+                    '  "path": "hashmarks/codemap/repository_file_discovery.py",\n'
+                    '  "symbol": "_iter_admitted_repository_files"\n'
+                    "}\n"
+                    "```"
+                ),
+            },
+            "",
+        )
+        reason = _reason_for_oracle_failure(grade)
+        self.assertIn(
+            "agent final_message is not JSON: Expecting value",
+            reason,
+        )
+        self.assertIn("actual='", reason)
+        self.assertIn("\\n", reason)
+        self.assertIn("_iter_admitted_repository_files", reason)
+
+    def test_runner_bounds_long_oracle_actual_text_preview(self) -> None:
+        grade = Observation(
+            {
+                "passed": False,
+                "valid": True,
+                "reason": "agent final_message is not JSON: Expecting value",
+                "actual_text": "x" * 1_000,
+            },
+            "",
+        )
+        reason = _reason_for_oracle_failure(grade)
+        self.assertLess(len(reason), 340)
+        self.assertIn("…", reason)
+        self.assertFalse(reason.endswith("x" * 20))
 
     def test_opencode_textless_successful_process_remains_incomplete(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
