@@ -41,6 +41,13 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
                         "expected_trials": len(selected_definitions),
                         "observed_trials": len(selected_definitions),
                         "status_counts": {"PASS": len(selected_definitions)},
+                        "campaign_qualification": {
+                            "status": "QUALIFIED",
+                            "complete": True,
+                            "invalid_outcomes": 0,
+                            "mixed_execution_authority": False,
+                            "mixed_localization_scoring_policy": False,
+                        },
                         "conditions": {},
                         "paired_assistance": [],
                         "agent_profiles": {},
@@ -76,9 +83,13 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
                 payload = json.loads(output.read_text(encoding="utf-8"))
                 self.assertEqual(
                     payload["schema"],
-                    "agents-cookbook-heldout-observer-outcomes.v2",
+                    "agents-cookbook-heldout-observer-outcomes.v3",
                 )
                 self.assertEqual(payload["selection"], {"agents": sorted(agents)})
+                self.assertEqual(
+                    payload["campaign_qualification"]["status"],
+                    "QUALIFIED",
+                )
                 self.assertEqual(payload["expected_trials"], 108 * len(agents))
                 self.assertEqual(payload["observed_trials"], 108 * len(agents))
                 self.assertEqual(
