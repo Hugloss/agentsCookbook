@@ -31,6 +31,12 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                     f"{target}:\n\t@uv run --no-project python -m benchmarks {command} --env-file .env",
                     makefile,
                 )
+        self.assertIn("benchmark-qualify-localization:", makefile)
+        self.assertIn(
+            "--root /tmp/agentscookbook-heldout-v1-localization-qualification",
+            makefile,
+        )
+        self.assertIn("--subject none --subject hashmarks --subject enola", makefile)
         self.assertNotIn("release-check:", makefile)
         self.assertIn("BENCHMARK_AGENT=\n", ENV_EXAMPLE.read_text(encoding="utf-8"))
 
