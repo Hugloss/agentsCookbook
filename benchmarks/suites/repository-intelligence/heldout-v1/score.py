@@ -61,17 +61,32 @@ def main() -> int:
             "expected_trials": report["expected_trials"],
             "observed_trials": report["observed_trials"],
             "status_counts": report["status_counts"],
+            "campaign_qualification": report["campaign_qualification"],
             "conditions": report["conditions"],
             "paired_assistance": report["paired_assistance"],
             "agent_profiles": report["agent_profiles"],
             "cross_agent_observations": report["cross_agent_observations"],
         }
     payload = {
-        "schema": "agents-cookbook-heldout-observer-outcomes.v2",
+        "schema": "agents-cookbook-heldout-observer-outcomes.v3",
         "expected_trials": sum(row["expected_trials"] for row in languages.values()),
         "observed_trials": sum(row["observed_trials"] for row in languages.values()),
         "languages": languages,
         "selection": {"agents": sorted(agents)},
+        "campaign_qualification": {
+            "status": (
+                "QUALIFIED"
+                if all(
+                    row["campaign_qualification"]["status"] == "QUALIFIED"
+                    for row in languages.values()
+                )
+                else "NOT_QUALIFIED"
+            ),
+            "languages": {
+                language: row["campaign_qualification"]
+                for language, row in sorted(languages.items())
+            },
+        },
         "authority": {
             "overall_winner": None,
             "cross_agent_comparison": (
