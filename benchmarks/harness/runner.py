@@ -16,6 +16,7 @@ from benchmarks.harness.admission import TrialAdmissionError, admit_trial
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.events import append_event, seal_events
+from benchmarks.harness.identity import execution_evidence_id, score_projection_id
 from benchmarks.harness.model import Observation, TrialStatus
 from benchmarks.harness.receipt import write_receipt
 from benchmarks.harness.schema_validation import (
@@ -365,6 +366,22 @@ def run_trial(
             event_evidence = seal_events(event_path, trial_id=trial_id)
             event_seal_path = event_path.with_name(event_path.name + ".seal.json")
 
+            execution_evidence = execution_evidence_id(
+                task=task,
+                condition=expanded_condition,
+                trial=trial_index,
+                seed=seed,
+                subject_identity=subject_authority,
+                agent_identity=agent_authority,
+                harness_identity=harness_authority,
+                environment_identity=environment_authority,
+                mutation_identity=mutation_authority,
+            )
+            score_projection = score_projection_id(
+                execution_evidence=execution_evidence,
+                oracle_identity=oracle_authority["declared"],
+            )
+
             receipt: dict[str, Any] = {
                 "definition_id": definition,
                 "trial_id": trial_id,
@@ -385,6 +402,12 @@ def run_trial(
                     "trial_index": trial_index,
                     "events": event_evidence,
                     "agent_terminal": agent_observation.payload.get("terminal_event"),
+                    "agent_answer": agent_observation.payload.get("final_message"),
+                    "workspace_root": str(context.workspace.resolve()),
+                    "evidence_identity": execution_evidence,
+                },
+                "scoring": {
+                    "projection_identity": score_projection,
                     "oracle_grade": grade.payload,
                 },
                 "measurements": {
