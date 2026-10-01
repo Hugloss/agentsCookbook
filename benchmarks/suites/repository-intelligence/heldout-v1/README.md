@@ -2,7 +2,7 @@
 
 This agentsCookbook suite measures what native Codex and native OpenCode do with bare tools, Hashmarks MCP, or Enola MCP. It contains twelve pinned tasks: five Python localization tasks on Hashmarks, one Python defect repair on agentsCookbook, and six TypeScript localization tasks on UV Fleet. Each of six agent/subject conditions runs three paired seeds per task: 216 trials. The source commits predate this suite, so task answers are absent from each trial repository.
 
-**Status:** heldout-v1 is still being qualified. Its repository/source pins are deliberate, but the benchmark is not considered frozen until its oracle semantics and a complete campaign are qualified. Benchmark defects found during qualification are repaired in v1; results produced under superseded v1 authority must not be mixed with or reused by the repaired authority.
+**Status:** heldout-v1 is still being qualified. Its repository/source pins are deliberate, but the benchmark is not considered frozen until its oracle semantics and a complete campaign are qualified. Benchmark defects found during qualification are repaired in v1; results produced under superseded v1 authority must not be mixed with current score projections. Once v1 is frozen, newly discovered benchmark ideas enter as diagnostic/shadow tasks first rather than being added post-hoc to the scored population.
 
 The runner owns process execution, isolation, contamination checks, receipts, and scoring. Hashmarks supplies repository evidence only. Localization tasks use a deterministic repository-location oracle; the repair task keeps its independent command oracle. Expected answers and repair checks live in the suite definitions and are never supplied to the agent prompt.
 
@@ -18,7 +18,13 @@ The repository-location oracle accepts only:
 
 It never extracts JSON from surrounding prose, never chooses among multiple objects, and rejects paths escaping the trial workspace. A single JSON fence is semantically gradeable but records `format_compliant=false`; the task prompt still requires a bare JSON object. Qualified symbols such as `WorkspaceMapStore.paths_under` normalize to `paths_under` for localization comparison without weakening the expected repository target.
 
-The result receipt persists the oracle grade, and reports expose both `semantic_success_rate` and `format_compliance_rate`. Task PASS for localization follows semantic success; formatting remains a separate instruction-following signal.
+The localization boundary is deliberately split into observation and scoring. `repository-location-normalization.v1` parses and normalizes the frozen agent answer without deciding correctness. `repository-location-score.v1` compares that observation with frozen oracle truth. The resulting semantic status is `CORRECT`, `INCORRECT`, or `UNSCORABLE`; an unscorable answer is not silently relabeled as a proven wrong location.
+
+The result receipt keeps execution evidence separate from the score projection. `execution.evidence_identity` binds the frozen task execution, runtime authorities, mutation, environment, agent answer, and original workspace root without depending on oracle/scoring authority. `scoring.projection_identity` binds that execution evidence to the declared oracle and scoring policy. This permits deterministic offline repository-location regrading without another model run when only scoring authority changes.
+
+Reports expose `semantic_success_rate`, `semantic_gradeable_rate`, semantic-status counts, and `format_compliance_rate` independently. Missing observations remain unknown with a zero denominator and a null rate; they are never converted to zero performance. Task PASS for localization follows semantic success; formatting remains a separate instruction-following signal.
+
+A complete campaign with legitimate candidate FAIL outcomes can still be qualified evidence. Campaign qualification is lost by missing, incomplete, invalid, or contaminated execution evidence, not by the candidate simply answering incorrectly.
 
 From the agentsCookbook root, configure the benchmark authority once:
 
