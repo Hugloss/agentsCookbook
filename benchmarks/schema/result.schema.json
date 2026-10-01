@@ -119,6 +119,20 @@
               "pattern": "^[0-9a-f]{64}$"
             }
           }
+        },
+        "agent_answer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_identity": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         }
       }
     },
@@ -131,6 +145,24 @@
         "string",
         "null"
       ]
+    },
+    "scoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projection_identity",
+        "oracle_grade"
+      ],
+      "properties": {
+        "projection_identity": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "oracle_grade": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
     }
   }
 }
