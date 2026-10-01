@@ -12,10 +12,11 @@ import json
 import os
 import tempfile
 from collections import Counter, defaultdict
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from benchmarks.__main__ import _load_benchmark_env
+from benchmarks.config import BenchmarkConfig, BenchmarkConfigError
 from benchmarks.adapters.enola import EnolaSubject
 from benchmarks.adapters.hashmarks import HashmarksSubject
 from benchmarks.harness.admission import harness_identity, runtime_environment_identity
@@ -280,7 +281,9 @@ def run_case(
     work: Path,
     results: Path,
     local_sources: dict[str, Path] | None = None,
+    source: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
+    source = os.environ if source is None else source
     destination = _receipt_dir(results, case["id"], subject_id)
     if destination.exists():
         _verify(destination)
@@ -319,8 +322,8 @@ def run_case(
                 raise ValueError("fixture changed since corpus validation")
             target.write_bytes(data)
             control = trial / "control"
-            environment = isolated_environment(control)
-            transport_runtime_authority(os.environ, environment)
+            environment = isolated_environment(control, source=source)
+            transport_runtime_authority(source, environment)
             environment_observed = runtime_environment_identity(
                 environment, control_root=control
             )
@@ -560,9 +563,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.env_file is None or args.cache is None or args.work is None:
         parser.error("run requires --env-file, --cache, and --work")
-    declared = _load_benchmark_env(args.env_file, os.environ, require_file=True)
-    if "hashmarks" in subjects and "HASHMARKS_BENCH_SOURCE" not in declared:
-        parser.error("HASHMARKS_BENCH_SOURCE must be set explicitly in .env")
+    try:
+        config = BenchmarkConfig.load(args.env_file)
+        if "hashmarks" in subjects:
+            config.require("HASHMARKS_BENCH_SOURCE")
+    except BenchmarkConfigError as exc:
+        parser.error(str(exc))
     selected = [case for case in cases if not args.case or case["id"] in args.case]
     if args.case and set(args.case) != {case["id"] for case in selected}:
         parser.error("unknown evidence case ID")
@@ -591,6 +597,7 @@ def main(argv: list[str] | None = None) -> int:
                         work=args.work,
                         results=args.results,
                         local_sources=local_sources,
+                        source=config.runtime_environment(),
                     ),
                     sort_keys=True,
                 )

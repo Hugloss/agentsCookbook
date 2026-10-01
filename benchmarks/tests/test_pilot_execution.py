@@ -33,7 +33,7 @@ from benchmarks.adapters.registry import (
     AdapterConfigurationError,
     build_agent,
 )
-from benchmarks.__main__ import _load_benchmark_env
+from benchmarks.config import BenchmarkConfig
 from benchmarks.harness.admission import (
     TrialAdmissionError,
     admit_trial,
@@ -479,12 +479,7 @@ class PilotExecutionTests(unittest.TestCase):
                 "UNRELATED=value\n",
                 encoding="utf-8",
             )
-            environment: dict[str, str] = {}
-            _load_benchmark_env(
-                env_file,
-                environment,
-                require_file=True,
-            )
+            environment = BenchmarkConfig.load(env_file, host={}).runtime_environment()
             self.assertEqual(
                 environment,
                 {
@@ -493,22 +488,19 @@ class PilotExecutionTests(unittest.TestCase):
                 },
             )
 
-    def test_benchmark_env_file_does_not_override_process_authority(self) -> None:
+    def test_benchmark_env_file_overrides_process_authority(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env_file = Path(tmp) / ".env"
             env_file.write_text(
                 "HASHMARKS_BENCH_SOURCE=/from-env-file\n",
                 encoding="utf-8",
             )
-            environment = {"HASHMARKS_BENCH_SOURCE": "/already-exported"}
-            _load_benchmark_env(
-                env_file,
-                environment,
-                require_file=True,
-            )
+            environment = BenchmarkConfig.load(
+                env_file, host={"HASHMARKS_BENCH_SOURCE": "/already-exported"}
+            ).runtime_environment()
             self.assertEqual(
                 environment["HASHMARKS_BENCH_SOURCE"],
-                "/already-exported",
+                "/from-env-file",
             )
 
     def test_selected_conditions_require_exact_runtime_authority(self) -> None:

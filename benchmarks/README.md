@@ -45,7 +45,7 @@ For native OpenCode and Codex trials, ambient/global MCP registrations are disab
 
 Participant processes do not inherit arbitrary host environment variables. The harness carries one fixed process-substrate allowlist—`PATH`, locale variables, terminal identity, and equivalent Windows launch variables—so native tools can start. Provider variables must be named explicitly through `BENCHMARK_PASSTHROUGH_ENV_KEYS`. The resulting observed environment is bound into execution identity.
 
-There is no automatic `.env` discovery in the benchmark CLI and no default harness root. The fast readiness check needs only `--env-file` and `--suite`; campaign execution/preflight additionally receives the campaign root and harness root explicitly. Required runtime authority keys must be present and nonempty in the selected `.env`; an exported shell value cannot make up for a missing file entry. Direct CLI callers must provide the authorities needed by the command they choose.
+Benchmark settings are parsed once per command by `benchmarks/config.py`. There is no automatic `.env` discovery: readiness, preflight, execution, and native evidence require `--env-file`. Required entries must be present and nonempty in that file even when a CLI flag supplies an override. An exported shell value cannot fill a missing entry. Explicit CLI flags override declared file values for one-off selections; file values override shell values for benchmark authority. Native host discovery and explicitly admitted provider secrets still use the host environment.
 
 Agent Economics remains a benchmark consumer/suite; shared process semantics remain single-owned until that module is promoted to a more generic repository location.
 
@@ -108,7 +108,7 @@ make benchmark-report      # generic framework report
 make benchmark-score       # suite-specific scorer configured in .env
 ```
 
-The Makefile chooses no native executable or native config root. Codex, OpenCode, and Enola use their installed host conventions; the benchmark observes what resolves. The Makefile transports deliberate benchmark choices such as the Hashmarks checkout, selected agents, suite, campaign root, OpenCode agent persona, provider passthrough, and scorer. Missing selected-agent choices fail before preflight, execution, reporting, or scoring.
+The Makefile passes only `.env` and fixed smoke task selectors to the CLI. The configuration loader owns benchmark choices and validates them before runtime work. Codex, OpenCode, and Enola use their installed host conventions; the benchmark observes what resolves. Missing selected-agent choices fail before preflight, execution, reporting, or scoring.
 
 `benchmark-check` answers only **“can each suite agent/subject combination be wired on this machine right now?”** For held-out v1 it checks Codex and OpenCode with bare tools, Hashmarks, and Enola: six pair outcomes, independent of `BENCHMARK_AGENT`. OpenCode's assisted probes supply a live stdio connection check. Only when that connection fails does readiness launch the selected MCP executable and args in the selected cwd and environment with stdin closed and a five-second bound, solely to capture a direct startup failure. A clean exit after stdin closes is inconclusive and adds no diagnostic. Codex readiness proves its native config plus the exact ephemeral subject exposure without invoking a model; it is reported as ready rather than falsely labelled connected. No readiness command retries automatically.
 
@@ -116,7 +116,7 @@ The Makefile chooses no native executable or native config root. Codex, OpenCode
 
 ### Advanced direct CLI
 
-The benchmark CLI remains available for automation and explicit one-off selections. Repository Python is owned by uv: invoke it as `uv run --no-project python -m benchmarks ...`. The CLI does not discover `.env` and does not default `--harness-root`. The snippets below set shell variables explicitly; entries in `.env` do not become shell variables automatically. Direct `--agent` accepts repeated values or a comma-separated list.
+The benchmark CLI remains available for automation and explicit one-off selections. Repository Python is owned by uv: invoke it as `uv run --no-project python -m benchmarks ...`. The CLI does not discover `.env`; it resolves declared suite, campaign, agent, and harness settings from the selected file when flags are omitted. The snippets below show optional CLI overrides. Direct `--agent` accepts repeated values or a comma-separated list.
 
 ```bash
 suite=benchmarks/suites/repository-intelligence/heldout-v1

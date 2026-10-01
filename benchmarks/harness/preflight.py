@@ -1,7 +1,9 @@
 """Preflight benchmark admission without invoking the coding agent."""
+
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -72,6 +74,7 @@ def preflight_trial(
     results_root: Path | None = None,
     local_source: Path | None = None,
     codex_auth: Path | None = None,
+    source: Mapping[str, str] | None = None,
 ) -> PreflightResult:
     definition = next(
         (
@@ -94,6 +97,7 @@ def preflight_trial(
             work_root=work_root,
             local_source=local_source,
             codex_auth=codex_auth,
+            source=source,
         ) as admission:
             status, reason = admission.initial_outcome()
             observed_state = snapshot(admission.context.workspace)
@@ -149,9 +153,7 @@ def preflight_trial(
                             model=admission.agent_prepare.payload.get("model"),
                             provider=admission.agent_prepare.payload.get("provider"),
                             workspace_binding=_binding_summary(
-                                admission.agent_prepare.payload.get(
-                                    "workspace_binding"
-                                )
+                                admission.agent_prepare.payload.get("workspace_binding")
                             ),
                             existing_result_status=None,
                         )
@@ -187,9 +189,7 @@ def preflight_trial(
                         model=admission.agent_prepare.payload.get("model"),
                         provider=admission.agent_prepare.payload.get("provider"),
                         workspace_binding=_binding_summary(
-                            admission.agent_prepare.payload.get(
-                                "workspace_binding"
-                            )
+                            admission.agent_prepare.payload.get("workspace_binding")
                         ),
                         existing_result_status=existing_status,
                     )

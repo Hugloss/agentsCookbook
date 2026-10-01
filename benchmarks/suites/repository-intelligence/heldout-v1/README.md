@@ -100,13 +100,13 @@ make benchmark-score
 - `benchmark-report` is the generic framework report.
 - `benchmark-score` runs this suite's explicit language-separated held-out scorer.
 
-The Makefile provides no hidden benchmark-path fallbacks. Native-installed tool paths are intentionally delegated to Linux/tool discovery and then recorded as observed authority.
+The Makefile passes `.env` to the benchmark CLI, whose single configuration loader validates required settings. Native-installed tool paths are intentionally delegated to Linux/tool discovery and then recorded as observed authority.
 
 Do not run `hashmarks install --opencode` for benchmark authority and do not prepend the local Hashmarks checkout to `PATH`. Enola should be installed normally (for example with its official installer) so `command -v enola` resolves it. Codex and OpenCode likewise use their normal installed commands. Global MCP registrations may exist for everyday development, but the benchmark does not use them to choose the subject executable.
 
 ### Advanced direct CLI
 
-Most developers should use the Make targets. For direct CLI calls, set shell variables explicitly; `.env` entries do not become shell variables automatically:
+Most developers should use the Make targets. For direct CLI calls, the selected `.env` supplies benchmark choices; these shell variables are optional explicit overrides:
 
 ```sh
 suite=benchmarks/suites/repository-intelligence/heldout-v1

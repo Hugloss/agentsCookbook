@@ -7,6 +7,7 @@ import hashlib
 import os
 import platform
 import shutil
+from collections.abc import Mapping
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -374,7 +375,9 @@ def admit_trial(
     work_root: Path,
     local_source: Path | None = None,
     codex_auth: Path | None = None,
+    source: Mapping[str, str] | None = None,
 ) -> Iterator[TrialAdmission]:
+    source = os.environ if source is None else source
     task = suite.tasks[task_id]
     condition = _resolve_condition(suite, condition_id)
     if trial_index < 0 or trial_index >= int(condition["trials"]):
@@ -408,9 +411,9 @@ def admit_trial(
             local_source=local_source,
         )
         control_root = run_root / "control"
-        environment = isolated_environment(control_root)
+        environment = isolated_environment(control_root, source=source)
         try:
-            transport_runtime_authority(os.environ, environment)
+            transport_runtime_authority(source, environment)
         except ValueError as exc:
             raise TrialAdmissionError(str(exc)) from exc
         context = TrialContext(
@@ -436,7 +439,7 @@ def admit_trial(
         )
         native_opencode = agent_definition["adapter"] == "opencode-native"
         if native_codex or native_opencode:
-            native_paths = native_host_paths(os.environ)
+            native_paths = native_host_paths(source)
             if native_codex:
                 context.environment["CODEX_HOME"] = native_paths["codex_home"]
             if native_opencode:

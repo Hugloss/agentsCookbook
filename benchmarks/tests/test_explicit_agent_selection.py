@@ -17,19 +17,16 @@ from benchmarks.harness.suite import load_suite
 
 
 HELDOUT = (
-    Path(__file__).resolve().parents[1]
-    / "suites/repository-intelligence/heldout-v1"
+    Path(__file__).resolve().parents[1] / "suites/repository-intelligence/heldout-v1"
 )
 
 
 class ExplicitAgentSelectionTests(unittest.TestCase):
     def test_check_allows_no_agent_filter(self) -> None:
-        args = _parser().parse_args(
-            ["check", "--suite", "suite", "--env-file", ".env"]
-        )
+        args = _parser().parse_args(["check", "--suite", "suite", "--env-file", ".env"])
         self.assertEqual(args.agent, [])
 
-    def test_preflight_requires_agent(self) -> None:
+    def test_preflight_requires_env_file(self) -> None:
         with self.assertRaises(SystemExit):
             _parser().parse_args(
                 [
@@ -41,7 +38,7 @@ class ExplicitAgentSelectionTests(unittest.TestCase):
                 ]
             )
 
-    def test_run_requires_agent(self) -> None:
+    def test_run_requires_env_file(self) -> None:
         with self.assertRaises(SystemExit):
             _parser().parse_args(
                 [
@@ -61,6 +58,8 @@ class ExplicitAgentSelectionTests(unittest.TestCase):
                 "suite",
                 "--harness-root",
                 ".",
+                "--env-file",
+                ".env",
                 "--agent",
                 "opencode-native",
             ]

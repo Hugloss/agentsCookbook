@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -59,7 +60,7 @@ def _unique(values):
     return tuple(dict.fromkeys(values))
 
 
-def _context(root: Path, label: str) -> TrialContext:
+def _context(root: Path, label: str, source: Mapping[str, str]) -> TrialContext:
     workspace = root / "workspace"
     workspace.mkdir(exist_ok=True)
     marker = workspace / "README.md"
@@ -68,10 +69,10 @@ def _context(root: Path, label: str) -> TrialContext:
 
     safe = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in label)
     control_root = root / "control" / safe
-    environment = isolated_environment(control_root)
-    transport_runtime_authority(os.environ, environment)
+    environment = isolated_environment(control_root, source=source)
+    transport_runtime_authority(source, environment)
 
-    native = native_host_paths(os.environ)
+    native = native_host_paths(source)
     environment["CODEX_HOME"] = native["codex_home"]
     environment["BENCHMARK_NATIVE_HOME"] = native["home"]
     environment["BENCHMARK_NATIVE_XDG_CONFIG_HOME"] = native["xdg_config_home"]
@@ -96,8 +97,9 @@ def _subject_runtime_check(
     suite: SuiteDefinition,
     subject_id: str,
     root: Path,
+    source: Mapping[str, str],
 ) -> ReadinessCheck:
-    context = _context(root, f"subject-{subject_id}")
+    context = _context(root, f"subject-{subject_id}", source)
     try:
         subject = build_subject(suite.subjects[subject_id])
         exposure = subject.mcp_exposure(context)
@@ -156,8 +158,9 @@ def _agent_native_check(
     suite: SuiteDefinition,
     agent_id: str,
     root: Path,
+    source: Mapping[str, str],
 ) -> ReadinessCheck:
-    context = _context(root, f"agent-{agent_id}")
+    context = _context(root, f"agent-{agent_id}", source)
     try:
         observation = _agent(suite, agent_id).prepare(context, None)
     except (OSError, ValueError) as exc:
@@ -221,8 +224,10 @@ def _pair_check(
     agent_id: str,
     subject_id: str,
     root: Path,
+    source: Mapping[str, str] | None = None,
 ) -> ReadinessCheck:
-    context = _context(root, f"pair-{agent_id}-{subject_id}")
+    source = os.environ if source is None else source
+    context = _context(root, f"pair-{agent_id}-{subject_id}", source)
     definition = suite.agents[agent_id]
     adapter = str(definition["adapter"])
     label = (
@@ -261,12 +266,12 @@ def check_runtime_readiness(
     suite: SuiteDefinition,
     *,
     agents: tuple[str, ...] = (),
+    source: Mapping[str, str] | None = None,
 ) -> ReadinessReport:
+    source = os.environ if source is None else source
     unknown = sorted(set(agents) - set(suite.agents))
     if unknown:
-        raise ValueError(
-            "unknown benchmark agent(s): " + ", ".join(unknown)
-        )
+        raise ValueError("unknown benchmark agent(s): " + ", ".join(unknown))
     selected_agents = set(agents)
     conditions = tuple(
         condition
@@ -280,8 +285,7 @@ def check_runtime_readiness(
     )
     if missing_agents:
         raise ValueError(
-            "no suite conditions for selected agent(s): "
-            + ", ".join(missing_agents)
+            "no suite conditions for selected agent(s): " + ", ".join(missing_agents)
         )
     subject_ids = _unique(
         str(condition["subject"])
@@ -289,20 +293,19 @@ def check_runtime_readiness(
         if str(condition["subject"]) != "none"
     )
     pairs = _unique(
-        (str(condition["agent"]), str(condition["subject"]))
-        for condition in conditions
+        (str(condition["agent"]), str(condition["subject"])) for condition in conditions
     )
 
     checks: list[ReadinessCheck] = []
     with tempfile.TemporaryDirectory(prefix="agents-cookbook-benchmark-check-") as tmp:
         root = Path(tmp)
         subject_checks = {
-            subject_id: _subject_runtime_check(suite, subject_id, root)
+            subject_id: _subject_runtime_check(suite, subject_id, root, source)
             for subject_id in subject_ids
         }
         for agent_id, subject_id in pairs:
             if subject_id == "none":
-                result = _agent_native_check(suite, agent_id, root)
+                result = _agent_native_check(suite, agent_id, root, source)
             elif not subject_checks[subject_id].ok:
                 prerequisite = subject_checks[subject_id]
                 result = ReadinessCheck(
@@ -311,7 +314,7 @@ def check_runtime_readiness(
                     f"{subject_id} runtime: {prerequisite.reason}",
                 )
             else:
-                result = _pair_check(suite, agent_id, subject_id, root)
+                result = _pair_check(suite, agent_id, subject_id, root, source)
             checks.append(
                 ReadinessCheck(
                     f"{agent_id} + {'bare' if subject_id == 'none' else subject_id}",

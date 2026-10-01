@@ -36,11 +36,14 @@ class MultidomainCorpusTests(unittest.TestCase):
     def test_check_rejects_required_value_missing_from_env_file(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             env_file = Path(temporary) / ".env"
-            env_file.write_text("BENCHMARK_OPENCODE_AGENT=build\n", encoding="utf-8")
+            env_file.write_text(
+                f"BENCHMARK_SUITE_PATH={ROOT}\nBENCHMARK_OPENCODE_AGENT=build\n",
+                encoding="utf-8",
+            )
             with patch.dict(os.environ, {"HASHMARKS_BENCH_SOURCE": "/exported"}):
                 with self.assertRaisesRegex(
                     SystemExit,
-                    "missing explicit benchmark runtime authority in .*HASHMARKS_BENCH_SOURCE",
+                    "missing explicit benchmark setting.*HASHMARKS_BENCH_SOURCE",
                 ):
                     benchmark_main(
                         [
@@ -232,9 +235,7 @@ class MultidomainCorpusTests(unittest.TestCase):
                     ]
                 )
             self.assertNotEqual(raised.exception.code, 0)
-            self.assertIn(
-                "HASHMARKS_BENCH_SOURCE must be set explicitly", stderr.getvalue()
-            )
+            self.assertIn("HASHMARKS_BENCH_SOURCE", stderr.getvalue())
             self.assertFalse((root / "work").exists())
 
     def test_pinned_source_cache_does_not_fetch_known_commit_again(self) -> None:

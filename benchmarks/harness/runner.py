@@ -1,4 +1,5 @@
 """Executable trial lifecycle and atomic evidence-bundle publication."""
+
 from __future__ import annotations
 
 import hashlib
@@ -6,6 +7,7 @@ import json
 import os
 import shutil
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -39,11 +41,7 @@ class TrialRunResult:
 
 
 def _validate_result_receipt(receipt: dict[str, Any]) -> None:
-    schema_path = (
-        Path(__file__).resolve().parents[1]
-        / "schema"
-        / "result.schema.json"
-    )
+    schema_path = Path(__file__).resolve().parents[1] / "schema" / "result.schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     try:
         validate_instance(receipt, schema)
@@ -80,9 +78,7 @@ def _publish_bundle(
         raise TrialRunnerError(
             f"published trial bundle is invalid: {final_dir}: {reason}"
         )
-    bundle = Path(
-        tempfile.mkdtemp(prefix=f".{trial_id}.bundle-", dir=results_root)
-    )
+    bundle = Path(tempfile.mkdtemp(prefix=f".{trial_id}.bundle-", dir=results_root))
     try:
         shutil.copy2(event_path, bundle / "events.jsonl")
         shutil.copy2(event_seal_path, bundle / "events.jsonl.seal.json")
@@ -149,6 +145,7 @@ def run_trial(
     work_root: Path,
     local_source: Path | None = None,
     codex_auth: Path | None = None,
+    source: Mapping[str, str] | None = None,
 ) -> TrialRunResult:
     try:
         admission_context = admit_trial(
@@ -161,6 +158,7 @@ def run_trial(
             work_root=work_root,
             local_source=local_source,
             codex_auth=codex_auth,
+            source=source,
         )
         with admission_context as admission:
             task = admission.task
@@ -365,9 +363,7 @@ def run_trial(
                     "seed": seed,
                     "trial_index": trial_index,
                     "events": event_evidence,
-                    "agent_terminal": agent_observation.payload.get(
-                        "terminal_event"
-                    ),
+                    "agent_terminal": agent_observation.payload.get("terminal_event"),
                 },
                 "measurements": {
                     "subject_prepare": subject_prepare.measurements,

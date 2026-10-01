@@ -1,8 +1,10 @@
 """Fresh-workspace materialization and bounded contamination evidence."""
+
 from __future__ import annotations
 
 import hashlib
 import os
+from collections.abc import Mapping
 from pathlib import Path
 
 from benchmarks.harness.runtime_authority import PROCESS_SUBSTRATE_ENV_KEYS
@@ -143,9 +145,7 @@ def materialize_git(
         )
     if expected_tree is not None:
         actual_tree = (
-            _run_git(destination, ("git", "rev-parse", "HEAD^{tree}"))
-            .decode()
-            .strip()
+            _run_git(destination, ("git", "rev-parse", "HEAD^{tree}")).decode().strip()
         )
         if actual_tree != expected_tree:
             raise WorkspaceError(
@@ -154,7 +154,10 @@ def materialize_git(
     return actual
 
 
-def isolated_environment(root: Path) -> dict[str, str]:
+def isolated_environment(
+    root: Path, *, source: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    source = os.environ if source is None else source
     root = root.resolve()
     home = root / "_environment" / "home"
     tmp = root / "_environment" / "tmp"
@@ -176,7 +179,7 @@ def isolated_environment(root: Path) -> dict[str, str]:
         "ENOLA_NO_UPDATE_CHECK": "1",
     }
     for name in PROCESS_SUBSTRATE_ENV_KEYS:
-        value = os.environ.get(name)
+        value = source.get(name)
         if value:
             environment[name] = value
     return environment
@@ -192,8 +195,6 @@ def diff_snapshots(
         "added": sorted(after_paths - before_paths),
         "removed": sorted(before_paths - after_paths),
         "changed": sorted(
-            path
-            for path in before_paths & after_paths
-            if before[path] != after[path]
+            path for path in before_paths & after_paths if before[path] != after[path]
         ),
     }
