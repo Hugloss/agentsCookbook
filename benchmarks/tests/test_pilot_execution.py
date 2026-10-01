@@ -58,7 +58,7 @@ from benchmarks.harness.mutation import apply_mutation
 from benchmarks.harness.preflight import preflight_trial
 from benchmarks.harness.receipt import is_complete_receipt
 from benchmarks.harness.report import ReportError, build_report
-from benchmarks.harness.runner import run_trial
+from benchmarks.harness.runner import _reason_for_agent, run_trial
 from benchmarks.harness.runtime_authority import (
     required_runtime_authority,
     transport_runtime_authority,
@@ -1201,6 +1201,184 @@ class PilotExecutionTests(unittest.TestCase):
                     prepared.payload["observed_identity"]["workspace_binding"]
                 ),
             )
+
+    def test_runner_preserves_agent_terminal_failure_reason(self) -> None:
+        observation = Observation(
+            {
+                "terminal_event": {
+                    "type": "turn.failed",
+                    "reason": "OpenCode completed without a final assistant message",
+                },
+                "jsonl_parse_errors": [],
+                "process": {
+                    "executable_missing": False,
+                    "timed_out": False,
+                    "stdout_truncated": False,
+                    "stderr_truncated": False,
+                },
+            },
+            "",
+        )
+        self.assertEqual(
+            _reason_for_agent(observation),
+            (
+                "agent terminal event was turn.failed: "
+                "OpenCode completed without a final assistant message"
+            ),
+        )
+
+    def test_opencode_textless_successful_process_remains_incomplete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            control.mkdir()
+            context = TrialContext(
+                workspace,
+                control,
+                {"BENCHMARK_OPENCODE_AGENT": "build"},
+            )
+            evidence = {
+                "selected_server": None,
+                "native_config_sha256": "a" * 64,
+                "native_mcp_servers": [],
+                "subject_exposure_sha256": None,
+                "model": "test-provider/test-model",
+                "provider": "test-provider",
+                "runtime_contract": "agents-cookbook-opencode-runtime/v2",
+            }
+            runtime_result = mock.Mock(
+                elapsed_ms=100,
+                stdout=b"{}",
+                stderr=b"",
+                executable_missing=False,
+                stdout_truncated=False,
+            )
+            runtime_result.metrics.return_value = {"return_code": 0}
+            exported = {
+                "messages": [
+                    {
+                        "info": {
+                            "role": "assistant",
+                            "modelID": "test-model",
+                            "providerID": "test-provider",
+                        },
+                        "parts": [],
+                    }
+                ]
+            }
+            envelope = {
+                "session_id": "session-123",
+                "run": {"status": 0},
+                "export": {
+                    "status": 0,
+                    "stdout": json.dumps(exported),
+                },
+                "final_text": None,
+                "export_parse_error": None,
+            }
+            agent = OpenCodeNativeAgent()
+            with (
+                mock.patch.object(agent, "_load_prepared", return_value=evidence),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._native_environment",
+                    return_value={"OPENCODE_BIN": "/bin/opencode"},
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call",
+                    return_value=(envelope, runtime_result),
+                ),
+            ):
+                observation = agent.run(context, "prompt", None)
+
+            self.assertFalse(observation.payload["terminal_complete"])
+            self.assertIsNone(observation.payload["final_message"])
+            self.assertEqual(
+                observation.payload["terminal_event"],
+                {
+                    "type": "turn.failed",
+                    "reason": "OpenCode completed without a final assistant message",
+                },
+            )
+
+    def test_opencode_nonzero_run_reports_status_and_bounded_stderr(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            control.mkdir()
+            context = TrialContext(
+                workspace,
+                control,
+                {"BENCHMARK_OPENCODE_AGENT": "build"},
+            )
+            evidence = {
+                "selected_server": None,
+                "native_config_sha256": "a" * 64,
+                "native_mcp_servers": [],
+                "subject_exposure_sha256": None,
+                "model": "test-provider/test-model",
+                "provider": "test-provider",
+                "runtime_contract": "agents-cookbook-opencode-runtime/v2",
+            }
+            runtime_result = mock.Mock(
+                elapsed_ms=100,
+                stdout=b"{}",
+                stderr=b"",
+                executable_missing=False,
+                stdout_truncated=False,
+            )
+            runtime_result.metrics.return_value = {"return_code": 0}
+            exported = {
+                "messages": [
+                    {
+                        "info": {
+                            "role": "assistant",
+                            "modelID": "test-model",
+                            "providerID": "test-provider",
+                        },
+                        "parts": [],
+                    }
+                ]
+            }
+            envelope = {
+                "session_id": "session-123",
+                "run": {
+                    "status": 7,
+                    "stderr": "provider failed: " + ("x" * 4_000),
+                    "error": None,
+                    "signal": None,
+                },
+                "export": {
+                    "status": 0,
+                    "stdout": json.dumps(exported),
+                },
+                "final_text": None,
+                "export_parse_error": None,
+            }
+            agent = OpenCodeNativeAgent()
+            with (
+                mock.patch.object(agent, "_load_prepared", return_value=evidence),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._native_environment",
+                    return_value={"OPENCODE_BIN": "/bin/opencode"},
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call",
+                    return_value=(envelope, runtime_result),
+                ),
+            ):
+                observation = agent.run(context, "prompt", None)
+
+            terminal = observation.payload["terminal_event"]
+            self.assertFalse(observation.payload["terminal_complete"])
+            self.assertEqual(terminal["type"], "turn.failed")
+            self.assertIn("OpenCode run exited with status 7", terminal["reason"])
+            self.assertIn("provider failed:", terminal["reason"])
+            self.assertLess(len(terminal["reason"]), 2_200)
+            self.assertTrue(terminal["reason"].endswith("…'"))
 
     def test_opencode_export_observes_native_model_and_mcp_adoption(self) -> None:
         exported = {
