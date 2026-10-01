@@ -1,4 +1,5 @@
 """Frozen benchmark-suite loading and semantic validation."""
+
 from __future__ import annotations
 
 import hashlib
@@ -39,9 +40,7 @@ def _validate_definition(
     source: Path,
 ) -> None:
     schema_path = (
-        Path(__file__).resolve().parents[1]
-        / "schema"
-        / f"{schema_name}.schema.json"
+        Path(__file__).resolve().parents[1] / "schema" / f"{schema_name}.schema.json"
     )
     schema = _load_json(schema_path)
     try:
@@ -199,19 +198,32 @@ def load_suite(root: Path) -> SuiteDefinition:
                 raise SuiteError(
                     f"task {task['id']} mutation must freeze changed_paths"
                 )
+        targets: set[str] = set()
+        for fixture in task.get("fixtures", []):
+            artifact = (root / str(fixture["artifact"])).resolve()
+            try:
+                artifact.relative_to(root)
+            except ValueError as exc:
+                raise SuiteError(
+                    f"task {task['id']} fixture escapes suite root"
+                ) from exc
+            if not artifact.is_file() or _sha256(artifact) != fixture["sha256"]:
+                raise SuiteError(
+                    f"task {task['id']} fixture missing or checksum mismatch"
+                )
+            target = Path(str(fixture["target"]))
+            if target.is_absolute() or ".." in target.parts or str(target) in targets:
+                raise SuiteError(
+                    f"task {task['id']} has unsafe or duplicate fixture target"
+                )
+            targets.add(str(target))
         contamination = task.get("contamination")
         if not isinstance(contamination, dict):
-            raise SuiteError(
-                f"task {task['id']} must define contamination allowances"
-            )
+            raise SuiteError(f"task {task['id']} must define contamination allowances")
         if "allowed_change_globs" not in contamination:
-            raise SuiteError(
-                f"task {task['id']} must define allowed_change_globs"
-            )
+            raise SuiteError(f"task {task['id']} must define allowed_change_globs")
         if "allowed_generated_globs" not in contamination:
-            raise SuiteError(
-                f"task {task['id']} must define allowed_generated_globs"
-            )
+            raise SuiteError(f"task {task['id']} must define allowed_generated_globs")
 
     return SuiteDefinition(
         root=root,

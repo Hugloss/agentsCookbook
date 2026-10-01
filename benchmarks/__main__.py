@@ -1,14 +1,16 @@
 """Command-line entry point for reusable empirical benchmark suites."""
+
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import subprocess
 import sys
 from collections import Counter
-from collections.abc import MutableMapping
 from pathlib import Path
 
+from benchmarks.config import BenchmarkConfig, BenchmarkConfigError
 from benchmarks.harness.campaign import (
     CampaignError,
     campaign_status,
@@ -16,10 +18,7 @@ from benchmarks.harness.campaign import (
 )
 from benchmarks.harness.preflight import preflight_trial
 from benchmarks.harness.readiness import check_runtime_readiness
-from benchmarks.harness.runtime_authority import (
-    RUNTIME_AUTHORITY_ENV_KEYS,
-    required_runtime_authority,
-)
+from benchmarks.harness.runtime_authority import required_runtime_authority
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
 from benchmarks.harness.selection import (
@@ -28,47 +27,6 @@ from benchmarks.harness.selection import (
     select_definitions,
 )
 from benchmarks.harness.suite import load_runtime_suite, load_suite
-
-
-_BENCHMARK_ENV_KEYS = frozenset(RUNTIME_AUTHORITY_ENV_KEYS)
-
-
-def _load_benchmark_env(
-    path: Path,
-    environment: MutableMapping[str, str],
-    *,
-    require_file: bool,
-) -> None:
-    if not path.is_file():
-        if require_file:
-            raise SystemExit(f"benchmark env file does not exist: {path}")
-        return
-    try:
-        lines = path.read_text(encoding="utf-8-sig").splitlines()
-    except OSError as exc:
-        raise SystemExit(f"cannot read benchmark env file {path}: {exc}") from exc
-    for line_no, raw in enumerate(lines, 1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[7:].lstrip()
-        if "=" not in line:
-            key = line.strip()
-            if key in _BENCHMARK_ENV_KEYS:
-                raise SystemExit(
-                    f"{path}:{line_no}: benchmark environment entry needs KEY=VALUE"
-                )
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        if key not in _BENCHMARK_ENV_KEYS or environment.get(key):
-            continue
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-            value = value[1:-1]
-        if value:
-            environment[key] = value
 
 
 def _add_selectors(
@@ -107,10 +65,11 @@ def _add_campaign_paths(
 
 
 def _add_execution_inputs(command: argparse.ArgumentParser) -> None:
-    command.add_argument("--harness-root", type=Path, required=True)
+    command.add_argument("--harness-root", type=Path)
     command.add_argument(
         "--env-file",
         type=Path,
+        required=True,
         help="explicit benchmark environment file; no file is auto-discovered",
     )
     command.add_argument("--source", type=Path)
@@ -122,16 +81,14 @@ def _add_execution_inputs(command: argparse.ArgumentParser) -> None:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="uv run --no-project python -m benchmarks"
-    )
+    parser = argparse.ArgumentParser(prog="uv run --no-project python -m benchmarks")
     sub = parser.add_subparsers(dest="command", required=True)
 
     validate = sub.add_parser("validate-suite")
     validate.add_argument("--suite", type=Path, required=True)
 
     check = sub.add_parser("check")
-    check.add_argument("--suite", type=Path, required=True)
+    check.add_argument("--suite", type=Path)
     check.add_argument(
         "--agent",
         action="append",
@@ -150,24 +107,26 @@ def _parser() -> argparse.ArgumentParser:
     _add_selectors(plan)
 
     preflight = sub.add_parser("preflight")
-    preflight.add_argument("--suite", type=Path, required=True)
-    _add_selectors(preflight, require_agent=True)
+    preflight.add_argument("--suite", type=Path)
+    _add_selectors(preflight)
     _add_campaign_paths(preflight, execution=True)
     _add_execution_inputs(preflight)
 
     run = sub.add_parser("run")
-    run.add_argument("--suite", type=Path, required=True)
-    _add_selectors(run, require_agent=True)
+    run.add_argument("--suite", type=Path)
+    _add_selectors(run)
     _add_campaign_paths(run, execution=True)
     _add_execution_inputs(run)
 
     status = sub.add_parser("status")
-    status.add_argument("--suite", type=Path, required=True)
+    status.add_argument("--suite", type=Path)
+    status.add_argument("--env-file", type=Path)
     _add_selectors(status)
     _add_campaign_paths(status, execution=False)
 
     report = sub.add_parser("report")
-    report.add_argument("--suite", type=Path, required=True)
+    report.add_argument("--suite", type=Path)
+    report.add_argument("--env-file", type=Path)
     _add_selectors(report)
     _add_campaign_paths(report, execution=False)
     report.add_argument(
@@ -176,7 +135,49 @@ def _parser() -> argparse.ArgumentParser:
         help="report available valid receipts without requiring every frozen definition",
     )
 
+    score = sub.add_parser("score")
+    score.add_argument("--env-file", type=Path, required=True)
+    score.add_argument("--suite", type=Path)
+    score.add_argument("--root", type=Path)
+    score.add_argument("--agent", action="append", default=[])
+    score.add_argument("--score-script", type=Path)
+    score.add_argument("--output", type=Path)
+
     return parser
+
+
+def _resolve_config(args: argparse.Namespace) -> BenchmarkConfig:
+    try:
+        config = BenchmarkConfig.load(getattr(args, "env_file", None))
+        config.require_for(args.command)
+        if hasattr(args, "suite") and args.suite is None:
+            args.suite = config.path("BENCHMARK_SUITE_PATH")
+        if (
+            hasattr(args, "root")
+            and args.root is None
+            and getattr(args, "results", None) is None
+        ):
+            args.root = config.path("BENCHMARK_CAMPAIGN_ROOT")
+        if hasattr(args, "harness_root") and args.harness_root is None:
+            args.harness_root = config.path("BENCHMARK_HARNESS_REPO_ROOT")
+        if hasattr(args, "agent") and not args.agent and args.command != "check":
+            args.agent = list(config.agents())
+        if args.command == "score":
+            args.score_script = args.score_script or config.path(
+                "BENCHMARK_SCORE_SCRIPT_PATH"
+            )
+            args.output = args.output or config.path("BENCHMARK_SCORE_OUTPUT_PATH")
+        if hasattr(args, "suite") and args.suite is None:
+            raise BenchmarkConfigError("BENCHMARK_SUITE_PATH or --suite is required")
+        if args.command in {"preflight", "run", "report", "score"} and not args.agent:
+            raise BenchmarkConfigError("BENCHMARK_AGENT or --agent is required")
+        if args.command in {"preflight", "run"} and args.harness_root is None:
+            raise BenchmarkConfigError(
+                "BENCHMARK_HARNESS_REPO_ROOT or --harness-root is required"
+            )
+        return config
+    except BenchmarkConfigError as exc:
+        raise SystemExit(f"ERROR: {exc}") from exc
 
 
 def _select(args, suite):
@@ -208,8 +209,7 @@ def _paths(args, *, need_execution: bool, results_optional: bool = False):
 
 def _selection_metadata(args, suite, rows) -> dict[str, object]:
     conditions = {
-        str(condition["id"]): condition
-        for condition in suite.experiment["conditions"]
+        str(condition["id"]): condition for condition in suite.experiment["conditions"]
     }
     bare_control_included = any(
         conditions.get(str(row["condition_id"]), {}).get("subject") == "none"
@@ -226,11 +226,40 @@ def _selection_metadata(args, suite, rows) -> dict[str, object]:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    config = _resolve_config(args)
+    runtime_source = config.runtime_environment()
     if hasattr(args, "agent"):
         try:
             args.agent = list(parse_agent_arguments(args.agent))
         except SelectionError as exc:
             raise SystemExit(str(exc)) from exc
+    if args.command == "score":
+        assert args.root is not None
+        assert args.output is not None
+        assert args.score_script is not None
+        script = args.score_script.resolve()
+        if not script.is_file():
+            raise SystemExit(f"ERROR: benchmark score script does not exist: {script}")
+        if script.parent != args.suite.resolve():
+            raise SystemExit(
+                f"ERROR: benchmark score script must belong to selected suite: {args.suite}"
+            )
+        invocation = [
+            sys.executable,
+            str(script),
+            "--results",
+            str(args.root / "results"),
+            "--output",
+            str(args.output),
+        ]
+        for agent in args.agent:
+            invocation.extend(("--agent", agent))
+        environment = dict(runtime_source)
+        project_root = str(Path(__file__).resolve().parents[1])
+        environment["PYTHONPATH"] = os.pathsep.join(
+            filter(None, (project_root, environment.get("PYTHONPATH", "")))
+        )
+        return subprocess.run(invocation, env=environment, check=False).returncode
     suite = (
         load_runtime_suite(args.suite)
         if args.command == "check"
@@ -255,16 +284,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "check":
-        _load_benchmark_env(
-            args.env_file,
-            os.environ,
-            require_file=True,
-        )
         unknown_agents = sorted(set(args.agent) - set(suite.agents))
         if unknown_agents:
-            raise SystemExit(
-                "unknown benchmark agent(s): " + ", ".join(unknown_agents)
-            )
+            raise SystemExit("unknown benchmark agent(s): " + ", ".join(unknown_agents))
         authority_rows = [
             {"condition_id": str(condition["id"])}
             for condition in suite.experiment["conditions"]
@@ -272,22 +294,16 @@ def main(argv: list[str] | None = None) -> int:
         ]
         if not authority_rows:
             raise SystemExit("benchmark check has no suite conditions")
-        missing = [
-            name
-            for name in required_runtime_authority(suite, authority_rows)
-            if not os.environ.get(name)
-        ]
-        if missing:
-            raise SystemExit(
-                "missing explicit benchmark runtime authority: "
-                + ", ".join(missing)
-                + "; set the value(s) in the file passed with --env-file "
-                "or export them explicitly"
-            )
+        required = required_runtime_authority(suite, authority_rows)
+        try:
+            config.require(*required)
+        except BenchmarkConfigError as exc:
+            raise SystemExit(f"ERROR: {exc}") from exc
         try:
             report = check_runtime_readiness(
                 suite,
                 agents=tuple(args.agent),
+                source=runtime_source,
             )
         except (OSError, ValueError) as exc:
             raise SystemExit(f"benchmark runtime check failed: {exc}") from exc
@@ -303,24 +319,10 @@ def main(argv: list[str] | None = None) -> int:
     rows = _select(args, suite)
 
     if args.command in {"preflight", "run"}:
-        if args.env_file is not None:
-            _load_benchmark_env(
-                args.env_file,
-                os.environ,
-                require_file=True,
-            )
-        missing = [
-            name
-            for name in required_runtime_authority(suite, rows)
-            if not os.environ.get(name)
-        ]
-        if missing:
-            raise SystemExit(
-                "missing explicit benchmark runtime authority: "
-                + ", ".join(missing)
-                + "; set the value(s) in the file passed with --env-file "
-                "or export them explicitly"
-            )
+        try:
+            config.require(*required_runtime_authority(suite, rows))
+        except BenchmarkConfigError as exc:
+            raise SystemExit(f"ERROR: {exc}") from exc
 
     if args.command == "plan":
         print(json.dumps(rows, indent=2, sort_keys=True))
@@ -332,18 +334,20 @@ def main(argv: list[str] | None = None) -> int:
         status = campaign_status(
             suite=suite,
             results_root=paths.results,
-            selected_definitions={
-                str(row["definition_id"]) for row in rows
-            },
+            selected_definitions={str(row["definition_id"]) for row in rows},
         )
         status["paths"] = paths.as_dict()
         status["selection"] = _selection_metadata(args, suite, rows)
         print(json.dumps(status, indent=2, sort_keys=True))
-        return 2 if (
-            status["conflicting_trials"]
-            or status["corrupt_bundles"]
-            or status["foreign_bundles"]
-        ) else 0
+        return (
+            2
+            if (
+                status["conflicting_trials"]
+                or status["corrupt_bundles"]
+                or status["foreign_bundles"]
+            )
+            else 0
+        )
 
     if args.command == "report":
         paths = _paths(args, need_execution=False)
@@ -364,9 +368,7 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(
                 f"benchmark report unavailable: {exc}; use --allow-incomplete to inspect a partial campaign"
             ) from exc
-        print(
-            json.dumps(report_data, indent=2, sort_keys=True)
-        )
+        print(json.dumps(report_data, indent=2, sort_keys=True))
         return 0
 
     paths = _paths(
@@ -392,6 +394,7 @@ def main(argv: list[str] | None = None) -> int:
                 results_root=paths.results,
                 local_source=args.source,
                 codex_auth=args.codex_auth,
+                source=runtime_source,
             )
             value = result.as_dict()
             results.append(value)
@@ -406,10 +409,7 @@ def main(argv: list[str] | None = None) -> int:
             "paths": paths.as_dict(),
             "selection": _selection_metadata(args, suite, rows),
             "summary": dict(sorted(counts.items())),
-            "ready": all(
-                row["status"] in {"READY", "COMPLETE"}
-                for row in results
-            ),
+            "ready": all(row["status"] in {"READY", "COMPLETE"} for row in results),
             "trials": results,
         }
         print(json.dumps(payload, indent=2, sort_keys=True))
@@ -435,6 +435,7 @@ def main(argv: list[str] | None = None) -> int:
             work_root=paths.work,
             local_source=args.source,
             codex_auth=args.codex_auth,
+            source=runtime_source,
         )
         results.append(
             {

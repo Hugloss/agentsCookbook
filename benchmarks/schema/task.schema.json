@@ -94,6 +94,19 @@
         }
       ]
     },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["artifact", "sha256", "target"],
+        "properties": {
+          "artifact": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "target": {"type": "string", "minLength": 1}
+        }
+      }
+    },
     "oracle": {
       "type": "object",
       "additionalProperties": false,
