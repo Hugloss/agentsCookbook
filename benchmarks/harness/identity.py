@@ -56,3 +56,62 @@ def execution_id(
             "mutation": mutation_identity,
         }
     )
+
+
+def execution_evidence_id(
+    *,
+    task: dict[str, Any],
+    condition: dict[str, Any],
+    trial: int,
+    seed: int,
+    subject_identity: dict[str, Any],
+    agent_identity: dict[str, Any],
+    harness_identity: dict[str, Any],
+    environment_identity: dict[str, Any],
+    mutation_identity: dict[str, Any] | None,
+) -> str:
+    """Identify frozen execution evidence independently of scoring authority."""
+    execution_task = {
+        key: task[key]
+        for key in (
+            "id",
+            "family",
+            "repository",
+            "prompt",
+            "mode",
+            "mutation",
+            "fixtures",
+            "budgets",
+            "contamination",
+        )
+        if key in task
+    }
+    return digest(
+        {
+            "contract": "benchmark-execution-evidence.v1",
+            "task": execution_task,
+            "condition": condition,
+            "trial": trial,
+            "seed": seed,
+            "subject": subject_identity,
+            "agent": agent_identity,
+            "harness": harness_identity,
+            "environment": environment_identity,
+            "mutation": mutation_identity,
+        }
+    )
+
+
+def score_projection_id(
+    *,
+    execution_evidence: str,
+    oracle_identity: dict[str, Any],
+) -> str:
+    """Identify one deterministic score projection over frozen execution evidence."""
+    return digest(
+        {
+            "contract": "benchmark-score-projection.v1",
+            "execution_evidence_id": execution_evidence,
+            "oracle": oracle_identity,
+        }
+    )
