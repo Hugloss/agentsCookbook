@@ -1,6 +1,6 @@
 {
   "id": "locate-repository-content-identity",
-  "version": 1,
+  "version": 2,
   "family": "python-localization",
   "mode": "read_only",
   "repository": {
@@ -11,10 +11,10 @@
   "prompt": "Without editing files, identify the function that computes the deterministic content identity of a repository tree for test selection. Return exactly one JSON object with keys path and symbol, and nothing else.",
   "mutation": null,
   "oracle": {
-    "adapter": "expected-json",
+    "adapter": "repository-location-json",
     "identity": {
       "id": "locate-repository-content-identity-oracle",
-      "version": "1"
+      "version": "2"
     },
     "configuration": {
       "expected": {
