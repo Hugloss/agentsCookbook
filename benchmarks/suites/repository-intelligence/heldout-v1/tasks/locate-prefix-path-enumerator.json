@@ -1,6 +1,6 @@
 {
   "id": "locate-prefix-path-enumerator",
-  "version": 1,
+  "version": 2,
   "family": "python-localization",
   "mode": "read_only",
   "repository": {
@@ -11,10 +11,10 @@
   "prompt": "Without editing files, identify the single function that enumerates indexed repository paths underneath a requested prefix. Return exactly one JSON object with keys path and symbol, and nothing else.",
   "mutation": null,
   "oracle": {
-    "adapter": "expected-json",
+    "adapter": "repository-location-json",
     "identity": {
       "id": "locate-prefix-path-enumerator-oracle",
-      "version": "1"
+      "version": "2"
     },
     "configuration": {
       "expected": {
