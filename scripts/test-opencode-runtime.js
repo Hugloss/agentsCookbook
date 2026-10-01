@@ -161,16 +161,25 @@ if (command === 'session' && filtered[1] === 'list') {
 }
 
 if (command === 'export') {
-  process.stdout.write(JSON.stringify({
+  const text = process.env.FAKE_EXPORT_LARGE === '1'
+    ? 'x'.repeat(180000)
+    : 'done';
+  const payload = JSON.stringify({
     messages: [{
       info: {
         role: 'assistant',
         providerID: 'liteLLM',
         modelID: 'gemma4'
       },
-      parts: [{ type: 'text', text: 'done' }]
+      parts: [{ type: 'text', text }]
     }]
-  }));
+  });
+  const stdoutIsRegularFile = fs.fstatSync(1).isFile();
+  process.stdout.write(
+    process.env.FAKE_EXPORT_TRUNCATE_PIPE === '1' && !stdoutIsRegularFile
+      ? payload.slice(0, 131072)
+      : payload
+  );
   process.exit(0);
 }
 
@@ -246,6 +255,32 @@ function testSelectedMcpFailureBlock() {
   assert.match(selected, /ModuleNotFoundError: No module named 'mcp'/);
   assert.doesNotMatch(selected, /enola connected/);
   assert.doesNotMatch(selected, /\.local\/bin\/enola/);
+}
+
+function testExportUsesRegularFileCapture() {
+  const root = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'agents-cookbook-opencode-export-'),
+  );
+  try {
+    const fake = [process.execPath, writeFakeOpenCode(root)];
+    const result = runtime.exportSession({
+      opencodeBin: fake,
+      repoDir: root,
+      sessionId: 'ses_test',
+      env: {
+        FAKE_EXPORT_LARGE: '1',
+        FAKE_EXPORT_TRUNCATE_PIPE: '1',
+      },
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    const parsed = JSON.parse(result.stdout);
+    assert.strictEqual(
+      parsed.messages[0].parts[0].text.length,
+      180000,
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 }
 
 async function testSharedLifecycle() {
@@ -587,6 +622,7 @@ async function testSharedLifecycle() {
 
 async function main() {
   testConfigInspection();
+  testExportUsesRegularFileCapture();
   testSelectedMcpFailureBlock();
   const parsed = runtime.extractFinalAnswer(
     JSON.stringify({
