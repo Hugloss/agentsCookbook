@@ -153,6 +153,9 @@ def build_oracle(definition: dict[str, Any], *, timeout_seconds: int, suite_root
             )
 
         valid_exit_codes = config.get("valid_exit_codes")
+        result_format = config.get("result_format", "text")
+        if result_format not in {"text", "lexigram-v1"}:
+            raise AdapterConfigurationError("unknown command oracle result_format")
         if valid_exit_codes is not None and not (
             isinstance(valid_exit_codes, list)
             and valid_exit_codes
@@ -176,5 +179,6 @@ def build_oracle(definition: dict[str, Any], *, timeout_seconds: int, suite_root
             valid_exit_codes=tuple(valid_exit_codes)
             if valid_exit_codes is not None
             else None,
+            result_format=result_format,
         )
     raise AdapterConfigurationError(f"unknown oracle adapter: {adapter}")
