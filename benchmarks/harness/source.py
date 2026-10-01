@@ -1,4 +1,5 @@
 """Repository source cache and exact materialization."""
+
 from __future__ import annotations
 
 import hashlib
@@ -64,7 +65,13 @@ def materialize_repository(
             timeout=600.0,
         )
     else:
-        _run_git(mirror, ("git", "fetch", "--prune", "origin"), timeout=600.0)
+        present = run_bounded(
+            repository_root=mirror,
+            argv=("git", "cat-file", "-e", f"{commit}^{{commit}}"),
+            limits=ProcessLimits(timeout_seconds=30.0),
+        )
+        if present.executable_missing or present.timed_out or present.return_code != 0:
+            _run_git(mirror, ("git", "fetch", "--prune", "origin"), timeout=600.0)
 
     actual_commit = _run_git(mirror, ("git", "rev-parse", commit)).decode().strip()
     if actual_commit != commit:
@@ -72,9 +79,7 @@ def materialize_repository(
             f"cached repository commit mismatch: expected {commit}, got {actual_commit}"
         )
     actual_tree = (
-        _run_git(mirror, ("git", "rev-parse", f"{commit}^{{tree}}"))
-        .decode()
-        .strip()
+        _run_git(mirror, ("git", "rev-parse", f"{commit}^{{tree}}")).decode().strip()
     )
     if actual_tree != tree:
         raise WorkspaceError(

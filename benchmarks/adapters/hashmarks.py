@@ -175,6 +175,24 @@ class HashmarksSubject:
             {"duration_ms": result.elapsed_ms, "response_bytes": len(result.stdout)},
         )
 
+    def direct_task_evidence(self, context: TrialContext, task: str) -> Observation:
+        """Native structured task evidence for model-free corpus probes."""
+        result = self._run(
+            context,
+            (*self._base(context), "task-evidence", task, "--limit", "20"),
+        )
+        return Observation(
+            {
+                "available": not result.executable_missing,
+                "invoked": True,
+                "query_semantics": "task-evidence",
+                "process": result.metrics(),
+                "stderr": result.stderr.decode("utf-8", errors="replace"),
+            },
+            result.stdout.decode("utf-8", errors="replace"),
+            {"duration_ms": result.elapsed_ms, "response_bytes": len(result.stdout)},
+        )
+
     def post_change(
         self,
         context: TrialContext,

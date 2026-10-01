@@ -8,6 +8,11 @@ The harness is the experiment authority. A product under test never grades itsel
 
 A benchmark suite freezes repository commit and tree identity, task, mutation digest, oracle identity, conditions, budgets, and scoring before campaign execution. Observed outcomes are preserved as `PASS`, `FAIL`, `INCOMPLETE`, `INVALID`, `CONTAMINATED`, or `NO_QUALIFYING_DEFECT`; infrastructure failures are never silently converted into product failures.
 
+The optional [multidomain v2 suite](suites/repository-intelligence/multidomain-v2/README.md)
+adds frozen external fixtures and a separate model-free evidence diagnostic. It
+runs only when explicitly requested. No benchmark target is a dependency of the
+Hashmarks release workflow.
+
 ## Model
 
 `suite -> experiment -> condition -> trial definition -> observed execution`
@@ -40,7 +45,7 @@ For native OpenCode and Codex trials, ambient/global MCP registrations are disab
 
 Participant processes do not inherit arbitrary host environment variables. The harness carries one fixed process-substrate allowlist—`PATH`, locale variables, terminal identity, and equivalent Windows launch variables—so native tools can start. Provider variables must be named explicitly through `BENCHMARK_PASSTHROUGH_ENV_KEYS`. The resulting observed environment is bound into execution identity.
 
-There is no automatic `.env` discovery in the benchmark CLI and no default harness root. The fast readiness check needs only `--env-file` and `--suite`; campaign execution/preflight additionally receives the campaign root and harness root explicitly. Direct CLI callers must provide the authorities needed by the command they choose.
+There is no automatic `.env` discovery in the benchmark CLI and no default harness root. The fast readiness check needs only `--env-file` and `--suite`; campaign execution/preflight additionally receives the campaign root and harness root explicitly. Required runtime authority keys must be present and nonempty in the selected `.env`; an exported shell value cannot make up for a missing file entry. Direct CLI callers must provide the authorities needed by the command they choose.
 
 Agent Economics remains a benchmark consumer/suite; shared process semantics remain single-owned until that module is promoted to a more generic repository location.
 

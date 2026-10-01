@@ -1,4 +1,5 @@
 """Command-line entry point for reusable empirical benchmark suites."""
+
 from __future__ import annotations
 
 import argparse
@@ -38,15 +39,16 @@ def _load_benchmark_env(
     environment: MutableMapping[str, str],
     *,
     require_file: bool,
-) -> None:
+) -> frozenset[str]:
     if not path.is_file():
         if require_file:
             raise SystemExit(f"benchmark env file does not exist: {path}")
-        return
+        return frozenset()
     try:
         lines = path.read_text(encoding="utf-8-sig").splitlines()
     except OSError as exc:
         raise SystemExit(f"cannot read benchmark env file {path}: {exc}") from exc
+    declared: set[str] = set()
     for line_no, raw in enumerate(lines, 1):
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -62,13 +64,27 @@ def _load_benchmark_env(
             continue
         key, value = line.split("=", 1)
         key = key.strip()
-        if key not in _BENCHMARK_ENV_KEYS or environment.get(key):
+        if key not in _BENCHMARK_ENV_KEYS:
             continue
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
             value = value[1:-1]
         if value:
-            environment[key] = value
+            declared.add(key)
+            if not environment.get(key):
+                environment[key] = value
+    return frozenset(declared)
+
+
+def _require_file_authority(
+    path: Path, declared: frozenset[str], required: tuple[str, ...]
+) -> None:
+    missing = sorted(set(required) - declared)
+    if missing:
+        raise SystemExit(
+            "missing explicit benchmark runtime authority in "
+            f"{path}: {', '.join(missing)}"
+        )
 
 
 def _add_selectors(
@@ -122,9 +138,7 @@ def _add_execution_inputs(command: argparse.ArgumentParser) -> None:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="uv run --no-project python -m benchmarks"
-    )
+    parser = argparse.ArgumentParser(prog="uv run --no-project python -m benchmarks")
     sub = parser.add_subparsers(dest="command", required=True)
 
     validate = sub.add_parser("validate-suite")
@@ -208,8 +222,7 @@ def _paths(args, *, need_execution: bool, results_optional: bool = False):
 
 def _selection_metadata(args, suite, rows) -> dict[str, object]:
     conditions = {
-        str(condition["id"]): condition
-        for condition in suite.experiment["conditions"]
+        str(condition["id"]): condition for condition in suite.experiment["conditions"]
     }
     bare_control_included = any(
         conditions.get(str(row["condition_id"]), {}).get("subject") == "none"
@@ -255,16 +268,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "check":
-        _load_benchmark_env(
+        declared = _load_benchmark_env(
             args.env_file,
             os.environ,
             require_file=True,
         )
         unknown_agents = sorted(set(args.agent) - set(suite.agents))
         if unknown_agents:
-            raise SystemExit(
-                "unknown benchmark agent(s): " + ", ".join(unknown_agents)
-            )
+            raise SystemExit("unknown benchmark agent(s): " + ", ".join(unknown_agents))
         authority_rows = [
             {"condition_id": str(condition["id"])}
             for condition in suite.experiment["conditions"]
@@ -272,11 +283,9 @@ def main(argv: list[str] | None = None) -> int:
         ]
         if not authority_rows:
             raise SystemExit("benchmark check has no suite conditions")
-        missing = [
-            name
-            for name in required_runtime_authority(suite, authority_rows)
-            if not os.environ.get(name)
-        ]
+        required = required_runtime_authority(suite, authority_rows)
+        _require_file_authority(args.env_file, declared, required)
+        missing = [name for name in required if not os.environ.get(name)]
         if missing:
             raise SystemExit(
                 "missing explicit benchmark runtime authority: "
@@ -304,10 +313,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command in {"preflight", "run"}:
         if args.env_file is not None:
-            _load_benchmark_env(
+            declared = _load_benchmark_env(
                 args.env_file,
                 os.environ,
                 require_file=True,
+            )
+            _require_file_authority(
+                args.env_file,
+                declared,
+                required_runtime_authority(suite, rows),
             )
         missing = [
             name
@@ -332,18 +346,20 @@ def main(argv: list[str] | None = None) -> int:
         status = campaign_status(
             suite=suite,
             results_root=paths.results,
-            selected_definitions={
-                str(row["definition_id"]) for row in rows
-            },
+            selected_definitions={str(row["definition_id"]) for row in rows},
         )
         status["paths"] = paths.as_dict()
         status["selection"] = _selection_metadata(args, suite, rows)
         print(json.dumps(status, indent=2, sort_keys=True))
-        return 2 if (
-            status["conflicting_trials"]
-            or status["corrupt_bundles"]
-            or status["foreign_bundles"]
-        ) else 0
+        return (
+            2
+            if (
+                status["conflicting_trials"]
+                or status["corrupt_bundles"]
+                or status["foreign_bundles"]
+            )
+            else 0
+        )
 
     if args.command == "report":
         paths = _paths(args, need_execution=False)
@@ -364,9 +380,7 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(
                 f"benchmark report unavailable: {exc}; use --allow-incomplete to inspect a partial campaign"
             ) from exc
-        print(
-            json.dumps(report_data, indent=2, sort_keys=True)
-        )
+        print(json.dumps(report_data, indent=2, sort_keys=True))
         return 0
 
     paths = _paths(
@@ -406,10 +420,7 @@ def main(argv: list[str] | None = None) -> int:
             "paths": paths.as_dict(),
             "selection": _selection_metadata(args, suite, rows),
             "summary": dict(sorted(counts.items())),
-            "ready": all(
-                row["status"] in {"READY", "COMPLETE"}
-                for row in results
-            ),
+            "ready": all(row["status"] in {"READY", "COMPLETE"} for row in results),
             "trials": results,
         }
         print(json.dumps(payload, indent=2, sort_keys=True))

@@ -65,4 +65,10 @@ Do not publish an overall winner score.
 
 ## Current native suites
 
+`multidomain-v2/` is an explicit draft benchmark with 60 frozen evidence cases
+and 36 agent tasks covering logs, Splunk CSV, dependencies, semantics, identities,
+and code ownership across four pinned repositories. Its new questions and oracles
+await independent review; the reports disclose that state. It is never invoked
+by Hashmarks release or ordinary test workflows. See its README for exact commands.
+
 `native-matrix-v3/` is the current native Codex/OpenCode comparison, with one paired smoke task by default from Hashmarks. It pins a source revision without checked-in answers. `enola-cycle-reproduction-v1/` adapts the published TypeScript cycle example and reports functional success and cycle introduction separately. Both are development-only experiments in agentsCookbook; neither enters the installed Hashmarks product.

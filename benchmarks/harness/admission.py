@@ -1,10 +1,12 @@
 """Shared benchmark trial admission used by preflight and execution."""
+
 from __future__ import annotations
 
 import dataclasses
 import hashlib
 import os
 import platform
+import shutil
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -198,8 +200,7 @@ def runtime_environment_identity(
         return "$CONTROL_ROOT/" + relative.as_posix()
 
     semantic = {
-        key: semantic_value(value)
-        for key, value in sorted(environment.items())
+        key: semantic_value(value) for key, value in sorted(environment.items())
     }
     digest = hashlib.sha256()
     for key, value in semantic.items():
@@ -208,9 +209,7 @@ def runtime_environment_identity(
         digest.update(value.encode())
         digest.update(b"\0")
     return {
-        "isolation_contract": (
-            "explicit-benchmark-environment-v3"
-        ),
+        "isolation_contract": ("explicit-benchmark-environment-v3"),
         "system": platform.system(),
         "machine": platform.machine(),
         "python": platform.python_version(),
@@ -250,9 +249,7 @@ def _native_subject_preparation(
 
     observed = agent_prepare.payload.get("observed_identity")
     stable_binding = (
-        observed.get("workspace_binding")
-        if isinstance(observed, dict)
-        else None
+        observed.get("workspace_binding") if isinstance(observed, dict) else None
     )
     exposure = agent_prepare.payload.get("mcp_exposure")
     native_identity = agent_prepare.payload.get("native_subject_identity")
@@ -309,12 +306,8 @@ def _agent_authority(agent, prepared: Observation) -> dict[str, Any]:
             "model": prepared.payload.get("model"),
             "reasoning_effort": prepared.payload.get("reasoning_effort"),
             "provider": prepared.payload.get("provider"),
-            "native_config_sha256": prepared.payload.get(
-                "native_config_sha256"
-            ),
-            "native_mcp_servers": prepared.payload.get(
-                "native_mcp_servers"
-            ),
+            "native_config_sha256": prepared.payload.get("native_config_sha256"),
+            "native_mcp_servers": prepared.payload.get("native_mcp_servers"),
         },
     }
 
@@ -341,6 +334,32 @@ def _resolve_condition(
     if condition is None:
         raise TrialAdmissionError(f"unknown condition: {condition_id}")
     return condition
+
+
+def _materialize_fixtures(
+    suite_root: Path,
+    workspace: Path,
+    fixtures: list[dict[str, str]],
+) -> None:
+    for fixture in fixtures:
+        source = (suite_root / fixture["artifact"]).resolve()
+        try:
+            source.relative_to(suite_root.resolve())
+        except ValueError as exc:
+            raise TrialAdmissionError("fixture source escapes suite") from exc
+        if hashlib.sha256(source.read_bytes()).hexdigest() != fixture["sha256"]:
+            raise TrialAdmissionError("fixture changed after suite validation")
+        target = (workspace / fixture["target"]).resolve()
+        try:
+            target.relative_to(workspace.resolve())
+        except ValueError as exc:
+            raise TrialAdmissionError("fixture target escapes trial workspace") from exc
+        if target.exists() or target.is_symlink():
+            raise TrialAdmissionError(
+                f"fixture target already exists: {fixture['target']}"
+            )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
 
 
 @contextmanager
@@ -405,6 +424,7 @@ def admit_trial(
             suite_root=suite.root,
             mutation=task["mutation"],
         )
+        _materialize_fixtures(suite.root, workspace, task.get("fixtures", []))
         admitted_state = snapshot(workspace)
 
         subject = build_subject(suite.subjects[str(condition["subject"])])
@@ -421,9 +441,9 @@ def admit_trial(
                 context.environment["CODEX_HOME"] = native_paths["codex_home"]
             if native_opencode:
                 context.environment["BENCHMARK_NATIVE_HOME"] = native_paths["home"]
-                context.environment["BENCHMARK_NATIVE_XDG_CONFIG_HOME"] = (
-                    native_paths["xdg_config_home"]
-                )
+                context.environment["BENCHMARK_NATIVE_XDG_CONFIG_HOME"] = native_paths[
+                    "xdg_config_home"
+                ]
         auth_mode = (
             "native-host"
             if native_codex

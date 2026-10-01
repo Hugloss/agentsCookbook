@@ -1,6 +1,6 @@
 -include .env
 
-.PHONY: benchmark-check benchmark-check-all benchmark benchmark-report benchmark-score \
+.PHONY: benchmark-check benchmark-check-all benchmark benchmark-smoke benchmark-report benchmark-score benchmark-evidence-validate \
 	_benchmark-suite-env _benchmark-agent-env _benchmark-campaign-env \
 	_benchmark-selected-campaign-env _benchmark-execution-env _benchmark-score-env
 
@@ -62,6 +62,21 @@ benchmark: _benchmark-execution-env
 		--harness-root "$(BENCHMARK_HARNESS_REPO_ROOT)" \
 		--agent "$(BENCHMARK_AGENT)"
 
+benchmark-smoke: _benchmark-execution-env
+	@uv run --no-project python -m benchmarks run \
+		--env-file .env \
+		--suite "$(BENCHMARK_SUITE_PATH)" \
+		--root "$(BENCHMARK_CAMPAIGN_ROOT)" \
+		--harness-root "$(BENCHMARK_HARNESS_REPO_ROOT)" \
+		--agent "$(BENCHMARK_AGENT)" \
+		--subject none --subject hashmarks \
+		--task logs-00 --task splunk-00 --task dependencies-00 \
+		--task semantics-00 --task identities-00 --task code_owners-00
+
+benchmark-evidence-validate:
+	@uv run --no-project python -m benchmarks.evidence validate \
+		--corpus benchmarks/suites/repository-intelligence/multidomain-v2/evidence.json
+
 benchmark-report: _benchmark-selected-campaign-env
 	@uv run --no-project python -m benchmarks report \
 		--suite "$(BENCHMARK_SUITE_PATH)" \
@@ -79,7 +94,7 @@ _benchmark-score-env: _benchmark-selected-campaign-env
 	}
 
 benchmark-score: _benchmark-score-env
-	@uv run --no-project python "$(BENCHMARK_SCORE_SCRIPT_PATH)" \
+	@PYTHONPATH="$(CURDIR):$$PYTHONPATH" uv run --no-project python "$(BENCHMARK_SCORE_SCRIPT_PATH)" \
 		--results "$(BENCHMARK_CAMPAIGN_ROOT)/results" \
 		--output "$(BENCHMARK_SCORE_OUTPUT_PATH)" \
 		--agent "$(BENCHMARK_AGENT)"
