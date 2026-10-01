@@ -67,6 +67,7 @@
       "task_success",
       "format_compliance",
       "semantic_success",
+      "semantic_gradeability",
       "command_calls",
       "tool_calls",
       "mcp_calls",
