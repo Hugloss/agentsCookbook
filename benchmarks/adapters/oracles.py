@@ -56,7 +56,11 @@ def _normalize_repository_location(
 
     workspace_root = workspace.resolve()
     candidate = Path(raw_path.strip())
-    resolved = candidate.resolve() if candidate.is_absolute() else (workspace_root / candidate).resolve()
+    resolved = (
+        candidate.resolve()
+        if candidate.is_absolute()
+        else (workspace_root / candidate).resolve()
+    )
     try:
         relative = resolved.relative_to(workspace_root)
     except ValueError:
@@ -93,7 +97,11 @@ class RepositoryLocationOracle:
         return Observation(
             {
                 "healthy": healthy,
-                "reason": None if healthy else reason or "expected repository location is not canonical",
+                "reason": (
+                    None
+                    if healthy
+                    else reason or "expected repository location is not canonical"
+                ),
             },
             "",
         )
