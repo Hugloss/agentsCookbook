@@ -215,6 +215,12 @@ class RepositoryLocationOracleTests(unittest.TestCase):
         self.assertEqual(report["task_success_rate"], 0.5)
         self.assertEqual(report["semantic_success_rate"], 0.5)
         self.assertEqual(report["semantic_success_denominator"], 2)
+        self.assertEqual(report["semantic_gradeable_rate"], 1.0)
+        self.assertEqual(report["semantic_gradeable_denominator"], 2)
+        self.assertEqual(
+            report["semantic_statuses"],
+            {},
+        )
         self.assertEqual(report["format_compliance_rate"], 0.5)
         self.assertEqual(report["format_compliance_denominator"], 2)
 
