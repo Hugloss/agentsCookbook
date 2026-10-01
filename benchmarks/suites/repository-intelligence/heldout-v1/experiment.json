@@ -62,9 +62,11 @@
   ],
   "scoring": {
     "id": "repository-intelligence-heldout-outcomes-score",
-    "version": 1,
+    "version": 2,
     "metrics": [
       "task_success",
+      "format_compliance",
+      "semantic_success",
       "command_calls",
       "tool_calls",
       "mcp_calls",
