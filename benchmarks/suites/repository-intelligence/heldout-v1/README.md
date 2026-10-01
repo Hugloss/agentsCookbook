@@ -115,7 +115,7 @@ make benchmark-score
 - `benchmark` executes/resumes the frozen campaign and does not secretly run either check first.
 - `benchmark-report` is the generic framework report.
 - `benchmark-score` runs this suite's explicit language-separated held-out scorer.
-- Before a new full campaign after benchmark-authority changes, use the focused localization qualification target documented in the repository Makefile. It uses a separate campaign root and must not be treated as the full score.
+- Before a new full campaign after benchmark-authority changes, run `make benchmark-qualify-localization`. It exercises the four localization cases that exposed the v1 oracle defect across bare, Hashmarks, and Enola using a separate `/tmp/agentscookbook-heldout-v1-localization-qualification` campaign root. It is qualification evidence, not the full score.
 
 The Makefile passes `.env` to the benchmark CLI, whose single configuration loader validates required settings. Native-installed tool paths are intentionally delegated to Linux/tool discovery and then recorded as observed authority.
 
