@@ -7,6 +7,7 @@ from pathlib import Path
 
 from benchmarks.adapters.oracles import RepositoryLocationOracle
 from benchmarks.harness.model import Observation, TrialContext
+from benchmarks.harness.report import _aggregate_condition
 
 
 EXPECTED = {
@@ -141,6 +142,38 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             )
             self.assertFalse(grade.payload["semantic_success"])
             self.assertFalse(grade.payload["format_compliant"])
+
+    def test_report_separates_semantic_success_from_format_compliance(self) -> None:
+        receipts = [
+            {
+                "status": "PASS",
+                "execution": {
+                    "oracle_grade": {
+                        "semantic_success": True,
+                        "format_compliant": False,
+                    }
+                },
+                "authority": {"subject": {"available": False}},
+                "measurements": {"agent": {}},
+            },
+            {
+                "status": "FAIL",
+                "execution": {
+                    "oracle_grade": {
+                        "semantic_success": False,
+                        "format_compliant": True,
+                    }
+                },
+                "authority": {"subject": {"available": False}},
+                "measurements": {"agent": {}},
+            },
+        ]
+        report = _aggregate_condition(receipts)
+        self.assertEqual(report["task_success_rate"], 0.5)
+        self.assertEqual(report["semantic_success_rate"], 0.5)
+        self.assertEqual(report["semantic_success_denominator"], 2)
+        self.assertEqual(report["format_compliance_rate"], 0.5)
+        self.assertEqual(report["format_compliance_denominator"], 2)
 
     def test_path_escape_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
