@@ -12,7 +12,8 @@
     "status",
     "authority",
     "execution",
-    "measurements"
+    "measurements",
+    "scoring"
   ],
   "properties": {
     "definition_id": {
@@ -94,7 +95,12 @@
       "type": "object",
       "additionalProperties": true,
       "required": [
-        "events"
+        "events",
+        "agent_answer",
+        "workspace_root",
+        "location_observation",
+        "evidence_contract",
+        "evidence_identity"
       ],
       "properties": {
         "events": {
@@ -119,6 +125,29 @@
               "pattern": "^[0-9a-f]{64}$"
             }
           }
+        },
+        "agent_answer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "workspace_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "location_observation": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "evidence_contract": {
+          "const": "benchmark-execution-evidence.v2"
+        },
+        "evidence_identity": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         }
       }
     },
@@ -131,6 +160,24 @@
         "string",
         "null"
       ]
+    },
+    "scoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projection_identity",
+        "oracle_grade"
+      ],
+      "properties": {
+        "projection_identity": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "oracle_grade": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
     }
   }
 }

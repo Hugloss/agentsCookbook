@@ -1,8 +1,30 @@
 # Held-out repository observer outcomes v1
 
-This agentsCookbook suite measures what native Codex and native OpenCode do with bare tools, Hashmarks MCP, or Enola MCP. It contains twelve pinned tasks: five Python localization tasks on Hashmarks, one Python defect repair on agentsCookbook, and six TypeScript localization tasks on UV Fleet. Each of six agent/subject conditions runs three paired seeds per task: 216 frozen trials. The source commits predate this suite, so task answers are absent from each trial repository.
+This agentsCookbook suite measures what native Codex and native OpenCode do with bare tools, Hashmarks MCP, or Enola MCP. It contains twelve pinned tasks: five Python localization tasks on Hashmarks, one Python defect repair on agentsCookbook, and six TypeScript localization tasks on UV Fleet. Each of six agent/subject conditions runs three paired seeds per task: 216 trials. The source commits predate this suite, so task answers are absent from each trial repository.
 
-The runner owns process execution, isolation, contamination checks, receipts, and scoring. Hashmarks supplies repository evidence only. Expected JSON answers and the repair oracle live in the suite definitions and are never supplied to the agent prompt. The repair mutation and its focused test come from the already validated native matrix v3.
+**Status:** heldout-v1 is still being qualified. Its repository/source pins are deliberate, but the benchmark is not considered frozen until its oracle semantics and a complete campaign are qualified. Benchmark defects found during qualification are repaired in v1; results produced under superseded v1 authority must not be mixed with current score projections. Once v1 is frozen, newly discovered benchmark ideas enter as diagnostic/shadow tasks first rather than being added post-hoc to the scored population.
+
+The runner owns process execution, isolation, contamination checks, receipts, and scoring. Hashmarks supplies repository evidence only. Localization tasks use a deterministic repository-location oracle; the repair task keeps its independent command oracle. Expected answers and repair checks live in the suite definitions and are never supplied to the agent prompt.
+
+### Localization grading
+
+Localization PASS/FAIL measures whether the agent identified the frozen repository location. Instruction-format compliance remains separately observable.
+
+The repository-location oracle accepts only:
+
+- one bare JSON object, or one `json` fenced JSON object, with exactly `path` and `symbol`
+- a repository-relative path, or an absolute path that resolves inside the isolated trial workspace
+- an unqualified symbol or a qualified callable name whose terminal symbol identifies the same target
+
+It never extracts JSON from surrounding prose, never chooses among multiple objects, rejects duplicate JSON keys, and rejects paths escaping the trial workspace. A single JSON fence is semantically gradeable but records `format_compliant=false`; the task prompt still requires a bare JSON object. Qualified symbols such as `WorkspaceMapStore.paths_under` normalize to `paths_under` for localization comparison without weakening the expected repository target.
+
+The localization boundary is deliberately split into observation and scoring. `repository-location-normalization.v2` parses and normalizes the frozen agent answer without deciding correctness. `repository-location-score.v2` compares that observation with frozen oracle truth. The resulting semantic status is `CORRECT`, `INCORRECT`, or `UNSCORABLE`; an unscorable answer is not silently relabeled as a proven wrong location. The suite remains heldout-v1 while it is being qualified; these internal policy identifiers distinguish incompatible evidence.
+
+The result receipt keeps execution evidence separate from the score projection. `execution.evidence_identity` binds the frozen task execution, runtime authorities, mutation, environment, exact agent answer, original workspace root, recorded location observation, and agent trace digest without depending on oracle/scoring authority. `scoring.projection_identity` binds that execution evidence to the declared oracle and scoring policy. Verified bundles can be regraded without another model run when only scoring truth or policy changes and the normalization policy is unchanged. Older bundles without this evidence must be rerun.
+
+Reports expose `semantic_success_rate`, `semantic_gradeable_rate`, semantic-status counts, and `format_compliance_rate` independently over valid localization outcomes. Missing observations remain unknown with a zero denominator and a null rate; they are never converted to zero performance. Task PASS for localization follows semantic success; formatting remains a separate instruction-following signal.
+
+A complete campaign with legitimate candidate FAIL outcomes can still be qualified evidence. Campaign qualification is lost by missing, incomplete, invalid, or contaminated execution evidence, not by the candidate simply answering incorrectly.
 
 From the agentsCookbook root, configure the benchmark authority once:
 
@@ -99,6 +121,19 @@ make benchmark-score
 - `benchmark` executes/resumes the frozen campaign and does not secretly run either check first.
 - `benchmark-report` is the generic framework report.
 - `benchmark-score` runs this suite's explicit language-separated held-out scorer.
+- Before a new full campaign after benchmark-authority changes, run `make benchmark-qualify-localization`. It exercises the four localization cases that exposed the v1 oracle defect across bare, Hashmarks, and Enola, prints a fresh campaign root, and checks that its execution evidence is qualified. It is qualification evidence, not the full score.
+
+For a scoring-only change to a complete campaign recorded under the current normalization and execution-evidence contracts, run offline scoring without editing the source bundles:
+
+```sh
+uv run --no-project python -m benchmarks regrade-score \
+  --suite benchmarks/suites/repository-intelligence/heldout-v1 \
+  --source-results /path/to/source-campaign/results \
+  --agent opencode-native \
+  --output /path/to/new-regraded-score.json
+```
+
+The offline report records source receipt hashes and projection identities. It rejects changed execution inputs, changed normalization policy, incomplete or invalid source trials, and a changed repair oracle. The output must be outside the source results directory.
 
 The Makefile passes `.env` to the benchmark CLI, whose single configuration loader validates required settings. Native-installed tool paths are intentionally delegated to Linux/tool discovery and then recorded as observed authority.
 
@@ -155,6 +190,6 @@ uv run --no-project python -m benchmarks preflight \
   --subject none
 ```
 
-Use a fresh campaign root for each independent Hashmarks candidate or native agent/model configuration. A failed preflight or incomplete receipt is not a scored trial. The specialized score writes one report for the selected population: 108 valid bundles for one agent or 216 for both, split evenly between Python and TypeScript. Its v2 JSON records `selection.agents` as a list. It compares assistance within each agent and reports cross-agent observations descriptively when both are selected. It does not rank the products into one winner.
+Use a fresh campaign root for each independent Hashmarks candidate, native agent/model configuration, or benchmark-authority revision. Do not resume a campaign created before a task/oracle/scoring change even when the directory is still named heldout-v1. A failed preflight or incomplete receipt is not a scored trial. The specialized score writes one report for the selected population: 108 valid bundles for one agent or 216 for both, split evenly between Python and TypeScript. Its JSON records `selection.agents` as a list. It compares assistance within each agent and reports cross-agent observations descriptively when both are selected. It does not rank the products into one winner.
 
 The permanent drift gate lives in Hashmarks tests. This suite measures downstream agent behavior and must not replace Hashmarks' owner, ambiguity, provenance, freshness, or verification regressions.

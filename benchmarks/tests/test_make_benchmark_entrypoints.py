@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import subprocess
+import io
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 from benchmarks.__main__ import main
 
@@ -31,6 +34,13 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                     f"{target}:\n\t@uv run --no-project python -m benchmarks {command} --env-file .env",
                     makefile,
                 )
+        self.assertIn("benchmark-qualify-localization:", makefile)
+        self.assertIn(
+            "mktemp -d /tmp/agentscookbook-heldout-v1-localization-qualification.XXXXXX",
+            makefile,
+        )
+        self.assertIn("--root \"$$qualification_root\" --require-qualified", makefile)
+        self.assertIn("--subject none --subject hashmarks --subject enola", makefile)
         self.assertNotIn("release-check:", makefile)
         self.assertIn("BENCHMARK_AGENT=\n", ENV_EXAMPLE.read_text(encoding="utf-8"))
 
@@ -62,6 +72,29 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             ):
                 main(["run", "--env-file", str(file)])
             self.assertEqual(list(Path(tmp).iterdir()), [])
+
+    def test_status_can_require_qualified_campaign(self) -> None:
+        suite = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            args = ["status", "--suite", str(suite), "--results", tmp]
+            self.assertEqual(main(args), 0)
+            self.assertEqual(main([*args, "--require-qualified"]), 2)
+
+    def test_regrade_score_dispatches_without_runtime_config(self) -> None:
+        suite = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
+        with tempfile.TemporaryDirectory() as tmp, mock.patch(
+            "benchmarks.__main__.subprocess.run"
+        ) as run:
+            run.return_value.returncode = 0
+            self.assertEqual(
+                main([
+                    "regrade-score", "--suite", str(suite),
+                    "--source-results", tmp, "--agent", "opencode-native",
+                    "--output", str(Path(tmp).parent / "score.json"),
+                ]),
+                0,
+            )
+            self.assertIn("--regrade-source-results", run.call_args.args[0])
 
     def test_missing_agent_fails_even_with_explicit_cli_agent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

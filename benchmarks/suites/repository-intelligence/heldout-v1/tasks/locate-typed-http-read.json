@@ -1,6 +1,6 @@
 {
   "id": "locate-typed-http-read",
-  "version": 1,
+  "version": 2,
   "family": "typescript-localization",
   "mode": "read_only",
   "repository": {
@@ -11,10 +11,10 @@
   "prompt": "Without editing files, identify the frontend HTTP transport function that starts a typed read request. Return exactly one JSON object with keys path and symbol, and nothing else.",
   "mutation": null,
   "oracle": {
-    "adapter": "expected-json",
+    "adapter": "repository-location-json",
     "identity": {
       "id": "locate-typed-http-read-oracle",
-      "version": "1"
+      "version": "2"
     },
     "configuration": {
       "expected": {

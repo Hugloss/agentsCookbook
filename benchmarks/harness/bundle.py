@@ -4,9 +4,13 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
 
-from benchmarks.harness.identity import canonical_json
+from benchmarks.harness.identity import (
+    EXECUTION_EVIDENCE_CONTRACT,
+    canonical_json,
+    execution_evidence_id,
+    score_projection_id,
+)
 from benchmarks.harness.receipt import is_complete_receipt
 
 
@@ -104,4 +108,39 @@ def verify_bundle(directory: Path) -> tuple[bool, str | None]:
         return False, "event seal differs from receipt"
     if canonical_json(seal_value) != seal:
         return False, "event seal is not canonical JSON"
+    contract = execution.get("evidence_contract")
+    if contract is not None:
+        if contract != EXECUTION_EVIDENCE_CONTRACT:
+            return False, "unsupported execution evidence contract"
+        trace = artifacts.get("agent_trace")
+        scoring = receipt.get("scoring")
+        authority = receipt.get("authority")
+        if not isinstance(trace, dict) or not isinstance(scoring, dict) or not isinstance(authority, dict):
+            return False, "execution evidence is missing trace or scoring authority"
+        try:
+            evidence_identity = execution_evidence_id(
+                task=receipt["task"],
+                condition=receipt["condition"],
+                trial=execution["trial_index"],
+                seed=execution["seed"],
+                subject_identity=authority["subject"],
+                agent_identity=authority["agent"],
+                harness_identity=authority["harness"],
+                environment_identity=authority["environment"],
+                mutation_identity=authority["mutation"],
+                agent_answer=execution["agent_answer"],
+                workspace_root=execution["workspace_root"],
+                location_observation=execution["location_observation"],
+                agent_trace_sha256=trace["sha256"],
+            )
+            projection_identity = score_projection_id(
+                execution_evidence=evidence_identity,
+                oracle_identity=authority["oracle"]["declared"],
+            )
+        except (KeyError, TypeError, ValueError):
+            return False, "execution evidence identity inputs are invalid"
+        if execution.get("evidence_identity") != evidence_identity:
+            return False, "execution evidence identity mismatch"
+        if scoring.get("projection_identity") != projection_identity:
+            return False, "score projection identity mismatch"
     return True, None

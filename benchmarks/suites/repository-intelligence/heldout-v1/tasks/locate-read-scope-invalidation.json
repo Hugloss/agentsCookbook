@@ -1,6 +1,6 @@
 {
   "id": "locate-read-scope-invalidation",
-  "version": 1,
+  "version": 2,
   "family": "typescript-localization",
   "mode": "read_only",
   "repository": {
@@ -11,10 +11,10 @@
   "prompt": "Without editing files, identify the frontend function that returns read scopes invalidated by a mutation scope. Return exactly one JSON object with keys path and symbol, and nothing else.",
   "mutation": null,
   "oracle": {
-    "adapter": "expected-json",
+    "adapter": "repository-location-json",
     "identity": {
       "id": "locate-read-scope-invalidation-oracle",
-      "version": "1"
+      "version": "2"
     },
     "configuration": {
       "expected": {

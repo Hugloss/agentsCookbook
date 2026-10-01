@@ -123,6 +123,7 @@ def _parser() -> argparse.ArgumentParser:
     status.add_argument("--env-file", type=Path)
     _add_selectors(status)
     _add_campaign_paths(status, execution=False)
+    status.add_argument("--require-qualified", action="store_true")
 
     report = sub.add_parser("report")
     report.add_argument("--suite", type=Path)
@@ -142,6 +143,12 @@ def _parser() -> argparse.ArgumentParser:
     score.add_argument("--agent", action="append", default=[])
     score.add_argument("--score-script", type=Path)
     score.add_argument("--output", type=Path)
+
+    regrade_score = sub.add_parser("regrade-score")
+    regrade_score.add_argument("--suite", type=Path, required=True)
+    regrade_score.add_argument("--source-results", type=Path, required=True)
+    regrade_score.add_argument("--output", type=Path, required=True)
+    regrade_score.add_argument("--agent", action="append", required=True)
 
     return parser
 
@@ -226,6 +233,26 @@ def _selection_metadata(args, suite, rows) -> dict[str, object]:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "regrade-score":
+        script = args.suite.resolve() / "score.py"
+        if not script.is_file():
+            raise SystemExit(f"selected suite has no score script: {script}")
+        invocation = [
+            sys.executable,
+            str(script),
+            "--regrade-source-results",
+            str(args.source_results),
+            "--output",
+            str(args.output),
+        ]
+        for agent in args.agent:
+            invocation.extend(("--agent", agent))
+        environment = dict(os.environ)
+        project_root = str(Path(__file__).resolve().parents[1])
+        environment["PYTHONPATH"] = os.pathsep.join(
+            filter(None, (project_root, environment.get("PYTHONPATH", "")))
+        )
+        return subprocess.run(invocation, env=environment, check=False).returncode
     config = _resolve_config(args)
     runtime_source = config.runtime_environment()
     if hasattr(args, "agent"):
@@ -345,6 +372,7 @@ def main(argv: list[str] | None = None) -> int:
                 status["conflicting_trials"]
                 or status["corrupt_bundles"]
                 or status["foreign_bundles"]
+                or (args.require_qualified and not status["qualified"])
             )
             else 0
         )

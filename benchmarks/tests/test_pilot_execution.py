@@ -1920,7 +1920,7 @@ class PilotExecutionTests(unittest.TestCase):
                 selected_definitions={row["definition_id"] for row in selected},
             )
         profile = report["conditions"][condition["id"]]
-        self.assertEqual(report["schema"]["version"], 3)
+        self.assertEqual(report["schema"]["version"], 4)
         self.assertEqual(profile["subject_tool_adoption_denominator"], 1)
         self.assertEqual(profile["subject_tool_adoption_rate"], 1.0)
         self.assertEqual(
@@ -2621,6 +2621,25 @@ class PilotExecutionTests(unittest.TestCase):
             self.assertTrue(is_complete_receipt(first.result_dir))
             self.assertTrue((first.result_dir / "events.jsonl").is_file())
             self.assertTrue((first.result_dir / "agent-trace.jsonl").is_file())
+            first_receipt = json.loads(
+                (first.result_dir / "result.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                first_receipt["scoring"]["oracle_grade"],
+                {"valid": True, "passed": True},
+            )
+            self.assertIsInstance(
+                first_receipt["execution"]["agent_answer"],
+                str,
+            )
+            self.assertRegex(
+                first_receipt["execution"]["evidence_identity"],
+                r"^[0-9a-f]{64}$",
+            )
+            self.assertRegex(
+                first_receipt["scoring"]["projection_identity"],
+                r"^[0-9a-f]{64}$",
+            )
 
             second = run_trial(**kwargs)
             self.assertEqual(second.trial_id, first.trial_id)
@@ -2633,6 +2652,15 @@ class PilotExecutionTests(unittest.TestCase):
             )
             self.assertEqual(report["observed_trials"], 1)
             self.assertEqual(report["status_counts"], {"PASS": 1})
+            self.assertEqual(
+                report["campaign_qualification"]["status"],
+                "QUALIFIED",
+            )
+            self.assertTrue(report["campaign_qualification"]["complete"])
+            self.assertEqual(
+                report["campaign_qualification"]["invalid_outcomes"],
+                0,
+            )
             self.assertFalse(report["authority"]["ranking_performed"])
             valid, reason = verify_bundle(first.result_dir)
             self.assertTrue(valid, reason)
