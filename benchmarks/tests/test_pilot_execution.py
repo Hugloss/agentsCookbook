@@ -2621,6 +2621,13 @@ class PilotExecutionTests(unittest.TestCase):
             self.assertTrue(is_complete_receipt(first.result_dir))
             self.assertTrue((first.result_dir / "events.jsonl").is_file())
             self.assertTrue((first.result_dir / "agent-trace.jsonl").is_file())
+            first_receipt = json.loads(
+                (first.result_dir / "result.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                first_receipt["execution"]["oracle_grade"],
+                {"valid": True, "passed": True},
+            )
 
             second = run_trial(**kwargs)
             self.assertEqual(second.trial_id, first.trial_id)
