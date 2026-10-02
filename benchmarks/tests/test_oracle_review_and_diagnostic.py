@@ -95,15 +95,66 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
             with self.assertRaisesRegex(SuiteError, "escapes suite root"):
                 load_suite(copy)
 
-    def test_first_review_is_recorded_but_does_not_approve_campaign(self) -> None:
+    def test_one_review_is_default_and_only_escalated_task_remains_pending(self) -> None:
         result = validate_oracle_reviews(load_suite(SOURCE), require_complete=False)
         self.assertEqual(result["first_reviewed_tasks"], 12)
-        self.assertEqual(result["approved_tasks"], 0)
+        self.assertEqual(result["approved_tasks"], 11)
+        self.assertEqual(
+            result["pending_tasks"],
+            ["locate-repository-content-identity"],
+        )
+        self.assertEqual(
+            result["escalated_tasks"],
+            ["locate-repository-content-identity"],
+        )
         with self.assertRaisesRegex(
             OracleReviewError,
-            "Next: make benchmark-oracle-review",
+            "1 evidence-escalated task",
         ):
             validate_oracle_reviews(load_suite(SOURCE), require_complete=True)
+
+    def test_second_review_completes_only_escalated_task(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "suite"
+            shutil.copytree(SOURCE, copy)
+            review_path = copy / "qualification/oracle-reviews.json"
+            evidence = json.loads(review_path.read_text(encoding="utf-8"))
+            row = evidence["tasks"]["locate-repository-content-identity"]
+            row["reviews"].append(
+                {
+                    "decision": "unique",
+                    "reason": (
+                        "Independent source inspection confirms the test-shard "
+                        "content identity is computed by this function."
+                    ),
+                    "reviewer": "independent-review-b",
+                    "task_digest": row["task_digest"],
+                }
+            )
+            review_path.write_text(
+                json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            result = validate_oracle_reviews(load_suite(copy), require_complete=True)
+            self.assertTrue(result["complete"])
+            self.assertEqual(result["approved_tasks"], 12)
+
+    def test_escalation_requires_a_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "suite"
+            shutil.copytree(SOURCE, copy)
+            review_path = copy / "qualification/oracle-reviews.json"
+            evidence = json.loads(review_path.read_text(encoding="utf-8"))
+            requirement = evidence["tasks"]["locate-repository-content-identity"][
+                "review_requirement"
+            ]
+            requirement["escalation_reason"] = None
+            review_path.write_text(json.dumps(evidence), encoding="utf-8")
+            with self.assertRaisesRegex(
+                OracleReviewError,
+                "escalated oracle review reason missing",
+            ):
+                validate_oracle_reviews(load_suite(copy), require_complete=False)
 
     def test_oracle_review_cli_prints_next_action_and_succeeds(self) -> None:
         output = io.StringIO()
@@ -113,23 +164,27 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
                 0,
             )
         rendered = output.getvalue()
-        self.assertIn("Oracle review BLOCKED: 0/12 tasks approved", rendered)
+        self.assertIn("Oracle review BLOCKED: 11/12 tasks approved", rendered)
         self.assertIn("make benchmark-oracle-review-check", rendered)
 
     def test_oracle_review_guide_hands_off_without_self_approval(self) -> None:
         suite = load_suite(SOURCE)
         guide = oracle_review_guide(suite)
-        self.assertIn("Oracle review BLOCKED: 0/12 tasks approved", guide)
+        self.assertIn("Oracle review BLOCKED: 11/12 tasks approved", guide)
+        self.assertIn("One independent source review is the default.", guide)
         self.assertIn("This command does not self-approve benchmark truth.", guide)
         self.assertIn("locate-repository-content-identity", guide)
+        self.assertNotIn("locate-prefix-path-enumerator", guide)
+        self.assertIn("required independent reviews: 2", guide)
         self.assertIn("existing independent reviews: 1", guide)
+        self.assertIn("Prior heldout-v1 runs showed", guide)
         self.assertIn("make benchmark-oracle-review-check", guide)
         self.assertIn("make benchmark", guide)
         self.assertEqual(
             validate_oracle_reviews(suite, require_complete=False)[
                 "approved_tasks"
             ],
-            0,
+            11,
         )
 
     def test_diagnostic_is_separate_and_has_ten_paired_replicates(self) -> None:
