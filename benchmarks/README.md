@@ -26,6 +26,12 @@ Subjects and agents are replaceable participants. Hashmarks, Enola, Codex, local
 
 Definition identity binds the frozen experiment/task/condition/trial/seed. Execution identity additionally binds observed subject, agent, oracle, harness, environment, and mutation authority. Re-running the same frozen task against a different product/model version therefore creates a different execution identity instead of overwriting or reusing an older result.
 
+The schema's historical `seed` field is a paired replicate identifier unless an
+agent adapter explicitly transports and records a provider sampling seed. Current
+native Codex/OpenCode benchmark adapters do not do so. The report therefore labels
+the value `replicate_id` and treats disagreement across replicates as stability
+evidence rather than something to retry away.
+
 Each trial uses isolated HOME, TMP, and XDG roots where the agent contract requires them, bounded process execution, sealed raw event evidence, an independently healthy oracle, and a create-once verified result receipt. A trial is resumably complete only when its result, checksum, completion record, and bound artifacts agree.
 
 ## Shared execution and admission authority
