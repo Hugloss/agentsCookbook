@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from benchmarks.harness.live_console import LiveTaskMatrix
 from benchmarks.harness.suite import load_suite
 
 
-SUITE = "benchmarks/suites/repository-intelligence/heldout-v1"
+SUITE = Path("benchmarks/suites/repository-intelligence/heldout-v1")
 
 
 class LiveTaskMatrixTests(unittest.TestCase):
