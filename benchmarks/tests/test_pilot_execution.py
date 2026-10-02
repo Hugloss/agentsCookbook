@@ -27,6 +27,7 @@ from benchmarks.adapters.enola import EnolaSubject
 from benchmarks.adapters.hashmarks import HashmarksSubject
 from benchmarks.adapters.opencode_native import (
     OpenCodeNativeAgent,
+    _BASE_CONFIG_CACHE,
     _EXECUTABLE_OBSERVATION_CACHE,
     _metrics as opencode_metrics,
     _native_environment as opencode_native_environment,
@@ -883,6 +884,102 @@ class PilotExecutionTests(unittest.TestCase):
             self.assertEqual(observed.call_count, 2)
             self.assertEqual(changed.payload["version"], "opencode 2")
             self.assertNotIn("cache_hit", changed.payload)
+
+    def test_opencode_reuses_base_config_only_within_exact_admission_scope(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            executable = Observation(
+                {
+                    "available": True,
+                    "version": "opencode 1",
+                    "executable_sha256": "a" * 64,
+                },
+                "opencode 1",
+            )
+            inspection = {
+                "model": "liteLLM/gemma4",
+                "provider": "liteLLM",
+                "config_sha256": "b" * 64,
+                "mcp_shape": "flat",
+                "mcp_servers": [],
+            }
+            base_config = {
+                "model": "liteLLM/gemma4",
+                "mcp": {},
+            }
+            runtime_result = mock.Mock()
+            runtime_result.metrics.return_value = {"return_code": 0}
+            runtime_result.stderr = b""
+            runtime_result.stdout = b"{}"
+            calls: list[tuple[str, ...]] = []
+
+            def runtime_call(context, *, args, **kwargs):
+                calls.append(args)
+                if "--base-config-file" in args:
+                    base_path = Path(args[args.index("--base-config-file") + 1])
+                    self.assertEqual(
+                        json.loads(base_path.read_text(encoding="utf-8")),
+                        base_config,
+                    )
+                    source = "task-cache"
+                    payload = {}
+                else:
+                    self.assertIn("--emit-base-config", args)
+                    source = "fresh"
+                    payload = {"base_config_snapshot": base_config}
+                return (
+                    {
+                        "status": "completed",
+                        "inspection": inspection,
+                        "effective_inspection": inspection,
+                        "selected_server": None,
+                        "workspace_binding": {"verified": True},
+                        "native_subject_identity": None,
+                        "overlay_identity": {"shape": "flat"},
+                        "base_config_source": source,
+                        **payload,
+                    },
+                    runtime_result,
+                )
+
+            def context(name: str, scope: str) -> TrialContext:
+                workspace = root / f"workspace-{name}"
+                workspace.mkdir()
+                control = root / f"control-{name}"
+                return TrialContext(
+                    workspace,
+                    control,
+                    _opencode_trial_environment(control, root),
+                    admission_scope=scope,
+                )
+
+            _BASE_CONFIG_CACHE.clear()
+            agent = OpenCodeNativeAgent()
+            with (
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._observe_opencode_executable",
+                    return_value=executable,
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call",
+                    side_effect=runtime_call,
+                ),
+            ):
+                first = agent.prepare(context("first", "same-task"), None)
+                second = agent.prepare(context("second", "same-task"), None)
+                third = agent.prepare(context("third", "different-task"), None)
+
+            self.assertEqual(first.payload["base_config_source"], "fresh")
+            self.assertEqual(second.payload["base_config_source"], "task-cache")
+            self.assertEqual(third.payload["base_config_source"], "fresh")
+            self.assertFalse(first.measurements["base_config_reused"])
+            self.assertTrue(second.measurements["base_config_reused"])
+            self.assertFalse(third.measurements["base_config_reused"])
+            self.assertNotIn("--base-config-file", calls[0])
+            self.assertIn("--base-config-file", calls[1])
+            self.assertNotIn("--base-config-file", calls[2])
 
     def test_opencode_prepare_uses_shared_runtime_inspection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
