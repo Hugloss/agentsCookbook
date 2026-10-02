@@ -12,6 +12,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from benchmarks.adapters.runtime import observe_executable, resolve_native_executable
@@ -30,6 +31,71 @@ from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 _RUNTIME_SCRIPT = (
     Path(__file__).resolve().parents[2] / "scripts" / "opencode-runtime.js"
 )
+
+_EXECUTABLE_OBSERVATION_CACHE: dict[tuple[str, str], Observation] = {}
+_EXECUTABLE_OBSERVATION_CACHE_LOCK = Lock()
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _observe_opencode_executable(
+    context: TrialContext,
+    environment: dict[str, str],
+) -> Observation:
+    """Reuse version evidence only for byte-identical OpenCode executables.
+
+    Config, MCP, workspace-binding, and model authority remain freshly observed.
+    """
+    command = environment["OPENCODE_BIN"]
+    resolved = resolve_native_executable(
+        context,
+        command,
+        environment=environment,
+    )
+    if resolved is None:
+        return observe_executable(
+            context,
+            command,
+            environment=environment,
+        )
+
+    try:
+        executable_sha256 = _sha256_file(Path(resolved))
+    except OSError:
+        return observe_executable(
+            context,
+            command,
+            environment=environment,
+        )
+
+    key = (resolved, executable_sha256)
+    with _EXECUTABLE_OBSERVATION_CACHE_LOCK:
+        cached = _EXECUTABLE_OBSERVATION_CACHE.get(key)
+    if cached is not None:
+        return Observation(
+            {**cached.payload, "cache_hit": True},
+            cached.raw,
+            {**cached.measurements, "cache_hit": True},
+        )
+
+    observed = observe_executable(
+        context,
+        command,
+        environment=environment,
+    )
+    if (
+        observed.payload.get("available") is True
+        and observed.payload.get("executable_sha256") == executable_sha256
+    ):
+        with _EXECUTABLE_OBSERVATION_CACHE_LOCK:
+            _EXECUTABLE_OBSERVATION_CACHE[key] = observed
+    return observed
 
 
 def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
@@ -436,10 +502,9 @@ class OpenCodeNativeAgent:
                 {"available": False, "reason": str(exc)},
                 "",
             )
-        executable = observe_executable(
+        executable = _observe_opencode_executable(
             context,
-            environment["OPENCODE_BIN"],
-            environment=environment,
+            environment,
         )
         args = (
             "inspect-config",
