@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import tempfile
+import traceback
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,6 +52,9 @@ class TrialRunResult:
     result_dir: Path
     reused: bool
     reason: str | None = None
+    stage: str | None = None
+    reason_code: str | None = None
+    diagnostic: str | None = None
 
 
 def _validate_result_receipt(receipt: dict[str, Any]) -> None:
@@ -147,31 +151,57 @@ def _reason_for_oracle_failure(grade: Observation) -> str:
     return rendered
 
 
-def _reason_for_agent(observation: Observation) -> str | None:
+def _agent_failure(observation: Observation) -> tuple[str, str] | None:
     process = observation.payload.get("process")
     if isinstance(process, dict):
         if process.get("executable_missing"):
-            return "agent executable unavailable"
+            return "agent-executable-unavailable", "agent executable unavailable"
         if process.get("timed_out"):
-            return "agent execution timed out"
+            return "agent-timeout", "agent execution timed out"
         if process.get("stdout_truncated") or process.get("stderr_truncated"):
-            return "agent execution evidence exceeded configured bounds"
+            return (
+                "agent-evidence-truncated",
+                "agent execution evidence exceeded configured bounds",
+            )
         if process.get("return_code") not in (None, 0):
-            return f"agent process exited with status {process['return_code']}"
+            return (
+                "agent-process-nonzero",
+                f"agent process exited with status {process['return_code']}",
+            )
     if observation.payload.get("jsonl_parse_errors"):
-        return "agent JSONL evidence is malformed"
+        return "agent-jsonl-malformed", "agent JSONL evidence is malformed"
     terminal = observation.payload.get("terminal_event")
     if not isinstance(terminal, dict):
-        return "agent emitted no terminal event"
+        return "agent-terminal-missing", "agent emitted no terminal event"
     if terminal.get("type") != "turn.completed":
         reason = terminal.get("reason")
+        rendered = f"agent terminal event was {terminal.get('type')}"
         if isinstance(reason, str) and reason:
-            return f"agent terminal event was {terminal.get('type')}: {reason}"
-        return f"agent terminal event was {terminal.get('type')}"
+            rendered += f": {reason}"
+        return "agent-terminal-failed", rendered
     answer = observation.payload.get("final_message")
     if not isinstance(answer, str) or not answer.strip():
-        return "agent completed without a final assistant answer"
+        return (
+            "agent-final-answer-missing",
+            "agent completed without a final assistant answer",
+        )
     return None
+
+
+def _reason_for_agent(observation: Observation) -> str | None:
+    failure = _agent_failure(observation)
+    return failure[1] if failure is not None else None
+
+
+def _bounded_diagnostic(value: str | None, *, limit: int = 8_000) -> str | None:
+    if not isinstance(value, str):
+        return None
+    rendered = value.strip()
+    if not rendered:
+        return None
+    if len(rendered) <= limit:
+        return rendered
+    return rendered[:limit] + "…"
 
 
 def run_trial(
