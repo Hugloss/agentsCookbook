@@ -37,6 +37,8 @@ class LiveTaskMatrixTests(unittest.TestCase):
         gradeable=True,
         invoked=None,
         subject_mcp_calls=None,
+        tool_names=None,
+        tool_observability=None,
     ):
         condition = next(
             item for item in suite.experiment["conditions"]
@@ -77,6 +79,8 @@ class LiveTaskMatrixTests(unittest.TestCase):
                 "agent": {
                     "subject_tool_invoked": invoked,
                     "subject_mcp_calls": subject_mcp_calls,
+                    "subject_tool_names": list(tool_names or ()),
+                    "subject_tool_observability": tool_observability,
                 }
             },
         }
