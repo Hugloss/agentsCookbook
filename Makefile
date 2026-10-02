@@ -4,7 +4,8 @@ export PYTHONPATH := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))):$(PYTHONPATH
 
 benchmark-oracle-review:
 	@uv run --no-project python -m benchmarks oracle-review \
-		--suite benchmarks/suites/repository-intelligence/heldout-v1
+		--suite benchmarks/suites/repository-intelligence/heldout-v1 \
+		--execute
 
 benchmark-oracle-review-check:
 	@uv run --no-project python -m benchmarks oracle-review-check \
