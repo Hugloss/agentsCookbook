@@ -121,4 +121,10 @@ class BenchmarkConfigTests(unittest.TestCase):
                 )
             command = run.call_args.args[0]
             self.assertIn(str(root / "results"), command)
+            output_index = command.index("--output") + 1
+            self.assertEqual(
+                command[output_index],
+                str(root / "reports" / "score.json"),
+            )
+            self.assertTrue((root / "reports").is_dir())
             self.assertEqual(command.count("--agent"), 2)
