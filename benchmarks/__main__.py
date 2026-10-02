@@ -322,51 +322,55 @@ def _selection_metadata(args, suite, rows) -> dict[str, object]:
     }
 
 
-def _automatic_saved_run(
+def _assert_saved_run_selection(
+    saved: SavedRun,
+    rows: list[dict[str, object]],
+) -> dict[str, object]:
+    """Fail before admission when the selected agents/tasks differ from the run."""
+    manifest = read_campaign(saved.root / "results")
+    selected = {str(row["definition_id"]) for row in rows}
+    frozen = set(manifest["selected_definitions"])
+    if frozen != selected:
+        frozen_agents = sorted(str(value) for value in manifest.get("agents", {}))
+        selected_agents = sorted({str(row["agent_id"]) for row in rows})
+        raise RunStoreError(
+            f"saved run {saved.run_id} selection does not match current benchmark "
+            f"selection (frozen agents={frozen_agents}, "
+            f"selected agents={selected_agents}); "
+            "set BENCHMARK_AGENT to the run's frozen agent set or start a new run"
+        )
+    return manifest
+
+
+def _guard_automatic_start(
     root: Path,
     *,
     suite,
     rows: list[dict[str, object]],
-) -> SavedRun | None:
-    """Resume the latest unfinished compatible run; otherwise request a new run."""
+) -> None:
+    """Start automatically only when no unfinished matching run needs a decision."""
     saved_runs = list_saved_runs(root)
     if not saved_runs:
-        return None
+        return
 
     latest = saved_runs[-1]
+    _assert_saved_run_selection(latest, rows)
     selected = {str(row["definition_id"]) for row in rows}
-    manifest = read_campaign(latest.root / "results")
-    frozen = set(manifest["selected_definitions"])
-    if frozen != selected:
-        raise RunStoreError(
-            f"latest saved run {latest.run_id} has a different frozen selection; "
-            "finish it with make benchmark-resume or explicitly start another "
-            "with make benchmark-new"
-        )
-
     status = campaign_status(
         suite=suite,
         results_root=latest.root / "results",
         selected_definitions=selected,
     )
     if status["complete"]:
-        print(
-            f"BENCHMARK auto | latest run {latest.run_id} is complete; "
-            "creating a new run",
-            file=sys.stderr,
-            flush=True,
-        )
-        return None
+        return
 
-    print(
-        f"BENCHMARK auto | resuming run {latest.run_id} | "
-        f"verified {status['complete_trials']}/{status['expected_trials']} | "
-        f"pending {status['pending_trials']} | "
-        f"interrupted {status['interrupted_trials']}",
-        file=sys.stderr,
-        flush=True,
+    raise RunStoreError(
+        f"saved run {latest.run_id} is unfinished "
+        f"({status['complete_trials']}/{status['expected_trials']} verified, "
+        f"{status['pending_trials']} pending, "
+        f"{status['interrupted_trials']} interrupted); choose explicitly: "
+        "make benchmark-resume or make benchmark-new"
     )
-    return latest
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -467,8 +471,16 @@ def main(argv: list[str] | None = None) -> int:
             )
         try:
             saved = select_saved_run(args.root, args.run_id)
-        except RunStoreError as exc:
+            manifest = read_campaign(saved.root / "results")
+        except (RunStoreError, CampaignAuthorityError) as exc:
             raise SystemExit(str(exc)) from exc
+        frozen_agents = set(str(value) for value in manifest.get("agents", {}))
+        selected_agents = set(args.agent)
+        if frozen_agents != selected_agents:
+            raise SystemExit(
+                "benchmark score agent selection does not match saved run: "
+                f"frozen={sorted(frozen_agents)}, selected={sorted(selected_agents)}"
+            )
         if not explicit_score_output:
             if args.output.is_absolute() or len(args.output.parts) != 1:
                 raise SystemExit("BENCHMARK_SCORE_OUTPUT_PATH must be a filename within each saved run")
@@ -629,23 +641,10 @@ def main(argv: list[str] | None = None) -> int:
                         flush=True,
                     )
 
-                auto_saved = (
-                    _automatic_saved_run(args.root, suite=suite, rows=rows)
-                    if args.command == "run" and args.auto
-                    else None
-                )
-                create_new = (
-                    args.command == "prepare"
-                    or args.new
-                    or (args.command == "run" and args.auto and auto_saved is None)
-                )
+                if args.command == "run" and args.auto:
+                    _guard_automatic_start(args.root, suite=suite, rows=rows)
+                create_new = args.command == "prepare" or args.new or args.auto
                 if create_new:
-                    if args.command == "run" and args.auto:
-                        print(
-                            "BENCHMARK auto | creating and executing a new saved run",
-                            file=sys.stderr,
-                            flush=True,
-                        )
                     saved, campaign = prepare_saved_run(
                         args.root,
                         lambda staged: admit_campaign(
@@ -662,7 +661,8 @@ def main(argv: list[str] | None = None) -> int:
                         ),
                     )
                 else:
-                    saved = auto_saved or select_saved_run(args.root, args.run_id)
+                    saved = select_saved_run(args.root, args.run_id)
+                    _assert_saved_run_selection(saved, rows)
                     campaign = admit_campaign(
                         suite=suite,
                         rows=rows,
