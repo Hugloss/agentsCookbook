@@ -249,6 +249,10 @@ class CampaignAuthorityTests(unittest.TestCase):
                     "benchmarks.harness.campaign_authority.condition_authority",
                     side_effect=drifted,
                 ),
+                mock.patch(
+                    "benchmarks.harness.campaign_authority.harness_identity",
+                    return_value={"commit": "stable-harness"},
+                ),
             ):
                 with self.assertRaisesRegex(CampaignAuthorityError, "runtime or model"):
                     admit_campaign(**options)
