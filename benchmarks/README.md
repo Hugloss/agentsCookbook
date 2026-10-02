@@ -44,7 +44,7 @@ Both `preflight` and `run` use that same path. Preflight is diagnostic and never
 
 Runtime readiness is deliberately separate from trial admission. `benchmark-check`/the `check` command never selects or materializes a task, applies a mutation, runs an oracle, derives a trial/execution identity, inspects receipts, or invokes a model. It creates one disposable smoke workspace, verifies shared subject prerequisites once, and checks each distinct agent/subject pair, including bare conditions, once. The held-out suite therefore produces six pair outcomes rather than expanding its 216 task/condition/replicate definitions. The disposable workspace is deleted when the command exits; rerunning the check is always an explicit user action.
 
-`prepare --new` admits every selected task/condition without inference and saves a numbered campaign. `run --new` combines preparation and execution; `run --resume` requires the same frozen selection and authority. Every later trial compares observed authority and exact task inputs against the campaign receipt before invoking the model. A durable launch claim makes interrupted trials visible. If a process dies before publishing a complete receipt, the next invocation retires that active claim into immutable numbered interruption evidence and starts a new explicit attempt; already completed receipts are reused and never retried. Changed runtime, model, configuration, subject source, workspace input, or selection requires a new saved run.
+`run --new` freezes the selected population and immediately executes the full campaign. `run --resume` requires the same frozen selection and authority. `prepare --new` remains an advanced model-free preparation primitive, not the normal `make benchmark-new` workflow. Every later trial compares observed authority and exact task inputs against the campaign receipt before invoking the model. A durable launch claim makes interrupted trials visible. If a process dies before publishing a complete receipt, the next invocation retires that active claim into immutable numbered interruption evidence and starts a new explicit attempt; already completed receipts are reused and never retried. Changed runtime, model, configuration, subject source, workspace input, or selection requires a new saved run.
 
 Native tool discovery and benchmark-subject selection are separate authorities.
 
@@ -111,24 +111,37 @@ BENCHMARK_AGENT=opencode-native
 # Or: BENCHMARK_AGENT=codex-native,opencode-native
 ```
 
-Then use:
+For normal use, the benchmark is start-and-leave:
 
 ```sh
-make benchmark-check       # six agent/subject readiness probes for held-out v1
-make benchmark-oracle-review-check # independent oracle qualification gate
-make benchmark-new         # save a new run without model calls
-make benchmark-check-all   # preflight 108 definitions per selected agent
-make benchmark-resume      # execute or resume the latest saved run
+make benchmark
+```
+
+If there is no unfinished run with the same frozen selection, this creates a new numbered run and executes the full population selected by `BENCHMARK_AGENT`. If the latest matching run is unfinished, it refuses to guess and tells you to choose explicitly:
+
+```sh
+make benchmark-resume  # continue the frozen run
+make benchmark-new     # intentionally start a separate fresh run
+```
+
+`benchmark-new` also executes immediately; it does not stop after preparation. `benchmark-resume` requires the current `BENCHMARK_AGENT` population and selected definitions to match the run's frozen campaign before expensive admission or any model work. Scoring enforces the same frozen agent set.
+
+The remaining targets are optional diagnostics or advanced controls:
+
+```sh
+make benchmark-check       # fast runtime readiness
+make benchmark-oracle-review-check # oracle qualification check
+make benchmark-check-all   # exhaustive model-free preflight
 make benchmark-runs        # list saved run IDs
 make benchmark-report      # generic framework report
-make benchmark-score       # suite-specific scorer configured in .env
+make benchmark-score       # suite-specific scorer
 ```
 
 The Makefile passes only `.env` and fixed smoke task selectors to the CLI. The configuration loader owns benchmark choices and validates them before runtime work. Codex, OpenCode, and Enola use their installed host conventions; the benchmark observes what resolves. Missing selected-agent choices fail before preflight, execution, reporting, or scoring.
 
 `benchmark-check` answers only **“can each suite agent/subject combination be wired on this machine right now?”** For held-out v1 it checks Codex and OpenCode with bare tools, Hashmarks, and Enola: six pair outcomes, independent of `BENCHMARK_AGENT`. OpenCode's assisted probes supply a live stdio connection check. Only when that connection fails does readiness launch the selected MCP executable and args in the selected cwd and environment with stdin closed and a five-second bound, solely to capture a direct startup failure. A clean exit after stdin closes is inconclusive and adds no diagnostic. Codex readiness proves its native config plus the exact ephemeral subject exposure without invoking a model; it is reported as ready rather than falsely labelled connected. No readiness command retries automatically.
 
-`benchmark-check-all` is the intentionally expensive command: it preflights every frozen definition for the explicitly selected agents. Held-out v1 has 108 definitions for one agent or 216 when both are listed.
+`benchmark-check-all` is an optional intentionally expensive diagnostic: it preflights every frozen definition for the explicitly selected agents. It is not a prerequisite for `make benchmark`, `make benchmark-new`, or `make benchmark-resume`. Held-out v1 has 108 definitions for one agent or 216 when both are listed.
 
 ### Advanced direct CLI
 
@@ -150,7 +163,7 @@ uv run --no-project python -m benchmarks check \
 
 This command uses no campaign root, harness root, or agent selection and creates no benchmark trial. Add `--agent "$agents"` to diagnose only the selected agents.
 
-Create the saved run before preflight, then use `make benchmark-check-all` or call preflight explicitly:
+For advanced workflows that deliberately separate preparation from execution, create a saved run explicitly before preflight:
 
 ```bash
 uv run --no-project python -m benchmarks prepare --new --env-file .env
