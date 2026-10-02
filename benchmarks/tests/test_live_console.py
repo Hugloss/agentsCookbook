@@ -3,7 +3,12 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from benchmarks.harness.live_console import LiveTaskMatrix
+from benchmarks.harness.live_console import (
+    LiveCampaignProgress,
+    LiveTaskMatrix,
+    render_trial_failure,
+)
+from benchmarks.harness.runner import TrialRunResult
 from benchmarks.harness.suite import load_suite
 
 
@@ -77,6 +82,99 @@ class LiveTaskMatrixTests(unittest.TestCase):
             "Enola     | 1    | 0         | 1          | 0          | 1",
             rendered,
         )
+
+    def test_progress_reports_step_elapsed_remaining_and_eta(self) -> None:
+        suite, rows = self._prefix_opencode_rows()
+        progress = LiveCampaignProgress(suite, rows)
+        start = progress.start_line(rows[0], elapsed=65.0)
+        self.assertIn("[1/9]", start)
+        self.assertIn("task 1/1 locate-prefix-path-enumerator", start)
+        self.assertIn("replicate 1/3", start)
+        self.assertIn("elapsed 1m05s", start)
+        self.assertIn("remaining 9", start)
+        self.assertIn("ETA estimating...", start)
+
+        executed = TrialRunResult(
+            trial_id="a" * 64,
+            definition_id="b" * 64,
+            status="PASS",
+            result_dir=Path("/tmp/result"),
+            reused=False,
+        )
+        finished = progress.finish_line(
+            executed,
+            elapsed=125.0,
+            trial_seconds=60.0,
+        )
+        self.assertIn("PROGRESS 1/9 (11.1%)", finished)
+        self.assertIn("executed", finished)
+        self.assertIn("avg 1m00s/trial", finished)
+        self.assertIn("ETA 8m00s", finished)
+
+        reused = TrialRunResult(
+            trial_id="c" * 64,
+            definition_id="d" * 64,
+            status="PASS",
+            result_dir=Path("/tmp/reused"),
+            reused=True,
+        )
+        resumed = progress.finish_line(
+            reused,
+            elapsed=126.0,
+            trial_seconds=0.1,
+        )
+        self.assertIn("reused", resumed)
+        self.assertIn("avg 1m00s/trial", resumed)
+        self.assertIn("ETA 7m00s", resumed)
+
+    def test_failure_envelope_is_agent_readable_and_preserves_diagnostic(self) -> None:
+        _, rows = self._prefix_opencode_rows()
+        result = TrialRunResult(
+            trial_id="a" * 64,
+            definition_id="b" * 64,
+            status="INCOMPLETE",
+            result_dir=Path("/tmp/evidence"),
+            reused=False,
+            reason="agent terminal event was turn.failed",
+            stage="agent-execution",
+            reason_code="agent-terminal-failed",
+            diagnostic="Traceback (most recent call last):\nValueError: boom",
+        )
+        rendered = render_trial_failure(
+            row=rows[0],
+            subject="none",
+            result=result,
+        )
+        assert rendered is not None
+        self.assertIn("FAILURE locate-prefix-path-enumerator", rendered)
+        self.assertIn("Status: INCOMPLETE", rendered)
+        self.assertIn("Stage: agent-execution", rendered)
+        self.assertIn("Reason code: agent-terminal-failed", rendered)
+        self.assertIn("Evidence: /tmp/evidence", rendered)
+        self.assertIn("--- diagnostic ---", rendered)
+        self.assertIn("ValueError: boom", rendered)
+
+    def test_recovered_failure_explicitly_says_model_was_not_retried(self) -> None:
+        _, rows = self._prefix_opencode_rows()
+        result = TrialRunResult(
+            trial_id="a" * 64,
+            definition_id="b" * 64,
+            status="INCOMPLETE",
+            result_dir=Path("/tmp/evidence"),
+            reused=False,
+            reason="previous trial launch was interrupted before a complete receipt",
+            stage="campaign-recovery",
+            reason_code="interrupted-launch",
+            recovered=True,
+        )
+        rendered = render_trial_failure(
+            row=rows[0],
+            subject="none",
+            result=result,
+        )
+        assert rendered is not None
+        self.assertIn("Recovery: prior interrupted launch sealed", rendered)
+        self.assertIn("model was not retried", rendered)
 
     def test_does_not_render_until_selected_task_agent_group_is_complete(self) -> None:
         suite, rows = self._prefix_opencode_rows()
