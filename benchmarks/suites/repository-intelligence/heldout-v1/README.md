@@ -37,7 +37,7 @@ semantic failure. Paired bare-to-assisted rows also classify each valid replicat
 `gain`, `preserved`, `unresolved`, or `regression`, so aggregate success rates
 cannot hide an assisted regression.
 
-The committed `qualification/oracle-reviews.json` binds each expected owner to its task digest and records independent source-audit evidence. One independent review with a `unique` decision is the default qualification requirement. A second independent review is required only when the task carries an explicit evidence-backed escalation reason, such as prior benchmark instability or unresolved ownership ambiguity. Campaign admission fails before any model call while any task lacks its required reviews or has a non-unique decision. If a task has two defensible owners, repair or retire it and start a new campaign root; do not add a grading exception.
+The committed `qualification/oracle-reviews.json` binds each expected owner to its task digest and records independent source-audit evidence. One independent review with a `unique` decision is the default qualification requirement. A second independent review is required only when the task carries an explicit evidence-backed escalation reason, such as prior benchmark instability or unresolved ownership ambiguity. Campaign admission fails before any model call while any task lacks its required reviews or has a non-unique decision. If a task has two defensible owners, repair or retire it and start a new saved run; do not add a grading exception.
 
 The campaign authority receipt freezes runtime and task inputs before inference. One launch claim is written before each model call; an interrupted claim is evidence and cannot be rerun in place. Reports expose execution, gradeability, semantic stability, output compliance, diagnostic boundaries, paired transitions, and excluded pairs separately. A diagnostic suite prepared with `diagnostic-prepare` has ten replicates per selected unstable task and its own root; its results never enter the official held-out score.
 
@@ -109,21 +109,22 @@ Only named variables are transported. Participant processes do not otherwise inh
 | Setting | What it points to |
 | --- | --- |
 | `BENCHMARK_SUITE_PATH` | Committed benchmark definition inside agentsCookbook |
-| `BENCHMARK_CAMPAIGN_ROOT` | Writable runtime/output directory for one campaign |
+| `BENCHMARK_CAMPAIGN_ROOT` | Ignored store containing numbered saved runs |
 | `BENCHMARK_HARNESS_REPO_ROOT` | agentsCookbook checkout owning the benchmark runner |
 | `BENCHMARK_SCORE_SCRIPT_PATH` | This suite's specialized scorer |
-| `BENCHMARK_SCORE_OUTPUT_PATH` | Output path for the specialized held-out score |
+| `BENCHMARK_SCORE_OUTPUT_PATH` | Score filename inside the selected saved run |
 
 ```text
 agentsCookbook/
 └── benchmarks/suites/.../heldout-v1    <- BENCHMARK_SUITE_PATH
                                            committed definition; never campaign output
 
-/tmp/agentscookbook-heldout-v1/          <- BENCHMARK_CAMPAIGN_ROOT
-├── cache/
-├── work/
-└── results/
-                                           generated campaign state/evidence
+.benchmark-runs/heldout-v1/              <- BENCHMARK_CAMPAIGN_ROOT
+└── runs/000001/
+    ├── cache/
+    ├── work/
+    ├── results/                        per-trial durable evidence
+    └── heldout-report.json              derived score
 ```
 
 ### Normal local workflow
@@ -142,10 +143,11 @@ If `BENCHMARK_AGENT` is absent or empty, selected-agent targets stop before any 
 make benchmark-oracle-review
 make benchmark-oracle-review-check
 make benchmark-check
-make benchmark-campaign-audit
+make benchmark-new
 # Optional individual trial preflight:
 make benchmark-check-all
-make benchmark
+make benchmark-resume
+make benchmark-runs
 make benchmark-report
 make benchmark-score
 ```
@@ -155,7 +157,7 @@ make benchmark-score
 - `benchmark-check` tests all six distinct agent/subject pairs once: each agent with bare tools, Hashmarks, and Enola. It uses one disposable smoke workspace, invokes no model, creates no trial, and exits.
 - `benchmark-campaign-audit` observes every selected task/condition and checks cross-task runtime identity and paired input equivalence before inference. It publishes no campaign authority or launch claim. It reports `ready_for_campaign: false` and exits 2 while independent oracle reviews are pending; it cannot waive the run gate. Run it after changing the suite, runtime, or model selection and before a costly campaign.
 - `benchmark-check-all` preflights 108 frozen definitions for one selected agent or 216 for both. It can be slow and is never run implicitly.
-- `benchmark` executes/resumes the frozen campaign and does not secretly run either check first.
+- `benchmark-new` saves a new numbered campaign without model calls; `benchmark-resume` executes or resumes the latest one. The plain `benchmark` target prints the required choice.
 - `benchmark-report` is the generic framework report.
 - `benchmark-score` runs this suite's explicit language-separated held-out scorer.
 - Before a new full campaign after benchmark-authority changes, run `make benchmark-oracle-review-check` and `make benchmark-qualify-localization`. Do not buy a second review for every task by default: only tasks with recorded escalation evidence require it. The localization qualification then exercises five Python localization cases and one TypeScript case, including repository-content-identity, across bare, Hashmarks, and Enola for every selected agent. It is qualification evidence, not the full score.
@@ -182,7 +184,7 @@ Most developers should use the Make targets. For direct CLI calls, the selected 
 
 ```sh
 suite=benchmarks/suites/repository-intelligence/heldout-v1
-root=/tmp/agentscookbook-heldout-v1
+root=.benchmark-runs/heldout-v1
 agents=opencode-native  # or codex-native,opencode-native
 ```
 
@@ -196,7 +198,13 @@ uv run --no-project python -m benchmarks check \
 
 It does not need a campaign root, harness root, or agent selection. It verifies Hashmarks/Enola runtime availability, Codex/OpenCode native configuration, Codex exact subject exposure, and live OpenCode MCP connections. It does not make an LLM request. Add `--agent "$agents"` for a focused readiness check.
 
-For exhaustive campaign admission, pass campaign and harness authority explicitly:
+Prepare a new saved run before exhaustive preflight:
+
+```sh
+uv run --no-project python -m benchmarks prepare --new --env-file .env
+```
+
+Then pass campaign and harness authority explicitly:
 
 ```sh
 uv run --no-project python -m benchmarks campaign-audit \
@@ -214,6 +222,7 @@ uv run --no-project python -m benchmarks preflight \
   --agent "$agents"
 
 uv run --no-project python -m benchmarks run \
+  --resume \
   --env-file .env \
   --suite "$suite" \
   --root "$root" \
@@ -234,6 +243,6 @@ uv run --no-project python -m benchmarks preflight \
   --subject none
 ```
 
-Use a fresh campaign root for each independent Hashmarks candidate, native agent/model configuration, or benchmark-authority revision. Do not resume a campaign created before a task/oracle/scoring change even when the directory is still named heldout-v1. A failed preflight or incomplete receipt is not a scored trial. The specialized score writes one report for the selected population: 108 valid bundles for one agent or 216 for both, split evenly between Python and TypeScript. Its JSON records `selection.agents` as a list. It compares assistance within each agent and reports cross-agent observations descriptively when both are selected. It does not rank the products into one winner.
+Create a new numbered run for each independent Hashmarks candidate, native agent/model configuration, or benchmark-authority revision. Do not resume a run created before a task/oracle/scoring change. A failed preflight or incomplete receipt is not a scored trial. The specialized score writes a derived report inside the selected run: 108 valid bundles for one agent or 216 for both, split evenly between Python and TypeScript. Its JSON records `selection.agents` as a list. It compares assistance within each agent and reports cross-agent observations descriptively when both are selected. It does not rank the products into one winner.
 
 The permanent drift gate lives in Hashmarks tests. This suite measures downstream agent behavior and must not replace Hashmarks' owner, ambiguity, provenance, freshness, or verification regressions.

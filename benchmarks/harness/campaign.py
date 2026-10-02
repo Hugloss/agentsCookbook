@@ -13,7 +13,7 @@ from .campaign_authority import (
     CampaignAuthorityError,
     read_campaign,
     read_interrupted_attempts,
-    read_launch_claims,
+    read_launch_details,
 )
 from .identity import definition_id, execution_id
 from .receipt import is_complete_receipt
@@ -68,6 +68,7 @@ class CampaignPaths:
     cache: Path | None
     work: Path | None
     results: Path | None
+    run_id: str | None = None
 
     def as_dict(self) -> dict[str, str | None]:
         return {
@@ -75,6 +76,7 @@ class CampaignPaths:
             "cache": str(self.cache) if self.cache is not None else None,
             "work": str(self.work) if self.work is not None else None,
             "results": str(self.results) if self.results is not None else None,
+            "run_id": self.run_id,
         }
 
 
@@ -121,6 +123,7 @@ def campaign_status(
     suite: SuiteDefinition,
     results_root: Path,
     selected_definitions: set[str],
+    active_definition: str | None = None,
 ) -> dict[str, Any]:
     all_rows = suite.trial_definitions()
     all_definitions = {str(row["definition_id"]): row for row in all_rows}
@@ -135,6 +138,7 @@ def campaign_status(
     campaign_error = None
     claims: set[str] = set()
     launch_claims: dict[str, str] = {}
+    launch_details: dict[str, dict[str, Any]] = {}
     interrupted_attempts: dict[str, list[dict[str, Any]]] = {}
     if new_contract:
         try:
@@ -143,7 +147,11 @@ def campaign_status(
                 raise CampaignAuthorityError(
                     "status selection exceeds campaign selection"
                 )
-            launch_claims = read_launch_claims(results_root, manifest["campaign_id"])
+            launch_details = read_launch_details(results_root, manifest["campaign_id"])
+            launch_claims = {
+                definition: claim["trial_id"]
+                for definition, claim in launch_details.items()
+            }
             interrupted_attempts = read_interrupted_attempts(
                 results_root,
                 manifest["campaign_id"],
@@ -151,6 +159,13 @@ def campaign_status(
             claims = set(launch_claims)
             if not claims.issubset(set(manifest["selected_definitions"])):
                 raise CampaignAuthorityError("launch claim exceeds campaign selection")
+            if not set(interrupted_attempts).issubset(set(manifest["selected_definitions"])):
+                raise CampaignAuthorityError("interruption attempt exceeds campaign selection")
+            for definition, claim in launch_details.items():
+                if claim["attempt"] != len(interrupted_attempts.get(definition, [])) + 1:
+                    raise CampaignAuthorityError(
+                        f"launch attempt lineage is invalid: {definition}"
+                    )
         except CampaignAuthorityError as exc:
             campaign_error = str(exc)
 
@@ -218,7 +233,9 @@ def campaign_status(
     for definition, row in definitions.items():
         found = receipts.get(definition, [])
         if not found:
-            state = "INTERRUPTED" if definition in claims else "PENDING"
+            state = (
+                "RUNNING" if definition == active_definition else "INTERRUPTED"
+            ) if definition in claims else "PENDING"
             outcome = None
             trial_ids: list[str] = []
             diagnostic = None
@@ -271,12 +288,22 @@ def campaign_status(
         for outcome, count in outcome_counts.items()
         if outcome not in valid_outcomes
     )
+    integrity_ok = (
+        not corrupt and not foreign and state_counts["CONFLICT"] == 0
+        and campaign_error is None
+    )
+    completeness_ok = state_counts["COMPLETE"] == len(definitions)
+    qualification_ok = (
+        integrity_ok and completeness_ok and unresolved_outcomes == 0
+        and comparability_error is None
+    )
 
     return {
         "expected_trials": len(definitions),
         "complete_trials": state_counts["COMPLETE"],
         "pending_trials": state_counts["PENDING"],
         "interrupted_trials": state_counts["INTERRUPTED"],
+        "running_trials": state_counts["RUNNING"],
         "conflicting_trials": state_counts["CONFLICT"],
         "outcomes": dict(sorted(outcome_counts.items())),
         "corrupt_bundles": corrupt,
@@ -286,22 +313,28 @@ def campaign_status(
             and not corrupt
             and state_counts["CONFLICT"] == 0
             and state_counts["INTERRUPTED"] == 0
+            and state_counts["RUNNING"] == 0
             and campaign_error is None
         ),
-        "qualified": (
-            state_counts["COMPLETE"] == len(definitions)
-            and not corrupt
-            and not foreign
-            and state_counts["CONFLICT"] == 0
-            and state_counts["INTERRUPTED"] == 0
-            and campaign_error is None
-            and unresolved_outcomes == 0
-            and comparability_error is None
-        ),
+        "qualified": qualification_ok,
         "unresolved_outcome_trials": unresolved_outcomes,
         "recovered_interruption_attempts": sum(
-            len(values) for values in interrupted_attempts.values()
+            len(values)
+            for definition, values in interrupted_attempts.items()
+            if definition in selected_definitions
         ),
+        "health": {
+            "integrity": "PASS" if integrity_ok else "FAIL",
+            "completeness": completeness_ok,
+            "qualification": qualification_ok,
+            "issues": [
+                *([campaign_error] if campaign_error else []),
+                *[f"corrupt bundle: {item['directory']}: {item['reason']}" for item in corrupt],
+                *[f"foreign bundle: {item['directory']}" for item in foreign],
+                *[f"conflicting receipts: {item['definition_id']}" for item in rows if item["state"] == "CONFLICT"],
+                *([comparability_error] if comparability_error else []),
+            ],
+        },
         "comparability_error": comparability_error,
         "campaign_authority_error": campaign_error,
         "rows": sorted(

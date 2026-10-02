@@ -1,6 +1,6 @@
 export PYTHONPATH := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))):$(PYTHONPATH)
 
-.PHONY: benchmark-check benchmark-check-all benchmark-campaign-audit benchmark-status benchmark benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-evidence-validate
+.PHONY: benchmark-check benchmark-check-all benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-evidence-validate
 
 benchmark-oracle-review:
 	@uv run --no-project python -m benchmarks oracle-review \
@@ -25,18 +25,28 @@ benchmark-status:
 	@uv run --no-project python -m benchmarks status --env-file .env
 
 benchmark:
-	@uv run --no-project python -m benchmarks run --env-file .env
+	@printf 'Choose make benchmark-new, then make benchmark-resume; or run --new explicitly.\n' >&2; exit 2
+
+benchmark-new:
+	@uv run --no-project python -m benchmarks prepare --new --env-file .env
+
+benchmark-resume:
+	@uv run --no-project python -m benchmarks run --resume --env-file .env
+
+benchmark-runs:
+	@uv run --no-project python -m benchmarks runs --env-file .env
 
 benchmark-smoke:
-	@uv run --no-project python -m benchmarks run --env-file .env \
+	@uv run --no-project python -m benchmarks run --new --env-file .env \
 		--subject none --subject hashmarks \
 		--task logs-00 --task splunk-00 --task dependencies-00 \
 		--task semantics-00 --task identities-00 --task code_owners-00
 
 benchmark-qualify-localization:
-	@qualification_root=$$(mktemp -d /tmp/agentscookbook-heldout-v1-localization-qualification.XXXXXX) || exit 2; \
-		printf 'qualification root: %s\n' "$$qualification_root"; \
-		if uv run --no-project python -m benchmarks run --env-file .env \
+	@mkdir -p .benchmark-runs/heldout-v1; \
+		qualification_root=$$(mktemp -d .benchmark-runs/heldout-v1/qualification.XXXXXX) || exit 2; \
+			printf 'qualification root: %s\n' "$$qualification_root"; \
+			if uv run --no-project python -m benchmarks run --new --env-file .env \
 			--root "$$qualification_root" \
 			--subject none --subject hashmarks --subject enola \
 			--task locate-prefix-path-enumerator \

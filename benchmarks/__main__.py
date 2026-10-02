@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
 from benchmarks.config import BenchmarkConfig, BenchmarkConfigError
@@ -35,6 +36,15 @@ from benchmarks.harness.readiness import check_runtime_readiness
 from benchmarks.harness.runtime_authority import required_runtime_authority
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import TrialRunnerError, run_trial
+from benchmarks.harness.run_store import (
+    RunStoreError,
+    active_definition,
+    active_trial,
+    exclusive_store,
+    list_saved_runs,
+    prepare_saved_run,
+    select_saved_run,
+)
 from benchmarks.harness.live_console import (
     LiveCampaignProgress,
     LiveTaskMatrix,
@@ -47,6 +57,7 @@ from benchmarks.harness.selection import (
     select_definitions,
 )
 from benchmarks.harness.suite import load_runtime_suite, load_suite
+from scripts.agent_economics.bounded_process import retain_lock_in_subprocesses
 
 
 def _add_selectors(
@@ -74,14 +85,14 @@ def _add_campaign_paths(
         "--root",
         type=Path,
         help=(
-            "campaign root; derives cache/, work/, and results/ "
-            "with authority stored under results/.campaign/"
+            "store of numbered campaigns; defaults to BENCHMARK_CAMPAIGN_ROOT"
         ),
     )
     if execution:
         command.add_argument("--cache", type=Path)
         command.add_argument("--work", type=Path)
     command.add_argument("--results", type=Path)
+    command.add_argument("--run-id", help="select an older numbered run or legacy")
 
 
 def _add_execution_inputs(command: argparse.ArgumentParser) -> None:
@@ -154,11 +165,25 @@ def _parser() -> argparse.ArgumentParser:
     _add_campaign_paths(audit, execution=True)
     _add_execution_inputs(audit)
 
+    prepare = sub.add_parser("prepare")
+    prepare.add_argument("--suite", type=Path)
+    _add_selectors(prepare)
+    _add_campaign_paths(prepare, execution=True)
+    _add_execution_inputs(prepare)
+    prepare.add_argument("--new", action="store_true", required=True)
+
     run = sub.add_parser("run")
     run.add_argument("--suite", type=Path)
     _add_selectors(run)
     _add_campaign_paths(run, execution=True)
     _add_execution_inputs(run)
+    mode = run.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--new", action="store_true")
+    mode.add_argument("--resume", action="store_true")
+
+    runs = sub.add_parser("runs")
+    runs.add_argument("--env-file", type=Path)
+    runs.add_argument("--root", type=Path)
 
     status = sub.add_parser("status")
     status.add_argument("--suite", type=Path)
@@ -185,6 +210,7 @@ def _parser() -> argparse.ArgumentParser:
     score.add_argument("--agent", action="append", default=[])
     score.add_argument("--score-script", type=Path)
     score.add_argument("--output", type=Path)
+    score.add_argument("--run-id")
 
     regrade_score = sub.add_parser("regrade-score")
     regrade_score.add_argument("--suite", type=Path, required=True)
@@ -219,12 +245,12 @@ def _resolve_config(args: argparse.Namespace) -> BenchmarkConfig:
         if hasattr(args, "suite") and args.suite is None:
             raise BenchmarkConfigError("BENCHMARK_SUITE_PATH or --suite is required")
         if (
-            args.command in {"preflight", "campaign-audit", "run", "report", "score"}
+            args.command in {"preflight", "campaign-audit", "prepare", "run", "report", "score"}
             and not args.agent
         ):
             raise BenchmarkConfigError("BENCHMARK_AGENT or --agent is required")
         if (
-            args.command in {"preflight", "campaign-audit", "run"}
+            args.command in {"preflight", "campaign-audit", "prepare", "run"}
             and args.harness_root is None
         ):
             raise BenchmarkConfigError(
@@ -250,15 +276,29 @@ def _select(args, suite):
 
 def _paths(args, *, need_execution: bool, results_optional: bool = False):
     try:
-        return resolve_campaign_paths(
-            root=args.root,
+        root = args.root
+        run_id = None
+        if root is not None:
+            if any(
+                value is not None
+                for value in (getattr(args, "cache", None), getattr(args, "work", None), args.results)
+            ):
+                raise CampaignError("--root cannot be combined with --cache, --work, or --results")
+            selected_run = select_saved_run(root, getattr(args, "run_id", None))
+            root = selected_run.root
+            run_id = selected_run.run_id
+        elif getattr(args, "run_id", None) is not None:
+            raise CampaignError("--run-id requires --root")
+        paths = resolve_campaign_paths(
+            root=root,
             cache=getattr(args, "cache", None),
             work=getattr(args, "work", None),
             results=args.results,
             need_execution=need_execution,
             results_optional=results_optional,
         )
-    except CampaignError as exc:
+        return replace(paths, run_id=run_id)
+    except (CampaignError, RunStoreError) as exc:
         raise SystemExit(str(exc)) from exc
 
 
@@ -281,6 +321,7 @@ def _selection_metadata(args, suite, rows) -> dict[str, object]:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    explicit_score_output = getattr(args, "output", None) is not None
     if args.command == "oracle-review-check":
         suite = load_suite(args.suite)
         try:
@@ -351,6 +392,18 @@ def main(argv: list[str] | None = None) -> int:
             args.agent = list(parse_agent_arguments(args.agent))
         except SelectionError as exc:
             raise SystemExit(str(exc)) from exc
+    if args.command == "runs":
+        if args.root is None:
+            raise SystemExit("provide --root or BENCHMARK_CAMPAIGN_ROOT")
+        try:
+            saved = list_saved_runs(args.root)
+        except RunStoreError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(json.dumps({
+            "latest": saved[-1].run_id if saved else None,
+            "runs": [{"run_id": run.run_id, "root": str(run.root)} for run in saved],
+        }, indent=2, sort_keys=True))
+        return 0
     if args.command == "score":
         assert args.root is not None
         assert args.output is not None
@@ -362,11 +415,19 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(
                 f"ERROR: benchmark score script must belong to selected suite: {args.suite}"
             )
+        try:
+            saved = select_saved_run(args.root, args.run_id)
+        except RunStoreError as exc:
+            raise SystemExit(str(exc)) from exc
+        if not explicit_score_output:
+            if args.output.is_absolute() or len(args.output.parts) != 1:
+                raise SystemExit("BENCHMARK_SCORE_OUTPUT_PATH must be a filename within each saved run")
+            args.output = saved.root / args.output
         invocation = [
             sys.executable,
             str(script),
             "--results",
-            str(args.root / "results"),
+            str(saved.root / "results"),
             "--output",
             str(args.output),
         ]
@@ -436,7 +497,7 @@ def main(argv: list[str] | None = None) -> int:
 
     rows = _select(args, suite)
 
-    if args.command in {"preflight", "campaign-audit", "run"}:
+    if args.command in {"preflight", "campaign-audit", "prepare", "run"}:
         try:
             config.require(*required_runtime_authority(suite, rows))
         except BenchmarkConfigError as exc:
@@ -453,8 +514,14 @@ def main(argv: list[str] | None = None) -> int:
             suite=suite,
             results_root=paths.results,
             selected_definitions={str(row["definition_id"]) for row in rows},
+            active_definition=(
+                active_definition(args.root, paths.run_id)
+                if args.root is not None and paths.run_id is not None
+                else None
+            ),
         )
         status["paths"] = paths.as_dict()
+        status["run_id"] = paths.run_id
         status["selection"] = _selection_metadata(args, suite, rows)
         print(json.dumps(status, indent=2, sort_keys=True))
         return (
@@ -487,8 +554,62 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(
                 f"benchmark report unavailable: {exc}; use --allow-incomplete to inspect a partial campaign"
             ) from exc
+        report_data["run_id"] = paths.run_id
         print(json.dumps(report_data, indent=2, sort_keys=True))
         return 0
+
+    if args.command in {"prepare", "run"}:
+        if args.root is None or any(
+            value is not None for value in (args.cache, args.work, args.results)
+        ):
+            raise SystemExit("prepare/run requires --root or BENCHMARK_CAMPAIGN_ROOT without separate paths")
+        if (args.command == "prepare" or args.new) and args.run_id is not None:
+            raise SystemExit("--run-id can only be used with run --resume")
+        try:
+            with exclusive_store(args.root) as lock_fd, retain_lock_in_subprocesses(lock_fd):
+                if args.command == "prepare" or args.new:
+                    saved, campaign = prepare_saved_run(
+                        args.root,
+                        lambda staged: admit_campaign(
+                            suite=suite,
+                            rows=rows,
+                            results_root=staged / "results",
+                            harness_root=args.harness_root,
+                            cache_root=staged / "cache",
+                            work_root=staged / "work",
+                            local_source=args.source,
+                            codex_auth=args.codex_auth,
+                            source=runtime_source,
+                        ),
+                    )
+                else:
+                    saved = select_saved_run(args.root, args.run_id)
+                    campaign = admit_campaign(
+                        suite=suite,
+                        rows=rows,
+                        results_root=saved.root / "results",
+                        harness_root=args.harness_root,
+                        cache_root=saved.root / "cache",
+                        work_root=saved.root / "work",
+                        local_source=args.source,
+                        codex_auth=args.codex_auth,
+                        source=runtime_source,
+                    )
+                if args.command == "prepare":
+                    print(json.dumps({
+                        "run_id": saved.run_id,
+                        "root": str(saved.root),
+                        "campaign_id": campaign["campaign_id"],
+                    }, indent=2, sort_keys=True))
+                    return 0
+                paths = resolve_campaign_paths(
+                    root=saved.root, cache=None, work=None, results=None,
+                    need_execution=True,
+                )
+                paths = replace(paths, run_id=saved.run_id)
+                return _execute_run(args, suite, rows, paths, campaign, runtime_source)
+        except (RunStoreError, CampaignAuthorityError, OracleReviewError) as exc:
+            raise SystemExit(f"benchmark run unavailable: {exc}") from exc
 
     paths = _paths(
         args,
@@ -573,30 +694,18 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0 if payload["ready"] else 2
 
+    raise SystemExit(f"unsupported benchmark command: {args.command}")
+
+
+def _execute_run(args, suite, rows, paths, campaign, runtime_source) -> int:
     results = []
     assert paths.results is not None
-    campaign = None
     live_matrix = LiveTaskMatrix(suite, rows)
     run_started = time.monotonic()
     conditions = {
         str(condition["id"]): condition
         for condition in suite.experiment["conditions"]
     }
-    if any("replicate_id" in row for row in rows):
-        try:
-            campaign = admit_campaign(
-                suite=suite,
-                rows=rows,
-                results_root=paths.results,
-                harness_root=args.harness_root,
-                cache_root=paths.cache,
-                work_root=paths.work,
-                local_source=args.source,
-                codex_auth=args.codex_auth,
-                source=runtime_source,
-            )
-        except (CampaignAuthorityError, OracleReviewError) as exc:
-            raise SystemExit(f"campaign admission failed: {exc}") from exc
     selected_definitions = {str(row["definition_id"]) for row in rows}
     initial_status = campaign_status(
         suite=suite,
@@ -605,11 +714,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     live_progress = LiveCampaignProgress(suite, rows, initial_status)
     print(
-        f"CAMPAIGN {len(rows)} trials | verified {initial_status['complete_trials']} | "
+        f"RUN {paths.run_id} ({paths.root}) | CAMPAIGN {len(rows)} trials | "
+        f"verified {initial_status['complete_trials']} | "
         f"pending {initial_status['pending_trials']} | "
         f"interrupted {initial_status['interrupted_trials']} | "
-        "completed receipts will be reused; interrupted launches will be sealed "
-        "INCOMPLETE without retry",
+        "completed receipts will be reused; interrupted launches will be "
+        "preserved and retried as numbered attempts",
         file=sys.stderr,
         flush=True,
     )
@@ -630,7 +740,7 @@ def main(argv: list[str] | None = None) -> int:
             emit=lambda line: print(line, file=sys.stderr, flush=True),
         )
         try:
-            with heartbeat:
+            with heartbeat, active_trial(args.root, paths.run_id, str(row["definition_id"])):
                 result = run_trial(
                     suite=suite,
                     task_id=str(row["task_id"]),

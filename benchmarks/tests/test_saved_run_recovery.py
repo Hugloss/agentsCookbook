@@ -1,0 +1,278 @@
+"""Durable run selection and crash-boundary regression tests."""
+
+from __future__ import annotations
+
+import io
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from contextlib import redirect_stdout
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+from benchmarks.__main__ import main
+from benchmarks.harness.campaign import campaign_status
+from benchmarks.harness.campaign_authority import (
+    CampaignAuthorityError,
+    claim_launch,
+    launch_state,
+    read_interrupted_attempts,
+    record_interrupted_attempt,
+    start_attempt_events,
+)
+from benchmarks.harness.events import append_event
+from benchmarks.harness.identity import canonical_json, digest
+from benchmarks.harness.run_store import (
+    RunStoreError,
+    active_definition,
+    active_trial,
+    exclusive_store,
+    list_saved_runs,
+    prepare_saved_run,
+    select_saved_run,
+)
+from benchmarks.harness.receipt import is_complete_receipt
+from benchmarks.harness.runner import _fsync_path, _publish_bundle
+from scripts.agent_economics.bounded_process import retain_lock_in_subprocesses, run_bounded
+
+
+def _campaign(results: Path, definitions: list[str]) -> dict:
+    payload = {
+        "contract": "benchmark-campaign-authority.v3",
+        "selected_definitions": definitions,
+    }
+    payload["campaign_id"] = digest(payload)
+    directory = results / ".campaign"
+    directory.mkdir(parents=True)
+    (directory / "authority.json").write_bytes(canonical_json(payload))
+    return payload
+
+
+class SavedRunRecoveryTests(unittest.TestCase):
+    def test_new_runs_are_numbered_and_latest_never_overwrites_history(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def admit(run_root: Path):
+                return _campaign(run_root / "results", ["a" * 64])
+
+            with exclusive_store(root):
+                first, _ = prepare_saved_run(root, admit)
+            marker = first.root / "results" / "keep.txt"
+            marker.write_text("first run", encoding="utf-8")
+            with exclusive_store(root):
+                second, _ = prepare_saved_run(root, admit)
+            self.assertEqual([run.run_id for run in list_saved_runs(root)], ["000001", "000002"])
+            self.assertEqual(select_saved_run(root), second)
+            self.assertEqual(select_saved_run(root, "000001"), first)
+            self.assertEqual(marker.read_text(encoding="utf-8"), "first run")
+            with redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(main(["runs", "--root", str(root)]), 0)
+            self.assertEqual(json.loads(output.getvalue())["latest"], "000002")
+
+    def test_legacy_run_stays_selectable_and_corrupt_newest_blocks_lookup(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            _campaign(root / "results", ["a" * 64])
+            self.assertEqual(select_saved_run(root).run_id, "legacy")
+            with exclusive_store(root):
+                newer, _ = prepare_saved_run(root, lambda path: _campaign(path / "results", ["b" * 64]))
+            self.assertEqual(select_saved_run(root), newer)
+            self.assertEqual(select_saved_run(root, "legacy").root, root)
+            (newer.root / "results/.campaign/authority.json").write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(RunStoreError, "invalid saved run"):
+                select_saved_run(root)
+
+    def test_second_runner_cannot_retire_a_live_claim(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with exclusive_store(root):
+                with self.assertRaisesRegex(RunStoreError, "another benchmark command"):
+                    with exclusive_store(root):
+                        self.fail("lock should exclude a second runner")
+
+    def test_bounded_child_inherits_the_store_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with exclusive_store(root) as lock_fd:
+                with retain_lock_in_subprocesses(lock_fd):
+                    with mock.patch(
+                        "scripts.agent_economics.bounded_process.subprocess.Popen",
+                        side_effect=FileNotFoundError,
+                    ) as popen:
+                        run_bounded(repository_root=root, argv=["missing-command"])
+                self.assertEqual(popen.call_args.kwargs["pass_fds"], (lock_fd,))
+
+    def test_model_child_keeps_lock_after_parent_releases_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with exclusive_store(root) as lock_fd:
+                reader, writer = os.pipe()
+                child = subprocess.Popen(
+                    [sys.executable, "-c", "import os,sys; os.write(1,b'ready\\n'); os.read(int(sys.argv[1]),1)", str(reader)],
+                    pass_fds=(lock_fd, reader),
+                    stdout=subprocess.PIPE,
+                )
+                os.close(reader)
+                self.assertEqual(child.stdout.readline(), b"ready\n")
+            try:
+                with self.assertRaisesRegex(RunStoreError, "another benchmark command"):
+                    with exclusive_store(root):
+                        self.fail("live child must retain lock")
+            finally:
+                os.write(writer, b"x")
+                os.close(writer)
+                child.wait(timeout=5)
+                child.stdout.close()
+            with exclusive_store(root):
+                pass
+
+    def test_interruption_record_is_idempotent_after_failed_claim_retirement(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "results"
+            definition = "a" * 64
+            trial = "b" * 64
+            campaign = _campaign(root, [definition])
+            self.assertEqual(claim_launch(results_root=root, campaign=campaign, definition_id=definition, trial_id=trial), 1)
+            claim_path = root / ".campaign/claims" / f"{definition}.json"
+            real_unlink = Path.unlink
+
+            def fail_claim_unlink(path, *args, **kwargs):
+                if path == claim_path:
+                    raise OSError("simulated crash before claim retirement")
+                return real_unlink(path, *args, **kwargs)
+
+            with mock.patch.object(Path, "unlink", fail_claim_unlink):
+                with self.assertRaisesRegex(OSError, "simulated crash"):
+                    record_interrupted_attempt(results_root=root, campaign=campaign, definition_id=definition, trial_id=trial)
+            self.assertTrue(claim_path.exists())
+            self.assertEqual(len(read_interrupted_attempts(root, campaign["campaign_id"])[definition]), 1)
+            self.assertEqual(record_interrupted_attempt(results_root=root, campaign=campaign, definition_id=definition, trial_id=trial), 1)
+            self.assertEqual(launch_state(results_root=root, campaign=campaign, definition_id=definition, trial_id=trial), "UNCLAIMED")
+            self.assertEqual(claim_launch(results_root=root, campaign=campaign, definition_id=definition, trial_id=trial), 2)
+
+    def test_failed_claim_publication_leaves_no_partial_claim(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "results"
+            definition = "a" * 64
+            campaign = _campaign(root, [definition])
+            with mock.patch(
+                "benchmarks.harness.campaign_authority.os.link",
+                side_effect=OSError("publication failed"),
+            ):
+                with self.assertRaisesRegex(OSError, "publication failed"):
+                    claim_launch(
+                        results_root=root, campaign=campaign,
+                        definition_id=definition, trial_id="b" * 64,
+                    )
+            self.assertFalse((root / ".campaign/claims" / f"{definition}.json").exists())
+
+    def test_published_bundle_survives_directory_sync_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "results"
+            root.mkdir()
+            events = Path(temporary) / "events.jsonl"
+            seal = Path(temporary) / "events.jsonl.seal.json"
+            events.write_bytes(b"event\n")
+            seal.write_bytes(b"seal")
+            trial = "b" * 64
+
+            def sync(path: Path) -> None:
+                if path == root:
+                    raise OSError("simulated directory sync failure")
+                _fsync_path(path)
+
+            with (
+                mock.patch("benchmarks.harness.runner._validate_result_receipt"),
+                mock.patch("benchmarks.harness.runner.verify_bundle", return_value=(True, None)),
+                mock.patch("benchmarks.harness.runner._fsync_path", side_effect=sync),
+            ):
+                with self.assertRaisesRegex(OSError, "simulated directory sync failure"):
+                    _publish_bundle(
+                        results_root=root, trial_id=trial, event_path=events,
+                        event_seal_path=seal, agent_trace="", receipt={"execution": {}},
+                    )
+            self.assertTrue((root / trial).is_dir())
+            self.assertTrue(is_complete_receipt(root / trial))
+            self.assertEqual((root / trial / "events.jsonl").read_bytes(), b"event\n")
+
+    def test_interrupted_attempt_preserves_available_event_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "results"
+            definition = "a" * 64
+            trial = "b" * 64
+            campaign = _campaign(root, [definition])
+            attempt = claim_launch(results_root=root, campaign=campaign, definition_id=definition, trial_id=trial)
+            events = start_attempt_events(root, definition, attempt, b"")
+            append_event(events, trial_id=trial, sequence=0, kind="agent.started", payload={"attempt": 1})
+            original = events.read_bytes()
+            record_interrupted_attempt(results_root=root, campaign=campaign, definition_id=definition, trial_id=trial)
+            evidence = root / ".campaign/interrupted-events" / definition / "000001.jsonl"
+            self.assertEqual(evidence.read_bytes(), original)
+            record = read_interrupted_attempts(root, campaign["campaign_id"])[definition][0]
+            self.assertEqual(record["events_bytes"], len(original))
+            self.assertEqual(record["contract"], "benchmark-interruption-attempt.v2")
+            evidence.write_bytes(b"tampered")
+            with self.assertRaisesRegex(CampaignAuthorityError, "interruption events changed"):
+                read_interrupted_attempts(root, campaign["campaign_id"])
+
+    def test_corrupt_final_bundle_is_not_recorded_as_interruption(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "results"
+            definition = "a" * 64
+            trial = "b" * 64
+            campaign = _campaign(root, [definition])
+            claim_launch(results_root=root, campaign=campaign, definition_id=definition, trial_id=trial)
+            (root / trial).mkdir()
+            self.assertEqual(launch_state(results_root=root, campaign=campaign, definition_id=definition, trial_id=trial), "CORRUPT")
+            with self.assertRaisesRegex(CampaignAuthorityError, "existing trial bundle"):
+                record_interrupted_attempt(results_root=root, campaign=campaign, definition_id=definition, trial_id=trial)
+            self.assertEqual(read_interrupted_attempts(root, campaign["campaign_id"]), {})
+
+    def test_status_counts_only_selected_interruptions(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "results"
+            first, second = "a" * 64, "b" * 64
+            campaign = _campaign(root, [first, second])
+            claim_launch(results_root=root, campaign=campaign, definition_id=second, trial_id="c" * 64)
+            record_interrupted_attempt(results_root=root, campaign=campaign, definition_id=second, trial_id="c" * 64)
+            suite = SimpleNamespace(trial_definitions=lambda: [
+                {"definition_id": key, "task_id": key, "condition_id": "condition", "trial": 0, "replicate_id": 1}
+                for key in (first, second)
+            ])
+            status = campaign_status(suite=suite, results_root=root, selected_definitions={first})
+            self.assertEqual(status["recovered_interruption_attempts"], 0)
+            status = campaign_status(suite=suite, results_root=root, selected_definitions={second})
+            self.assertEqual(status["recovered_interruption_attempts"], 1)
+            self.assertEqual(status["health"]["integrity"], "PASS")
+
+    def test_status_separates_live_claim_from_stale_claim(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Path(temporary)
+            root = store / "results"
+            definition = "a" * 64
+            campaign = _campaign(root, [definition])
+            claim_launch(results_root=root, campaign=campaign, definition_id=definition, trial_id="b" * 64)
+            suite = SimpleNamespace(trial_definitions=lambda: [{
+                "definition_id": definition, "task_id": "task", "condition_id": "condition",
+                "trial": 0, "replicate_id": 1,
+            }])
+            with exclusive_store(store):
+                with active_trial(store, "000001", definition):
+                    status = campaign_status(
+                        suite=suite, results_root=root, selected_definitions={definition},
+                        active_definition=active_definition(store, "000001"),
+                    )
+                    self.assertEqual(status["running_trials"], 1)
+                    self.assertEqual(status["interrupted_trials"], 0)
+                    self.assertIsNone(active_definition(store, "000002"))
+            status = campaign_status(suite=suite, results_root=root, selected_definitions={definition})
+            self.assertEqual(status["interrupted_trials"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

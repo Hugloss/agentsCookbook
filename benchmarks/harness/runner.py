@@ -20,6 +20,8 @@ from benchmarks.harness.campaign_authority import (
     claim_launch,
     launch_state,
     record_interrupted_attempt,
+    retire_completed_events,
+    start_attempt_events,
     verify_trial_authority,
 )
 from benchmarks.harness.contamination import classify_contamination
@@ -79,6 +81,14 @@ def _artifact(path: Path) -> dict[str, Any]:
     }
 
 
+def _fsync_path(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def _publish_bundle(
     *,
     results_root: Path,
@@ -105,6 +115,8 @@ def _publish_bundle(
             agent_trace,
             encoding="utf-8",
         )
+        for name in ("events.jsonl", "events.jsonl.seal.json", "agent-trace.jsonl"):
+            _fsync_path(bundle / name)
         receipt["execution"]["artifacts"] = {
             "events": _artifact(bundle / "events.jsonl"),
             "events_seal": _artifact(bundle / "events.jsonl.seal.json"),
@@ -112,21 +124,14 @@ def _publish_bundle(
         }
         _validate_result_receipt(receipt)
         write_receipt(bundle, receipt)
+        _fsync_path(bundle)
         os.rename(bundle, final_dir)
         valid, reason = verify_bundle(final_dir)
         if not valid:
-            shutil.rmtree(final_dir, ignore_errors=True)
             raise TrialRunnerError(
                 f"published trial bundle failed verification: {reason}"
             )
-        try:
-            fd = os.open(results_root, os.O_RDONLY)
-            try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-        except OSError:
-            pass
+        _fsync_path(results_root)
     except BaseException:
         shutil.rmtree(bundle, ignore_errors=True)
         raise
@@ -332,6 +337,8 @@ def run_trial(
                         definition_id=definition,
                         trial_id=trial_id,
                     )
+                if state == "CORRUPT":
+                    raise TrialRunnerError(f"existing trial bundle is corrupt: {final_dir}")
                 if final_dir.exists() and state != "COMPLETE":
                     raise TrialRunnerError(
                         "result exists without a matching launch claim"
@@ -422,6 +429,7 @@ def run_trial(
             reason_code: str | None = None
             diagnostic_detail: str | None = None
             agent_exception_traceback: str | None = None
+            launch_attempt: int | None = None
             status, reason = admission.initial_outcome()
             if status is not None:
                 stage = "admission"
@@ -430,13 +438,18 @@ def run_trial(
                 raise TrialRunnerError(f"pre-model admission failed: {reason}")
 
             if status is None:
-                launch_attempt: int | None = None
                 if campaign is not None:
                     launch_attempt = claim_launch(
                         results_root=results_root,
                         campaign=campaign,
                         definition_id=definition,
                         trial_id=trial_id,
+                    )
+                    event_path = start_attempt_events(
+                        results_root,
+                        definition,
+                        launch_attempt,
+                        event_path.read_bytes(),
                     )
                 emit(
                     "agent.started",
@@ -716,6 +729,11 @@ def run_trial(
                 agent_trace=agent_observation.raw,
                 receipt=receipt,
             )
+            if launch_attempt is not None:
+                try:
+                    retire_completed_events(results_root, definition, launch_attempt)
+                except OSError:
+                    pass  # The verified bundle already contains the sealed stream.
             return TrialRunResult(
                 trial_id=trial_id,
                 definition_id=definition,

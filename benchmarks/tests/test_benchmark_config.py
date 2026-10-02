@@ -94,7 +94,7 @@ class BenchmarkConfigTests(unittest.TestCase):
                 "BENCHMARK_CAMPAIGN_ROOT=/tmp/file-campaign\n"
                 "BENCHMARK_AGENT=codex-native,opencode-native\n"
                 f"BENCHMARK_SCORE_SCRIPT_PATH={scorer}\n"
-                f"BENCHMARK_SCORE_OUTPUT_PATH={root / 'score.json'}\n",
+                "BENCHMARK_SCORE_OUTPUT_PATH=score.json\n",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(SystemExit, "must belong to selected suite"):
@@ -110,7 +110,10 @@ class BenchmarkConfigTests(unittest.TestCase):
             with patch(
                 "benchmarks.__main__.subprocess.run",
                 return_value=SimpleNamespace(returncode=0),
-            ) as run:
+            ) as run, patch(
+                "benchmarks.__main__.select_saved_run",
+                return_value=SimpleNamespace(run_id="000001", root=root),
+            ):
                 self.assertEqual(
                     main(["score", "--env-file", str(file), "--root", str(root)]), 0
                 )
