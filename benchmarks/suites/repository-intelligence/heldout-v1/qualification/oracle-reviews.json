@@ -15,6 +15,10 @@
         "tree": "667b7066be9ef6cab6e1ce3a28a603481f07387e",
         "url": "https://github.com/Hugloss/Hashmarks.git"
       },
+      "review_requirement": {
+        "escalation_reason": null,
+        "minimum_independent_reviews": 1
+      },
       "reviews": [
         {
           "decision": "unique",
@@ -23,11 +27,7 @@
           "task_digest": "757fffa7ddca15e6867d8cb4dd0137c9bc3b914cb13c36c383497c7b26d568f9"
         }
       ],
-      "task_digest": "757fffa7ddca15e6867d8cb4dd0137c9bc3b914cb13c36c383497c7b26d568f9",
-      "review_requirement": {
-        "minimum_independent_reviews": 1,
-        "escalation_reason": null
-      }
+      "task_digest": "757fffa7ddca15e6867d8cb4dd0137c9bc3b914cb13c36c383497c7b26d568f9"
     },
     "locate-mcp-task-evidence": {
       "alternatives": [
@@ -43,6 +43,10 @@
         "tree": "667b7066be9ef6cab6e1ce3a28a603481f07387e",
         "url": "https://github.com/Hugloss/Hashmarks.git"
       },
+      "review_requirement": {
+        "escalation_reason": null,
+        "minimum_independent_reviews": 1
+      },
       "reviews": [
         {
           "decision": "unique",
@@ -51,11 +55,7 @@
           "task_digest": "88722dfe356c1b119145d0d296de47c43327a396b9abe0df407d77142e68d41f"
         }
       ],
-      "task_digest": "88722dfe356c1b119145d0d296de47c43327a396b9abe0df407d77142e68d41f",
-      "review_requirement": {
-        "minimum_independent_reviews": 1,
-        "escalation_reason": null
-      }
+      "task_digest": "88722dfe356c1b119145d0d296de47c43327a396b9abe0df407d77142e68d41f"
     },
     "locate-prefix-path-enumerator": {
       "alternatives": [
@@ -71,6 +71,10 @@
         "tree": "667b7066be9ef6cab6e1ce3a28a603481f07387e",
         "url": "https://github.com/Hugloss/Hashmarks.git"
       },
+      "review_requirement": {
+        "escalation_reason": null,
+        "minimum_independent_reviews": 1
+      },
       "reviews": [
         {
           "decision": "unique",
@@ -79,11 +83,7 @@
           "task_digest": "bb522aaf7a3988b5c1e51986cbc4d9aa9eae7b78ee63840f3a2f52f66b6dc705"
         }
       ],
-      "task_digest": "bb522aaf7a3988b5c1e51986cbc4d9aa9eae7b78ee63840f3a2f52f66b6dc705",
-      "review_requirement": {
-        "minimum_independent_reviews": 1,
-        "escalation_reason": null
-      }
+      "task_digest": "bb522aaf7a3988b5c1e51986cbc4d9aa9eae7b78ee63840f3a2f52f66b6dc705"
     },
     "locate-read-scope-invalidation": {
       "alternatives": [
@@ -99,6 +99,10 @@
         "tree": "3ded8be71da0ac93700dcf3a3af76eb172e75ff8",
         "url": "https://github.com/Hugloss/uv-fleet-updater.git"
       },
+      "review_requirement": {
+        "escalation_reason": null,
+        "minimum_independent_reviews": 1
+      },
       "reviews": [
         {
           "decision": "unique",
@@ -107,11 +111,7 @@
           "task_digest": "572c291ed5e70b8fee7dbfc723e58bdfaf2f11c869d697610d591ac9fd1bf51b"
         }
       ],
-      "task_digest": "572c291ed5e70b8fee7dbfc723e58bdfaf2f11c869d697610d591ac9fd1bf51b",
-      "review_requirement": {
-        "minimum_independent_reviews": 1,
-        "escalation_reason": null
-      }
+      "task_digest": "572c291ed5e70b8fee7dbfc723e58bdfaf2f11c869d697610d591ac9fd1bf51b"
     },
     "locate-refresh-outcome": {
       "alternatives": [
@@ -127,6 +127,10 @@
         "tree": "3ded8be71da0ac93700dcf3a3af76eb172e75ff8",
         "url": "https://github.com/Hugloss/uv-fleet-updater.git"
       },
+      "review_requirement": {
+        "escalation_reason": null,
+        "minimum_independent_reviews": 1
+      },
       "reviews": [
         {
           "decision": "unique",
@@ -135,11 +139,7 @@
           "task_digest": "a822024365583862ab1b160254adbf1f5e5855877136b87a7e745667b2ead0b7"
         }
       ],
-      "task_digest": "a822024365583862ab1b160254adbf1f5e5855877136b87a7e745667b2ead0b7",
-      "review_requirement": {
-        "minimum_independent_reviews": 1,
-        "escalation_reason": null
-      }
+      "task_digest": "a822024365583862ab1b160254adbf1f5e5855877136b87a7e745667b2ead0b7"
     },
     "locate-repository-content-identity": {
       "alternatives": [
@@ -155,12 +155,28 @@
         "tree": "667b7066be9ef6cab6e1ce3a28a603481f07387e",
         "url": "https://github.com/Hugloss/Hashmarks.git"
       },
-      "reviews": [],
-      "task_digest": "6e581dd9cca8bcbabf61b872f75e1ca6e3cdecde8298669226f40964b63cf872",
       "review_requirement": {
-        "minimum_independent_reviews": 1,
-        "escalation_reason": null
-      }
+        "escalation_reason": null,
+        "minimum_independent_reviews": 1
+      },
+      "reviews": [
+        {
+          "decision": "unique",
+          "observed_owner": {
+            "path": "hashmarks/test_shards.py",
+            "symbol": "repository_content_identity"
+          },
+          "reason": "repository_content_identity in hashmarks/test_shards.py:305 computes the identity and is used by work_selection_envelope:431 and validate_work_selection_repository_binding:897.",
+          "reviewer": "opencode-plan-independent-oracle-review",
+          "runtime": {
+            "agent": "plan",
+            "command_identity": "sha256:e5449d9da828831f64403d1791cadd711fb15b038485e452c2ab9891abffbb98",
+            "host": "opencode"
+          },
+          "task_digest": "6e581dd9cca8bcbabf61b872f75e1ca6e3cdecde8298669226f40964b63cf872"
+        }
+      ],
+      "task_digest": "6e581dd9cca8bcbabf61b872f75e1ca6e3cdecde8298669226f40964b63cf872"
     },
     "locate-resource-invalidation": {
       "alternatives": [
@@ -176,6 +192,10 @@
         "tree": "3ded8be71da0ac93700dcf3a3af76eb172e75ff8",
         "url": "https://github.com/Hugloss/uv-fleet-updater.git"
       },
+      "review_requirement": {
+        "escalation_reason": null,
+        "minimum_independent_reviews": 1
+      },
       "reviews": [
         {
           "decision": "unique",
@@ -184,11 +204,7 @@
           "task_digest": "0b45beec1fe0da4a5d21f788d2ab7e13547f977bc34486fc90bfe616918add1c"
         }
       ],
-      "task_digest": "0b45beec1fe0da4a5d21f788d2ab7e13547f977bc34486fc90bfe616918add1c",
-      "review_requirement": {
-        "minimum_independent_reviews": 1,
-        "escalation_reason": null
-      }
+      "task_digest": "0b45beec1fe0da4a5d21f788d2ab7e13547f977bc34486fc90bfe616918add1c"
     },
     "locate-run-poll-delay": {
       "alternatives": [
@@ -204,6 +220,10 @@
         "tree": "3ded8be71da0ac93700dcf3a3af76eb172e75ff8",
         "url": "https://github.com/Hugloss/uv-fleet-updater.git"
       },
+      "review_requirement": {
+        "escalation_reason": null,
+        "minimum_independent_reviews": 1
+      },
       "reviews": [
         {
           "decision": "unique",
@@ -212,11 +232,7 @@
           "task_digest": "0852969f9fb699a02c520d71f831255f2d23fad2ee6e0cf6593f567a75ec41de"
         }
       ],
-      "task_digest": "0852969f9fb699a02c520d71f831255f2d23fad2ee6e0cf6593f567a75ec41de",
-      "review_requirement": {
-        "minimum_independent_reviews": 1,
-        "escalation_reason": null
-      }
+      "task_digest": "0852969f9fb699a02c520d71f831255f2d23fad2ee6e0cf6593f567a75ec41de"
     },
     "locate-stale-index-removal": {
       "alternatives": [
@@ -232,6 +248,10 @@
         "tree": "667b7066be9ef6cab6e1ce3a28a603481f07387e",
         "url": "https://github.com/Hugloss/Hashmarks.git"
       },
+      "review_requirement": {
+        "escalation_reason": null,
+        "minimum_independent_reviews": 1
+      },
       "reviews": [
         {
           "decision": "unique",
@@ -240,11 +260,7 @@
           "task_digest": "1698acbf6627500616b369697422a07b4bef57f4cc29e30949053cf11b00f1d7"
         }
       ],
-      "task_digest": "1698acbf6627500616b369697422a07b4bef57f4cc29e30949053cf11b00f1d7",
-      "review_requirement": {
-        "minimum_independent_reviews": 1,
-        "escalation_reason": null
-      }
+      "task_digest": "1698acbf6627500616b369697422a07b4bef57f4cc29e30949053cf11b00f1d7"
     },
     "locate-terminal-run-check": {
       "alternatives": [
@@ -260,6 +276,10 @@
         "tree": "3ded8be71da0ac93700dcf3a3af76eb172e75ff8",
         "url": "https://github.com/Hugloss/uv-fleet-updater.git"
       },
+      "review_requirement": {
+        "escalation_reason": null,
+        "minimum_independent_reviews": 1
+      },
       "reviews": [
         {
           "decision": "unique",
@@ -268,11 +288,7 @@
           "task_digest": "194612d56283ac0a9299cfc93f913aa8e05d52b63f1b05c27b55427f62de247c"
         }
       ],
-      "task_digest": "194612d56283ac0a9299cfc93f913aa8e05d52b63f1b05c27b55427f62de247c",
-      "review_requirement": {
-        "minimum_independent_reviews": 1,
-        "escalation_reason": null
-      }
+      "task_digest": "194612d56283ac0a9299cfc93f913aa8e05d52b63f1b05c27b55427f62de247c"
     },
     "locate-typed-http-read": {
       "alternatives": [
@@ -288,6 +304,10 @@
         "tree": "3ded8be71da0ac93700dcf3a3af76eb172e75ff8",
         "url": "https://github.com/Hugloss/uv-fleet-updater.git"
       },
+      "review_requirement": {
+        "escalation_reason": null,
+        "minimum_independent_reviews": 1
+      },
       "reviews": [
         {
           "decision": "unique",
@@ -296,11 +316,7 @@
           "task_digest": "c3ccb44820c96d8d6541b885d94562ecd8abc5c7676b188c327cacd72701aa1c"
         }
       ],
-      "task_digest": "c3ccb44820c96d8d6541b885d94562ecd8abc5c7676b188c327cacd72701aa1c",
-      "review_requirement": {
-        "minimum_independent_reviews": 1,
-        "escalation_reason": null
-      }
+      "task_digest": "c3ccb44820c96d8d6541b885d94562ecd8abc5c7676b188c327cacd72701aa1c"
     },
     "repair-partial-receipt-regression": {
       "alternatives": [
@@ -313,6 +329,10 @@
         "tree": "65a32888329e308615647dda194f0e36c2afe2ac",
         "url": "https://github.com/Hugloss/agentsCookbook.git"
       },
+      "review_requirement": {
+        "escalation_reason": null,
+        "minimum_independent_reviews": 1
+      },
       "reviews": [
         {
           "decision": "unique",
@@ -321,11 +341,7 @@
           "task_digest": "c85102601549670085952104f4975025fe24b29324393ced4beba40144383fe1"
         }
       ],
-      "task_digest": "c85102601549670085952104f4975025fe24b29324393ced4beba40144383fe1",
-      "review_requirement": {
-        "minimum_independent_reviews": 1,
-        "escalation_reason": null
-      }
+      "task_digest": "c85102601549670085952104f4975025fe24b29324393ced4beba40144383fe1"
     }
   }
 }
