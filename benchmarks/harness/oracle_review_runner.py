@@ -178,21 +178,50 @@ def _parse_decision(
     }
 
 
-def _run_review(workspace: Path, prompt: str) -> dict[str, str]:
-    result = run_bounded(
-        repository_root=workspace,
-        argv=("opencode", "run", "--agent", REVIEWER_AGENT, prompt),
-        limits=ProcessLimits(
-            timeout_seconds=600.0,
-            max_stdout_bytes=1_000_000,
-            max_stderr_bytes=200_000,
-        ),
-        environment={"AGENTS_COOKBOOK_RUN_DIR": ""},
-        close_stdin=True,
-    )
+def _run_review(
+    workspace: Path,
+    prompt: str,
+    *,
+    task_id: str,
+) -> dict[str, str]:
+    with tempfile.TemporaryDirectory(
+        prefix="agentscookbook-oracle-prompt-"
+    ) as tmp:
+        prompt_path = Path(tmp) / "prompt.txt"
+        prompt_path.write_text(prompt, encoding="utf-8")
+        result = run_bounded(
+            repository_root=workspace,
+            argv=(
+                "node",
+                str(_RUNTIME_SCRIPT),
+                "run-export",
+                "--repo",
+                str(workspace),
+                "--agent",
+                REVIEWER_AGENT,
+                "--title",
+                f"agentscookbook-oracle-review-{task_id}",
+                "--prompt-file",
+                str(prompt_path),
+                "--keep-session",
+                "false",
+            ),
+            limits=ProcessLimits(
+                timeout_seconds=600.0,
+                max_stdout_bytes=5_000_000,
+                max_stderr_bytes=200_000,
+            ),
+            environment={
+                "AGENTS_COOKBOOK_RUN_DIR": "",
+                "OPENCODE_DISABLE_AUTOUPDATE": "1",
+                "OPENCODE_DISABLE_PRUNE": "1",
+                "OPENCODE_AUTO_SHARE": "false",
+            },
+            close_stdin=True,
+        )
     if result.executable_missing:
         raise OracleReviewError(
-            "OpenCode is required for independent oracle review; install it first"
+            "Node.js is required for the qualified OpenCode review runtime"
         )
     if (
         result.timed_out
@@ -203,10 +232,29 @@ def _run_review(workspace: Path, prompt: str) -> dict[str, str]:
         stderr = result.stderr.decode("utf-8", errors="replace").strip()
         detail = f": {stderr[:1200]}" if stderr else ""
         raise OracleReviewError(
-            "independent OpenCode oracle reviewer failed" + detail
+            "independent OpenCode oracle reviewer runtime failed" + detail
+        )
+    try:
+        envelope = json.loads(result.stdout.decode("utf-8", errors="strict"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise OracleReviewError(
+            "independent OpenCode oracle reviewer emitted invalid runtime evidence"
+        ) from exc
+    run = envelope.get("run")
+    if not isinstance(run, dict) or run.get("status") != 0:
+        raise OracleReviewError(
+            "independent OpenCode oracle reviewer did not complete cleanly"
+        )
+    final_text = envelope.get("final_text")
+    if not isinstance(final_text, str) or not final_text.strip():
+        detail = envelope.get("export_parse_error")
+        suffix = f": {detail}" if isinstance(detail, str) and detail else ""
+        raise OracleReviewError(
+            "independent OpenCode oracle reviewer produced no terminal decision"
+            + suffix
         )
     return {
-        "stdout": result.stdout.decode("utf-8", errors="strict"),
+        "stdout": final_text,
         "command_identity": result.command_identity,
     }
 
