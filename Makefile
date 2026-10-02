@@ -1,6 +1,10 @@
 export PYTHONPATH := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))):$(PYTHONPATH)
 
-.PHONY: benchmark-check benchmark-check-all benchmark-campaign-audit benchmark benchmark-smoke benchmark-qualify-localization benchmark-oracle-review-check benchmark-report benchmark-score benchmark-evidence-validate
+.PHONY: benchmark-check benchmark-check-all benchmark-campaign-audit benchmark benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-evidence-validate
+
+benchmark-oracle-review:
+	@uv run --no-project python -m benchmarks oracle-review \
+		--suite benchmarks/suites/repository-intelligence/heldout-v1
 
 benchmark-oracle-review-check:
 	@uv run --no-project python -m benchmarks oracle-review-check \
