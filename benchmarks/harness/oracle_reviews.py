@@ -62,6 +62,8 @@ def validate_oracle_reviews(
         raise OracleReviewError("oracle review task map is missing")
     pending = []
     escalated = []
+    missing_review = []
+    non_unique = []
     first_reviewed = 0
     for task_id in suite.experiment["tasks"]:
         task = suite.tasks[task_id]
@@ -125,14 +127,29 @@ def validate_oracle_reviews(
             first_reviewed += 1
         if minimum_reviews == 2:
             escalated.append(task_id)
-        if len(reviewers) < minimum_reviews or any(
+        has_non_unique = any(
             review["decision"] != "unique" for review in reviews
-        ):
+        )
+        lacks_required_review = len(reviewers) < minimum_reviews
+        if has_non_unique:
+            non_unique.append(task_id)
+        elif lacks_required_review:
+            missing_review.append(task_id)
+        if has_non_unique or lacks_required_review:
             pending.append(task_id)
     approved = len(suite.experiment["tasks"]) - len(pending)
     if require_complete and pending:
+        if non_unique:
+            raise OracleReviewError(
+                "independent oracle review blocked by non-unique evidence for: "
+                + ", ".join(non_unique)
+                + "\nDo not add another reviewer to outvote this result. "
+                "Repair or retire the task. If this evidence was produced by a "
+                "reviewer tooling defect, update the tooling and restore the "
+                "review evidence from source before rerunning that review."
+            )
         detail = (
-            f"{len(pending)} task(s) still need independent review or resolution."
+            f"{len(pending)} task(s) still need independent review."
         )
         if pending == escalated:
             detail = (
@@ -151,6 +168,8 @@ def validate_oracle_reviews(
         "first_reviewed_tasks": first_reviewed,
         "approved_tasks": approved,
         "pending_tasks": pending,
+        "missing_review_tasks": missing_review,
+        "non_unique_tasks": non_unique,
         "escalated_tasks": escalated,
         "complete": not pending,
     }
