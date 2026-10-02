@@ -37,7 +37,7 @@ semantic failure. Paired bare-to-assisted rows also classify each valid replicat
 `gain`, `preserved`, `unresolved`, or `regression`, so aggregate success rates
 cannot hide an assisted regression.
 
-The committed `qualification/oracle-reviews.json` binds each expected owner to its task digest and records one independent source audit. A second independent reviewer must add a distinct task-bound decision for every task. Campaign admission fails before any model call until all reviews conclude that the expected semantic owner is unique. If a task has two defensible owners, repair or retire it and start a new campaign root; do not add a grading exception.
+The committed `qualification/oracle-reviews.json` binds each expected owner to its task digest and records independent source-audit evidence. One independent review with a `unique` decision is the default qualification requirement. A second independent review is required only when the task carries an explicit evidence-backed escalation reason, such as prior benchmark instability or unresolved ownership ambiguity. Campaign admission fails before any model call while any task lacks its required reviews or has a non-unique decision. If a task has two defensible owners, repair or retire it and start a new campaign root; do not add a grading exception.
 
 The campaign authority receipt freezes runtime and task inputs before inference. One launch claim is written before each model call; an interrupted claim is evidence and cannot be rerun in place. Reports expose execution, gradeability, semantic stability, output compliance, diagnostic boundaries, paired transitions, and excluded pairs separately. A diagnostic suite prepared with `diagnostic-prepare` has ten replicates per selected unstable task and its own root; its results never enter the official held-out score.
 
@@ -138,6 +138,7 @@ BENCHMARK_AGENT=opencode-native
 If `BENCHMARK_AGENT` is absent or empty, selected-agent targets stop before any preflight or agent run.
 
 ```sh
+# Only runs if committed review policy says more evidence is required.
 make benchmark-oracle-review
 make benchmark-oracle-review-check
 make benchmark-check
@@ -149,7 +150,7 @@ make benchmark-report
 make benchmark-score
 ```
 
-- `benchmark-oracle-review` prints the pending independent-review packet and the exact evidence file to update. It never writes an approval or runs a benchmark model; use a distinct reviewer to inspect the pinned source.
+- `benchmark-oracle-review` executes only reviews still required by the committed review-depth policy. It materializes the pinned target repository, invokes native OpenCode's read-only `plan` agent, withholds prior review rationale, and records the task-bound decision in `qualification/oracle-reviews.json`. Most tasks qualify after one independent source audit; evidence-escalated tasks alone incur the extra reviewer cost. It never runs benchmark trial models.
 - `benchmark-oracle-review-check` is the fail-closed proof gate. If reviews are incomplete it prints the next Make command instead of leaving the user at a dead end.
 - `benchmark-check` tests all six distinct agent/subject pairs once: each agent with bare tools, Hashmarks, and Enola. It uses one disposable smoke workspace, invokes no model, creates no trial, and exits.
 - `benchmark-campaign-audit` observes every selected task/condition and checks cross-task runtime identity and paired input equivalence before inference. It publishes no campaign authority or launch claim. It reports `ready_for_campaign: false` and exits 2 while independent oracle reviews are pending; it cannot waive the run gate. Run it after changing the suite, runtime, or model selection and before a costly campaign.
@@ -157,7 +158,7 @@ make benchmark-score
 - `benchmark` executes/resumes the frozen campaign and does not secretly run either check first.
 - `benchmark-report` is the generic framework report.
 - `benchmark-score` runs this suite's explicit language-separated held-out scorer.
-- Before a new full campaign after benchmark-authority changes, run `make benchmark-oracle-review-check` and `make benchmark-qualify-localization`. The latter exercises five Python localization cases and one TypeScript case, including repository-content-identity, across bare, Hashmarks, and Enola for every selected agent. It is qualification evidence, not the full score.
+- Before a new full campaign after benchmark-authority changes, run `make benchmark-oracle-review-check` and `make benchmark-qualify-localization`. Do not buy a second review for every task by default: only tasks with recorded escalation evidence require it. The localization qualification then exercises five Python localization cases and one TypeScript case, including repository-content-identity, across bare, Hashmarks, and Enola for every selected agent. It is qualification evidence, not the full score.
 
 For a scoring-only change to a complete campaign recorded under the current normalization and execution-evidence contracts, run offline scoring without editing the source bundles:
 
