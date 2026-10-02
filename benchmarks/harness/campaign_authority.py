@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
 
-from .admission import TrialAdmission, admit_trial
+from .admission import TrialAdmission, admit_trial, harness_identity
 from .bundle import verify_bundle
 from .identity import canonical_json, digest
 from .oracle_reviews import (
@@ -426,6 +426,7 @@ def audit_campaign(
     agents: dict[str, dict[str, Any]] = {}
     subjects: dict[str, dict[str, Any]] = {}
     task_inputs: dict[str, str] = {}
+    campaign_harness_authority = harness_identity(harness_root)
     ordered_representatives = sorted(representatives.items())
     for index, ((task_id, condition), row) in enumerate(
         ordered_representatives, start=1
@@ -451,6 +452,7 @@ def audit_campaign(
             local_source=local_source,
             codex_auth=codex_auth,
             source=source,
+            precomputed_harness_authority=campaign_harness_authority,
         ) as admission:
             status, reason = admission.initial_outcome()
             if status is not None:
@@ -510,6 +512,10 @@ def audit_campaign(
                 )
             task_inputs[task_id] = inputs
             admission.cleanup_subject()
+    if harness_identity(harness_root) != campaign_harness_authority:
+        raise CampaignAuthorityError(
+            "harness authority changed during campaign admission"
+        )
     payload = {
         "contract": "benchmark-campaign-authority.v3",
         "selected_definitions": selected,
