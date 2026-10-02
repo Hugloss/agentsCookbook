@@ -60,6 +60,7 @@ from benchmarks.harness.preflight import preflight_trial
 from benchmarks.harness.receipt import is_complete_receipt
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import (
+    _oracle_failure_diagnostic,
     _reason_for_agent,
     _reason_for_oracle_failure,
     run_trial,
@@ -1228,6 +1229,70 @@ class PilotExecutionTests(unittest.TestCase):
                 "agent terminal event was turn.failed: "
                 "OpenCode completed without a final assistant message"
             ),
+        )
+
+    def test_runner_distinguishes_output_contract_from_wrong_owner(self) -> None:
+        ungradeable = Observation(
+            {
+                "passed": False,
+                "valid": True,
+                "semantic_status": "UNSCORABLE",
+                "semantic_gradeable": False,
+                "format_compliant": False,
+                "answer_shape": "PROSE_OR_MALFORMED",
+                "expected": {
+                    "path": "hashmarks/codemap/indexing_lifecycle.py",
+                    "symbol": "_sync_remove_stale_paths",
+                },
+                "actual": None,
+                "normalized_actual": None,
+                "reason": "agent final_message is not JSON: Expecting value",
+                "actual_text": "The task is complete.",
+            },
+            "",
+        )
+        code, detail = _oracle_failure_diagnostic(ungradeable)
+        self.assertEqual(code, "output-contract-ungradeable")
+        payload = json.loads(detail)
+        self.assertEqual(payload["semantic_status"], "UNSCORABLE")
+        self.assertFalse(payload["semantic_gradeable"])
+        self.assertFalse(payload["format_compliant"])
+        self.assertEqual(payload["answer_shape"], "PROSE_OR_MALFORMED")
+
+        incorrect = Observation(
+            {
+                "passed": False,
+                "valid": True,
+                "semantic_status": "INCORRECT",
+                "semantic_gradeable": True,
+                "format_compliant": True,
+                "answer_shape": "BARE_JSON",
+                "expected": {
+                    "path": "hashmarks/codemap/repository_index_store.py",
+                    "symbol": "paths_under",
+                },
+                "actual": {
+                    "path": "hashmarks/codemap/store_queries.py",
+                    "symbol": "paths_under",
+                },
+                "normalized_actual": {
+                    "path": "hashmarks/codemap/store_queries.py",
+                    "symbol": "paths_under",
+                },
+                "reason": "repository location differs from frozen oracle",
+            },
+            "",
+        )
+        code, detail = _oracle_failure_diagnostic(incorrect)
+        self.assertEqual(code, "oracle-mismatch")
+        payload = json.loads(detail)
+        self.assertEqual(
+            payload["expected"]["path"],
+            "hashmarks/codemap/repository_index_store.py",
+        )
+        self.assertEqual(
+            payload["observed"]["path"],
+            "hashmarks/codemap/store_queries.py",
         )
 
     def test_runner_surfaces_bounded_oracle_actual_text_preview(self) -> None:
