@@ -202,6 +202,8 @@ class LiveTaskMatrixTests(unittest.TestCase):
         )
         assert rendered is not None
         self.assertIn("FAILURE locate-prefix-path-enumerator", rendered)
+        self.assertIn("Replicate ordinal: 1", rendered)
+        self.assertIn("Replicate ID: 6201", rendered)
         self.assertIn("Status: INCOMPLETE", rendered)
         self.assertIn("Stage: agent-execution", rendered)
         self.assertIn("Reason code: agent-terminal-failed", rendered)
