@@ -57,10 +57,13 @@ def main() -> int:
             if row["task_id"] in task_ids
             and conditions[str(row["condition_id"])]["agent"] in selected_agents
         }
-        expected = 54 * len(agents)
-        if len(task_ids) != 6 or len(selected) != expected:
+        expected = sum(
+            int(condition["trials"]) for condition in conditions.values()
+            if condition["agent"] in selected_agents
+        ) * len(task_ids)
+        if not task_ids or len(selected) != expected:
             raise ValueError(
-                f"{language}: expected six tasks and {expected} frozen trials "
+                f"{language}: expected {len(task_ids)} tasks and {expected} frozen trials "
                 f"for agents {', '.join(agents)}"
             )
         try:
@@ -90,12 +93,15 @@ def main() -> int:
             "conditions": report["conditions"],
             "paired_assistance": report["paired_assistance"],
             "paired_assistance_summary": report["paired_assistance_summary"],
+            "paired_assistance_exclusions": report["paired_assistance_exclusions"],
+            "expected_assistance_pairs": report["expected_assistance_pairs"],
             "stability": report["stability"],
+            "diagnostics": report["diagnostics"],
             "agent_profiles": report["agent_profiles"],
             "cross_agent_observations": report["cross_agent_observations"],
         }
     payload = {
-        "schema": "agents-cookbook-heldout-observer-outcomes.v5",
+        "schema": "agents-cookbook-heldout-observer-outcomes.v6",
         "projection_mode": (
             "offline-regrade"
             if args.regrade_source_results is not None

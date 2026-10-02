@@ -17,7 +17,10 @@ from benchmarks.adapters.oracles import (
 from benchmarks.adapters.registry import build_oracle
 from benchmarks.harness.identity import (
     EXECUTION_EVIDENCE_CONTRACT,
+    REPLICATE_EVIDENCE_CONTRACT,
+    REPLICATE_SCORE_CONTRACT,
     canonical_json,
+    digest,
     execution_evidence_id,
     score_projection_id,
 )
@@ -75,11 +78,23 @@ class RepositoryLocationOracleTests(unittest.TestCase):
         trial_id: str = "a" * 64,
         trial_index: int = 0,
         seed: int = 1,
+        replicate_id: int | None = None,
         observation_policy: str | None = None,
         oracle_identity: dict | None = None,
     ) -> Path:
         bundle = root / trial_id
         bundle.mkdir()
+        campaign_id = None
+        if replicate_id is not None:
+            campaign_data = {
+                "contract": "benchmark-campaign-authority.v1",
+                "selected_definitions": [definition_id or "b" * 64],
+            }
+            campaign_id = digest(campaign_data)
+            campaign_data["campaign_id"] = campaign_id
+            campaign_dir = root / ".campaign"
+            campaign_dir.mkdir(exist_ok=True)
+            (campaign_dir / "authority.json").write_bytes(canonical_json(campaign_data))
         events = b""
         seal = {
             "trial_id": trial_id,
@@ -119,7 +134,8 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             task=task,
             condition=condition,
             trial=trial_index,
-            seed=seed,
+            **({"seed": seed} if replicate_id is None else {"replicate_id": replicate_id,
+                "campaign_id": campaign_id, "admitted_state_sha256": "a" * 64}),
             subject_identity=authority["subject"],
             agent_identity=authority["agent"],
             harness_identity=authority["harness"],
@@ -140,19 +156,25 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             "authority": authority,
             "execution": {
                 "trial_index": trial_index,
-                "seed": seed,
+                **({"seed": seed} if replicate_id is None else {
+                    "replicate_id": replicate_id, "campaign_id": campaign_id,
+                    "admitted_state_sha256": "a" * 64}),
                 "events": seal,
                 "artifacts": artifacts,
                 "agent_answer": answer,
                 "workspace_root": str(context.workspace),
                 "location_observation": observed,
-                "evidence_contract": EXECUTION_EVIDENCE_CONTRACT,
+                "evidence_contract": (
+                    EXECUTION_EVIDENCE_CONTRACT if replicate_id is None
+                    else REPLICATE_EVIDENCE_CONTRACT),
                 "evidence_identity": evidence_id,
             },
             "scoring": {
                 "projection_identity": score_projection_id(
                     execution_evidence=evidence_id,
                     oracle_identity=authority["oracle"]["declared"],
+                    **({"contract": REPLICATE_SCORE_CONTRACT}
+                       if replicate_id is not None else {}),
                 ),
                 "oracle_grade": self._oracle().grade_observed(observed).payload,
             },
@@ -547,7 +569,7 @@ class RepositoryLocationOracleTests(unittest.TestCase):
                 condition=condition,
                 experiment=suite.experiment,
                 definition_id=row["definition_id"],
-                seed=row["seed"],
+                replicate_id=row["replicate_id"],
             )
             first, lineage = project_campaign_receipts(
                 suite=suite,
@@ -616,7 +638,7 @@ class RepositoryLocationOracleTests(unittest.TestCase):
                 invalid_results, context, answer,
                 task=suite.tasks[row["task_id"]], condition=condition,
                 experiment=suite.experiment, definition_id=row["definition_id"],
-                status="CONTAMINATED", seed=row["seed"],
+                status="CONTAMINATED", replicate_id=row["replicate_id"],
             )
             with self.assertRaisesRegex(RegradeError, "not qualified"):
                 project_campaign_receipts(
@@ -631,7 +653,7 @@ class RepositoryLocationOracleTests(unittest.TestCase):
                 old_policy_results, context, answer,
                 task=suite.tasks[row["task_id"]], condition=condition,
                 experiment=suite.experiment, definition_id=row["definition_id"],
-                seed=row["seed"],
+                replicate_id=row["replicate_id"],
                 observation_policy="repository-location-normalization.v1",
             )
             with self.assertRaisesRegex(RegradeError, "normalization policy differs"):
@@ -671,7 +693,8 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             self._bundle(
                 results, context, json.dumps(EXPECTED),
                 task=task, condition=condition, experiment=suite.experiment,
-                definition_id=row["definition_id"], seed=row["seed"],
+                definition_id=row["definition_id"],
+                replicate_id=row["replicate_id"],
                 oracle_identity=dataclasses.asdict(oracle.identity()),
             )
             projected, _ = project_campaign_receipts(

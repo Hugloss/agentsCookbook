@@ -11,42 +11,66 @@
       "subject": "none",
       "agent": "codex-native",
       "trials": 3,
-      "seed": 6101
+      "replicate_ids": [
+        6101,
+        6102,
+        6103
+      ]
     },
     {
       "id": "hashmarks-codex-native",
       "subject": "hashmarks",
       "agent": "codex-native",
       "trials": 3,
-      "seed": 6101
+      "replicate_ids": [
+        6101,
+        6102,
+        6103
+      ]
     },
     {
       "id": "enola-codex-native",
       "subject": "enola",
       "agent": "codex-native",
       "trials": 3,
-      "seed": 6101
+      "replicate_ids": [
+        6101,
+        6102,
+        6103
+      ]
     },
     {
       "id": "bare-opencode-native",
       "subject": "none",
       "agent": "opencode-native",
       "trials": 3,
-      "seed": 6101
+      "replicate_ids": [
+        6101,
+        6102,
+        6103
+      ]
     },
     {
       "id": "hashmarks-opencode-native",
       "subject": "hashmarks",
       "agent": "opencode-native",
       "trials": 3,
-      "seed": 6101
+      "replicate_ids": [
+        6101,
+        6102,
+        6103
+      ]
     },
     {
       "id": "enola-opencode-native",
       "subject": "enola",
       "agent": "opencode-native",
       "trials": 3,
-      "seed": 6101
+      "replicate_ids": [
+        6101,
+        6102,
+        6103
+      ]
     }
   ],
   "scoring": {

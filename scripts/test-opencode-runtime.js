@@ -633,6 +633,21 @@ async function main() {
     }),
   );
   assert.strictEqual(parsed.text, 'final');
+  assert.throws(() => runtime.extractFinalAnswer(JSON.stringify({
+    messages: [{ info: { role: 'assistant' }, parts: [{ type: 'tool' }] }],
+  })), /no final text/);
+  assert.throws(() => runtime.extractFinalAnswer(JSON.stringify({
+    messages: [{ info: { role: 'assistant' }, parts: [
+      { type: 'text', text: 'earlier answer' }, { type: 'tool' },
+    ] }],
+  })), /no final text/);
+  assert.throws(() => runtime.extractFinalAnswer('banner\n{"messages":[]}'), /Unexpected token|not valid JSON/);
+  assert.throws(() => runtime.extractFinalAnswer(JSON.stringify({
+    messages: [
+      { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'old' }] },
+      { info: { role: 'assistant' }, parts: [] },
+    ],
+  })), /no final text/);
   await testSharedLifecycle();
   process.stdout.write('opencode-runtime tests: PASS\n');
 }

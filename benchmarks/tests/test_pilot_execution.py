@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import os
 import runpy
@@ -86,6 +87,15 @@ PINNED_COMMIT = "0841a8822f417b8fd03af61c03779df8f1cdc941"
 PINNED_TREE = "65a32888329e308615647dda194f0e36c2afe2ac"
 MATRIX_V2_COMMIT = "6ce8b0d9230dd9bc5369ddf495ad9404766fbbaf"
 MATRIX_V2_TREE = "1e253d251f8e0a874aeca0b05358b36253a714cc"
+
+
+def _legacy_matrix_suite() -> SuiteDefinition:
+    """Keep historical receipt tests on the historical seed contract."""
+    suite = load_suite(MATRIX_V2)
+    experiment = copy.deepcopy(suite.experiment)
+    for condition in experiment["conditions"]:
+        condition["seed"] = condition.pop("replicate_ids")[0]
+    return SuiteDefinition(suite.root, experiment, suite.tasks, suite.subjects, suite.agents)
 
 
 def _opencode_trial_environment(control: Path, root: Path) -> dict[str, str]:
@@ -1592,6 +1602,13 @@ class PilotExecutionTests(unittest.TestCase):
             _final_message(events),
             '{"path":"x","symbol":"y"}',
         )
+        continued = events[:-1] + [
+            {"type": "item.completed", "item": {"type": "command_execution"}},
+            events[-1],
+        ]
+        self.assertIsNone(_final_message(continued))
+        failed = events[:-1] + [{"type": "turn.failed"}]
+        self.assertIsNone(_final_message(failed))
 
         bare = _metrics(events, subject_server=None)
         self.assertEqual(bare["subject_mcp_calls"], 0)
@@ -1811,7 +1828,7 @@ class PilotExecutionTests(unittest.TestCase):
             )
 
     def test_report_keeps_cross_agent_rows_descriptive(self) -> None:
-        suite = load_suite(MATRIX_V2)
+        suite = _legacy_matrix_suite()
         task_id = "locate-receipt-completion-owner"
         rows = {
             (row["task_id"], row["condition_id"]): row
@@ -1885,7 +1902,7 @@ class PilotExecutionTests(unittest.TestCase):
         )
 
     def test_report_excludes_unobserved_code_mode_adoption(self) -> None:
-        suite = load_suite(MATRIX_V2)
+        suite = _legacy_matrix_suite()
         condition = next(
             row for row in suite.experiment["conditions"]
             if row["id"] == "hashmarks-opencode-native"
@@ -1920,7 +1937,7 @@ class PilotExecutionTests(unittest.TestCase):
                 selected_definitions={row["definition_id"] for row in selected},
             )
         profile = report["conditions"][condition["id"]]
-        self.assertEqual(report["schema"]["version"], 5)
+        self.assertEqual(report["schema"]["version"], 6)
         self.assertEqual(profile["subject_tool_adoption_denominator"], 1)
         self.assertEqual(profile["subject_tool_adoption_rate"], 1.0)
         self.assertEqual(
@@ -1938,7 +1955,7 @@ class PilotExecutionTests(unittest.TestCase):
                 )
 
     def test_report_selection_rejects_mixed_native_runtime_authority(self) -> None:
-        suite = load_suite(MATRIX_V2)
+        suite = _legacy_matrix_suite()
         task_id = "locate-receipt-completion-owner"
         definitions = {
             row["condition_id"]: row
@@ -2000,7 +2017,7 @@ class PilotExecutionTests(unittest.TestCase):
                 )
 
     def test_report_and_status_reject_mixed_subject_authority(self) -> None:
-        suite = load_suite(MATRIX_V2)
+        suite = _legacy_matrix_suite()
         condition = next(
             row
             for row in suite.experiment["conditions"]
@@ -2262,7 +2279,7 @@ class PilotExecutionTests(unittest.TestCase):
                 )
 
     def test_campaign_status_separates_receipts_from_qualification(self) -> None:
-        suite = load_suite(MATRIX_V2)
+        suite = _legacy_matrix_suite()
         selected = [
             row
             for row in suite.trial_definitions()

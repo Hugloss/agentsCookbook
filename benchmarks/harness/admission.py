@@ -40,11 +40,13 @@ class TrialAdmissionError(RuntimeError):
 
 @dataclass(frozen=True)
 class TrialAdmission:
+    suite: SuiteDefinition
     task: dict[str, Any]
     condition: dict[str, Any]
     expanded_condition: dict[str, Any]
     trial_index: int
-    seed: int
+    replicate_id: int
+    legacy_seed: bool
     definition_id: str
     context: TrialContext
     mutation: Observation
@@ -386,13 +388,17 @@ def admit_trial(
         )
 
     expanded_condition = suite.expanded_condition(condition)
-    seed = int(condition["seed"]) + trial_index
+    legacy_seed = "replicate_ids" not in condition
+    replicate_id = (
+        int(condition["seed"]) + trial_index if legacy_seed
+        else int(condition["replicate_ids"][trial_index])
+    )
     definition = definition_id(
         experiment=suite.experiment,
         task=task,
         condition=expanded_condition,
         trial=trial_index,
-        seed=seed,
+        **({"seed": replicate_id} if legacy_seed else {"replicate_id": replicate_id}),
     )
 
     harness_authority = harness_identity(harness_root)
@@ -487,11 +493,13 @@ def admit_trial(
         oracle_health = oracle.healthcheck(context)
 
         yield TrialAdmission(
+            suite=suite,
             task=task,
             condition=condition,
             expanded_condition=expanded_condition,
             trial_index=trial_index,
-            seed=seed,
+            replicate_id=replicate_id,
+            legacy_seed=legacy_seed,
             definition_id=definition,
             context=context,
             mutation=mutation,

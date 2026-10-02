@@ -3,44 +3,56 @@
     {
       "agent": "codex-native",
       "id": "none-codex-native",
-      "seed": 8201,
       "subject": "none",
-      "trials": 1
+      "trials": 1,
+      "replicate_ids": [
+        8201
+      ]
     },
     {
       "agent": "codex-native",
       "id": "hashmarks-codex-native",
-      "seed": 8201,
       "subject": "hashmarks",
-      "trials": 1
+      "trials": 1,
+      "replicate_ids": [
+        8201
+      ]
     },
     {
       "agent": "codex-native",
       "id": "enola-codex-native",
-      "seed": 8201,
       "subject": "enola",
-      "trials": 1
+      "trials": 1,
+      "replicate_ids": [
+        8201
+      ]
     },
     {
       "agent": "opencode-native",
       "id": "none-opencode-native",
-      "seed": 8201,
       "subject": "none",
-      "trials": 1
+      "trials": 1,
+      "replicate_ids": [
+        8201
+      ]
     },
     {
       "agent": "opencode-native",
       "id": "hashmarks-opencode-native",
-      "seed": 8201,
       "subject": "hashmarks",
-      "trials": 1
+      "trials": 1,
+      "replicate_ids": [
+        8201
+      ]
     },
     {
       "agent": "opencode-native",
       "id": "enola-opencode-native",
-      "seed": 8201,
       "subject": "enola",
-      "trials": 1
+      "trials": 1,
+      "replicate_ids": [
+        8201
+      ]
     }
   ],
   "id": "repository-intelligence-multidomain-v2",

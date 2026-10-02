@@ -1,6 +1,6 @@
 # Held-out repository observer outcomes v1
 
-This agentsCookbook suite measures what native Codex and native OpenCode do with bare tools, Hashmarks MCP, or Enola MCP. It contains twelve pinned tasks: five Python localization tasks on Hashmarks, one Python defect repair on agentsCookbook, and six TypeScript localization tasks on UV Fleet. Each of six agent/subject conditions runs three paired seeds per task: 216 trials. The source commits predate this suite, so task answers are absent from each trial repository.
+This agentsCookbook suite measures what native Codex and native OpenCode do with bare tools, Hashmarks MCP, or Enola MCP. It contains twelve pinned tasks: five Python localization tasks on Hashmarks, one Python defect repair on agentsCookbook, and six TypeScript localization tasks on UV Fleet. Each of six agent/subject conditions runs three paired replicates per task: 216 trials. The source commits predate this suite, so task answers are absent from each trial repository.
 
 **Status:** heldout-v1 is still being qualified. Its repository/source pins are deliberate, but the benchmark is not considered frozen until its oracle semantics and a complete campaign are qualified. Benchmark defects found during qualification are repaired in v1; results produced under superseded v1 authority must not be mixed with current score projections. Once v1 is frozen, newly discovered benchmark ideas enter as diagnostic/shadow tasks first rather than being added post-hoc to the scored population.
 
@@ -28,18 +28,30 @@ A complete campaign with legitimate candidate FAIL outcomes can still be qualifi
 
 ### Replicates and stability
 
-The frozen condition field named `seed` is a historical **paired replicate identifier**.
-Native Codex/OpenCode adapters do not currently transport it as a provider/model RNG
-seed, so it must not be interpreted as deterministic inference. Reports surface the
-same value as `replicate_id` while preserving the frozen receipt field for execution
-identity.
+The frozen condition field `replicate_ids` identifies paired stochastic observations. Native Codex/OpenCode adapters do not currently transport a provider/model RNG seed. Historical `seed` receipts remain readable but are not comparable to the new execution contract.
 
 Repeated outcomes are evidence, not retries. Reports therefore expose stability per
 task/agent/subject as `stable-correct`, `stable-incorrect`, `unstable`, or
-`execution-unstable`. An incomplete or invalid execution is never converted into a
+`execution-unstable` or `not-gradeable`. An incomplete or invalid execution is never converted into a
 semantic failure. Paired bare-to-assisted rows also classify each valid replicate as
 `gain`, `preserved`, `unresolved`, or `regression`, so aggregate success rates
 cannot hide an assisted regression.
+
+The committed `qualification/oracle-reviews.json` binds each expected owner to its task digest and records one independent source audit. A second independent reviewer must add a distinct task-bound decision for every task. Campaign admission fails before any model call until all reviews conclude that the expected semantic owner is unique. If a task has two defensible owners, repair or retire it and start a new campaign root; do not add a grading exception.
+
+The campaign authority receipt freezes runtime and task inputs before inference. One launch claim is written before each model call; an interrupted claim is evidence and cannot be rerun in place. Reports expose execution, gradeability, semantic stability, output compliance, diagnostic boundaries, paired transitions, and excluded pairs separately. A diagnostic suite prepared with `diagnostic-prepare` has ten replicates per selected unstable task and its own root; its results never enter the official held-out score.
+
+After a qualified official score, prepare the diagnostic suite with:
+
+```sh
+uv run --no-project python -m benchmarks diagnostic-prepare \
+  --suite benchmarks/suites/repository-intelligence/heldout-v1 \
+  --score /path/to/qualified-heldout-score.json \
+  --output-suite /tmp/agentscookbook-heldout-diagnostic-v1 \
+  --include-task locate-repository-content-identity
+```
+
+Run that generated suite with a distinct campaign root. Keep its report separate from the official score. Freeze heldout-v1 only after both selected native agents finish fresh qualified campaigns, every oracle review is complete, and remaining unstable results have an explicit owner; any later semantic change starts a new benchmark generation.
 
 From the agentsCookbook root, configure the benchmark authority once:
 
@@ -136,7 +148,7 @@ make benchmark-score
 - `benchmark` executes/resumes the frozen campaign and does not secretly run either check first.
 - `benchmark-report` is the generic framework report.
 - `benchmark-score` runs this suite's explicit language-separated held-out scorer.
-- Before a new full campaign after benchmark-authority changes, run `make benchmark-qualify-localization`. It exercises the four localization cases that exposed the v1 oracle defect plus the repository-content-identity case and one TypeScript localization case across bare, Hashmarks, and Enola, prints a fresh campaign root, and checks that its execution evidence is qualified. It is qualification evidence, not the full score.
+- Before a new full campaign after benchmark-authority changes, run `make benchmark-oracle-review-check` and `make benchmark-qualify-localization`. The latter exercises five Python localization cases and one TypeScript case, including repository-content-identity, across bare, Hashmarks, and Enola for every selected agent. It is qualification evidence, not the full score.
 
 For a scoring-only change to a complete campaign recorded under the current normalization and execution-evidence contracts, run offline scoring without editing the source bundles:
 

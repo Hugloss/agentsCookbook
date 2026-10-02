@@ -73,19 +73,23 @@ class SuiteDefinition:
             for condition in self.experiment["conditions"]:
                 expanded = self.expanded_condition(condition)
                 for trial in range(int(condition["trials"])):
-                    seed = int(condition["seed"]) + trial
+                    identity = (
+                        {"replicate_id": condition["replicate_ids"][trial]}
+                        if "replicate_ids" in condition
+                        else {"seed": int(condition["seed"]) + trial}
+                    )
                     rows.append(
                         {
                             "task_id": task_id,
                             "condition_id": condition["id"],
                             "trial": trial,
-                            "seed": seed,
+                            **identity,
                             "definition_id": definition_id(
                                 experiment=self.experiment,
                                 task=task,
                                 condition=expanded,
                                 trial=trial,
-                                seed=seed,
+                                **identity,
                             ),
                         }
                     )
@@ -135,8 +139,21 @@ def _validate_participant_references(
             )
         if int(condition.get("trials", 0)) < 1:
             raise SuiteError(f"condition {condition.get('id')} has no trials")
-        if "seed" not in condition:
-            raise SuiteError(f"condition {condition.get('id')} has no seed")
+        if "replicate_ids" in condition:
+            ids = condition["replicate_ids"]
+            if len(ids) != condition["trials"] or len(set(ids)) != len(ids):
+                raise SuiteError(f"condition {condition.get('id')} has invalid replicate_ids")
+        elif "seed" not in condition:
+            raise SuiteError(f"condition {condition.get('id')} has no replicate identity")
+    grouped: dict[str, list[int]] = {}
+    for condition in experiment.get("conditions", []):
+        if "replicate_ids" not in condition:
+            continue
+        agent = str(condition["agent"])
+        ids = condition["replicate_ids"]
+        if agent in grouped and grouped[agent] != ids:
+            raise SuiteError(f"agent {agent} has unpaired replicate_ids")
+        grouped[agent] = ids
 
 
 def load_runtime_suite(root: Path) -> SuiteDefinition:
@@ -225,10 +242,19 @@ def load_suite(root: Path) -> SuiteDefinition:
         if "allowed_generated_globs" not in contamination:
             raise SuiteError(f"task {task['id']} must define allowed_generated_globs")
 
-    return SuiteDefinition(
+    suite = SuiteDefinition(
         root=root,
         experiment=experiment,
         tasks=tasks,
         subjects=subjects,
         agents=agents,
     )
+    if "oracle_reviews" in experiment or (root / "qualification" / "oracle-reviews.json").is_file():
+        from .oracle_reviews import OracleReviewError, validate_oracle_reviews
+        try:
+            if "oracle_reviews" in experiment and not (root / experiment["oracle_reviews"]).is_file():
+                raise OracleReviewError("oracle review evidence is missing")
+            validate_oracle_reviews(suite, require_complete=False)
+        except OracleReviewError as exc:
+            raise SuiteError(str(exc)) from exc
+    return suite

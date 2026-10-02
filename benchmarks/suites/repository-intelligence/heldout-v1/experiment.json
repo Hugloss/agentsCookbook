@@ -2,6 +2,7 @@
   "id": "repository-intelligence-heldout-outcomes-v1",
   "version": 1,
   "suite": "repository-intelligence",
+  "oracle_reviews": "qualification/oracle-reviews.json",
   "tasks": [
     "locate-prefix-path-enumerator",
     "locate-stale-index-removal",
@@ -22,42 +23,66 @@
       "subject": "none",
       "agent": "codex-native",
       "trials": 3,
-      "seed": 6201
+      "replicate_ids": [
+        6201,
+        6202,
+        6203
+      ]
     },
     {
       "id": "hashmarks-codex-native",
       "subject": "hashmarks",
       "agent": "codex-native",
       "trials": 3,
-      "seed": 6201
+      "replicate_ids": [
+        6201,
+        6202,
+        6203
+      ]
     },
     {
       "id": "enola-codex-native",
       "subject": "enola",
       "agent": "codex-native",
       "trials": 3,
-      "seed": 6201
+      "replicate_ids": [
+        6201,
+        6202,
+        6203
+      ]
     },
     {
       "id": "none-opencode-native",
       "subject": "none",
       "agent": "opencode-native",
       "trials": 3,
-      "seed": 6201
+      "replicate_ids": [
+        6201,
+        6202,
+        6203
+      ]
     },
     {
       "id": "hashmarks-opencode-native",
       "subject": "hashmarks",
       "agent": "opencode-native",
       "trials": 3,
-      "seed": 6201
+      "replicate_ids": [
+        6201,
+        6202,
+        6203
+      ]
     },
     {
       "id": "enola-opencode-native",
       "subject": "enola",
       "agent": "opencode-native",
       "trials": 3,
-      "seed": 6201
+      "replicate_ids": [
+        6201,
+        6202,
+        6203
+      ]
     }
   ],
   "scoring": {

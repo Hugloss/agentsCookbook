@@ -8,6 +8,8 @@ from typing import Any
 
 EXECUTION_EVIDENCE_CONTRACT = "benchmark-execution-evidence.v2"
 SCORE_PROJECTION_CONTRACT = "benchmark-score-projection.v2"
+REPLICATE_EVIDENCE_CONTRACT = "benchmark-execution-evidence.v3"
+REPLICATE_SCORE_CONTRACT = "benchmark-score-projection.v3"
 
 
 def canonical_json(value: Any) -> bytes:
@@ -26,15 +28,21 @@ def definition_id(
     task: dict[str, Any],
     condition: dict[str, Any],
     trial: int,
-    seed: int,
+    seed: int | None = None,
+    replicate_id: int | None = None,
 ) -> str:
+    if (seed is None) == (replicate_id is None):
+        raise ValueError("provide exactly one legacy seed or replicate_id")
     return digest(
         {
             "experiment": experiment,
             "task": task,
             "condition": condition,
             "trial": trial,
-            "seed": seed,
+            **({"seed": seed} if seed is not None else {
+                "identity_contract": "benchmark-definition.v2",
+                "replicate_id": replicate_id,
+            }),
         }
     )
 
@@ -86,7 +94,8 @@ def execution_evidence_id(
     task: dict[str, Any],
     condition: dict[str, Any],
     trial: int,
-    seed: int,
+    seed: int | None = None,
+    replicate_id: int | None = None,
     subject_identity: dict[str, Any],
     agent_identity: dict[str, Any],
     harness_identity: dict[str, Any],
@@ -96,15 +105,28 @@ def execution_evidence_id(
     workspace_root: str,
     location_observation: dict[str, Any] | None,
     agent_trace_sha256: str,
+    campaign_id: str | None = None,
+    admitted_state_sha256: str | None = None,
 ) -> str:
     """Identify frozen execution evidence independently of scoring authority."""
+    if (seed is None) == (replicate_id is None):
+        raise ValueError("provide exactly one legacy seed or replicate_id")
+    if replicate_id is not None and not campaign_id:
+        raise ValueError("replicate evidence requires campaign_id")
+    if replicate_id is not None and not admitted_state_sha256:
+        raise ValueError("replicate evidence requires admitted_state_sha256")
     return digest(
         {
-            "contract": EXECUTION_EVIDENCE_CONTRACT,
+            "contract": (
+                EXECUTION_EVIDENCE_CONTRACT if seed is not None
+                else REPLICATE_EVIDENCE_CONTRACT
+            ),
             "task": execution_task_contract(task),
             "condition": condition,
             "trial": trial,
-            "seed": seed,
+            **({"seed": seed} if seed is not None else {"replicate_id": replicate_id}),
+            **({} if seed is not None else {"campaign_id": campaign_id,
+                                            "admitted_state_sha256": admitted_state_sha256}),
             "subject": subject_identity,
             "agent": agent_identity,
             "harness": harness_identity,
@@ -122,11 +144,12 @@ def score_projection_id(
     *,
     execution_evidence: str,
     oracle_identity: dict[str, Any],
+    contract: str = SCORE_PROJECTION_CONTRACT,
 ) -> str:
     """Identify one deterministic score projection over frozen execution evidence."""
     return digest(
         {
-            "contract": SCORE_PROJECTION_CONTRACT,
+            "contract": contract,
             "execution_evidence_id": execution_evidence,
             "oracle": oracle_identity,
         }

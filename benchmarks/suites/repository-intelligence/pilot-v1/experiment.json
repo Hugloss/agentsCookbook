@@ -13,21 +13,27 @@
       "subject": "none",
       "agent": "codex",
       "trials": 1,
-      "seed": 4101
+      "replicate_ids": [
+        4101
+      ]
     },
     {
       "id": "hashmarks-codex",
       "subject": "hashmarks",
       "agent": "codex",
       "trials": 1,
-      "seed": 4101
+      "replicate_ids": [
+        4101
+      ]
     },
     {
       "id": "enola-codex",
       "subject": "enola",
       "agent": "codex",
       "trials": 1,
-      "seed": 4101
+      "replicate_ids": [
+        4101
+      ]
     }
   ],
   "scoring": {

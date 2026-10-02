@@ -14,7 +14,11 @@ from benchmarks.adapters.oracles import (
     score_repository_location,
 )
 from benchmarks.harness.bundle import verify_bundle
+from benchmarks.harness.campaign_authority import (
+    CampaignAuthorityError, claimed_definitions, read_campaign,
+)
 from benchmarks.harness.suite import SuiteDefinition
+from benchmarks.harness.identity import digest, execution_task_contract
 
 
 class ReportError(ValueError):
@@ -106,7 +110,8 @@ def _replicate_id(receipt: dict[str, Any]) -> int:
     transport it as a provider/model sampling seed, so reports must not imply
     deterministic inference from this value.
     """
-    return int(receipt["execution"]["seed"])
+    execution = receipt["execution"]
+    return int(execution.get("replicate_id", execution.get("seed")))
 
 
 def _metric_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
@@ -365,7 +370,7 @@ def _pair_key(receipt: dict[str, Any]) -> tuple[str, str, int, int]:
         _task_id(receipt),
         agent_id,
         int(execution["trial_index"]),
-        int(execution["seed"]),
+        _replicate_id(receipt),
     )
 
 
@@ -386,6 +391,19 @@ def _assistance_transition(
     if not left and not right:
         return "unresolved"
     return "regression"
+
+
+def _pair_input_id(receipt: dict[str, Any]) -> str:
+    authority = receipt.get("authority", {})
+    return digest({
+        "task": execution_task_contract(receipt["task"]),
+        "agent": _comparison_identity(receipt),
+        "harness": authority.get("harness"),
+        "environment": authority.get("environment"),
+        "mutation": authority.get("mutation"),
+        "admitted_state": receipt.get("execution", {}).get("admitted_state_sha256"),
+        "replicate_id": _replicate_id(receipt),
+    })
 
 
 def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -411,14 +429,18 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         baseline = bare.get(key)
         if baseline is None:
             continue
+        pair_input = _pair_input_id(baseline)
+        if pair_input != _pair_input_id(receipt):
+            raise ReportError(f"paired non-subject authority differs for {key}")
         row: dict[str, Any] = {
             "task_id": key[0],
             "agent_id": key[1],
             "trial_index": key[2],
-            "seed": key[3],
             "replicate_id": key[3],
+            **({"seed": key[3]} if "seed" in receipt["execution"] else {}),
             "condition_id": _condition_id(receipt),
             "subject_id": receipt["condition"]["subject_definition"]["id"],
+            "pair_input_id": pair_input,
             "bare_status": baseline["status"],
             "assisted_status": receipt["status"],
             "task_success_delta": (
@@ -470,25 +492,42 @@ def _paired_assistance_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any
     ]
 
 
-def _stability(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _stability(
+    receipts: list[dict[str, Any]], *,
+    expected: dict[str, dict[str, Any]], suite: SuiteDefinition,
+) -> list[dict[str, Any]]:
     grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    expected_ids: dict[tuple[str, str, str], list[int]] = defaultdict(list)
+    conditions = {row["id"]: row for row in suite.experiment["conditions"]}
+    for row in expected.values():
+        condition = conditions[row["condition_id"]]
+        key = (str(row["task_id"]), str(condition["agent"]), str(condition["subject"]))
+        expected_ids[key].append(int(row.get("replicate_id", row.get("seed"))))
     for receipt in receipts:
         grouped[
             (_task_id(receipt), _agent_id(receipt), _subject_id(receipt))
         ].append(receipt)
 
     rows: list[dict[str, Any]] = []
-    for key, group in sorted(grouped.items()):
+    for key, identifiers in sorted(expected_ids.items()):
+        group = grouped.get(key, [])
         valid = [row for row in group if row.get("status") in _VALID_OUTCOMES]
         gradeable = [row for row in valid if _semantic_gradeable(row)]
         correct = sum(_semantic_success(row) is True for row in gradeable)
-        if len(valid) != len(group):
+        answer_counts = Counter(
+            json.dumps(
+                row.get("scoring", {}).get("oracle_grade", {}).get("normalized_actual"),
+                sort_keys=True,
+            )
+            for row in gradeable
+        )
+        if len(valid) != len(identifiers):
             state = "execution-unstable"
         elif len(gradeable) != len(valid):
             state = "not-gradeable" if not gradeable else "unstable"
         elif correct == len(gradeable):
             state = "stable-correct"
-        elif correct == 0:
+        elif correct == 0 and len(answer_counts) == 1:
             state = "stable-incorrect"
         else:
             state = "unstable"
@@ -497,16 +536,101 @@ def _stability(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "task_id": key[0],
                 "agent_id": key[1],
                 "subject_id": key[2],
-                "replicates": len(group),
-                "replicate_ids": sorted(_replicate_id(row) for row in group),
+                "replicates": len(identifiers),
+                "observed_replicates": len(group),
+                "replicate_ids": sorted(identifiers),
+                "observed_replicate_ids": sorted(_replicate_id(row) for row in group),
                 "valid_outcomes": len(valid),
                 "gradeable_outcomes": len(gradeable),
                 "semantic_correct": correct,
                 "semantic_incorrect": len(gradeable) - correct,
+                "format_compliant": sum(
+                    _oracle_bool(row, "format_compliant") is True for row in valid
+                ),
+                "answer_distribution": dict(sorted(answer_counts.items())),
                 "state": state,
             }
         )
     return rows
+
+
+def _diagnostic(receipt: dict[str, Any]) -> dict[str, Any]:
+    status = receipt.get("status")
+    grade = receipt.get("scoring", {}).get("oracle_grade", {})
+    process = receipt.get("execution", {}).get("agent_terminal") or {}
+    agent_process = receipt.get("measurements", {}).get("agent", {})
+    flags = {
+        "contamination": status == "CONTAMINATED",
+        "output_contract": grade.get("format_compliant") is False,
+        "semantic_ungradeable": grade.get("semantic_gradeable") is False,
+        "semantic_incorrect": grade.get("semantic_status") == "INCORRECT",
+    }
+    reason = str(receipt.get("reason") or "").lower()
+    if flags["contamination"]:
+        primary = "contamination"
+    elif status == "INVALID" and "oracle" in reason:
+        primary = "oracle-invalid-or-ambiguous"
+    elif status == "INCOMPLETE" and "timed out" in reason:
+        primary = "timeout"
+    elif status == "INCOMPLETE" and process.get("type") == "turn.failed":
+        primary = "agent-terminal"
+    elif status in {"INCOMPLETE", "INVALID"}:
+        primary = "runtime"
+    elif flags["semantic_incorrect"]:
+        primary = "semantic-incorrect"
+    elif flags["output_contract"] and not grade.get("semantic_gradeable"):
+        primary = "output-contract"
+    elif flags["semantic_ungradeable"]:
+        primary = "semantic-ungradeable"
+    elif status == "PASS":
+        primary = "semantic-correct"
+    else:
+        primary = "semantic-incorrect" if status == "FAIL" else "runtime"
+    return {"primary": primary, "flags": flags}
+
+
+def _pair_exclusions(
+    *, expected: dict[str, dict[str, Any]],
+    by_definition: dict[str, list[dict[str, Any]]],
+    suite: SuiteDefinition,
+    interrupted: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    interrupted = interrupted or set()
+    conditions = {row["id"]: row for row in suite.experiment["conditions"]}
+    groups: dict[tuple[str, str, int], dict[str, dict[str, Any]]] = defaultdict(dict)
+    for definition, row in expected.items():
+        condition = conditions[row["condition_id"]]
+        key = (str(row["task_id"]), str(condition["agent"]),
+               int(row.get("replicate_id", row.get("seed"))))
+        groups[key][str(condition["subject"])] = {
+            "definition_id": definition,
+            "receipt": by_definition.get(definition, [None])[0],
+        }
+    exclusions = []
+    for key, arms in sorted(groups.items()):
+        bare = arms.get("none")
+        for subject, arm in sorted(arms.items()):
+            if subject == "none":
+                continue
+            left = bare["receipt"] if bare else None
+            right = arm["receipt"]
+            if left and right and all(
+                row.get("status") in _VALID_OUTCOMES for row in (left, right)
+            ):
+                continue
+            exclusions.append({
+                "task_id": key[0], "agent_id": key[1],
+                "replicate_id": key[2], "subject_id": subject,
+                "bare_definition_id": bare["definition_id"] if bare else None,
+                "assisted_definition_id": arm["definition_id"],
+                "bare_status": left.get("status") if left else (
+                    "INTERRUPTED" if bare and bare["definition_id"] in interrupted else "MISSING"
+                ),
+                "assisted_status": right.get("status") if right else (
+                    "INTERRUPTED" if arm["definition_id"] in interrupted else "MISSING"
+                ),
+            })
+    return exclusions
 
 
 def _cross_agent_observations(
@@ -524,7 +648,7 @@ def _cross_agent_observations(
             _task_id(receipt),
             _subject_id(receipt),
             int(execution["trial_index"]),
-            int(execution["seed"]),
+            _replicate_id(receipt),
         )
         agent = _agent_id(receipt)
         if agent in grouped[key]:
@@ -554,7 +678,6 @@ def _cross_agent_observations(
             "task_id": key[0],
             "subject_id": key[1],
             "trial_index": key[2],
-            "seed": key[3],
             "replicate_id": key[3],
             "agents": dict(sorted(agents.items())),
         }
@@ -583,6 +706,9 @@ def build_report(
     )
     if selected_definitions is not None and set(expected) != selected_definitions:
         raise ReportError("report selection contains definitions outside frozen suite")
+    new_contract = any("replicate_id" in row for row in expected.values())
+    interrupted: set[str] = set()
+    campaign_id = None
     by_definition: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for receipt in receipts:
         definition = receipt.get("definition_id")
@@ -608,6 +734,19 @@ def build_report(
             + ", ".join(sorted(duplicates))
         )
 
+    if new_contract:
+        try:
+            manifest = read_campaign(results_root)
+            campaign_id = manifest["campaign_id"]
+            if projected_receipts is None and not set(expected).issubset(set(manifest["selected_definitions"])):
+                raise CampaignAuthorityError("report selection exceeds frozen campaign")
+            interrupted = claimed_definitions(results_root, campaign_id)
+        except CampaignAuthorityError as exc:
+            raise ReportError(str(exc)) from exc
+        for receipt in receipts:
+            if receipt.get("definition_id") in expected and receipt.get("execution", {}).get("campaign_id") != campaign_id:
+                raise ReportError("receipt belongs to a different campaign authority")
+
     missing = sorted(set(expected) - set(by_definition))
     if require_complete and missing:
         raise ReportError(
@@ -630,11 +769,15 @@ def build_report(
     campaign_complete = not missing
     campaign_qualified = campaign_complete and invalid_outcomes == 0
     paired_assistance = _paired_assistance(receipts)
-    stability = _stability(receipts)
+    stability = _stability(receipts, expected=expected, suite=suite)
+    pair_exclusions = _pair_exclusions(
+        expected=expected, by_definition=by_definition, suite=suite,
+        interrupted=interrupted,
+    )
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 5,
+            "version": 6,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
@@ -652,6 +795,7 @@ def build_report(
         "expected_trials": len(expected),
         "observed_trials": len(receipts),
         "missing_definitions": missing,
+        "interrupted_definitions": sorted(interrupted & set(missing)),
         "status_counts": dict(sorted(statuses.items())),
         "conditions": {
             condition: _aggregate_condition(rows)
@@ -659,7 +803,20 @@ def build_report(
         },
         "paired_assistance": paired_assistance,
         "paired_assistance_summary": _paired_assistance_summary(paired_assistance),
+        "paired_assistance_exclusions": pair_exclusions,
+        "expected_assistance_pairs": len(paired_assistance) + len(pair_exclusions),
         "stability": stability,
+        "diagnostics": [
+            {
+                "definition_id": row["definition_id"],
+                "trial_id": row["trial_id"],
+                "task_id": _task_id(row),
+                "agent_id": _agent_id(row),
+                "subject_id": _subject_id(row),
+                **_diagnostic(row),
+            }
+            for row in sorted(receipts, key=lambda item: item["definition_id"])
+        ],
         "agent_profiles": {
             agent: _aggregate_condition(rows)
             for agent, rows in sorted(by_agent.items())
@@ -679,7 +836,11 @@ def build_report(
             "invalid_outcomes_excluded_from_success_rates": True,
             "economics_include_invalid_and_incomplete_trials": True,
             "paired_assistance_scope": "valid-outcomes-only",
-            "replicate_identity_field": "execution.seed",
+            "replicate_identity_field": (
+                "execution.replicate_id" if any(
+                    "replicate_id" in row["execution"] for row in receipts
+                ) else "execution.seed"
+            ),
             "replicate_identity_is_provider_sampling_seed": False,
             "cross_agent_rows_are_descriptive": True,
         },

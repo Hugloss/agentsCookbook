@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .bundle import verify_bundle
+from .campaign_authority import CampaignAuthorityError, claimed_definitions, read_campaign
 from .identity import definition_id, execution_id
 from .receipt import is_complete_receipt
 from .report import ReportError, validate_comparability
@@ -134,6 +135,19 @@ def campaign_status(
         raise CampaignError(
             "status selection contains definitions outside frozen suite"
         )
+    new_contract = any("replicate_id" in row for row in definitions.values())
+    campaign_error = None
+    claims: set[str] = set()
+    if new_contract:
+        try:
+            manifest = read_campaign(results_root)
+            if not selected_definitions.issubset(set(manifest["selected_definitions"])):
+                raise CampaignAuthorityError("status selection exceeds campaign selection")
+            claims = claimed_definitions(results_root, manifest["campaign_id"])
+            if not claims.issubset(set(manifest["selected_definitions"])):
+                raise CampaignAuthorityError("launch claim exceeds campaign selection")
+        except CampaignAuthorityError as exc:
+            campaign_error = str(exc)
 
     receipts: dict[str, list[dict[str, Any]]] = defaultdict(list)
     corrupt: list[dict[str, str]] = []
@@ -163,6 +177,9 @@ def campaign_status(
                 )
                 continue
             if definition in definitions:
+                if new_contract and campaign_error is None and value.get("execution", {}).get("campaign_id") != manifest["campaign_id"]:
+                    corrupt.append({"directory": str(directory), "reason": "receipt campaign authority mismatch"})
+                    continue
                 receipts[definition].append(value)
             elif definition not in all_definitions:
                 foreign.append(
@@ -178,7 +195,7 @@ def campaign_status(
     for definition, row in definitions.items():
         found = receipts.get(definition, [])
         if not found:
-            state = "PENDING"
+            state = "INTERRUPTED" if definition in claims else "PENDING"
             outcome = None
             trial_ids: list[str] = []
         elif len(found) == 1:
@@ -227,6 +244,7 @@ def campaign_status(
         "expected_trials": len(definitions),
         "complete_trials": state_counts["COMPLETE"],
         "pending_trials": state_counts["PENDING"],
+        "interrupted_trials": state_counts["INTERRUPTED"],
         "conflicting_trials": state_counts["CONFLICT"],
         "outcomes": dict(sorted(outcome_counts.items())),
         "corrupt_bundles": corrupt,
@@ -235,17 +253,22 @@ def campaign_status(
             state_counts["COMPLETE"] == len(definitions)
             and not corrupt
             and state_counts["CONFLICT"] == 0
+            and state_counts["INTERRUPTED"] == 0
+            and campaign_error is None
         ),
         "qualified": (
             state_counts["COMPLETE"] == len(definitions)
             and not corrupt
             and not foreign
             and state_counts["CONFLICT"] == 0
+            and state_counts["INTERRUPTED"] == 0
+            and campaign_error is None
             and unresolved_outcomes == 0
             and comparability_error is None
         ),
         "unresolved_outcome_trials": unresolved_outcomes,
         "comparability_error": comparability_error,
+        "campaign_authority_error": campaign_error,
         "rows": sorted(
             rows,
             key=lambda value: (

@@ -14,12 +14,16 @@ from typing import Any
 
 from benchmarks.harness.admission import TrialAdmissionError, admit_trial
 from benchmarks.harness.bundle import verify_bundle
+from benchmarks.harness.campaign_authority import (
+    CampaignAuthorityError, claim_launch, launch_state, verify_trial_authority,
+)
 from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.events import append_event, seal_events
 from benchmarks.harness.identity import (
     EXECUTION_EVIDENCE_CONTRACT,
     execution_evidence_id,
     score_projection_id,
+    digest,
 )
 from benchmarks.adapters.oracles import RepositoryLocationOracle
 from benchmarks.harness.model import Observation, TrialStatus
@@ -149,6 +153,8 @@ def _reason_for_agent(observation: Observation) -> str | None:
             return "agent execution timed out"
         if process.get("stdout_truncated") or process.get("stderr_truncated"):
             return "agent execution evidence exceeded configured bounds"
+        if process.get("return_code") not in (None, 0):
+            return f"agent process exited with status {process['return_code']}"
     if observation.payload.get("jsonl_parse_errors"):
         return "agent JSONL evidence is malformed"
     terminal = observation.payload.get("terminal_event")
@@ -162,6 +168,9 @@ def _reason_for_agent(observation: Observation) -> str | None:
                 f"{reason}"
             )
         return f"agent terminal event was {terminal.get('type')}"
+    answer = observation.payload.get("final_message")
+    if not isinstance(answer, str) or not answer.strip():
+        return "agent completed without a final assistant answer"
     return None
 
 
@@ -178,6 +187,7 @@ def run_trial(
     local_source: Path | None = None,
     codex_auth: Path | None = None,
     source: Mapping[str, str] | None = None,
+    campaign: dict[str, Any] | None = None,
 ) -> TrialRunResult:
     try:
         admission_context = admit_trial(
@@ -195,7 +205,11 @@ def run_trial(
         with admission_context as admission:
             task = admission.task
             expanded_condition = admission.expanded_condition
-            seed = admission.seed
+            replicate_id = admission.replicate_id
+            identity_field = (
+                {"seed": replicate_id} if admission.legacy_seed
+                else {"replicate_id": replicate_id}
+            )
             definition = admission.definition_id
             context = admission.context
             mutation = admission.mutation
@@ -215,6 +229,23 @@ def run_trial(
             auth_mode = admission.auth_mode
             trial_id = admission.trial_id
             final_dir = results_root / trial_id
+            if not admission.legacy_seed:
+                if campaign is None:
+                    raise TrialRunnerError("replicate trial requires campaign authority")
+                verify_trial_authority(
+                    results_root=results_root, campaign=campaign,
+                    admission=admission,
+                )
+                state = launch_state(
+                    results_root=results_root, campaign=campaign,
+                    definition_id=definition, trial_id=trial_id,
+                )
+                if state == "INTERRUPTED":
+                    raise TrialRunnerError(
+                        "trial was launched without a complete receipt; use a new campaign root"
+                    )
+                if final_dir.exists() and state != "COMPLETE":
+                    raise TrialRunnerError("result exists without a matching launch claim")
             if final_dir.exists():
                 valid, invalid_reason = verify_bundle(final_dir)
                 if not valid:
@@ -254,7 +285,7 @@ def run_trial(
                 {
                     "repository": task["repository"],
                     "definition_id": definition,
-                    "seed": seed,
+                    **identity_field,
                 },
             )
             emit("trial.mutation", mutation.payload)
@@ -281,8 +312,15 @@ def run_trial(
             )
             location_observation: dict[str, Any] | None = None
             status, reason = admission.initial_outcome()
+            if not admission.legacy_seed and status is not None:
+                raise TrialRunnerError(f"pre-model admission failed: {reason}")
 
             if status is None:
+                if campaign is not None:
+                    claim_launch(
+                        results_root=results_root, campaign=campaign,
+                        definition_id=definition, trial_id=trial_id,
+                    )
                 emit(
                     "agent.started",
                     {
@@ -292,9 +330,18 @@ def run_trial(
                         "mode": task["mode"],
                     },
                 )
-                agent_observation = agent.run(context, task["prompt"], subject)
-                if isinstance(oracle, RepositoryLocationOracle):
-                    location_observation = oracle.observe(context, agent_observation)
+                try:
+                    agent_observation = agent.run(context, task["prompt"], subject)
+                except Exception as exc:
+                    agent_observation = Observation(
+                        {
+                            "terminal_event": {"type": "turn.failed", "reason": str(exc)},
+                            "terminal_complete": False,
+                            "final_message": None,
+                            "process": {},
+                        },
+                        repr(exc),
+                    )
                 emit(
                     "agent.completed",
                     {
@@ -302,56 +349,72 @@ def run_trial(
                         "measurements": agent_observation.measurements,
                     },
                 )
-                budget_violation = agent_observation.payload.get("budget_violation")
-                agent_reason = _reason_for_agent(agent_observation)
-                if isinstance(budget_violation, str) and budget_violation:
-                    status = TrialStatus.INVALID
-                    reason = budget_violation
-                elif agent_reason is not None:
-                    status = TrialStatus.INCOMPLETE
-                    reason = agent_reason
-                else:
-                    grade = (
-                        oracle.grade_observed(location_observation)
-                        if isinstance(oracle, RepositoryLocationOracle)
-                        and location_observation is not None
-                        else oracle.grade(context, agent_observation)
-                    )
-                    emit(
-                        "oracle.graded",
-                        {
-                            "payload": grade.payload,
-                            "measurements": grade.measurements,
-                        },
-                    )
-                    if grade.payload.get("valid") is False:
+                try:
+                    if isinstance(oracle, RepositoryLocationOracle):
+                        location_observation = oracle.observe(context, agent_observation)
+                    budget_violation = agent_observation.payload.get("budget_violation")
+                    agent_reason = _reason_for_agent(agent_observation)
+                    if isinstance(budget_violation, str) and budget_violation:
                         status = TrialStatus.INVALID
-                        reason = "independent oracle could not complete grading"
+                        reason = budget_violation
+                    elif agent_reason is not None:
+                        status = TrialStatus.INCOMPLETE
+                        reason = agent_reason
                     else:
-                        status = (
-                            TrialStatus.PASS
-                            if grade.payload.get("passed") is True
-                            else TrialStatus.FAIL
+                        grade = (
+                            oracle.grade_observed(location_observation)
+                            if isinstance(oracle, RepositoryLocationOracle)
+                            and location_observation is not None
+                            else oracle.grade(context, agent_observation)
                         )
-                        if status is TrialStatus.FAIL:
-                            reason = _reason_for_oracle_failure(grade)
+                        emit(
+                            "oracle.graded",
+                            {
+                                "payload": grade.payload,
+                                "measurements": grade.measurements,
+                            },
+                        )
+                        if grade.payload.get("valid") is False:
+                            status = TrialStatus.INVALID
+                            reason = "independent oracle could not complete grading"
+                        else:
+                            status = (
+                                TrialStatus.PASS
+                                if grade.payload.get("passed") is True
+                                else TrialStatus.FAIL
+                            )
+                            if status is TrialStatus.FAIL:
+                                reason = _reason_for_oracle_failure(grade)
+                except Exception as exc:
+                    status = TrialStatus.INCOMPLETE
+                    reason = f"post-execution observation failed: {exc}"
+                    emit("trial.observation_failed", {"reason": reason})
 
-            observed_state = snapshot(context.workspace)
-            contamination_config = task["contamination"]
-            allowed_generated = tuple(
-                sorted(
-                    set(contamination_config["allowed_generated_globs"])
-                    | set(admission.generated_globs())
+            try:
+                observed_state = snapshot(context.workspace)
+                contamination_config = task["contamination"]
+                allowed_generated = tuple(
+                    sorted(
+                        set(contamination_config["allowed_generated_globs"])
+                        | set(admission.generated_globs())
+                    )
                 )
-            )
-            contamination = classify_contamination(
-                before=admitted_state,
-                after=observed_state,
-                allowed_change_globs=tuple(
-                    contamination_config["allowed_change_globs"]
-                ),
-                allowed_generated_globs=allowed_generated,
-            )
+                contamination = classify_contamination(
+                    before=admitted_state,
+                    after=observed_state,
+                    allowed_change_globs=tuple(
+                        contamination_config["allowed_change_globs"]
+                    ),
+                    allowed_generated_globs=allowed_generated,
+                )
+            except Exception as exc:
+                contamination = {
+                    "contaminated": None,
+                    "diff": {"added": [], "removed": [], "changed": []},
+                    "observation_error": str(exc),
+                }
+                status = TrialStatus.INCOMPLETE
+                reason = f"workspace observation failed: {exc}"
             emit("trial.contamination", contamination)
             if contamination["contaminated"]:
                 status = TrialStatus.CONTAMINATED
@@ -365,16 +428,26 @@ def run_trial(
                 )
             )
             if changed_paths:
-                post_change = admission.post_change(changed_paths)
-                emit(
-                    "subject.post_change",
-                    {
-                        "payload": post_change.payload,
-                        "measurements": post_change.measurements,
-                    },
-                )
-            cleanup = admission.cleanup_subject()
-            emit("subject.cleanup", cleanup.payload)
+                try:
+                    post_change = admission.post_change(changed_paths)
+                    emit(
+                        "subject.post_change",
+                        {
+                            "payload": post_change.payload,
+                            "measurements": post_change.measurements,
+                        },
+                    )
+                except Exception as exc:
+                    status = TrialStatus.INCOMPLETE
+                    reason = f"subject post-change failed: {exc}"
+                    emit("subject.post_change_failed", {"reason": reason})
+            try:
+                cleanup = admission.cleanup_subject()
+                emit("subject.cleanup", cleanup.payload)
+            except Exception as exc:
+                status = TrialStatus.INCOMPLETE
+                reason = f"subject cleanup failed: {exc}"
+                emit("subject.cleanup_failed", {"reason": reason})
 
             event_evidence = seal_events(event_path, trial_id=trial_id)
             event_seal_path = event_path.with_name(event_path.name + ".seal.json")
@@ -386,7 +459,7 @@ def run_trial(
                 task=task,
                 condition=expanded_condition,
                 trial=trial_index,
-                seed=seed,
+            **identity_field,
                 subject_identity=subject_authority,
                 agent_identity=agent_authority,
                 harness_identity=harness_authority,
@@ -395,11 +468,16 @@ def run_trial(
                 agent_answer=agent_answer,
                 workspace_root=workspace_root,
                 location_observation=location_observation,
-                agent_trace_sha256=trace_sha256,
+            agent_trace_sha256=trace_sha256,
+            **({"campaign_id": campaign["campaign_id"],
+                "admitted_state_sha256": digest(admitted_state)}
+               if campaign is not None and not admission.legacy_seed else {}),
             )
             score_projection = score_projection_id(
                 execution_evidence=execution_evidence,
                 oracle_identity=oracle_authority["declared"],
+                **({"contract": "benchmark-score-projection.v3"}
+                   if not admission.legacy_seed else {}),
             )
 
             receipt: dict[str, Any] = {
@@ -418,14 +496,20 @@ def run_trial(
                     "mutation": mutation_authority,
                 },
                 "execution": {
-                    "seed": seed,
+                    **identity_field,
+                    **({"campaign_id": campaign["campaign_id"]}
+                       if campaign is not None and not admission.legacy_seed else {}),
                     "trial_index": trial_index,
                     "events": event_evidence,
                     "agent_terminal": agent_observation.payload.get("terminal_event"),
                     "agent_answer": agent_answer,
                     "workspace_root": workspace_root,
+                    "admitted_state_sha256": digest(admitted_state),
                     "location_observation": location_observation,
-                    "evidence_contract": EXECUTION_EVIDENCE_CONTRACT,
+                    "evidence_contract": (
+                        EXECUTION_EVIDENCE_CONTRACT if admission.legacy_seed
+                        else "benchmark-execution-evidence.v3"
+                    ),
                     "evidence_identity": execution_evidence,
                 },
                 "scoring": {
@@ -458,5 +542,5 @@ def run_trial(
                 reused=False,
                 reason=reason,
             )
-    except TrialAdmissionError as exc:
+    except (TrialAdmissionError, CampaignAuthorityError) as exc:
         raise TrialRunnerError(str(exc)) from exc

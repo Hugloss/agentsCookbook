@@ -7,6 +7,8 @@ from pathlib import Path
 
 from benchmarks.harness.identity import (
     EXECUTION_EVIDENCE_CONTRACT,
+    REPLICATE_EVIDENCE_CONTRACT,
+    REPLICATE_SCORE_CONTRACT,
     canonical_json,
     execution_evidence_id,
     score_projection_id,
@@ -110,7 +112,7 @@ def verify_bundle(directory: Path) -> tuple[bool, str | None]:
         return False, "event seal is not canonical JSON"
     contract = execution.get("evidence_contract")
     if contract is not None:
-        if contract != EXECUTION_EVIDENCE_CONTRACT:
+        if contract not in {EXECUTION_EVIDENCE_CONTRACT, REPLICATE_EVIDENCE_CONTRACT}:
             return False, "unsupported execution evidence contract"
         trace = artifacts.get("agent_trace")
         scoring = receipt.get("scoring")
@@ -122,7 +124,8 @@ def verify_bundle(directory: Path) -> tuple[bool, str | None]:
                 task=receipt["task"],
                 condition=receipt["condition"],
                 trial=execution["trial_index"],
-                seed=execution["seed"],
+                **({"seed": execution["seed"]} if contract == EXECUTION_EVIDENCE_CONTRACT
+                   else {"replicate_id": execution["replicate_id"]}),
                 subject_identity=authority["subject"],
                 agent_identity=authority["agent"],
                 harness_identity=authority["harness"],
@@ -132,10 +135,15 @@ def verify_bundle(directory: Path) -> tuple[bool, str | None]:
                 workspace_root=execution["workspace_root"],
                 location_observation=execution["location_observation"],
                 agent_trace_sha256=trace["sha256"],
+                **({"campaign_id": execution["campaign_id"],
+                    "admitted_state_sha256": execution["admitted_state_sha256"]}
+                   if contract == REPLICATE_EVIDENCE_CONTRACT else {}),
             )
             projection_identity = score_projection_id(
                 execution_evidence=evidence_identity,
                 oracle_identity=authority["oracle"]["declared"],
+                **({"contract": REPLICATE_SCORE_CONTRACT}
+                   if contract == REPLICATE_EVIDENCE_CONTRACT else {}),
             )
         except (KeyError, TypeError, ValueError):
             return False, "execution evidence identity inputs are invalid"

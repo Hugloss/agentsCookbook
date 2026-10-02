@@ -11,12 +11,17 @@ from collections import Counter
 from pathlib import Path
 
 from benchmarks.config import BenchmarkConfig, BenchmarkConfigError
+from benchmarks.diagnostic import DiagnosticError, prepare_diagnostic_suite
 from benchmarks.harness.campaign import (
     CampaignError,
     campaign_status,
     resolve_campaign_paths,
 )
+from benchmarks.harness.campaign_authority import (
+    CampaignAuthorityError, admit_campaign,
+)
 from benchmarks.harness.preflight import preflight_trial
+from benchmarks.harness.oracle_reviews import OracleReviewError, validate_oracle_reviews
 from benchmarks.harness.readiness import check_runtime_readiness
 from benchmarks.harness.runtime_authority import required_runtime_authority
 from benchmarks.harness.report import ReportError, build_report
@@ -55,7 +60,7 @@ def _add_campaign_paths(
         type=Path,
         help=(
             "campaign root; derives cache/, work/, and results/ "
-            "without creating a second campaign manifest"
+            "with authority stored under results/.campaign/"
         ),
     )
     if execution:
@@ -86,6 +91,16 @@ def _parser() -> argparse.ArgumentParser:
 
     validate = sub.add_parser("validate-suite")
     validate.add_argument("--suite", type=Path, required=True)
+
+    diagnostic = sub.add_parser("diagnostic-prepare")
+    diagnostic.add_argument("--suite", type=Path, required=True)
+    diagnostic.add_argument("--score", type=Path, required=True)
+    diagnostic.add_argument("--output-suite", type=Path, required=True)
+    diagnostic.add_argument("--include-task", action="append", default=[])
+
+    reviews = sub.add_parser("oracle-review-check")
+    reviews.add_argument("--suite", type=Path, required=True)
+    reviews.add_argument("--require-complete", action="store_true")
 
     check = sub.add_parser("check")
     check.add_argument("--suite", type=Path)
@@ -233,6 +248,27 @@ def _selection_metadata(args, suite, rows) -> dict[str, object]:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "oracle-review-check":
+        suite = load_suite(args.suite)
+        try:
+            result = validate_oracle_reviews(
+                suite, require_complete=args.require_complete,
+            )
+        except OracleReviewError as exc:
+            raise SystemExit(f"oracle review unavailable: {exc}") from exc
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0 if result["complete"] or not args.require_complete else 2
+    if args.command == "diagnostic-prepare":
+        try:
+            evidence = prepare_diagnostic_suite(
+                source_suite=args.suite, score_path=args.score,
+                destination=args.output_suite,
+                include_tasks=set(args.include_task),
+            )
+        except (DiagnosticError, OSError, ValueError) as exc:
+            raise SystemExit(f"diagnostic suite unavailable: {exc}") from exc
+        print(json.dumps(evidence, indent=2, sort_keys=True))
+        return 0
     if args.command == "regrade-score":
         script = args.suite.resolve() / "score.py"
         if not script.is_file():
@@ -446,6 +482,17 @@ def main(argv: list[str] | None = None) -> int:
     results = []
     invalid = False
     assert paths.results is not None
+    campaign = None
+    if any("replicate_id" in row for row in rows):
+        try:
+            campaign = admit_campaign(
+                suite=suite, rows=rows, results_root=paths.results,
+                harness_root=args.harness_root, cache_root=paths.cache,
+                work_root=paths.work, local_source=args.source,
+                codex_auth=args.codex_auth, source=runtime_source,
+            )
+        except (CampaignAuthorityError, OracleReviewError) as exc:
+            raise SystemExit(f"campaign admission failed: {exc}") from exc
     for row in rows:
         print(
             f"starting {row['task_id']} / {row['condition_id']} trial {row['trial']}",
@@ -464,6 +511,7 @@ def main(argv: list[str] | None = None) -> int:
             local_source=args.source,
             codex_auth=args.codex_auth,
             source=runtime_source,
+            campaign=campaign,
         )
         results.append(
             {

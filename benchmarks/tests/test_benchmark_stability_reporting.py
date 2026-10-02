@@ -146,7 +146,7 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         ):
             report = build_report(suite=suite, results_root=Path("/unused"))
 
-        self.assertEqual(report["schema"]["version"], 5)
+        self.assertEqual(report["schema"]["version"], 6)
         stability = {
             row["subject_id"]: row
             for row in report["stability"]
@@ -214,6 +214,24 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertEqual(report["stability"][0]["state"], "execution-unstable")
         self.assertEqual(report["stability"][0]["valid_outcomes"], 2)
         self.assertEqual(report["stability"][0]["semantic_correct"], 2)
+
+    def test_missing_replicate_remains_visible_in_stability_and_pair_exclusions(self) -> None:
+        suite = _suite()
+        rows = suite.trial_definitions()
+        bare = next(row for row in rows if row["condition_id"] == "bare")
+        with mock.patch("benchmarks.harness.report._receipts", return_value=[
+            _receipt(suite, bare, "PASS", "a" * 64)
+        ]):
+            report = build_report(
+                suite=suite, results_root=Path("/unused"), require_complete=False,
+            )
+        by_subject = {row["subject_id"]: row for row in report["stability"]}
+        self.assertEqual(by_subject["none"]["replicates"], 3)
+        self.assertEqual(by_subject["none"]["observed_replicates"], 1)
+        self.assertEqual(by_subject["none"]["state"], "execution-unstable")
+        self.assertEqual(by_subject["hashmarks"]["replicates"], 3)
+        self.assertEqual(by_subject["hashmarks"]["observed_replicates"], 0)
+        self.assertEqual(len(report["paired_assistance_exclusions"]), 3)
 
 
 if __name__ == "__main__":

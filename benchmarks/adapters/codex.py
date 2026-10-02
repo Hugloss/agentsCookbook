@@ -165,12 +165,23 @@ def seed_codex_auth(
 
 
 def _final_message(events: list[dict[str, Any]]) -> str | None:
-    messages = [
-        item.get("text")
-        for item in _completed_items(events)
-        if item.get("type") == "agent_message" and isinstance(item.get("text"), str)
-    ]
-    return messages[-1] if messages else None
+    terminals = [index for index, event in enumerate(events)
+                 if event.get("type") in {"turn.completed", "turn.failed", "error"}]
+    if not terminals or events[terminals[-1]].get("type") != "turn.completed":
+        return None
+    if any(event.get("type") == "item.completed" for event in events[terminals[-1] + 1:]):
+        return None
+    for event in reversed(events[:terminals[-1]]):
+        if event.get("type") != "item.completed":
+            continue
+        item = event.get("item")
+        if not isinstance(item, dict):
+            return None
+        if item.get("type") != "agent_message":
+            return None
+        value = item.get("text")
+        return value if isinstance(value, str) and value.strip() else None
+    return None
 
 
 def _exposure_payload(exposure: McpExposure | None) -> dict[str, Any] | None:

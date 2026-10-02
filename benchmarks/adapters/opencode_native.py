@@ -33,10 +33,7 @@ _RUNTIME_SCRIPT = (
 
 
 def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
-    start = raw.find("{")
-    if start < 0:
-        raise ValueError(f"{label}: missing JSON object")
-    value = json.loads(raw[start:])
+    value = json.loads(raw.strip())
     if not isinstance(value, dict):
         raise ValueError(f"{label}: expected JSON object")
     return value
