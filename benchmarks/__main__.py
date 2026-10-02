@@ -25,6 +25,7 @@ from benchmarks.harness.campaign_authority import (
 from benchmarks.harness.preflight import preflight_trial
 from benchmarks.harness.oracle_reviews import (
     OracleReviewError,
+    oracle_review_guide,
     oracle_reviews_declared,
     validate_oracle_reviews,
 )
@@ -108,6 +109,9 @@ def _parser() -> argparse.ArgumentParser:
     reviews = sub.add_parser("oracle-review-check")
     reviews.add_argument("--suite", type=Path, required=True)
     reviews.add_argument("--require-complete", action="store_true")
+
+    review = sub.add_parser("oracle-review")
+    review.add_argument("--suite", type=Path, required=True)
 
     check = sub.add_parser("check")
     check.add_argument("--suite", type=Path)
@@ -278,6 +282,13 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"oracle review unavailable: {exc}") from exc
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0 if result["complete"] or not args.require_complete else 2
+    if args.command == "oracle-review":
+        suite = load_suite(args.suite)
+        try:
+            print(oracle_review_guide(suite))
+        except OracleReviewError as exc:
+            raise SystemExit(f"oracle review unavailable: {exc}") from exc
+        return 0
     if args.command == "diagnostic-prepare":
         try:
             evidence = prepare_diagnostic_suite(
