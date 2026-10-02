@@ -34,6 +34,11 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                     f"{target}:\n\t@uv run --no-project python -m benchmarks {command} --env-file .env",
                     makefile,
                 )
+        self.assertIn("benchmark-oracle-review:", makefile)
+        self.assertIn(
+            "python -m benchmarks oracle-review \\\n\t\t--suite benchmarks/suites/repository-intelligence/heldout-v1",
+            makefile,
+        )
         self.assertIn("benchmark-qualify-localization:", makefile)
         self.assertIn(
             "mktemp -d /tmp/agentscookbook-heldout-v1-localization-qualification.XXXXXX",
