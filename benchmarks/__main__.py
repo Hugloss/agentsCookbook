@@ -23,6 +23,7 @@ from benchmarks.harness.campaign_authority import (
     CampaignAuthorityError,
     admit_campaign,
     audit_campaign,
+    read_campaign,
 )
 from benchmarks.harness.preflight import preflight_trial
 from benchmarks.harness.oracle_reviews import (
@@ -179,6 +180,7 @@ def _parser() -> argparse.ArgumentParser:
     _add_campaign_paths(run, execution=True)
     _add_execution_inputs(run)
     mode = run.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--auto", action="store_true")
     mode.add_argument("--new", action="store_true")
     mode.add_argument("--resume", action="store_true")
 
@@ -320,6 +322,98 @@ def _selection_metadata(args, suite, rows) -> dict[str, object]:
     }
 
 
+def _selected_agent_ids(suite, rows: list[dict[str, object]]) -> list[str]:
+    conditions = {
+        str(condition["id"]): condition
+        for condition in suite.experiment["conditions"]
+    }
+    return sorted(
+        {
+            str(conditions[str(row["condition_id"])]["agent"])
+            for row in rows
+        }
+    )
+
+
+def _assert_saved_run_agents(
+    saved: SavedRun,
+    agents: list[str] | tuple[str, ...] | set[str],
+) -> dict[str, object]:
+    """Bind resume/scoring to the campaign's frozen agent population."""
+    manifest = read_campaign(saved.root / "results")
+    frozen_agents = sorted(str(value) for value in manifest.get("agents", {}))
+    selected_agents = sorted(set(str(value) for value in agents))
+    if frozen_agents != selected_agents:
+        raise RunStoreError(
+            f"saved run {saved.run_id} agent selection does not match "
+            f"BENCHMARK_AGENT (frozen={frozen_agents}, "
+            f"selected={selected_agents}); use the frozen agent set to resume "
+            "or score, or start a new run"
+        )
+    return manifest
+
+
+def _assert_saved_run_selection(
+    saved: SavedRun,
+    *,
+    suite,
+    rows: list[dict[str, object]],
+) -> dict[str, object]:
+    """Fail before admission when selected tasks/conditions differ from the run."""
+    selected_agents = _selected_agent_ids(suite, rows)
+    manifest = _assert_saved_run_agents(saved, selected_agents)
+    selected = {str(row["definition_id"]) for row in rows}
+    frozen = set(manifest["selected_definitions"])
+    if frozen != selected:
+        raise RunStoreError(
+            f"saved run {saved.run_id} frozen definition selection does not "
+            "match the current benchmark selection; use the same task/subject/"
+            "condition selection to resume, or use make benchmark-new"
+        )
+    return manifest
+
+
+def _guard_automatic_start(
+    root: Path,
+    *,
+    suite,
+    rows: list[dict[str, object]],
+) -> None:
+    """Require an explicit choice only for an unfinished matching latest run."""
+    saved_runs = list_saved_runs(root)
+    if not saved_runs:
+        return
+
+    latest = saved_runs[-1]
+    manifest = read_campaign(latest.root / "results")
+    selected = {str(row["definition_id"]) for row in rows}
+    frozen = set(manifest["selected_definitions"])
+    if frozen != selected:
+        print(
+            f"BENCHMARK auto | latest run {latest.run_id} has a different "
+            "frozen selection; starting a new run",
+            file=sys.stderr,
+            flush=True,
+        )
+        return
+
+    status = campaign_status(
+        suite=suite,
+        results_root=latest.root / "results",
+        selected_definitions=selected,
+    )
+    if status["complete"]:
+        return
+
+    raise RunStoreError(
+        f"saved run {latest.run_id} is unfinished "
+        f"({status['complete_trials']}/{status['expected_trials']} verified, "
+        f"{status['pending_trials']} pending, "
+        f"{status['interrupted_trials']} interrupted); choose explicitly: "
+        "make benchmark-resume or make benchmark-new"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     explicit_score_output = getattr(args, "output", None) is not None
@@ -418,7 +512,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         try:
             saved = select_saved_run(args.root, args.run_id)
-        except RunStoreError as exc:
+            _assert_saved_run_agents(saved, args.agent)
+        except (RunStoreError, CampaignAuthorityError) as exc:
             raise SystemExit(str(exc)) from exc
         if not explicit_score_output:
             if args.output.is_absolute() or len(args.output.parts) != 1:
@@ -580,7 +675,10 @@ def main(argv: list[str] | None = None) -> int:
                         flush=True,
                     )
 
-                if args.command == "prepare" or args.new:
+                if args.command == "run" and args.auto:
+                    _guard_automatic_start(args.root, suite=suite, rows=rows)
+                create_new = args.command == "prepare" or args.new or args.auto
+                if create_new:
                     saved, campaign = prepare_saved_run(
                         args.root,
                         lambda staged: admit_campaign(
@@ -598,6 +696,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 else:
                     saved = select_saved_run(args.root, args.run_id)
+                    _assert_saved_run_selection(saved, suite=suite, rows=rows)
                     campaign = admit_campaign(
                         suite=suite,
                         rows=rows,

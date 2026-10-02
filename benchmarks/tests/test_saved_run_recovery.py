@@ -45,6 +45,7 @@ def _campaign(results: Path, definitions: list[str]) -> dict:
     payload = {
         "contract": "benchmark-campaign-authority.v3",
         "selected_definitions": definitions,
+        "agents": {"opencode-native": {}},
     }
     payload["campaign_id"] = digest(payload)
     directory = results / ".campaign"
