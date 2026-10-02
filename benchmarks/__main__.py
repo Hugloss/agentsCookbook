@@ -23,6 +23,7 @@ from benchmarks.harness.campaign_authority import (
     CampaignAuthorityError,
     admit_campaign,
     audit_campaign,
+    read_campaign,
 )
 from benchmarks.harness.preflight import preflight_trial
 from benchmarks.harness.oracle_reviews import (
@@ -179,6 +180,7 @@ def _parser() -> argparse.ArgumentParser:
     _add_campaign_paths(run, execution=True)
     _add_execution_inputs(run)
     mode = run.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--auto", action="store_true")
     mode.add_argument("--new", action="store_true")
     mode.add_argument("--resume", action="store_true")
 
@@ -318,6 +320,53 @@ def _selection_metadata(args, suite, rows) -> dict[str, object]:
         "condition": args.condition,
         "bare_control_included": bare_control_included,
     }
+
+
+def _automatic_saved_run(
+    root: Path,
+    *,
+    suite,
+    rows: list[dict[str, object]],
+) -> SavedRun | None:
+    """Resume the latest unfinished compatible run; otherwise request a new run."""
+    saved_runs = list_saved_runs(root)
+    if not saved_runs:
+        return None
+
+    latest = saved_runs[-1]
+    selected = {str(row["definition_id"]) for row in rows}
+    manifest = read_campaign(latest.root / "results")
+    frozen = set(manifest["selected_definitions"])
+    if frozen != selected:
+        raise RunStoreError(
+            f"latest saved run {latest.run_id} has a different frozen selection; "
+            "finish it with make benchmark-resume or explicitly start another "
+            "with make benchmark-new"
+        )
+
+    status = campaign_status(
+        suite=suite,
+        results_root=latest.root / "results",
+        selected_definitions=selected,
+    )
+    if status["complete"]:
+        print(
+            f"BENCHMARK auto | latest run {latest.run_id} is complete; "
+            "creating a new run",
+            file=sys.stderr,
+            flush=True,
+        )
+        return None
+
+    print(
+        f"BENCHMARK auto | resuming run {latest.run_id} | "
+        f"verified {status['complete_trials']}/{status['expected_trials']} | "
+        f"pending {status['pending_trials']} | "
+        f"interrupted {status['interrupted_trials']}",
+        file=sys.stderr,
+        flush=True,
+    )
+    return latest
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -580,7 +629,23 @@ def main(argv: list[str] | None = None) -> int:
                         flush=True,
                     )
 
-                if args.command == "prepare" or args.new:
+                auto_saved = (
+                    _automatic_saved_run(args.root, suite=suite, rows=rows)
+                    if args.command == "run" and args.auto
+                    else None
+                )
+                create_new = (
+                    args.command == "prepare"
+                    or args.new
+                    or (args.command == "run" and args.auto and auto_saved is None)
+                )
+                if create_new:
+                    if args.command == "run" and args.auto:
+                        print(
+                            "BENCHMARK auto | creating and executing a new saved run",
+                            file=sys.stderr,
+                            flush=True,
+                        )
                     saved, campaign = prepare_saved_run(
                         args.root,
                         lambda staged: admit_campaign(
@@ -597,7 +662,7 @@ def main(argv: list[str] | None = None) -> int:
                         ),
                     )
                 else:
-                    saved = select_saved_run(args.root, args.run_id)
+                    saved = auto_saved or select_saved_run(args.root, args.run_id)
                     campaign = admit_campaign(
                         suite=suite,
                         rows=rows,
