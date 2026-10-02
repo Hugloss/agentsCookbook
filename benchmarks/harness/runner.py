@@ -152,6 +152,45 @@ def _reason_for_oracle_failure(grade: Observation) -> str:
     return rendered
 
 
+def _oracle_failure_diagnostic(grade: Observation) -> tuple[str, str]:
+    payload = grade.payload
+    gradeable = payload.get("semantic_gradeable")
+    format_compliant = payload.get("format_compliant")
+    semantic_status = payload.get("semantic_status")
+    if gradeable is False:
+        reason_code = (
+            "output-contract-ungradeable"
+            if format_compliant is False
+            else "semantic-ungradeable"
+        )
+    elif semantic_status == "INCORRECT":
+        reason_code = "oracle-mismatch"
+    else:
+        reason_code = "oracle-rejected"
+
+    observed = payload.get("normalized_actual")
+    if observed is None:
+        observed = payload.get("actual")
+    detail = {
+        "semantic_status": semantic_status,
+        "semantic_gradeable": gradeable,
+        "format_compliant": format_compliant,
+        "answer_shape": payload.get("answer_shape"),
+        "expected": payload.get("expected"),
+        "observed": observed,
+        "reason": payload.get("reason"),
+    }
+    actual_text = _bounded_preview(payload.get("actual_text"))
+    if actual_text is not None:
+        detail["actual_text"] = actual_text
+    return reason_code, json.dumps(
+        detail,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
 def _agent_failure(observation: Observation) -> tuple[str, str] | None:
     process = observation.payload.get("process")
     if isinstance(process, dict):
@@ -636,8 +675,9 @@ def run_trial(
                             if status is TrialStatus.FAIL:
                                 reason = _reason_for_oracle_failure(grade)
                                 stage = "oracle-grading"
-                                reason_code = "oracle-mismatch"
-                                diagnostic_detail = _bounded_diagnostic(reason)
+                                reason_code, diagnostic_detail = (
+                                    _oracle_failure_diagnostic(grade)
+                                )
                 except Exception as exc:
                     status = TrialStatus.INCOMPLETE
                     reason = f"post-execution observation failed: {exc}"
