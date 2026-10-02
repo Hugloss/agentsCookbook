@@ -485,6 +485,20 @@ def _pair_input_id(receipt: dict[str, Any]) -> str:
     )
 
 
+def classify_assistance_pair(
+    baseline: dict[str, Any], assisted: dict[str, Any]
+) -> str | None:
+    """Use the report's evidence contract for both live and final pair summaries."""
+    if (
+        baseline.get("status") not in _VALID_OUTCOMES
+        or assisted.get("status") not in _VALID_OUTCOMES
+    ):
+        return None
+    if _pair_input_id(baseline) != _pair_input_id(assisted):
+        raise ReportError(f"paired non-subject authority differs for {_pair_key(assisted)}")
+    return _assistance_transition(baseline, assisted)
+
+
 def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     bare: dict[tuple[str, str, int, int], dict[str, Any]] = {}
     assisted: list[dict[str, Any]] = []
@@ -509,8 +523,7 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if baseline is None:
             continue
         pair_input = _pair_input_id(baseline)
-        if pair_input != _pair_input_id(receipt):
-            raise ReportError(f"paired non-subject authority differs for {key}")
+        transition = classify_assistance_pair(baseline, receipt)
         row: dict[str, Any] = {
             "task_id": key[0],
             "agent_id": key[1],
@@ -525,7 +538,7 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "task_success_delta": (
                 int(receipt["status"] == "PASS") - int(baseline["status"] == "PASS")
             ),
-            "assistance_transition": _assistance_transition(baseline, receipt),
+            "assistance_transition": transition,
         }
         for metric in (
             "duration_ms",
@@ -639,7 +652,11 @@ def _diagnostic(receipt: dict[str, Any]) -> dict[str, Any]:
     status = receipt.get("status")
     grade = receipt.get("scoring", {}).get("oracle_grade", {})
     process = receipt.get("execution", {}).get("agent_terminal") or {}
-    agent_process = receipt.get("measurements", {}).get("agent", {})
+    source = receipt.get("diagnostic")
+    if not isinstance(source, dict):
+        source = None
+    stage = source.get("stage") if source is not None else None
+    reason_code = source.get("reason_code") if source is not None else None
     flags = {
         "contamination": status == "CONTAMINATED",
         "output_contract": grade.get("format_compliant") is False,
@@ -647,7 +664,21 @@ def _diagnostic(receipt: dict[str, Any]) -> dict[str, Any]:
         "semantic_incorrect": grade.get("semantic_status") == "INCORRECT",
     }
     reason = str(receipt.get("reason") or "").lower()
-    if flags["contamination"]:
+    if reason_code == "interrupted-launch":
+        primary = "runtime"
+    elif reason_code == "agent-timeout":
+        primary = "timeout"
+    elif reason_code == "oracle-invalid":
+        primary = "oracle-invalid-or-ambiguous"
+    elif reason_code in {
+        "agent-terminal-failed",
+        "agent-terminal-missing",
+        "agent-final-answer-missing",
+    }:
+        primary = "agent-terminal"
+    elif isinstance(reason_code, str) and reason_code.startswith("agent-"):
+        primary = "runtime"
+    elif flags["contamination"]:
         primary = "contamination"
     elif status == "INVALID" and "oracle" in reason:
         primary = "oracle-invalid-or-ambiguous"
@@ -667,7 +698,13 @@ def _diagnostic(receipt: dict[str, Any]) -> dict[str, Any]:
         primary = "semantic-correct"
     else:
         primary = "semantic-incorrect" if status == "FAIL" else "runtime"
-    return {"primary": primary, "flags": flags}
+    return {
+        "primary": primary,
+        "flags": flags,
+        "stage": stage,
+        "reason_code": reason_code,
+        "diagnostic_source": "receipt" if source is not None else "legacy-inferred",
+    }
 
 
 def _pair_exclusions(
@@ -687,15 +724,19 @@ def _pair_exclusions(
             str(condition["agent"]),
             int(row.get("replicate_id", row.get("seed"))),
         )
-        groups[key][str(condition["subject"])] = {
+        groups[key][str(row["condition_id"])] = {
             "definition_id": definition,
+            "subject_id": str(condition["subject"]),
             "receipt": by_definition.get(definition, [None])[0],
         }
     exclusions = []
     for key, arms in sorted(groups.items()):
-        bare = arms.get("none")
-        for subject, arm in sorted(arms.items()):
-            if subject == "none":
+        controls = [arm for arm in arms.values() if arm["subject_id"] == "none"]
+        if len(controls) > 1:
+            raise ReportError(f"multiple bare executions for pair {key}")
+        bare = controls[0] if controls else None
+        for condition_id, arm in sorted(arms.items()):
+            if arm["subject_id"] == "none":
                 continue
             left = bare["receipt"] if bare else None
             right = arm["receipt"]
@@ -710,7 +751,8 @@ def _pair_exclusions(
                     "task_id": key[0],
                     "agent_id": key[1],
                     "replicate_id": key[2],
-                    "subject_id": subject,
+                    "condition_id": condition_id,
+                    "subject_id": arm["subject_id"],
                     "bare_definition_id": bare["definition_id"] if bare else None,
                     "assisted_definition_id": arm["definition_id"],
                     "bare_status": left.get("status")

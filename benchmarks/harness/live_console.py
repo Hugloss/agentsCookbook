@@ -9,14 +9,14 @@ from __future__ import annotations
 
 from collections import Counter
 from statistics import mean
-from typing import Any
+from threading import Event, Lock, Thread
+from time import monotonic
+from typing import Any, Callable
 
+from benchmarks.harness.report import ReportError, classify_assistance_pair
 from benchmarks.harness.runner import TrialRunResult
 
 from benchmarks.harness.suite import SuiteDefinition
-
-
-_SEMANTIC_STATUSES = frozenset({"PASS", "FAIL"})
 
 
 def _subject_label(subject: str) -> str:
@@ -27,22 +27,10 @@ def _subject_label(subject: str) -> str:
 
 def _replicate_key(row: dict[str, Any]) -> object:
     if "replicate_id" in row:
-        return ("replicate", row["replicate_id"])
+        return (row["trial"], "replicate", row["replicate_id"])
     if "seed" in row:
-        return ("seed", row["seed"])
-    return ("trial", row["trial"])
-
-
-def _transition(control: str | None, assisted: str | None) -> str:
-    if control not in _SEMANTIC_STATUSES or assisted not in _SEMANTIC_STATUSES:
-        return "excluded"
-    if control == "FAIL" and assisted == "PASS":
-        return "gain"
-    if control == "PASS" and assisted == "PASS":
-        return "preserved"
-    if control == "FAIL" and assisted == "FAIL":
-        return "unresolved"
-    return "regression"
+        return (row["trial"], "seed", row["seed"])
+    return (row["trial"],)
 
 
 def _render_table(headers: list[str], rows: list[list[str]]) -> list[str]:
@@ -76,27 +64,29 @@ class LiveTaskMatrix:
             for condition in suite.experiment["conditions"]
         }
         self._expected: Counter[tuple[str, str]] = Counter()
-        self._subject_order: dict[tuple[str, str], list[str]] = {}
+        self._condition_order: dict[tuple[str, str], list[str]] = {}
         self._outcomes: dict[
             tuple[str, str],
-            list[tuple[dict[str, Any], str, str]],
+            list[tuple[dict[str, Any], str, dict[str, Any]]],
         ] = {}
         self._emitted: set[tuple[str, str]] = set()
 
         for row in selected_rows:
             condition = self._conditions[str(row["condition_id"])]
             group = (str(row["task_id"]), str(condition["agent"]))
-            subject = str(condition["subject"])
             self._expected[group] += 1
-            order = self._subject_order.setdefault(group, [])
-            if subject not in order:
-                order.append(subject)
+            order = self._condition_order.setdefault(group, [])
+            condition_id = str(row["condition_id"])
+            if condition_id not in order:
+                order.append(condition_id)
 
-    def record(self, row: dict[str, Any], status: str) -> str | None:
+    def record(self, row: dict[str, Any], receipt: dict[str, Any]) -> str | None:
+        if receipt.get("definition_id") != row["definition_id"]:
+            raise ValueError("live matrix receipt does not match selected definition")
         condition = self._conditions[str(row["condition_id"])]
         group = (str(row["task_id"]), str(condition["agent"]))
-        subject = str(condition["subject"])
-        self._outcomes.setdefault(group, []).append((row, subject, status))
+        condition_id = str(row["condition_id"])
+        self._outcomes.setdefault(group, []).append((row, condition_id, receipt))
 
         if group in self._emitted:
             return None
@@ -109,21 +99,37 @@ class LiveTaskMatrix:
     def _render(self, group: tuple[str, str]) -> str:
         task_id, agent = group
         outcomes = self._outcomes[group]
-        subjects = self._subject_order[group]
+        conditions = self._condition_order[group]
+        subjects = [str(self._conditions[item]["subject"]) for item in conditions]
+        repeated = {subject for subject, count in Counter(subjects).items() if count > 1}
+
+        def label(condition_id: str) -> str:
+            subject = str(self._conditions[condition_id]["subject"])
+            name = _subject_label(subject)
+            return f"{name} ({condition_id})" if subject in repeated else name
 
         trial_indexes = sorted({int(row["trial"]) for row, _, _ in outcomes})
-        by_trial_subject = {
-            (int(row["trial"]), subject): status
-            for row, subject, status in outcomes
+        replicate_ids: dict[int, set[object]] = {}
+        for row, _, _ in outcomes:
+            replicate_ids.setdefault(int(row["trial"]), set()).add(
+                row.get("replicate_id", row.get("seed", row["trial"]))
+            )
+        by_trial_condition = {
+            (int(row["trial"]), condition_id): str(receipt["status"])
+            for row, condition_id, receipt in outcomes
         }
 
-        headers = ["Replicate", *(_subject_label(subject) for subject in subjects)]
+        headers = ["Replicate ID", *(label(condition_id) for condition_id in conditions)]
         table_rows = [
             [
-                str(trial),
+                (
+                    str(next(iter(replicate_ids[trial])))
+                    if len(replicate_ids[trial]) == 1
+                    else f"trial {trial} (mixed IDs)"
+                ),
                 *(
-                    by_trial_subject.get((trial, subject), "-")
-                    for subject in subjects
+                    by_trial_condition.get((trial, condition_id), "-")
+                    for condition_id in conditions
                 ),
             ]
             for trial in trial_indexes
@@ -137,28 +143,41 @@ class LiveTaskMatrix:
         ]
 
         if "none" in subjects:
-            control = {
-                _replicate_key(row): status
-                for row, subject, status in outcomes
-                if subject == "none"
-            }
-            assisted_subjects = [subject for subject in subjects if subject != "none"]
-            if assisted_subjects:
+            controls: dict[object, dict[str, Any]] = {}
+            for row, condition_id, receipt in outcomes:
+                if self._conditions[condition_id]["subject"] != "none":
+                    continue
+                key = _replicate_key(row)
+                if key in controls:
+                    raise ReportError(
+                        f"multiple bare executions for pair {task_id} / {agent} / {key}"
+                    )
+                controls[key] = receipt
+            assisted_conditions = [
+                item for item in conditions if self._conditions[item]["subject"] != "none"
+            ]
+            if assisted_conditions:
                 lines.extend(["", "Paired vs Bare"])
                 transition_rows: list[list[str]] = []
-                for subject in assisted_subjects:
+                for condition_id in assisted_conditions:
                     assisted = {
-                        _replicate_key(row): status
-                        for row, observed_subject, status in outcomes
-                        if observed_subject == subject
+                        _replicate_key(row): receipt
+                        for row, observed_condition, receipt in outcomes
+                        if observed_condition == condition_id
                     }
-                    counts: Counter[str] = Counter(
-                        _transition(control.get(key), assisted.get(key))
-                        for key in sorted(set(control) | set(assisted), key=repr)
-                    )
+                    counts: Counter[str] = Counter()
+                    for key in sorted(assisted, key=repr):
+                        baseline = controls.get(key)
+                        candidate = assisted.get(key)
+                        transition = (
+                            classify_assistance_pair(baseline, candidate)
+                            if baseline is not None and candidate is not None
+                            else None
+                        )
+                        counts[transition or "excluded"] += 1
                     transition_rows.append(
                         [
-                            _subject_label(subject),
+                            label(condition_id),
                             str(counts["gain"]),
                             str(counts["preserved"]),
                             str(counts["unresolved"]),
@@ -203,14 +222,22 @@ class LiveCampaignProgress:
         self,
         suite: SuiteDefinition,
         selected_rows: list[dict[str, Any]],
+        initial_status: dict[str, Any],
     ) -> None:
         self._conditions = {
             str(condition["id"]): condition
             for condition in suite.experiment["conditions"]
         }
         self._total = len(selected_rows)
-        self._completed = 0
+        self._processed = 0
         self._durations: list[float] = []
+        self._states = {
+            str(row["definition_id"]): str(row["state"])
+            for row in initial_status["rows"]
+        }
+        self._verified = int(initial_status["complete_trials"])
+        self._pending = int(initial_status["pending_trials"])
+        self._interrupted = int(initial_status["interrupted_trials"])
         self._task_order: list[str] = []
         for row in selected_rows:
             task_id = str(row["task_id"])
@@ -223,14 +250,14 @@ class LiveCampaignProgress:
         task_index = self._task_order.index(task_id) + 1
         trial = int(row["trial"])
         trials = int(condition["trials"])
-        remaining = self._total - self._completed
-        eta = self._eta(remaining=remaining)
+        eta = self._eta()
         return (
-            f"[{self._completed + 1}/{self._total}] "
+            f"[{self._processed + 1}/{self._total} this run] "
             f"task {task_index}/{len(self._task_order)} {task_id} | "
             f"{row['condition_id']} | replicate {trial + 1}/{trials} | "
-            f"elapsed {_duration(elapsed)} | remaining {remaining} | "
-            f"ETA {_duration(eta)}"
+            f"run elapsed {_duration(elapsed)} | verified {self._verified}/{self._total} | "
+            f"pending {self._pending} | interrupted {self._interrupted} | "
+            f"execution ETA {_duration(eta)}"
         )
 
     def finish_line(
@@ -240,11 +267,18 @@ class LiveCampaignProgress:
         elapsed: float,
         trial_seconds: float,
     ) -> str:
-        self._completed += 1
+        self._processed += 1
+        previous = self._states.get(result.definition_id)
+        if previous != "COMPLETE":
+            self._verified += 1
+            if previous == "PENDING":
+                self._pending -= 1
+            elif previous == "INTERRUPTED":
+                self._interrupted -= 1
+            self._states[result.definition_id] = "COMPLETE"
         if not result.reused and not result.recovered and trial_seconds > 0:
             self._durations.append(trial_seconds)
-        remaining = self._total - self._completed
-        eta = self._eta(remaining=remaining)
+        eta = self._eta()
         mode = (
             "reused"
             if result.reused
@@ -254,16 +288,114 @@ class LiveCampaignProgress:
         )
         average = mean(self._durations) if self._durations else None
         return (
-            f"PROGRESS {self._completed}/{self._total} "
-            f"({(100 * self._completed / self._total):.1f}%) | "
-            f"{mode} | elapsed {_duration(elapsed)} | remaining {remaining} | "
-            f"avg {_duration(average)}/trial | ETA {_duration(eta)}"
+            f"PROGRESS processed {self._processed}/{self._total} "
+            f"({(100 * self._processed / self._total):.1f}%) | "
+            f"verified {self._verified}/{self._total} | {mode} | "
+            f"run elapsed {_duration(elapsed)} | pending {self._pending} | "
+            f"interrupted {self._interrupted} | avg {_duration(average)}/execution | "
+            f"execution ETA {_duration(eta)}"
         )
 
-    def _eta(self, *, remaining: int) -> float | None:
-        if not self._durations or remaining <= 0:
-            return 0.0 if remaining <= 0 else None
-        return mean(self._durations) * remaining
+    def heartbeat_line(
+        self,
+        row: dict[str, Any],
+        *,
+        stage: str,
+        elapsed: float,
+        trial_seconds: float,
+    ) -> str:
+        return (
+            f"ACTIVE {row['task_id']} / {row['condition_id']} replicate {int(row['trial']) + 1} | "
+            f"stage {stage} | trial elapsed {_duration(trial_seconds)} | "
+            f"run elapsed {_duration(elapsed)} | verified {self._verified}/{self._total}"
+        )
+
+    def abort_line(
+        self,
+        row: dict[str, Any],
+        *,
+        stage: str,
+        elapsed: float,
+        error: Exception,
+    ) -> str:
+        return (
+            f"ABORT {row['task_id']} / {row['condition_id']} replicate {int(row['trial']) + 1} | "
+            f"stage {stage} | processed {self._processed}/{self._total} | "
+            f"verified {self._verified}/{self._total} | run elapsed {_duration(elapsed)} | {error}"
+        )
+
+    def _eta(self) -> float | None:
+        if self._pending <= 0:
+            return 0.0
+        if not self._durations:
+            return None
+        return mean(self._durations) * self._pending
+
+
+class TrialHeartbeat:
+    """Emit bounded activity lines without mutating trial evidence."""
+
+    def __init__(
+        self,
+        *,
+        progress: LiveCampaignProgress,
+        row: dict[str, Any],
+        run_started: float,
+        emit: Callable[[str], None],
+        interval: float = 30.0,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
+        self._progress = progress
+        self._row = row
+        self._run_started = run_started
+        self._emit = emit
+        self._interval = interval
+        self._clock = clock
+        self._trial_started = clock()
+        self._last_emitted = self._trial_started
+        self._stage = "admission"
+        self._lock = Lock()
+        self._stop = Event()
+        self._thread: Thread | None = None
+
+    @property
+    def stage(self) -> str:
+        with self._lock:
+            return self._stage
+
+    def update_stage(self, stage: str) -> None:
+        with self._lock:
+            self._stage = stage
+
+    def tick(self, now: float | None = None) -> str | None:
+        now = self._clock() if now is None else now
+        with self._lock:
+            if self._stop.is_set() or now - self._last_emitted < self._interval:
+                return None
+            self._last_emitted = now
+            stage = self._stage
+        return self._progress.heartbeat_line(
+            self._row,
+            stage=stage,
+            elapsed=now - self._run_started,
+            trial_seconds=now - self._trial_started,
+        )
+
+    def _loop(self) -> None:
+        while not self._stop.wait(self._interval):
+            line = self.tick()
+            if line is not None:
+                self._emit(line)
+
+    def __enter__(self) -> TrialHeartbeat:
+        self._thread = Thread(target=self._loop, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join()
 
 
 def render_trial_failure(

@@ -62,7 +62,6 @@ from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import (
     _reason_for_agent,
     _reason_for_oracle_failure,
-    _recover_interrupted_launch,
     run_trial,
 )
 from benchmarks.harness.runtime_authority import (
@@ -2725,6 +2724,11 @@ class PilotExecutionTests(unittest.TestCase):
                 },
                 expanded_condition={"id": "condition"},
                 admitted_state={"files": []},
+                mutation=Observation({}, "", {}),
+                subject=FakeSubject(),
+                agent=mock.Mock(),
+                oracle=FakeOracle(),
+                auth_mode="not-applicable",
                 mutation_authority=None,
                 subject_authority={"declared": {"id": "none"}},
                 agent_authority={"declared": {"id": "agent"}},
@@ -2743,11 +2747,28 @@ class PilotExecutionTests(unittest.TestCase):
                     {},
                 ),
             )
-            result = _recover_interrupted_launch(
-                admission=admission,
-                results_root=root / "results",
-                campaign={"campaign_id": "c" * 64},
-            )
+            stages = []
+            with (
+                mock.patch("benchmarks.harness.runner.admit_trial", return_value=nullcontext(admission)),
+                mock.patch("benchmarks.harness.runner.verify_trial_authority"),
+                mock.patch("benchmarks.harness.runner.launch_state", return_value="INTERRUPTED"),
+                mock.patch("benchmarks.harness.runner.claim_launch") as claim,
+            ):
+                result = run_trial(
+                    suite=admission.suite,
+                    task_id="task",
+                    condition_id="condition",
+                    trial_index=0,
+                    harness_root=root,
+                    cache_root=root / "cache",
+                    results_root=root / "results",
+                    work_root=root / "work",
+                    campaign={"campaign_id": "c" * 64},
+                    on_progress=stages.append,
+                )
+            admission.agent.run.assert_not_called()
+            claim.assert_not_called()
+            self.assertEqual(stages, ["admission", "recovery"])
 
             self.assertEqual(result.status, "INCOMPLETE")
             self.assertTrue(result.recovered)

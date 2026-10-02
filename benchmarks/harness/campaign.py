@@ -215,15 +215,26 @@ def campaign_status(
             state = "INTERRUPTED" if definition in claims else "PENDING"
             outcome = None
             trial_ids: list[str] = []
+            diagnostic = None
         elif len(found) == 1:
             state = "COMPLETE"
             outcome = str(found[0].get("status"))
             outcome_counts[outcome] += 1
             trial_ids = [str(found[0].get("trial_id"))]
+            source_diagnostic = found[0].get("diagnostic")
+            diagnostic = (
+                {
+                    "stage": source_diagnostic.get("stage"),
+                    "reason_code": source_diagnostic.get("reason_code"),
+                }
+                if isinstance(source_diagnostic, dict)
+                else None
+            )
         else:
             state = "CONFLICT"
             outcome = None
             trial_ids = sorted(str(value.get("trial_id")) for value in found)
+            diagnostic = None
         state_counts[state] += 1
         rows.append(
             {
@@ -234,6 +245,7 @@ def campaign_status(
                 "state": state,
                 "outcome": outcome,
                 "trial_ids": trial_ids,
+                "diagnostic": diagnostic,
             }
         )
 

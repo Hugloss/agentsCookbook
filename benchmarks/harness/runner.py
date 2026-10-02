@@ -11,7 +11,7 @@ import traceback
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from benchmarks.harness.admission import TrialAdmissionError, admit_trial
 from benchmarks.harness.bundle import verify_bundle
@@ -384,8 +384,14 @@ def run_trial(
     codex_auth: Path | None = None,
     source: Mapping[str, str] | None = None,
     campaign: dict[str, Any] | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> TrialRunResult:
+    def emit_stage(value: str) -> None:
+        if on_progress is not None:
+            on_progress(value)
+
     try:
+        emit_stage("admission")
         admission_context = admit_trial(
             suite=suite,
             task_id=task_id,
@@ -443,6 +449,7 @@ def run_trial(
                     trial_id=trial_id,
                 )
                 if state == "INTERRUPTED":
+                    emit_stage("recovery")
                     return _recover_interrupted_launch(
                         admission=admission,
                         results_root=results_root,
@@ -453,6 +460,7 @@ def run_trial(
                         "result exists without a matching launch claim"
                     )
             if final_dir.exists():
+                emit_stage("reuse")
                 valid, invalid_reason = verify_bundle(final_dir)
                 if not valid:
                     raise TrialRunnerError(
@@ -552,6 +560,7 @@ def run_trial(
                         "mode": task["mode"],
                     },
                 )
+                emit_stage("agent-execution")
                 try:
                     agent_observation = agent.run(context, task["prompt"], subject)
                 except Exception as exc:
@@ -575,6 +584,7 @@ def run_trial(
                         "measurements": agent_observation.measurements,
                     },
                 )
+                emit_stage("grading")
                 try:
                     if isinstance(oracle, RepositoryLocationOracle):
                         location_observation = oracle.observe(
@@ -636,6 +646,7 @@ def run_trial(
                     diagnostic_detail = _bounded_diagnostic(traceback.format_exc())
                     emit("trial.observation_failed", {"reason": reason})
 
+            emit_stage("verification")
             try:
                 observed_state = snapshot(context.workspace)
                 contamination_config = task["contamination"]
@@ -803,6 +814,7 @@ def run_trial(
                 },
                 "reason": reason,
             }
+            emit_stage("publication")
             result_dir = _publish_bundle(
                 results_root=results_root,
                 trial_id=trial_id,
