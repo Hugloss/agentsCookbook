@@ -66,17 +66,29 @@ def _display_outcome(receipt: dict[str, Any]) -> str:
     return status
 
 
-def _subject_tool_use(receipt: dict[str, Any]) -> tuple[bool | None, int | None]:
+def _subject_tool_use(
+    receipt: dict[str, Any],
+) -> tuple[bool | None, int | None, tuple[str, ...], str]:
     agent = receipt.get("measurements", {}).get("agent", {})
     if not isinstance(agent, dict):
-        return None, None
+        return None, None, (), "unknown"
     invoked = agent.get("subject_tool_invoked")
     if not isinstance(invoked, bool):
         invoked = None
     calls = agent.get("subject_mcp_calls")
     if isinstance(calls, bool) or not isinstance(calls, int):
+        calls = agent.get("subject_mcp_calls_observed")
+    if isinstance(calls, bool) or not isinstance(calls, int):
         calls = None
-    return invoked, calls
+    names = agent.get("subject_tool_names")
+    if not isinstance(names, list) or any(not isinstance(name, str) for name in names):
+        tool_names: tuple[str, ...] = ()
+    else:
+        tool_names = tuple(names)
+    observability = agent.get("subject_tool_observability")
+    if observability not in {"complete", "partial"}:
+        observability = "unknown"
+    return invoked, calls, tool_names, observability
 
 
 class LiveTaskMatrix:
@@ -235,11 +247,27 @@ class LiveTaskMatrix:
                         for _row, observed_condition, receipt in outcomes
                         if observed_condition == condition_id
                     ]
-                    invoked = sum(value is True for value, _calls in usage)
-                    not_invoked = sum(value is False for value, _calls in usage)
-                    unknown = sum(value is None for value, _calls in usage)
+                    invoked = sum(value is True for value, *_rest in usage)
+                    not_invoked = sum(value is False for value, *_rest in usage)
+                    unknown = sum(value is None for value, *_rest in usage)
                     total_calls = sum(
-                        calls for _value, calls in usage if calls is not None
+                        calls
+                        for _value, calls, _names, _observability in usage
+                        if calls is not None
+                    )
+                    tool_names = sorted(
+                        {
+                            name
+                            for _value, _calls, names, _observability in usage
+                            for name in names
+                        }
+                    )
+                    observability = sorted(
+                        {
+                            value
+                            for _invoked, _calls, _names, value in usage
+                            if value != "unknown"
+                        }
                     )
                     usage_rows.append(
                         [
@@ -248,6 +276,8 @@ class LiveTaskMatrix:
                             str(not_invoked),
                             str(unknown),
                             str(total_calls),
+                            ",".join(tool_names) or "-",
+                            ",".join(observability) or "unknown",
                         ]
                     )
                 lines.extend(
@@ -257,7 +287,9 @@ class LiveTaskMatrix:
                             "Invoked",
                             "Not invoked",
                             "Unknown",
-                            "MCP calls",
+                            "Observed calls",
+                            "Tools",
+                            "Observation",
                         ],
                         usage_rows,
                     )
