@@ -12,7 +12,11 @@ from benchmarks.diagnostic import (
     _SCORE_REPORT_FIELDS,
     prepare_diagnostic_suite,
 )
-from benchmarks.harness.oracle_reviews import OracleReviewError, validate_oracle_reviews
+from benchmarks.harness.oracle_reviews import (
+    OracleReviewError,
+    oracle_review_guide,
+    validate_oracle_reviews,
+)
 from benchmarks.harness.suite import SuiteError, load_suite
 
 
@@ -92,8 +96,27 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
         result = validate_oracle_reviews(load_suite(SOURCE), require_complete=False)
         self.assertEqual(result["first_reviewed_tasks"], 12)
         self.assertEqual(result["approved_tasks"], 0)
-        with self.assertRaisesRegex(OracleReviewError, "incomplete"):
+        with self.assertRaisesRegex(
+            OracleReviewError,
+            "Next: make benchmark-oracle-review",
+        ):
             validate_oracle_reviews(load_suite(SOURCE), require_complete=True)
+
+    def test_oracle_review_guide_hands_off_without_self_approval(self) -> None:
+        suite = load_suite(SOURCE)
+        guide = oracle_review_guide(suite)
+        self.assertIn("Oracle review BLOCKED: 0/12 tasks approved", guide)
+        self.assertIn("This command does not self-approve benchmark truth.", guide)
+        self.assertIn("locate-repository-content-identity", guide)
+        self.assertIn("existing independent reviews: 1", guide)
+        self.assertIn("make benchmark-oracle-review-check", guide)
+        self.assertIn("make benchmark", guide)
+        self.assertEqual(
+            validate_oracle_reviews(suite, require_complete=False)[
+                "approved_tasks"
+            ],
+            0,
+        )
 
     def test_diagnostic_is_separate_and_has_ten_paired_replicates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
