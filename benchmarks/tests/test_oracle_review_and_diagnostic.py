@@ -216,6 +216,10 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
                 self.assertEqual(task_id, "locate-repository-content-identity")
                 self.assertIn("locate-repository-content-identity", prompt)
                 self.assertIn("hashmarks/test_shards.py", prompt)
+                self.assertIn(
+                    "terminal response must be exactly one JSON object",
+                    prompt,
+                )
                 self.assertNotIn(
                     "hashes canonical source paths and bytes",
                     prompt,
