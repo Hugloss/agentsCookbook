@@ -128,7 +128,7 @@ def observe_repository_location(
     observed["format_compliant"] = True
 
     fence_pattern = re.compile(
-        r"```json[ \\t]*\\r?\\n(?P<payload>.*?)\\r?\\n```",
+        r"```json[ \t]*\r?\n(?P<payload>.*?)\r?\n```",
         re.DOTALL,
     )
     fence_matches = list(fence_pattern.finditer(stripped))
