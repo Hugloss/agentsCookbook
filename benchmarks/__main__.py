@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -34,7 +35,11 @@ from benchmarks.harness.readiness import check_runtime_readiness
 from benchmarks.harness.runtime_authority import required_runtime_authority
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
-from benchmarks.harness.live_console import LiveTaskMatrix
+from benchmarks.harness.live_console import (
+    LiveCampaignProgress,
+    LiveTaskMatrix,
+    render_trial_failure,
+)
 from benchmarks.harness.selection import (
     SelectionError,
     parse_agent_arguments,
@@ -572,6 +577,12 @@ def main(argv: list[str] | None = None) -> int:
     assert paths.results is not None
     campaign = None
     live_matrix = LiveTaskMatrix(suite, rows)
+    live_progress = LiveCampaignProgress(suite, rows)
+    campaign_started = time.monotonic()
+    conditions = {
+        str(condition["id"]): condition
+        for condition in suite.experiment["conditions"]
+    }
     if any("replicate_id" in row for row in rows):
         try:
             campaign = admit_campaign(
@@ -589,10 +600,14 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"campaign admission failed: {exc}") from exc
     for row in rows:
         print(
-            f"starting {row['task_id']} / {row['condition_id']} trial {row['trial']}",
+            live_progress.start_line(
+                row,
+                elapsed=time.monotonic() - campaign_started,
+            ),
             file=sys.stderr,
             flush=True,
         )
+        trial_started = time.monotonic()
         result = run_trial(
             suite=suite,
             task_id=str(row["task_id"]),
@@ -614,12 +629,33 @@ def main(argv: list[str] | None = None) -> int:
                 "status": result.status,
                 "result_dir": str(result.result_dir),
                 "reused": result.reused,
+                "recovered": result.recovered,
                 "reason": result.reason,
+                "stage": result.stage,
+                "reason_code": result.reason_code,
+                "diagnostic": result.diagnostic,
             }
         )
         detail = f": {result.reason}" if result.reason else ""
         print(
             f"{row['task_id']} / {row['condition_id']}: {result.status}{detail}",
+            file=sys.stderr,
+            flush=True,
+        )
+        condition = conditions[str(row["condition_id"])]
+        failure = render_trial_failure(
+            row=row,
+            subject=str(condition["subject"]),
+            result=result,
+        )
+        if failure is not None:
+            print(failure, file=sys.stderr, flush=True)
+        print(
+            live_progress.finish_line(
+                result,
+                elapsed=time.monotonic() - campaign_started,
+                trial_seconds=time.monotonic() - trial_started,
+            ),
             file=sys.stderr,
             flush=True,
         )
