@@ -23,6 +23,9 @@ from benchmarks.harness.oracle_reviews import (
 from benchmarks.harness.oracle_review_runner import (
     DECISION_PREFIX,
     REVIEWER_ID,
+    _parse_decision,
+    _run_review,
+    _verify_expected_owner,
     run_pending_oracle_reviews,
 )
 from benchmarks.harness.suite import SuiteError, load_suite
@@ -34,6 +37,16 @@ SOURCE = (
 
 
 class ReviewAndDiagnosticTests(unittest.TestCase):
+    @staticmethod
+    def _materialize_expected_owner(**kwargs) -> None:
+        path = kwargs["destination"] / "hashmarks/test_shards.py"
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            "def repository_content_identity(root):\n"
+            "    return root\n",
+            encoding="utf-8",
+        )
+
     def test_qualified_label_without_source_campaign_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -176,10 +189,10 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
                 "locate-repository-content-identity"
             ]["task_digest"]
 
-            def materialize(**kwargs):
-                kwargs["destination"].mkdir(parents=True)
+            materialize = self._materialize_expected_owner
 
-            def review(_workspace, prompt):
+            def review(_workspace, prompt, *, task_id):
+                self.assertEqual(task_id, "locate-repository-content-identity")
                 self.assertIn("locate-repository-content-identity", prompt)
                 self.assertIn("hashmarks/test_shards.py", prompt)
                 self.assertNotIn(
@@ -191,6 +204,10 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
                     "task_digest": task_digest,
                     "decision": "unique",
                     "reason": "Independent inspection found one semantic owner.",
+                    "observed_owner": {
+                        "path": "hashmarks/test_shards.py",
+                        "symbol": "repository_content_identity",
+                    },
                 }
                 return {
                     "stdout": "audit\n" + DECISION_PREFIX + json.dumps(payload),
@@ -241,14 +258,17 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
                 )
             )["tasks"]["locate-repository-content-identity"]
 
-            def materialize(**kwargs):
-                kwargs["destination"].mkdir(parents=True)
+            materialize = self._materialize_expected_owner
 
             payload = {
                 "task_id": "locate-repository-content-identity",
                 "task_digest": row["task_digest"],
                 "decision": "ambiguous",
                 "reason": "Independent inspection found two defensible owners.",
+                "observed_owner": {
+                    "path": "hashmarks/test_shards.py",
+                    "symbol": "repository_content_identity",
+                },
             }
             with (
                 mock.patch(
@@ -284,6 +304,102 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
                 ][-1]["decision"],
                 "ambiguous",
             )
+
+    def test_expected_owner_presence_is_proved_before_model_review(self) -> None:
+        suite = load_suite(SOURCE)
+        task = suite.tasks["locate-repository-content-identity"]
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            with self.assertRaisesRegex(
+                OracleReviewError,
+                "expected owner path is missing before review",
+            ):
+                _verify_expected_owner(workspace, task)
+
+    def test_review_decision_must_bind_observed_expected_owner(self) -> None:
+        suite = load_suite(SOURCE)
+        task = suite.tasks["locate-repository-content-identity"]
+        row = json.loads(
+            (SOURCE / "qualification/oracle-reviews.json").read_text(
+                encoding="utf-8"
+            )
+        )["tasks"]["locate-repository-content-identity"]
+        payload = {
+            "task_id": "locate-repository-content-identity",
+            "task_digest": row["task_digest"],
+            "decision": "invalid",
+            "reason": "Expected owner could not be observed.",
+        }
+        with self.assertRaisesRegex(
+            OracleReviewError,
+            "did not observe the deterministically present expected owner",
+        ):
+            _parse_decision(
+                DECISION_PREFIX + json.dumps(payload),
+                task_id="locate-repository-content-identity",
+                task_digest=row["task_digest"],
+                expected_owner=task["oracle"]["configuration"]["expected"],
+            )
+
+    def test_non_unique_review_does_not_request_another_reviewer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "suite"
+            shutil.copytree(SOURCE, copy)
+            review_path = copy / "qualification/oracle-reviews.json"
+            evidence = json.loads(review_path.read_text(encoding="utf-8"))
+            row = evidence["tasks"]["locate-repository-content-identity"]
+            row["reviews"].append(
+                {
+                    "decision": "invalid",
+                    "reason": "Independent semantic review rejected the owner.",
+                    "reviewer": "independent-review-b",
+                    "task_digest": row["task_digest"],
+                }
+            )
+            review_path.write_text(json.dumps(evidence), encoding="utf-8")
+            with self.assertRaisesRegex(
+                OracleReviewError,
+                "Do not add another reviewer",
+            ):
+                validate_oracle_reviews(
+                    load_suite(copy),
+                    require_complete=True,
+                )
+
+    def test_review_runtime_reuses_qualified_opencode_session_wrapper(self) -> None:
+        envelope = {
+            "run": {"status": 0},
+            "final_text": "review result",
+            "export_parse_error": None,
+        }
+        process = mock.Mock(
+            executable_missing=False,
+            timed_out=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+            return_code=0,
+            stdout=json.dumps(envelope).encode(),
+            stderr=b"",
+            command_identity="sha256:runtime",
+        )
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch(
+                "benchmarks.harness.oracle_review_runner.run_bounded",
+                return_value=process,
+            ) as run,
+        ):
+            result = _run_review(
+                Path(tmp),
+                "prompt",
+                task_id="locate-repository-content-identity",
+            )
+        argv = run.call_args.kwargs["argv"]
+        self.assertEqual(argv[0], "node")
+        self.assertIn("opencode-runtime.js", argv[1])
+        self.assertIn("run-export", argv)
+        self.assertIn("--repo", argv)
+        self.assertEqual(result["stdout"], "review result")
 
     def test_oracle_review_cli_prints_next_action_and_succeeds(self) -> None:
         output = io.StringIO()
