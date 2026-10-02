@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import runpy
@@ -26,8 +27,10 @@ from benchmarks.adapters.enola import EnolaSubject
 from benchmarks.adapters.hashmarks import HashmarksSubject
 from benchmarks.adapters.opencode_native import (
     OpenCodeNativeAgent,
+    _EXECUTABLE_OBSERVATION_CACHE,
     _metrics as opencode_metrics,
     _native_environment as opencode_native_environment,
+    _observe_opencode_executable,
     _observed_model as opencode_observed_model,
 )
 from benchmarks.adapters.registry import (
@@ -828,6 +831,58 @@ class PilotExecutionTests(unittest.TestCase):
                 context.environment["TMPDIR"],
             )
             self.assertNotIn("OPENCODE_CONFIG_CONTENT", environment)
+
+    def test_opencode_executable_version_evidence_reuses_only_identical_bytes(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            context = TrialContext(
+                workspace,
+                control,
+                _opencode_trial_environment(control, root),
+            )
+            environment = opencode_native_environment(context)
+            executable = Path(environment["OPENCODE_BIN"])
+            first_sha = hashlib.sha256(executable.read_bytes()).hexdigest()
+            first = Observation(
+                {
+                    "available": True,
+                    "version": "opencode 1",
+                    "executable_sha256": first_sha,
+                },
+                "opencode 1",
+            )
+            _EXECUTABLE_OBSERVATION_CACHE.clear()
+            with mock.patch(
+                "benchmarks.adapters.opencode_native.observe_executable",
+                return_value=first,
+            ) as observed:
+                initial = _observe_opencode_executable(context, environment)
+                reused = _observe_opencode_executable(context, environment)
+                self.assertEqual(observed.call_count, 1)
+                self.assertNotIn("cache_hit", initial.payload)
+                self.assertTrue(reused.payload["cache_hit"])
+
+                executable.write_text("#!/bin/sh\necho changed\n", encoding="utf-8")
+                executable.chmod(0o755)
+                second_sha = hashlib.sha256(executable.read_bytes()).hexdigest()
+                observed.return_value = Observation(
+                    {
+                        "available": True,
+                        "version": "opencode 2",
+                        "executable_sha256": second_sha,
+                    },
+                    "opencode 2",
+                )
+                changed = _observe_opencode_executable(context, environment)
+
+            self.assertEqual(observed.call_count, 2)
+            self.assertEqual(changed.payload["version"], "opencode 2")
+            self.assertNotIn("cache_hit", changed.payload)
 
     def test_opencode_prepare_uses_shared_runtime_inspection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

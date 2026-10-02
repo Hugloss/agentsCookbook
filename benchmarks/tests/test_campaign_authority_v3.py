@@ -74,12 +74,14 @@ class CampaignAuthorityTests(unittest.TestCase):
         suite = _suite()
         rows = suite.trial_definitions()
         seen = []
+        transported_harness = []
 
         @contextmanager
         def fake_admission(**kwargs):
             task_id = kwargs["task_id"]
             condition_id = kwargs["condition_id"]
             seen.append((task_id, condition_id))
+            transported_harness.append(kwargs.get("harness_authority"))
             condition = next(
                 value
                 for value in suite.experiment["conditions"]
@@ -92,6 +94,7 @@ class CampaignAuthorityTests(unittest.TestCase):
                 mutation_authority=None,
                 initial_outcome=lambda: (None, None),
                 cleanup_subject=lambda: None,
+                admission_timings_ms={"total": 10},
                 definition_id=next(
                     row["definition_id"]
                     for row in rows
@@ -117,6 +120,10 @@ class CampaignAuthorityTests(unittest.TestCase):
                     "benchmarks.harness.campaign_authority.condition_authority",
                     side_effect=_fake_condition_authority,
                 ),
+                mock.patch(
+                    "benchmarks.harness.campaign_authority.harness_identity",
+                    return_value={"commit": "stable-harness"},
+                ) as harness_identity,
             ):
                 progress = []
                 audited = audit_campaign(
@@ -124,6 +131,11 @@ class CampaignAuthorityTests(unittest.TestCase):
                     on_progress=progress.append,
                 )
                 self.assertEqual(len(seen), 4)
+                self.assertEqual(harness_identity.call_count, 2)
+                self.assertEqual(
+                    transported_harness,
+                    [{"commit": "stable-harness"}] * 4,
+                )
                 condition_progress = [
                     row for row in progress if row["stage"] == "condition-authority"
                 ]
@@ -237,6 +249,10 @@ class CampaignAuthorityTests(unittest.TestCase):
                     "benchmarks.harness.campaign_authority.condition_authority",
                     side_effect=drifted,
                 ),
+                mock.patch(
+                    "benchmarks.harness.campaign_authority.harness_identity",
+                    return_value={"commit": "stable-harness"},
+                ),
             ):
                 with self.assertRaisesRegex(CampaignAuthorityError, "runtime or model"):
                     admit_campaign(**options)
@@ -280,6 +296,54 @@ class CampaignAuthorityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "admitted_state"):
             execution_evidence_id(**arguments)
 
+    def test_campaign_rejects_harness_drift_after_condition_checks(self) -> None:
+        suite = _suite()
+        rows = suite.trial_definitions()[:1]
+
+        @contextmanager
+        def fake_admission(**kwargs):
+            condition = suite.experiment["conditions"][0]
+            yield SimpleNamespace(
+                task=suite.tasks["task-a"],
+                condition=condition,
+                admitted_state={"source": "same"},
+                mutation_authority=None,
+                initial_outcome=lambda: (None, None),
+                cleanup_subject=lambda: None,
+                admission_timings_ms={"total": 1},
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                mock.patch(
+                    "benchmarks.harness.campaign_authority.admit_trial",
+                    fake_admission,
+                ),
+                mock.patch(
+                    "benchmarks.harness.campaign_authority.condition_authority",
+                    side_effect=_fake_condition_authority,
+                ),
+                mock.patch(
+                    "benchmarks.harness.campaign_authority.harness_identity",
+                    side_effect=[
+                        {"commit": "before"},
+                        {"commit": "after"},
+                    ],
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    CampaignAuthorityError,
+                    "harness authority changed during campaign admission",
+                ):
+                    audit_campaign(
+                        suite=suite,
+                        rows=rows,
+                        harness_root=root,
+                        cache_root=root / "cache",
+                        work_root=root / "work",
+                    )
+
     def test_late_preflight_failure_publishes_no_campaign_or_launch(self) -> None:
         suite = _suite()
         rows = suite.trial_definitions()
@@ -314,6 +378,10 @@ class CampaignAuthorityTests(unittest.TestCase):
                 mock.patch(
                     "benchmarks.harness.campaign_authority.condition_authority",
                     side_effect=_fake_condition_authority,
+                ),
+                mock.patch(
+                    "benchmarks.harness.campaign_authority.harness_identity",
+                    return_value={"commit": "stable-harness"},
                 ),
             ):
                 with self.assertRaisesRegex(

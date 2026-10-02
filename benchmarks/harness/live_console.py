@@ -358,14 +358,46 @@ def _duration(value: float | None) -> str:
 def render_campaign_admission(event: dict[str, Any], *, elapsed: float) -> str:
     """Render model-free campaign admission progress without owning authority."""
     stage = str(event.get("stage") or "unknown")
-    if stage == "condition-authority":
+    if stage in {"condition-authority", "condition-authority-complete"}:
         index = event.get("index")
         total = event.get("total")
         task_id = event.get("task_id")
         condition_id = event.get("condition_id")
+        if stage == "condition-authority-complete":
+            timings = event.get("timings_ms")
+            timings = timings if isinstance(timings, dict) else {}
+            detail = " | ".join(
+                f"{label} {int(timings[key])}ms"
+                for key, label in (
+                    ("materialize", "materialize"),
+                    ("snapshot", "snapshot"),
+                    ("participant_prepare", "prepare"),
+                    ("oracle_health", "oracle"),
+                    ("condition_authority", "authority"),
+                    ("total", "total"),
+                )
+                if isinstance(timings.get(key), (int, float))
+            )
+            suffix = f" | {detail}" if detail else ""
+            return (
+                f"ADMISSION [{index}/{total}] {task_id} / {condition_id} | "
+                f"authority OK{suffix} | admission elapsed {_duration(elapsed)}"
+            )
         return (
             f"ADMISSION [{index}/{total}] {task_id} / {condition_id} | "
             f"checking authority | admission elapsed {_duration(elapsed)}"
+        )
+    if stage == "campaign-harness-authority":
+        duration_ms = event.get("duration_ms")
+        detail = (
+            f" | {int(duration_ms)}ms"
+            if isinstance(duration_ms, (int, float))
+            else ""
+        )
+        return (
+            "ADMISSION harness authority | "
+            f"{event.get('status') or 'checking'}{detail} | "
+            f"admission elapsed {_duration(elapsed)}"
         )
     if stage == "oracle-review":
         return (
