@@ -44,7 +44,7 @@ Both `preflight` and `run` use that same path. Preflight is diagnostic and never
 
 Runtime readiness is deliberately separate from trial admission. `benchmark-check`/the `check` command never selects or materializes a task, applies a mutation, runs an oracle, derives a trial/execution identity, inspects receipts, or invokes a model. It creates one disposable smoke workspace, verifies shared subject prerequisites once, and checks each distinct agent/subject pair, including bare conditions, once. The held-out suite therefore produces six pair outcomes rather than expanding its 216 task/condition/replicate definitions. The disposable workspace is deleted when the command exits; rerunning the check is always an explicit user action.
 
-`run` admits every selected task/condition without inference before its first model call and writes a canonical campaign authority receipt. Every later trial compares observed authority and exact task inputs against that receipt before invoking the model. A durable launch claim makes interrupted trials visible and prevents replacing a started execution. A changed runtime, model, configuration, subject source, workspace input, or selected population requires a new campaign root. The held-out suite also requires two independent, task-bound oracle reviews before admission.
+`run` admits every selected task/condition without inference before its first model call and writes a canonical campaign authority receipt. Every later trial compares observed authority and exact task inputs against that receipt before invoking the model. A durable launch claim makes interrupted trials visible. If a process dies before publishing a complete receipt, the next invocation retires that active claim into immutable numbered interruption evidence and starts a new explicit attempt; already completed receipts are always reused and are never retried. A changed runtime, model, configuration, subject source, workspace input, or selected population requires a new campaign root. The held-out suite also requires two independent, task-bound oracle reviews before admission.
 
 Native tool discovery and benchmark-subject selection are separate authorities.
 
@@ -79,7 +79,7 @@ Keep deliberate benchmark choices separate from native host discovery:
 | `BENCHMARK_OPENCODE_AGENT` | Exact OpenCode agent persona to execute | Explicit benchmark semantic choice |
 | `BENCHMARK_PASSTHROUGH_ENV_KEYS` | Comma-separated provider variables explicitly admitted into participant processes | Optional provider environment authority |
 | `BENCHMARK_SUITE_PATH` | Committed suite definition inside agentsCookbook | Benchmark source/configuration |
-| `BENCHMARK_CAMPAIGN_ROOT` | Writable campaign directory containing `cache/`, `work/`, and `results/` | Generated campaign evidence |
+| `BENCHMARK_CAMPAIGN_ROOT` | Durable campaign directory containing `cache/`, `work/`, and `results/`; local default is ignored `.benchmark-runs/` | Generated campaign evidence |
 | `BENCHMARK_HARNESS_REPO_ROOT` | agentsCookbook checkout containing the runner | Harness source authority |
 | `BENCHMARK_SCORE_SCRIPT_PATH` | Optional suite-specific scorer | Specialized reporting authority |
 | `BENCHMARK_SCORE_OUTPUT_PATH` | Output file for the suite-specific score | Generated report |
@@ -99,6 +99,8 @@ For local human-driven campaigns:
 cp -n .env.example .env
 # edit .env and set the authorities used by the selected suite
 ```
+
+The example stores campaign evidence under `.benchmark-runs/`, which is ignored by Git but intentionally not temporary. Do not use `/tmp` for a long campaign you expect to resume after a process, WSL, or machine restart. Each completed trial publishes its own atomic receipt immediately; the aggregate report is derived later and is not the durability boundary.
 
 In the selected Hashmarks source checkout, install its locked MCP extra with `uv sync --frozen --extra mcp --group test` before running readiness. A correct `HASHMARKS_BENCH_SOURCE` path alone does not install the MCP server dependency.
 
@@ -132,7 +134,7 @@ The benchmark CLI remains available for automation and explicit one-off selectio
 
 ```bash
 suite=benchmarks/suites/repository-intelligence/heldout-v1
-root=/tmp/agentscookbook-heldout-v1
+root=.benchmark-runs/heldout-v1
 agents=opencode-native  # or codex-native,opencode-native
 ```
 
@@ -213,7 +215,7 @@ uv run --no-project python -m benchmarks run \
   --subject enola
 ```
 
-The runner reuses valid existing receipts, so rerunning the command resumes a partially completed campaign instead of starting completed definitions again. Live stderr shows processed definitions in this invocation separately from verified receipts in the campaign. During a long trial it prints an activity heartbeat every 30 seconds with the current stage and elapsed time. The execution ETA estimates remaining pending executions from trials executed in this invocation; it is not a qualification estimate and stays `estimating...` until a sample exists. Run elapsed time resets on each invocation.
+The runner reuses valid existing receipts, so rerunning the command resumes a partially completed campaign instead of starting completed definitions again. If the process died during one definition, its prior launch is preserved under `.campaign/attempts/<definition_id>/` as immutable `INTERRUPTED` evidence, then only that unfinished definition is relaunched as the next numbered attempt. A `PASS`, `FAIL`, or any other already published complete receipt is never silently retried. Live stderr shows processed definitions in this invocation separately from verified receipts in the campaign. During a long trial it prints an activity heartbeat every 30 seconds with the current stage and elapsed time. The execution ETA estimates remaining pending executions from trials executed in this invocation; it is not a qualification estimate and stays `estimating...` until a sample exists. Run elapsed time resets on each invocation.
 
 Inspect resumability without invoking any agent:
 
@@ -243,9 +245,9 @@ uv run --no-project python -m benchmarks report \
 
 The same selectors should be used across preflight, run, status, and report. Bare controls are included only when explicitly selected or when the full frozen suite is run without subject filters.
 
-### Immutable non-outcome receipts
+### Immutable outcomes and interruption evidence
 
-A published `INCOMPLETE`, `INVALID`, or `CONTAMINATED` receipt is evidence and is never deleted or silently overwritten. If the underlying infrastructure problem is corrected but observed execution authority does not change, start a new campaign root instead of mutating the old evidence. If observed tool/config authority changes, execution identity changes naturally and the new execution can coexist.
+A published `INCOMPLETE`, `INVALID`, or `CONTAMINATED` receipt is evidence and is never deleted or silently overwritten. A process interruption before any complete receipt exists is different: it is preserved as immutable numbered attempt evidence and the unfinished definition may resume with a new explicit attempt. If the underlying infrastructure problem is corrected but observed execution authority does not change, start a new campaign root instead of mutating the old evidence. If observed tool/config authority changes, execution identity changes naturally and the new execution can coexist.
 
 `--root` is only path derivation for `cache/`, `work/`, and `results/`; it does not create a second mutable campaign manifest. Frozen suite definitions plus verified receipts remain authority.
 
