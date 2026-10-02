@@ -28,7 +28,7 @@ benchmark:
 	@uv run --no-project python -m benchmarks run --auto --env-file .env
 
 benchmark-new:
-	@uv run --no-project python -m benchmarks prepare --new --env-file .env
+	@uv run --no-project python -m benchmarks run --new --env-file .env
 
 benchmark-resume:
 	@uv run --no-project python -m benchmarks run --resume --env-file .env
