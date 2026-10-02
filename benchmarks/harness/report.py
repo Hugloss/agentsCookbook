@@ -220,6 +220,126 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _subject_adoption_summary(
+    receipts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Describe whether configured repository-intelligence subjects were used."""
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for receipt in receipts:
+        subject = receipt.get("condition", {}).get("subject_definition", {}).get("id")
+        agent = receipt.get("condition", {}).get("agent_definition", {}).get("id")
+        if not isinstance(subject, str) or subject == "none":
+            continue
+        if not isinstance(agent, str) or not agent:
+            continue
+        grouped[(agent, subject)].append(receipt)
+
+    rows: list[dict[str, Any]] = []
+    for (agent, subject), group in sorted(grouped.items()):
+        available = [
+            row
+            for row in group
+            if row.get("authority", {}).get("subject", {}).get("available") is True
+        ]
+        configured = [
+            row
+            for row in group
+            if row.get("measurements", {}).get("agent", {}).get(
+                "subject_tool_configured"
+            )
+            is True
+        ]
+        observed = [
+            row
+            for row in group
+            if isinstance(
+                row.get("measurements", {}).get("agent", {}).get(
+                    "subject_tool_invoked"
+                ),
+                bool,
+            )
+        ]
+        invoked = [
+            row
+            for row in observed
+            if row.get("measurements", {}).get("agent", {}).get(
+                "subject_tool_invoked"
+            )
+            is True
+        ]
+        not_invoked = len(observed) - len(invoked)
+        calls = [
+            value
+            for row in group
+            if (
+                value := _agent_metric(row, "subject_mcp_calls")
+            )
+            is not None
+        ]
+        tools = sorted(
+            {
+                name
+                for row in group
+                for name in (
+                    row.get("measurements", {})
+                    .get("agent", {})
+                    .get("subject_tool_names", [])
+                )
+                if isinstance(name, str) and name
+            }
+        )
+        output_contract_failures = sum(
+            row.get("scoring", {})
+            .get("oracle_grade", {})
+            .get("format_compliant")
+            is False
+            and row.get("scoring", {})
+            .get("oracle_grade", {})
+            .get("semantic_gradeable")
+            is False
+            for row in group
+        )
+        semantic_incorrect = sum(
+            row.get("scoring", {})
+            .get("oracle_grade", {})
+            .get("semantic_status")
+            == "INCORRECT"
+            for row in group
+        )
+        if not available:
+            state = "subject-unavailable"
+        elif not observed:
+            state = "invocation-unobserved"
+        elif not invoked:
+            state = "configured-never-invoked"
+        elif len(invoked) == len(observed):
+            state = "invoked-all-observed"
+        else:
+            state = "invoked-some-observed"
+        rows.append(
+            {
+                "agent_id": agent,
+                "subject_id": subject,
+                "trials": len(group),
+                "available_trials": len(available),
+                "configured_trials": len(configured),
+                "invocation_observed_trials": len(observed),
+                "invoked_trials": len(invoked),
+                "not_invoked_trials": not_invoked,
+                "invocation_unknown_trials": len(group) - len(observed),
+                "subject_mcp_calls": sum(calls),
+                "subject_tool_names": tools,
+                "output_contract_failures": output_contract_failures,
+                "semantic_incorrect_trials": semantic_incorrect,
+                "status_counts": dict(
+                    sorted(Counter(str(row.get("status")) for row in group).items())
+                ),
+                "state": state,
+            }
+        )
+    return rows
+
+
 def _agent_id(receipt: dict[str, Any]) -> str:
     value = receipt.get("condition", {}).get("agent_definition", {}).get("id")
     if not isinstance(value, str) or not value:
@@ -936,7 +1056,7 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 7,
+            "version": 8,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
@@ -966,6 +1086,7 @@ def build_report(
         "expected_assistance_pairs": len(paired_assistance) + len(pair_exclusions),
         "stability": stability,
         "task_agent_authority": _task_agent_authority(receipts),
+        "subject_adoption": _subject_adoption_summary(receipts),
         "diagnostics": [
             {
                 "definition_id": row["definition_id"],
