@@ -294,6 +294,9 @@ def run_trial(
                 existing = json.loads(
                     (final_dir / "result.json").read_text(encoding="utf-8")
                 )
+                diagnostic = existing.get("diagnostic")
+                if not isinstance(diagnostic, dict):
+                    diagnostic = {}
                 return TrialRunResult(
                     trial_id=trial_id,
                     definition_id=definition,
@@ -301,6 +304,9 @@ def run_trial(
                     result_dir=final_dir,
                     reused=True,
                     reason=existing.get("reason"),
+                    stage=diagnostic.get("stage"),
+                    reason_code=diagnostic.get("reason_code"),
+                    diagnostic=diagnostic.get("detail"),
                 )
 
             run_root = context.workspace.parent
@@ -349,7 +355,14 @@ def run_trial(
                 {},
             )
             location_observation: dict[str, Any] | None = None
+            stage: str | None = None
+            reason_code: str | None = None
+            diagnostic_detail: str | None = None
+            agent_exception_traceback: str | None = None
             status, reason = admission.initial_outcome()
+            if status is not None:
+                stage = "admission"
+                reason_code = "admission-initial-outcome"
             if not admission.legacy_seed and status is not None:
                 raise TrialRunnerError(f"pre-model admission failed: {reason}")
 
@@ -373,6 +386,7 @@ def run_trial(
                 try:
                     agent_observation = agent.run(context, task["prompt"], subject)
                 except Exception as exc:
+                    agent_exception_traceback = traceback.format_exc()
                     agent_observation = Observation(
                         {
                             "terminal_event": {
@@ -398,13 +412,20 @@ def run_trial(
                             context, agent_observation
                         )
                     budget_violation = agent_observation.payload.get("budget_violation")
-                    agent_reason = _reason_for_agent(agent_observation)
+                    agent_failure = _agent_failure(agent_observation)
                     if isinstance(budget_violation, str) and budget_violation:
                         status = TrialStatus.INVALID
                         reason = budget_violation
-                    elif agent_reason is not None:
+                        stage = "agent-execution"
+                        reason_code = "agent-budget-violation"
+                        diagnostic_detail = _bounded_diagnostic(budget_violation)
+                    elif agent_failure is not None:
                         status = TrialStatus.INCOMPLETE
-                        reason = agent_reason
+                        reason_code, reason = agent_failure
+                        stage = "agent-execution"
+                        diagnostic_detail = _bounded_diagnostic(
+                            agent_exception_traceback or reason
+                        )
                     else:
                         grade = (
                             oracle.grade_observed(location_observation)
@@ -422,6 +443,11 @@ def run_trial(
                         if grade.payload.get("valid") is False:
                             status = TrialStatus.INVALID
                             reason = "independent oracle could not complete grading"
+                            stage = "oracle-grading"
+                            reason_code = "oracle-invalid"
+                            diagnostic_detail = _bounded_diagnostic(
+                                str(grade.payload.get("reason") or reason)
+                            )
                         else:
                             status = (
                                 TrialStatus.PASS
@@ -430,9 +456,15 @@ def run_trial(
                             )
                             if status is TrialStatus.FAIL:
                                 reason = _reason_for_oracle_failure(grade)
+                                stage = "oracle-grading"
+                                reason_code = "oracle-mismatch"
+                                diagnostic_detail = _bounded_diagnostic(reason)
                 except Exception as exc:
                     status = TrialStatus.INCOMPLETE
                     reason = f"post-execution observation failed: {exc}"
+                    stage = "post-execution-observation"
+                    reason_code = "post-execution-observation-exception"
+                    diagnostic_detail = _bounded_diagnostic(traceback.format_exc())
                     emit("trial.observation_failed", {"reason": reason})
 
             try:
@@ -460,10 +492,16 @@ def run_trial(
                 }
                 status = TrialStatus.INCOMPLETE
                 reason = f"workspace observation failed: {exc}"
+                stage = "workspace-observation"
+                reason_code = "workspace-observation-exception"
+                diagnostic_detail = _bounded_diagnostic(traceback.format_exc())
             emit("trial.contamination", contamination)
             if contamination["contaminated"]:
                 status = TrialStatus.CONTAMINATED
                 reason = "workspace changed outside frozen contamination allowances"
+                stage = "contamination"
+                reason_code = "workspace-contamination"
+                diagnostic_detail = _bounded_diagnostic(reason)
 
             changed_paths = tuple(
                 sorted(
@@ -485,6 +523,9 @@ def run_trial(
                 except Exception as exc:
                     status = TrialStatus.INCOMPLETE
                     reason = f"subject post-change failed: {exc}"
+                    stage = "subject-post-change"
+                    reason_code = "subject-post-change-exception"
+                    diagnostic_detail = _bounded_diagnostic(traceback.format_exc())
                     emit("subject.post_change_failed", {"reason": reason})
             try:
                 cleanup = admission.cleanup_subject()
@@ -492,6 +533,9 @@ def run_trial(
             except Exception as exc:
                 status = TrialStatus.INCOMPLETE
                 reason = f"subject cleanup failed: {exc}"
+                stage = "subject-cleanup"
+                reason_code = "subject-cleanup-exception"
+                diagnostic_detail = _bounded_diagnostic(traceback.format_exc())
                 emit("subject.cleanup_failed", {"reason": reason})
 
             event_evidence = seal_events(event_path, trial_id=trial_id)
@@ -575,6 +619,11 @@ def run_trial(
                     "projection_identity": score_projection,
                     "oracle_grade": grade.payload,
                 },
+                "diagnostic": {
+                    "stage": stage,
+                    "reason_code": reason_code,
+                    "detail": diagnostic_detail,
+                },
                 "measurements": {
                     "subject_prepare": subject_prepare.measurements,
                     "agent_prepare": agent_prepare.measurements,
@@ -600,6 +649,9 @@ def run_trial(
                 result_dir=result_dir,
                 reused=False,
                 reason=reason,
+                stage=stage,
+                reason_code=reason_code,
+                diagnostic=diagnostic_detail,
             )
     except (TrialAdmissionError, CampaignAuthorityError) as exc:
         raise TrialRunnerError(str(exc)) from exc
