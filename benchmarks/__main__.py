@@ -95,6 +95,7 @@ def _parser() -> argparse.ArgumentParser:
     diagnostic = sub.add_parser("diagnostic-prepare")
     diagnostic.add_argument("--suite", type=Path, required=True)
     diagnostic.add_argument("--score", type=Path, required=True)
+    diagnostic.add_argument("--source-results", type=Path, required=True)
     diagnostic.add_argument("--output-suite", type=Path, required=True)
     diagnostic.add_argument("--include-task", action="append", default=[])
 
@@ -262,6 +263,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             evidence = prepare_diagnostic_suite(
                 source_suite=args.suite, score_path=args.score,
+                source_results=args.source_results,
                 destination=args.output_suite,
                 include_tasks=set(args.include_task),
             )

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .bundle import verify_bundle
-from .campaign_authority import CampaignAuthorityError, claimed_definitions, read_campaign
+from .campaign_authority import CampaignAuthorityError, read_launch_claims, read_campaign
 from .identity import definition_id, execution_id
 from .receipt import is_complete_receipt
 from .report import ReportError, validate_comparability
@@ -138,12 +138,14 @@ def campaign_status(
     new_contract = any("replicate_id" in row for row in definitions.values())
     campaign_error = None
     claims: set[str] = set()
+    launch_claims: dict[str, str] = {}
     if new_contract:
         try:
             manifest = read_campaign(results_root)
             if not selected_definitions.issubset(set(manifest["selected_definitions"])):
                 raise CampaignAuthorityError("status selection exceeds campaign selection")
-            claims = claimed_definitions(results_root, manifest["campaign_id"])
+            launch_claims = read_launch_claims(results_root, manifest["campaign_id"])
+            claims = set(launch_claims)
             if not claims.issubset(set(manifest["selected_definitions"])):
                 raise CampaignAuthorityError("launch claim exceeds campaign selection")
         except CampaignAuthorityError as exc:
@@ -179,6 +181,9 @@ def campaign_status(
             if definition in definitions:
                 if new_contract and campaign_error is None and value.get("execution", {}).get("campaign_id") != manifest["campaign_id"]:
                     corrupt.append({"directory": str(directory), "reason": "receipt campaign authority mismatch"})
+                    continue
+                if new_contract and campaign_error is None and launch_claims.get(definition) != value.get("trial_id"):
+                    corrupt.append({"directory": str(directory), "reason": "receipt has no matching launch claim"})
                     continue
                 receipts[definition].append(value)
             elif definition not in all_definitions:

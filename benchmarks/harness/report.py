@@ -15,7 +15,7 @@ from benchmarks.adapters.oracles import (
 )
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.campaign_authority import (
-    CampaignAuthorityError, claimed_definitions, read_campaign,
+    CampaignAuthorityError, read_launch_claims, read_campaign,
 )
 from benchmarks.harness.suite import SuiteDefinition
 from benchmarks.harness.identity import digest, execution_task_contract
@@ -708,6 +708,7 @@ def build_report(
         raise ReportError("report selection contains definitions outside frozen suite")
     new_contract = any("replicate_id" in row for row in expected.values())
     interrupted: set[str] = set()
+    launch_claims: dict[str, str] = {}
     campaign_id = None
     by_definition: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for receipt in receipts:
@@ -740,12 +741,17 @@ def build_report(
             campaign_id = manifest["campaign_id"]
             if projected_receipts is None and not set(expected).issubset(set(manifest["selected_definitions"])):
                 raise CampaignAuthorityError("report selection exceeds frozen campaign")
-            interrupted = claimed_definitions(results_root, campaign_id)
+            launch_claims = read_launch_claims(results_root, campaign_id)
+            if not set(launch_claims).issubset(set(manifest["selected_definitions"])):
+                raise CampaignAuthorityError("launch claim exceeds frozen campaign selection")
+            interrupted = set(launch_claims)
         except CampaignAuthorityError as exc:
             raise ReportError(str(exc)) from exc
         for receipt in receipts:
             if receipt.get("definition_id") in expected and receipt.get("execution", {}).get("campaign_id") != campaign_id:
                 raise ReportError("receipt belongs to a different campaign authority")
+            if projected_receipts is None and launch_claims.get(receipt["definition_id"]) != receipt.get("trial_id"):
+                raise ReportError("receipt has no matching launch claim")
 
     missing = sorted(set(expected) - set(by_definition))
     if require_complete and missing:

@@ -13,7 +13,7 @@ from benchmarks.adapters.oracles import RepositoryLocationOracle, score_reposito
 from benchmarks.adapters.registry import build_oracle
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.campaign_authority import (
-    CampaignAuthorityError, read_campaign,
+    CampaignAuthorityError, read_launch_claims, read_campaign,
 )
 from benchmarks.harness.identity import (
     EXECUTION_EVIDENCE_CONTRACT,
@@ -121,6 +121,7 @@ def project_campaign_receipts(
     lineage: list[dict[str, str]] = []
     found: set[tuple[str, str, int, int]] = set()
     source_campaign = None
+    source_claims: dict[str, str] = {}
     for bundle in sorted(source_results.iterdir()):
         if not bundle.is_dir() or bundle.name.startswith("."):
             continue
@@ -129,6 +130,13 @@ def project_campaign_receipts(
             if source_campaign is None:
                 try:
                     source_campaign = read_campaign(source_results)
+                    source_claims = read_launch_claims(
+                        source_results, source_campaign["campaign_id"]
+                    )
+                    if not set(source_claims).issubset(
+                        set(source_campaign["selected_definitions"])
+                    ):
+                        raise RegradeError("source launch claim exceeds campaign selection")
                 except CampaignAuthorityError as exc:
                     raise RegradeError(str(exc)) from exc
             if (
@@ -136,6 +144,8 @@ def project_campaign_receipts(
                 or source.get("definition_id") not in source_campaign["selected_definitions"]
             ):
                 raise RegradeError("source receipt is outside frozen campaign authority")
+            if source_claims.get(source.get("definition_id")) != source.get("trial_id"):
+                raise RegradeError("source receipt has no matching launch claim")
         task = source.get("task", {})
         condition = source.get("condition", {})
         execution = source.get("execution", {})

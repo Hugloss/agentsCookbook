@@ -101,20 +101,35 @@ def read_campaign(results_root: Path) -> dict[str, Any]:
     return _read_manifest(results_root / ".campaign")
 
 
-def claimed_definitions(results_root: Path, campaign_id: str) -> set[str]:
+def read_launch_claims(results_root: Path, campaign_id: str) -> dict[str, str]:
+    """Read every durable launch claim and bind definition to exact trial ID."""
     directory = results_root / ".campaign" / "claims"
     if not directory.exists():
-        return set()
-    found = set()
-    for path in directory.glob("*.json"):
+        return {}
+    if directory.is_symlink() or not directory.is_dir():
+        raise CampaignAuthorityError("launch claim directory is invalid")
+    found: dict[str, str] = {}
+    for path in directory.iterdir():
+        if path.suffix != ".json" or path.is_symlink() or not path.is_file():
+            raise CampaignAuthorityError(f"unexpected launch claim entry: {path}")
         try:
-            claim = json.loads(path.read_bytes())
+            raw = path.read_bytes()
+            claim = json.loads(raw)
         except (OSError, ValueError) as exc:
             raise CampaignAuthorityError(f"corrupt launch claim: {path}") from exc
         definition = path.stem
-        if claim.get("campaign_id") != campaign_id or claim.get("definition_id") != definition:
+        if (
+            not isinstance(claim, dict)
+            or canonical_json(claim) != raw
+            or set(claim) != {"campaign_id", "definition_id", "trial_id"}
+            or claim.get("campaign_id") != campaign_id
+            or claim.get("definition_id") != definition
+            or not isinstance(claim.get("trial_id"), str)
+            or len(claim["trial_id"]) != 64
+            or any(char not in "0123456789abcdef" for char in claim["trial_id"])
+        ):
             raise CampaignAuthorityError(f"launch claim identity mismatch: {path}")
-        found.add(definition)
+        found[definition] = claim["trial_id"]
     return found
 
 

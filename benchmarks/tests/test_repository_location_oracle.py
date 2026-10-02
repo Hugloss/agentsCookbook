@@ -25,13 +25,14 @@ from benchmarks.harness.identity import (
     score_projection_id,
 )
 from benchmarks.harness.model import Observation, TrialContext
+from benchmarks.harness.campaign import campaign_status
 from benchmarks.harness.receipt import write_receipt
 from benchmarks.harness.regrade import (
     RegradeError,
     project_campaign_receipts,
     regrade_repository_location_bundle,
 )
-from benchmarks.harness.report import ReportError, _aggregate_condition, _check_localization_grades
+from benchmarks.harness.report import ReportError, _aggregate_condition, _check_localization_grades, build_report
 from benchmarks.harness.suite import SuiteDefinition, load_suite
 
 
@@ -95,6 +96,15 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             campaign_dir = root / ".campaign"
             campaign_dir.mkdir(exist_ok=True)
             (campaign_dir / "authority.json").write_bytes(canonical_json(campaign_data))
+            claims_dir = campaign_dir / "claims"
+            claims_dir.mkdir(exist_ok=True)
+            (claims_dir / f"{definition_id or 'b' * 64}.json").write_bytes(
+                canonical_json({
+                    "campaign_id": campaign_id,
+                    "definition_id": definition_id or "b" * 64,
+                    "trial_id": trial_id,
+                })
+            )
         events = b""
         seal = {
             "trial_id": trial_id,
@@ -579,6 +589,58 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             self.assertEqual(len(first), 1)
             self.assertEqual(first[0]["status"], "PASS")
             self.assertEqual(len(lineage), 1)
+
+            claim = results / ".campaign" / "claims" / f"{row['definition_id']}.json"
+            claim.unlink()
+            with self.assertRaisesRegex(ReportError, "launch claim"):
+                build_report(
+                    suite=suite, results_root=results,
+                    selected_definitions={row["definition_id"]},
+                )
+            status_without_claim = campaign_status(
+                suite=suite, results_root=results,
+                selected_definitions={row["definition_id"]},
+            )
+            self.assertFalse(status_without_claim["qualified"])
+            self.assertEqual(len(status_without_claim["corrupt_bundles"]), 1)
+            with self.assertRaisesRegex(RegradeError, "launch claim"):
+                project_campaign_receipts(
+                    suite=suite, source_results=results,
+                    selected_definitions={row["definition_id"]},
+                )
+            claim.write_bytes(canonical_json({
+                "campaign_id": json.loads(
+                    (results / ".campaign" / "authority.json").read_text()
+                )["campaign_id"],
+                "definition_id": row["definition_id"],
+                "trial_id": "b" * 64,
+            }))
+            with self.assertRaisesRegex(ReportError, "launch claim"):
+                build_report(
+                    suite=suite, results_root=results,
+                    selected_definitions={row["definition_id"]},
+                )
+            claim.write_bytes(canonical_json({
+                "campaign_id": json.loads(
+                    (results / ".campaign" / "authority.json").read_text()
+                )["campaign_id"],
+                "definition_id": row["definition_id"],
+                "trial_id": "a" * 64,
+            }))
+            foreign_claim = claim.parent / f"{'c' * 64}.json"
+            foreign_claim.write_bytes(canonical_json({
+                "campaign_id": json.loads(
+                    (results / ".campaign" / "authority.json").read_text()
+                )["campaign_id"],
+                "definition_id": "c" * 64,
+                "trial_id": "d" * 64,
+            }))
+            with self.assertRaisesRegex(ReportError, "exceeds frozen campaign"):
+                build_report(
+                    suite=suite, results_root=results,
+                    selected_definitions={row["definition_id"]},
+                )
+            foreign_claim.unlink()
 
             changed_task = copy.deepcopy(suite.tasks[row["task_id"]])
             changed_task["oracle"]["configuration"]["expected"]["symbol"] = "other"

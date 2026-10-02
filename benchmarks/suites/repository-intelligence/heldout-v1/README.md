@@ -47,6 +47,7 @@ After a qualified official score, prepare the diagnostic suite with:
 uv run --no-project python -m benchmarks diagnostic-prepare \
   --suite benchmarks/suites/repository-intelligence/heldout-v1 \
   --score /path/to/qualified-heldout-score.json \
+  --source-results /path/to/qualified-campaign/results \
   --output-suite /tmp/agentscookbook-heldout-diagnostic-v1 \
   --include-task locate-repository-content-identity
 ```
