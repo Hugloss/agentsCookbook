@@ -378,7 +378,6 @@ def admit_trial(
     local_source: Path | None = None,
     codex_auth: Path | None = None,
     source: Mapping[str, str] | None = None,
-    precomputed_harness_authority: dict[str, Any] | None = None,
 ) -> Iterator[TrialAdmission]:
     source = os.environ if source is None else source
     task = suite.tasks[task_id]
@@ -403,11 +402,7 @@ def admit_trial(
         **({"seed": replicate_id} if legacy_seed else {"replicate_id": replicate_id}),
     )
 
-    harness_authority = (
-        dict(precomputed_harness_authority)
-        if precomputed_harness_authority is not None
-        else harness_identity(harness_root)
-    )
+    harness_authority = harness_identity(harness_root)
 
     work_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
