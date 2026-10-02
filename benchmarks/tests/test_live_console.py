@@ -317,6 +317,7 @@ class LiveTaskMatrixTests(unittest.TestCase):
             row=rows[0],
             subject="none",
             result=result,
+            receipt=self._receipt(suite, rows[0], "INCOMPLETE"),
         )
         assert rendered is not None
         self.assertIn("FAILURE locate-prefix-path-enumerator", rendered)
