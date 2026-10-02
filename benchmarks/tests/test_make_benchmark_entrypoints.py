@@ -41,6 +41,8 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         )
         self.assertIn("--root \"$$qualification_root\" --require-qualified", makefile)
         self.assertIn("--subject none --subject hashmarks --subject enola", makefile)
+        self.assertIn("--task locate-repository-content-identity", makefile)
+        self.assertIn("--task locate-terminal-run-check", makefile)
         self.assertNotIn("release-check:", makefile)
         self.assertIn("BENCHMARK_AGENT=\n", ENV_EXAMPLE.read_text(encoding="utf-8"))
 
