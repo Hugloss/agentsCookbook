@@ -322,22 +322,38 @@ def _selection_metadata(args, suite, rows) -> dict[str, object]:
     }
 
 
+def _selected_agent_ids(suite, rows: list[dict[str, object]]) -> list[str]:
+    conditions = {
+        str(condition["id"]): condition
+        for condition in suite.experiment["conditions"]
+    }
+    return sorted(
+        {
+            str(conditions[str(row["condition_id"])]["agent"])
+            for row in rows
+        }
+    )
+
+
 def _assert_saved_run_selection(
     saved: SavedRun,
+    *,
+    suite,
     rows: list[dict[str, object]],
 ) -> dict[str, object]:
-    """Fail before admission when the selected agents/tasks differ from the run."""
+    """Fail before admission when selected agents/tasks differ from the saved run."""
     manifest = read_campaign(saved.root / "results")
     selected = {str(row["definition_id"]) for row in rows}
     frozen = set(manifest["selected_definitions"])
     if frozen != selected:
         frozen_agents = sorted(str(value) for value in manifest.get("agents", {}))
-        selected_agents = sorted({str(row["agent_id"]) for row in rows})
+        selected_agents = _selected_agent_ids(suite, rows)
         raise RunStoreError(
             f"saved run {saved.run_id} selection does not match current benchmark "
             f"selection (frozen agents={frozen_agents}, "
             f"selected agents={selected_agents}); "
-            "set BENCHMARK_AGENT to the run's frozen agent set or start a new run"
+            "set BENCHMARK_AGENT to the run's frozen agent set or use "
+            "make benchmark-new"
         )
     return manifest
 
@@ -348,14 +364,24 @@ def _guard_automatic_start(
     suite,
     rows: list[dict[str, object]],
 ) -> None:
-    """Start automatically only when no unfinished matching run needs a decision."""
+    """Require an explicit choice only for an unfinished matching latest run."""
     saved_runs = list_saved_runs(root)
     if not saved_runs:
         return
 
     latest = saved_runs[-1]
-    _assert_saved_run_selection(latest, rows)
+    manifest = read_campaign(latest.root / "results")
     selected = {str(row["definition_id"]) for row in rows}
+    frozen = set(manifest["selected_definitions"])
+    if frozen != selected:
+        print(
+            f"BENCHMARK auto | latest run {latest.run_id} has a different "
+            "frozen selection; starting a new run",
+            file=sys.stderr,
+            flush=True,
+        )
+        return
+
     status = campaign_status(
         suite=suite,
         results_root=latest.root / "results",
@@ -662,7 +688,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 else:
                     saved = select_saved_run(args.root, args.run_id)
-                    _assert_saved_run_selection(saved, rows)
+                    _assert_saved_run_selection(saved, suite=suite, rows=rows)
                     campaign = admit_campaign(
                         suite=suite,
                         rows=rows,
