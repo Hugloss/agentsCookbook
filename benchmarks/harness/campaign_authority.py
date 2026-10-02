@@ -1,4 +1,4 @@
-"""Immutable campaign admission and one-launch-per-definition claims."""
+"""Immutable campaign admission with crash-safe, explicit launch-attempt lineage."""
 
 from __future__ import annotations
 
@@ -157,8 +157,36 @@ def read_campaign(results_root: Path) -> dict[str, Any]:
     return _read_manifest(results_root / ".campaign")
 
 
+def _read_launch_claim(
+    path: Path,
+    *,
+    campaign_id: str,
+    definition_id: str,
+) -> dict[str, Any]:
+    try:
+        raw = path.read_bytes()
+        claim = json.loads(raw)
+    except (OSError, ValueError) as exc:
+        raise CampaignAuthorityError(f"corrupt launch claim: {path}") from exc
+    if (
+        not isinstance(claim, dict)
+        or canonical_json(claim) != raw
+        or set(claim)
+        != {"campaign_id", "definition_id", "trial_id", "attempt"}
+        or claim.get("campaign_id") != campaign_id
+        or claim.get("definition_id") != definition_id
+        or not isinstance(claim.get("trial_id"), str)
+        or len(claim["trial_id"]) != 64
+        or any(char not in "0123456789abcdef" for char in claim["trial_id"])
+        or not isinstance(claim.get("attempt"), int)
+        or claim["attempt"] < 1
+    ):
+        raise CampaignAuthorityError(f"launch claim identity mismatch: {path}")
+    return claim
+
+
 def read_launch_claims(results_root: Path, campaign_id: str) -> dict[str, str]:
-    """Read every durable launch claim and bind definition to exact trial ID."""
+    """Read active launch claims and bind each definition to its exact trial ID."""
     directory = results_root / ".campaign" / "claims"
     if not directory.exists():
         return {}
@@ -168,26 +196,81 @@ def read_launch_claims(results_root: Path, campaign_id: str) -> dict[str, str]:
     for path in directory.iterdir():
         if path.suffix != ".json" or path.is_symlink() or not path.is_file():
             raise CampaignAuthorityError(f"unexpected launch claim entry: {path}")
-        try:
-            raw = path.read_bytes()
-            claim = json.loads(raw)
-        except (OSError, ValueError) as exc:
-            raise CampaignAuthorityError(f"corrupt launch claim: {path}") from exc
         definition = path.stem
-        if (
-            not isinstance(claim, dict)
-            or canonical_json(claim) != raw
-            or set(claim) != {"campaign_id", "definition_id", "trial_id"}
-            or claim.get("campaign_id") != campaign_id
-            or claim.get("definition_id") != definition
-            or not isinstance(claim.get("trial_id"), str)
-            or len(claim["trial_id"]) != 64
-            or any(char not in "0123456789abcdef" for char in claim["trial_id"])
-        ):
-            raise CampaignAuthorityError(f"launch claim identity mismatch: {path}")
+        claim = _read_launch_claim(
+            path,
+            campaign_id=campaign_id,
+            definition_id=definition,
+        )
         found[definition] = claim["trial_id"]
     return found
 
+
+def read_interrupted_attempts(
+    results_root: Path,
+    campaign_id: str,
+) -> dict[str, list[dict[str, Any]]]:
+    """Read immutable interruption evidence grouped by definition."""
+    root = results_root / ".campaign" / "attempts"
+    if not root.exists():
+        return {}
+    if root.is_symlink() or not root.is_dir():
+        raise CampaignAuthorityError("interruption attempt directory is invalid")
+    found: dict[str, list[dict[str, Any]]] = {}
+    for definition_dir in sorted(root.iterdir()):
+        if definition_dir.is_symlink() or not definition_dir.is_dir():
+            raise CampaignAuthorityError(
+                f"unexpected interruption attempt entry: {definition_dir}"
+            )
+        definition = definition_dir.name
+        attempts: list[dict[str, Any]] = []
+        for expected_attempt, path in enumerate(
+            sorted(definition_dir.iterdir()),
+            start=1,
+        ):
+            if (
+                path.name != f"{expected_attempt:06d}.json"
+                or path.is_symlink()
+                or not path.is_file()
+            ):
+                raise CampaignAuthorityError(
+                    f"interruption attempt sequence is invalid: {path}"
+                )
+            try:
+                raw = path.read_bytes()
+                record = json.loads(raw)
+            except (OSError, ValueError) as exc:
+                raise CampaignAuthorityError(
+                    f"corrupt interruption attempt: {path}"
+                ) from exc
+            if (
+                not isinstance(record, dict)
+                or canonical_json(record) != raw
+                or set(record)
+                != {
+                    "campaign_id",
+                    "definition_id",
+                    "trial_id",
+                    "attempt",
+                    "status",
+                }
+                or record.get("campaign_id") != campaign_id
+                or record.get("definition_id") != definition
+                or record.get("attempt") != expected_attempt
+                or record.get("status") != "INTERRUPTED"
+                or not isinstance(record.get("trial_id"), str)
+                or len(record["trial_id"]) != 64
+                or any(
+                    char not in "0123456789abcdef"
+                    for char in record["trial_id"]
+                )
+            ):
+                raise CampaignAuthorityError(
+                    f"interruption attempt identity mismatch: {path}"
+                )
+            attempts.append(record)
+        found[definition] = attempts
+    return found
 
 def _write_manifest(directory: Path, value: dict[str, Any]) -> None:
     raw = canonical_json(value)
@@ -322,7 +405,7 @@ def audit_campaign(
             task_inputs[task_id] = inputs
             admission.cleanup_subject()
     payload = {
-        "contract": "benchmark-campaign-authority.v2",
+        "contract": "benchmark-campaign-authority.v3",
         "selected_definitions": selected,
         "task_conditions": observed,
         "agents": agents,
@@ -451,33 +534,112 @@ def claim_launch(
     campaign: dict[str, Any],
     definition_id: str,
     trial_id: str,
-) -> None:
-    """Create a durable claim before invoking a model; never replace one."""
-    directory = results_root / ".campaign" / "claims"
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{definition_id}.json"
-    payload = canonical_json(
-        {
-            "campaign_id": campaign["campaign_id"],
-            "definition_id": definition_id,
-            "trial_id": trial_id,
-        }
-    )
-    try:
+) -> int:
+    """Create the next durable launch attempt before invoking a model."""
+    campaign_dir = results_root / ".campaign"
+    with _locked(campaign_dir):
+        if _read_manifest(campaign_dir) != campaign:
+            raise CampaignAuthorityError("campaign authority receipt changed")
+        directory = campaign_dir / "claims"
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"{definition_id}.json"
+        if path.exists():
+            raise CampaignAuthorityError(
+                f"trial launch already claimed: {definition_id}"
+            )
+        attempts = read_interrupted_attempts(
+            results_root,
+            campaign["campaign_id"],
+        ).get(definition_id, [])
+        attempt = len(attempts) + 1
+        payload = canonical_json(
+            {
+                "campaign_id": campaign["campaign_id"],
+                "definition_id": definition_id,
+                "trial_id": trial_id,
+                "attempt": attempt,
+            }
+        )
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError as exc:
-        raise CampaignAuthorityError(
-            f"trial launch already claimed: {definition_id}"
-        ) from exc
-    with os.fdopen(fd, "wb") as stream:
-        stream.write(payload)
-        stream.flush()
-        os.fsync(stream.fileno())
-    directory_fd = os.open(directory, os.O_RDONLY)
-    try:
-        os.fsync(directory_fd)
-    finally:
-        os.close(directory_fd)
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        directory_fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        return attempt
+
+
+def record_interrupted_attempt(
+    *,
+    results_root: Path,
+    campaign: dict[str, Any],
+    definition_id: str,
+    trial_id: str,
+) -> int:
+    """Retire one crashed active launch into immutable interruption evidence."""
+    campaign_dir = results_root / ".campaign"
+    with _locked(campaign_dir):
+        if _read_manifest(campaign_dir) != campaign:
+            raise CampaignAuthorityError("campaign authority receipt changed")
+        claim_path = campaign_dir / "claims" / f"{definition_id}.json"
+        if not claim_path.is_file():
+            raise CampaignAuthorityError(
+                f"interrupted trial has no active launch claim: {definition_id}"
+            )
+        claim = _read_launch_claim(
+            claim_path,
+            campaign_id=campaign["campaign_id"],
+            definition_id=definition_id,
+        )
+        if claim["trial_id"] != trial_id:
+            raise CampaignAuthorityError("trial launch claim identity mismatch")
+        valid, _reason = verify_bundle(results_root / trial_id)
+        if valid:
+            raise CampaignAuthorityError(
+                "complete trial receipt cannot be retired as interrupted"
+            )
+
+        attempt = int(claim["attempt"])
+        directory = campaign_dir / "attempts" / definition_id
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"{attempt:06d}.json"
+        payload = canonical_json(
+            {
+                "campaign_id": campaign["campaign_id"],
+                "definition_id": definition_id,
+                "trial_id": trial_id,
+                "attempt": attempt,
+                "status": "INTERRUPTED",
+            }
+        )
+        if path.exists():
+            if path.read_bytes() != payload:
+                raise CampaignAuthorityError(
+                    f"interruption attempt conflicts with prior evidence: {path}"
+                )
+        else:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+            directory_fd = os.open(directory, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+
+        claim_path.unlink()
+        claims_fd = os.open(claim_path.parent, os.O_RDONLY)
+        try:
+            os.fsync(claims_fd)
+        finally:
+            os.close(claims_fd)
+        return attempt
 
 
 def launch_state(
@@ -490,15 +652,12 @@ def launch_state(
     path = results_root / ".campaign" / "claims" / f"{definition_id}.json"
     if not path.exists():
         return "UNCLAIMED"
-    try:
-        claim = json.loads(path.read_bytes())
-    except (OSError, ValueError) as exc:
-        raise CampaignAuthorityError("trial launch claim is corrupt") from exc
-    if claim != {
-        "campaign_id": campaign["campaign_id"],
-        "definition_id": definition_id,
-        "trial_id": trial_id,
-    }:
+    claim = _read_launch_claim(
+        path,
+        campaign_id=campaign["campaign_id"],
+        definition_id=definition_id,
+    )
+    if claim["trial_id"] != trial_id:
         raise CampaignAuthorityError("trial launch claim identity mismatch")
     valid, _reason = verify_bundle(results_root / trial_id)
     return "COMPLETE" if valid else "INTERRUPTED"
