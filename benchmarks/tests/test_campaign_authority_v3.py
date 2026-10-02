@@ -74,10 +74,12 @@ class CampaignAuthorityTests(unittest.TestCase):
         suite = _suite()
         rows = suite.trial_definitions()
         seen = []
+        transported_harness = []
 
         @contextmanager
         def fake_admission(**kwargs):
             task_id = kwargs["task_id"]
+            transported_harness.append(kwargs.get("precomputed_harness_authority"))
             condition_id = kwargs["condition_id"]
             seen.append((task_id, condition_id))
             condition = next(
@@ -117,6 +119,10 @@ class CampaignAuthorityTests(unittest.TestCase):
                     "benchmarks.harness.campaign_authority.condition_authority",
                     side_effect=_fake_condition_authority,
                 ),
+                mock.patch(
+                    "benchmarks.harness.campaign_authority.harness_identity",
+                    return_value={"commit": "stable-harness"},
+                ) as harness_identity,
             ):
                 progress = []
                 audited = audit_campaign(
@@ -124,6 +130,11 @@ class CampaignAuthorityTests(unittest.TestCase):
                     on_progress=progress.append,
                 )
                 self.assertEqual(len(seen), 4)
+                self.assertEqual(harness_identity.call_count, 2)
+                self.assertEqual(
+                    transported_harness,
+                    [{"commit": "stable-harness"}] * 4,
+                )
                 condition_progress = [
                     row for row in progress if row["stage"] == "condition-authority"
                 ]
