@@ -1,6 +1,6 @@
 {
   "id": "repository-intelligence-heldout-outcomes-v1",
-  "version": 1,
+  "version": 2,
   "suite": "repository-intelligence",
   "oracle_reviews": "qualification/oracle-reviews.json",
   "tasks": [
@@ -87,7 +87,7 @@
   ],
   "scoring": {
     "id": "repository-intelligence-heldout-outcomes-score",
-    "version": 2,
+    "version": 3,
     "metrics": [
       "task_success",
       "format_compliance",
