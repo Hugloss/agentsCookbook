@@ -11,8 +11,9 @@ from typing import Any
 from .bundle import verify_bundle
 from .campaign_authority import (
     CampaignAuthorityError,
-    read_launch_claims,
     read_campaign,
+    read_interrupted_attempts,
+    read_launch_claims,
 )
 from .identity import definition_id, execution_id
 from .receipt import is_complete_receipt
@@ -134,6 +135,7 @@ def campaign_status(
     campaign_error = None
     claims: set[str] = set()
     launch_claims: dict[str, str] = {}
+    interrupted_attempts: dict[str, list[dict[str, Any]]] = {}
     if new_contract:
         try:
             manifest = read_campaign(results_root)
@@ -142,6 +144,10 @@ def campaign_status(
                     "status selection exceeds campaign selection"
                 )
             launch_claims = read_launch_claims(results_root, manifest["campaign_id"])
+            interrupted_attempts = read_interrupted_attempts(
+                results_root,
+                manifest["campaign_id"],
+            )
             claims = set(launch_claims)
             if not claims.issubset(set(manifest["selected_definitions"])):
                 raise CampaignAuthorityError("launch claim exceeds campaign selection")
@@ -246,6 +252,9 @@ def campaign_status(
                 "outcome": outcome,
                 "trial_ids": trial_ids,
                 "diagnostic": diagnostic,
+                "interrupted_attempts": len(
+                    interrupted_attempts.get(definition, [])
+                ),
             }
         )
 
@@ -290,6 +299,9 @@ def campaign_status(
             and comparability_error is None
         ),
         "unresolved_outcome_trials": unresolved_outcomes,
+        "recovered_interruption_attempts": sum(
+            len(values) for values in interrupted_attempts.values()
+        ),
         "comparability_error": comparability_error,
         "campaign_authority_error": campaign_error,
         "rows": sorted(
