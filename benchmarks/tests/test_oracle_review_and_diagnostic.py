@@ -20,6 +20,11 @@ from benchmarks.harness.oracle_reviews import (
     oracle_review_guide,
     validate_oracle_reviews,
 )
+from benchmarks.harness.oracle_review_runner import (
+    DECISION_PREFIX,
+    REVIEWER_ID,
+    run_pending_oracle_reviews,
+)
 from benchmarks.harness.suite import SuiteError, load_suite
 
 
@@ -157,6 +162,129 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
             ):
                 validate_oracle_reviews(suite, require_complete=False)
 
+    def test_oracle_review_runner_reviews_only_pending_escalation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "suite"
+            shutil.copytree(SOURCE, copy)
+            suite = load_suite(copy)
+            task = suite.tasks["locate-repository-content-identity"]
+            task_digest = validate_oracle_reviews(
+                suite, require_complete=False
+            ) and json.loads(
+                (copy / "qualification/oracle-reviews.json").read_text(
+                    encoding="utf-8"
+                )
+            )["tasks"]["locate-repository-content-identity"]["task_digest"]
+
+            def materialize(**kwargs):
+                kwargs["destination"].mkdir(parents=True)
+
+            def review(_workspace, prompt):
+                self.assertIn("locate-repository-content-identity", prompt)
+                self.assertIn("hashmarks/test_shards.py", prompt)
+                self.assertNotIn(
+                    "hashes canonical source paths and bytes",
+                    prompt,
+                )
+                payload = {
+                    "task_id": "locate-repository-content-identity",
+                    "task_digest": task_digest,
+                    "decision": "unique",
+                    "reason": "Independent inspection found one semantic owner.",
+                }
+                return {
+                    "stdout": "audit\n" + DECISION_PREFIX + json.dumps(payload),
+                    "command_identity": "sha256:review-command",
+                }
+
+            with (
+                mock.patch(
+                    "benchmarks.harness.oracle_review_runner.materialize_repository",
+                    side_effect=materialize,
+                ),
+                mock.patch(
+                    "benchmarks.harness.oracle_review_runner._run_review",
+                    side_effect=review,
+                ),
+            ):
+                result = run_pending_oracle_reviews(
+                    suite,
+                    cache_root=Path(tmp) / "cache",
+                )
+
+            self.assertTrue(result["complete"])
+            self.assertEqual(result["approved_tasks"], 12)
+            self.assertEqual(
+                [row["task_id"] for row in result["reviewed_tasks"]],
+                ["locate-repository-content-identity"],
+            )
+            evidence = json.loads(
+                (copy / "qualification/oracle-reviews.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            reviews = evidence["tasks"]["locate-repository-content-identity"][
+                "reviews"
+            ]
+            self.assertEqual(len(reviews), 2)
+            self.assertEqual(reviews[-1]["reviewer"], REVIEWER_ID)
+            self.assertEqual(reviews[-1]["decision"], "unique")
+
+    def test_oracle_review_runner_preserves_ambiguous_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "suite"
+            shutil.copytree(SOURCE, copy)
+            suite = load_suite(copy)
+            row = json.loads(
+                (copy / "qualification/oracle-reviews.json").read_text(
+                    encoding="utf-8"
+                )
+            )["tasks"]["locate-repository-content-identity"]
+
+            def materialize(**kwargs):
+                kwargs["destination"].mkdir(parents=True)
+
+            payload = {
+                "task_id": "locate-repository-content-identity",
+                "task_digest": row["task_digest"],
+                "decision": "ambiguous",
+                "reason": "Independent inspection found two defensible owners.",
+            }
+            with (
+                mock.patch(
+                    "benchmarks.harness.oracle_review_runner.materialize_repository",
+                    side_effect=materialize,
+                ),
+                mock.patch(
+                    "benchmarks.harness.oracle_review_runner._run_review",
+                    return_value={
+                        "stdout": DECISION_PREFIX + json.dumps(payload),
+                        "command_identity": "sha256:review-command",
+                    },
+                ),
+            ):
+                result = run_pending_oracle_reviews(
+                    suite,
+                    cache_root=Path(tmp) / "cache",
+                )
+
+            self.assertFalse(result["complete"])
+            self.assertEqual(
+                result["pending_tasks"],
+                ["locate-repository-content-identity"],
+            )
+            evidence = json.loads(
+                (copy / "qualification/oracle-reviews.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                evidence["tasks"]["locate-repository-content-identity"][
+                    "reviews"
+                ][-1]["decision"],
+                "ambiguous",
+            )
+
     def test_oracle_review_cli_prints_next_action_and_succeeds(self) -> None:
         output = io.StringIO()
         with redirect_stdout(output):
@@ -167,6 +295,36 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
         rendered = output.getvalue()
         self.assertIn("Oracle review BLOCKED: 11/12 tasks approved", rendered)
         self.assertIn("make benchmark-oracle-review-check", rendered)
+
+    def test_oracle_review_cli_execute_dispatches_runner(self) -> None:
+        output = io.StringIO()
+        with (
+            mock.patch(
+                "benchmarks.__main__.run_pending_oracle_reviews",
+                return_value={
+                    "reviewed_tasks": [
+                        {"task_id": "locate-repository-content-identity"}
+                    ],
+                    "approved_tasks": 12,
+                    "pending_tasks": [],
+                    "complete": True,
+                },
+            ) as run,
+            redirect_stdout(output),
+        ):
+            self.assertEqual(
+                main(
+                    [
+                        "oracle-review",
+                        "--suite",
+                        str(SOURCE),
+                        "--execute",
+                    ]
+                ),
+                0,
+            )
+        self.assertTrue(run.called)
+        self.assertIn('"complete": true', output.getvalue())
 
     def test_oracle_review_guide_hands_off_without_self_approval(self) -> None:
         suite = load_suite(SOURCE)
