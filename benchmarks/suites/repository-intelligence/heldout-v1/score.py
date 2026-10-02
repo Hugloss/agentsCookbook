@@ -89,11 +89,13 @@ def main() -> int:
             "campaign_qualification": report["campaign_qualification"],
             "conditions": report["conditions"],
             "paired_assistance": report["paired_assistance"],
+            "paired_assistance_summary": report["paired_assistance_summary"],
+            "stability": report["stability"],
             "agent_profiles": report["agent_profiles"],
             "cross_agent_observations": report["cross_agent_observations"],
         }
     payload = {
-        "schema": "agents-cookbook-heldout-observer-outcomes.v4",
+        "schema": "agents-cookbook-heldout-observer-outcomes.v5",
         "projection_mode": (
             "offline-regrade"
             if args.regrade_source_results is not None
