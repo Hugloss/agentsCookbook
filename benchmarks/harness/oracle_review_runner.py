@@ -26,6 +26,15 @@ DECISION_PREFIX = "BENCHMARK_ORACLE_DECISION="
 def _review_prompt(task_id: str, task: dict[str, Any]) -> str:
     expected = task["oracle"]["configuration"].get("expected")
     task_digest = digest(task)
+    decision_example = json.dumps(
+        {
+            "task_id": task_id,
+            "task_digest": task_digest,
+            "decision": "unique|ambiguous|invalid",
+            "reason": "brief evidence",
+        },
+        separators=(",", ":"),
+    )
     return f"""You are performing an independent benchmark-oracle source audit.
 
 Inspect only this pinned repository checkout. Do not use or search for any
@@ -48,7 +57,7 @@ Decision rules:
 - invalid: the expected owner is not defensible or the task cannot be audited.
 
 Explain the source evidence briefly. End your response with exactly one line:
-{DECISION_PREFIX}{{"task_id":"{task_id}","task_digest":"{task_digest}","decision":"unique|ambiguous|invalid","reason":"brief evidence"}}
+{DECISION_PREFIX}{decision_example}
 """
 
 
