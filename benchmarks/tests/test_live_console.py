@@ -184,13 +184,15 @@ class LiveTaskMatrixTests(unittest.TestCase):
         )
         self.assertIn("Subject tool use", rendered)
         self.assertIn(
-            "Hashmarks | 2       | 1           | 0       | 3",
+            "Hashmarks | 2       | 1           | 0       | 3              | find,task_evidence",
             rendered,
         )
         self.assertIn(
-            "Enola     | 0       | 0           | 3       | 0",
+            "Enola     | 0       | 0           | 3       | 0              | -",
             rendered,
         )
+        self.assertIn("complete", rendered)
+        self.assertIn("unknown", rendered)
 
     def test_progress_reports_step_elapsed_remaining_and_eta(self) -> None:
         suite, rows = self._prefix_opencode_rows()
