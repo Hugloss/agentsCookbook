@@ -25,7 +25,7 @@ benchmark-status:
 	@uv run --no-project python -m benchmarks status --env-file .env
 
 benchmark:
-	@printf 'Choose make benchmark-new, then make benchmark-resume; or run --new explicitly.\n' >&2; exit 2
+	@uv run --no-project python -m benchmarks run --auto --env-file .env
 
 benchmark-new:
 	@uv run --no-project python -m benchmarks prepare --new --env-file .env
