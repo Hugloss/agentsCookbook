@@ -143,9 +143,9 @@
     },
     "locate-repository-content-identity": {
       "alternatives": [
-        "IdentityEngine owns a general repository identity; qualified_identity calls this test-shard function and does not compute it."
+        "IdentityEngine.workspace_root owns the general Merkle repository identity API, but the test-selection work-selection envelope and repository-binding validator do not call it."
       ],
-      "evidence": "test_shards.repository_content_identity hashes canonical source paths and bytes and supplies test-selection repository.content_identity.",
+      "evidence": "work_selection_envelope and validate_work_selection_repository_binding in hashmarks/test_shards.py call repository_content_identity to bind shard-selection evidence to extraction-stable repository bytes.",
       "owner": {
         "path": "hashmarks/test_shards.py",
         "symbol": "repository_content_identity"
@@ -155,18 +155,11 @@
         "tree": "667b7066be9ef6cab6e1ce3a28a603481f07387e",
         "url": "https://github.com/Hugloss/Hashmarks.git"
       },
-      "reviews": [
-        {
-          "decision": "unique",
-          "reason": "test_shards.repository_content_identity hashes canonical source paths and bytes and supplies test-selection repository.content_identity.",
-          "reviewer": "codex-independent-audit-2026-10-02",
-          "task_digest": "d2441998d9ca6e10464f549893c170a445ee45880a3597e9243316cba3dc52c4"
-        }
-      ],
-      "task_digest": "d2441998d9ca6e10464f549893c170a445ee45880a3597e9243316cba3dc52c4",
+      "reviews": [],
+      "task_digest": "6e581dd9cca8bcbabf61b872f75e1ca6e3cdecde8298669226f40964b63cf872",
       "review_requirement": {
-        "minimum_independent_reviews": 2,
-        "escalation_reason": "Prior heldout-v1 runs showed repeated cross-subject disagreement around this expected repository owner; require a second independent source audit before campaign admission."
+        "minimum_independent_reviews": 1,
+        "escalation_reason": null
       }
     },
     "locate-resource-invalidation": {

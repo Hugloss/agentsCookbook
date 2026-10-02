@@ -132,9 +132,10 @@ Decision rules:
 - inability to inspect source is NOT an invalid oracle decision; emit no decision.
 
 For repository-location tasks, observed_owner must exactly name the source
-location you actually inspected. Explain the source evidence briefly. End your
-response with exactly one line. Do not wrap that line in Markdown:
-{DECISION_PREFIX}{rendered_decision}
+location you actually inspected. Put the source evidence briefly in reason.
+Use tool calls for analysis. Your terminal response must be exactly one JSON
+object and nothing else: no prose, no Markdown, no code fence, no prefix.
+{rendered_decision}
 """
 
 def _bounded_answer_preview(value: str, *, limit: int = 1200) -> str:
