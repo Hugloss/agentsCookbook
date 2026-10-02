@@ -34,6 +34,8 @@ _RUNTIME_SCRIPT = (
 
 _EXECUTABLE_OBSERVATION_CACHE: dict[tuple[str, str], Observation] = {}
 _EXECUTABLE_OBSERVATION_CACHE_LOCK = Lock()
+_BASE_CONFIG_CACHE: dict[tuple[str, str, str, str, str, str], dict[str, Any]] = {}
+_BASE_CONFIG_CACHE_LOCK = Lock()
 
 
 def _sha256_file(path: Path) -> str:
@@ -96,6 +98,48 @@ def _observe_opencode_executable(
         with _EXECUTABLE_OBSERVATION_CACHE_LOCK:
             _EXECUTABLE_OBSERVATION_CACHE[key] = observed
     return observed
+
+
+def _base_config_cache_key(
+    context: TrialContext,
+    environment: dict[str, str],
+    executable: Observation,
+) -> tuple[str, str, str, str, str, str] | None:
+    """Scope reusable base config to one exact admitted task/native authority."""
+    scope = context.admission_scope
+    executable_sha256 = executable.payload.get("executable_sha256")
+    if not isinstance(scope, str) or not scope:
+        return None
+    if not isinstance(executable_sha256, str) or not executable_sha256:
+        return None
+    return (
+        scope,
+        environment["OPENCODE_BIN"],
+        executable_sha256,
+        context.environment["BENCHMARK_OPENCODE_AGENT"],
+        environment["HOME"],
+        environment["XDG_CONFIG_HOME"],
+    )
+
+
+def _cached_base_config(
+    key: tuple[str, str, str, str, str, str] | None,
+) -> dict[str, Any] | None:
+    if key is None:
+        return None
+    with _BASE_CONFIG_CACHE_LOCK:
+        cached = _BASE_CONFIG_CACHE.get(key)
+    return dict(cached) if cached is not None else None
+
+
+def _store_base_config(
+    key: tuple[str, str, str, str, str, str] | None,
+    value: Any,
+) -> None:
+    if key is None or not isinstance(value, dict):
+        return
+    with _BASE_CONFIG_CACHE_LOCK:
+        _BASE_CONFIG_CACHE[key] = dict(value)
 
 
 def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
@@ -506,6 +550,8 @@ class OpenCodeNativeAgent:
             context,
             environment,
         )
+        base_cache_key = _base_config_cache_key(context, environment, executable)
+        cached_base = _cached_base_config(base_cache_key)
         args = (
             "inspect-config",
             "--repo",
@@ -517,13 +563,31 @@ class OpenCodeNativeAgent:
         )
         if exposure_path is not None:
             args += ("--benchmark-exposure-file", str(exposure_path))
+        if cached_base is not None:
+            base_path = context.control_root / "opencode-base-config.json"
+            base_path.parent.mkdir(parents=True, exist_ok=True)
+            base_path.write_bytes(canonical_json(cached_base))
+            args += ("--base-config-file", str(base_path))
+        elif base_cache_key is not None:
+            args += ("--emit-base-config", "true")
         envelope, result = _runtime_call(
             context,
             args=args,
             environment=environment,
             timeout_seconds=min(30.0, float(self.timeout_seconds)),
-            max_stdout_bytes=1_000_000,
+            max_stdout_bytes=2_000_000,
         )
+        base_snapshot = (
+            envelope.pop("base_config_snapshot", None)
+            if isinstance(envelope, dict)
+            else None
+        )
+        if (
+            cached_base is None
+            and isinstance(envelope, dict)
+            and envelope.get("status") == "completed"
+        ):
+            _store_base_config(base_cache_key, base_snapshot)
         if (
             envelope is None
             or envelope.get("status") != "completed"
@@ -698,6 +762,7 @@ class OpenCodeNativeAgent:
                 "provider": provider,
                 "native_config_sha256": evidence["native_config_sha256"],
                 "native_mcp_servers": evidence["native_mcp_servers"],
+                "base_config_source": resolved.get("base_config_source", "fresh"),
                 "workspace_binding": workspace_binding,
                 "native_subject_identity": native_subject_identity,
                 "mcp_exposure": (
@@ -712,7 +777,12 @@ class OpenCodeNativeAgent:
                 "auth_mode": "native-opencode",
             },
             executable.raw,
-            executable.measurements,
+            {
+                **executable.measurements,
+                "base_config_reused": (
+                    resolved.get("base_config_source") == "task-cache"
+                ),
+            },
         )
 
     def _load_prepared(
