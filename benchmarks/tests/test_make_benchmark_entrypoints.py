@@ -36,7 +36,9 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 )
         self.assertIn("benchmark-oracle-review:", makefile)
         self.assertIn(
-            "python -m benchmarks oracle-review \\\n\t\t--suite benchmarks/suites/repository-intelligence/heldout-v1",
+            "python -m benchmarks oracle-review \\\n"
+            "\t\t--suite benchmarks/suites/repository-intelligence/heldout-v1 \\\n"
+            "\t\t--execute",
             makefile,
         )
         self.assertIn("benchmark-qualify-localization:", makefile)
