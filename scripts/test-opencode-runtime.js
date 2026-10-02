@@ -108,6 +108,13 @@ function value(flag) {
 }
 
 if (command === 'debug' && filtered[1] === 'config') {
+  if (
+    process.env.FAKE_FAIL_BASE_CONFIG === '1' &&
+    !process.env.OPENCODE_CONFIG_CONTENT
+  ) {
+    process.stderr.write('unexpected base config resolution\n');
+    process.exit(17);
+  }
   process.stdout.write(JSON.stringify(config()));
   process.exit(0);
 }
@@ -312,6 +319,56 @@ async function testSharedLifecycle() {
     assert.strictEqual(resolved.status, 'completed', JSON.stringify(resolved));
     assert.strictEqual(resolved.inspection.model, 'liteLLM/gemma4');
     assert.ok(!JSON.stringify(resolved).includes('must-not-leak'));
+
+    const cachedBase = {
+      model: 'liteLLM/gemma4',
+      provider: { liteLLM: { options: { apiKey: 'cached-secret' } } },
+      mcp: {
+        hashmarks: {
+          type: 'local',
+          command: ['ambient-hashmarks'],
+          cwd: '.',
+          enabled: true,
+        },
+        enola: { type: 'local', command: ['enola'], enabled: true },
+      },
+    };
+    const cachedExposure = subjectExposure(root, 'hashmarks');
+    const cachedPrepared = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      agentName: 'build',
+      env: { ...env, FAKE_FAIL_BASE_CONFIG: '1' },
+      selectedSubject: 'hashmarks',
+      subjectExposure: cachedExposure,
+      baseConfig: cachedBase,
+    });
+    assert.strictEqual(
+      cachedPrepared.status,
+      'completed',
+      cachedPrepared.reason,
+    );
+    assert.strictEqual(cachedPrepared.base_config_source, 'task-cache');
+    assert.strictEqual(cachedPrepared.inspection.model, 'liteLLM/gemma4');
+
+    const cachedDrift = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      agentName: 'build',
+      env: {
+        ...env,
+        FAKE_FAIL_BASE_CONFIG: '1',
+        FAKE_EFFECTIVE_MCP_DRIFT: '1',
+      },
+      selectedSubject: 'hashmarks',
+      subjectExposure: cachedExposure,
+      baseConfig: cachedBase,
+    });
+    assert.strictEqual(cachedDrift.status, 'failed');
+    assert.match(
+      cachedDrift.reason,
+      /effective benchmark MCP definition changed/,
+    );
 
     for (const shape of ['flat', 'nested']) {
       const exposure = subjectExposure(root, 'hashmarks');
