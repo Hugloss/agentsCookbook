@@ -7,11 +7,12 @@ import hashlib
 import json
 import os
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
 
-from .admission import TrialAdmission, admit_trial
+from .admission import TrialAdmission, admit_trial, harness_identity
 from .bundle import verify_bundle
 from .identity import canonical_json, digest
 from .oracle_reviews import (
@@ -426,10 +427,24 @@ def audit_campaign(
     agents: dict[str, dict[str, Any]] = {}
     subjects: dict[str, dict[str, Any]] = {}
     task_inputs: dict[str, str] = {}
+
+    harness_started = time.monotonic()
+    campaign_harness_authority = harness_identity(harness_root)
+    harness_observe_ms = int(round((time.monotonic() - harness_started) * 1000))
+    if on_progress is not None:
+        on_progress(
+            {
+                "stage": "campaign-harness-authority",
+                "status": "verified",
+                "duration_ms": harness_observe_ms,
+            }
+        )
+
     ordered_representatives = sorted(representatives.items())
     for index, ((task_id, condition), row) in enumerate(
         ordered_representatives, start=1
     ):
+        condition_started = time.monotonic()
         if on_progress is not None:
             on_progress(
                 {
@@ -451,6 +466,7 @@ def audit_campaign(
             local_source=local_source,
             codex_auth=codex_auth,
             source=source,
+            harness_authority=campaign_harness_authority,
         ) as admission:
             status, reason = admission.initial_outcome()
             if status is not None:
@@ -510,6 +526,43 @@ def audit_campaign(
                 )
             task_inputs[task_id] = inputs
             admission.cleanup_subject()
+            if on_progress is not None:
+                timings = dict(admission.admission_timings_ms)
+                full_total = int(
+                    round((time.monotonic() - condition_started) * 1000)
+                )
+                timings["condition_authority"] = max(
+                    0,
+                    full_total - int(timings.get("total", 0)),
+                )
+                timings["total"] = full_total
+                on_progress(
+                    {
+                        "stage": "condition-authority-complete",
+                        "index": index,
+                        "total": len(ordered_representatives),
+                        "task_id": task_id,
+                        "condition_id": condition,
+                        "timings_ms": timings,
+                    }
+                )
+
+    harness_recheck_started = time.monotonic()
+    if harness_identity(harness_root) != campaign_harness_authority:
+        raise CampaignAuthorityError(
+            "harness authority changed during campaign admission"
+        )
+    if on_progress is not None:
+        on_progress(
+            {
+                "stage": "campaign-harness-authority",
+                "status": "revalidated",
+                "duration_ms": int(
+                    round((time.monotonic() - harness_recheck_started) * 1000)
+                ),
+            }
+        )
+
     payload = {
         "contract": "benchmark-campaign-authority.v3",
         "selected_definitions": selected,
