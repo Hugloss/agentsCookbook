@@ -14,7 +14,9 @@ from typing import Any, Iterator, Mapping
 from .admission import TrialAdmission, admit_trial
 from .bundle import verify_bundle
 from .identity import canonical_json, digest
-from .oracle_reviews import validate_oracle_reviews
+from .oracle_reviews import (
+    oracle_review_path, oracle_reviews_declared, validate_oracle_reviews,
+)
 from .suite import SuiteDefinition
 
 
@@ -179,6 +181,7 @@ def _write_manifest(directory: Path, value: dict[str, Any]) -> None:
 
 def audit_campaign(
     *, suite: SuiteDefinition, rows: list[dict[str, Any]],
+    results_root: Path | None = None,
     harness_root: Path, cache_root: Path, work_root: Path,
     local_source: Path | None = None, codex_auth: Path | None = None,
     source: Mapping[str, str] | None = None,
@@ -189,6 +192,13 @@ def audit_campaign(
     """
     if not rows:
         raise CampaignAuthorityError("campaign selection is empty")
+    if results_root is not None:
+        directory = results_root / ".campaign"
+        if not (directory / "authority.json").exists() and results_root.exists() and any(
+            path.is_dir() and not path.name.startswith(".")
+            for path in results_root.iterdir()
+        ):
+            raise CampaignAuthorityError("existing results have no campaign authority")
     selected = sorted(str(row["definition_id"]) for row in rows)
     representatives: dict[tuple[str, str], dict[str, Any]] = {}
     for row in rows:
@@ -273,11 +283,17 @@ def audit_campaign(
             "agents": suite.agents, "subjects": suite.subjects,
         }),
         "oracle_review_sha256": (
-            hashlib.sha256((suite.root / suite.experiment["oracle_reviews"]).read_bytes()).hexdigest()
-            if "oracle_reviews" in suite.experiment else None
+            hashlib.sha256(review_path.read_bytes()).hexdigest()
+            if (review_path := oracle_review_path(suite)).is_file()
+            else None
         ),
     }
     payload["campaign_id"] = digest(payload)
+    if results_root is not None and (results_root / ".campaign" / "authority.json").exists():
+        if _read_manifest(results_root / ".campaign") != payload:
+            raise CampaignAuthorityError(
+                "campaign selection or execution authority changed; use a new root"
+            )
     return payload
 
 
@@ -288,7 +304,7 @@ def admit_campaign(
     source: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Check every selected condition without inference, then freeze its authority."""
-    if "oracle_reviews" in suite.experiment or (suite.root / "qualification" / "oracle-reviews.json").is_file():
+    if oracle_reviews_declared(suite):
         validate_oracle_reviews(suite, require_complete=True)
     directory = results_root / ".campaign"
     with _locked(directory):
@@ -299,7 +315,8 @@ def admit_campaign(
         ):
             raise CampaignAuthorityError("existing results have no campaign authority")
         payload = audit_campaign(
-            suite=suite, rows=rows, harness_root=harness_root,
+            suite=suite, rows=rows, results_root=results_root,
+            harness_root=harness_root,
             cache_root=cache_root, work_root=work_root,
             local_source=local_source, codex_auth=codex_auth, source=source,
         )
@@ -319,14 +336,16 @@ def verify_trial_authority(
     observed = _read_manifest(results_root / ".campaign")
     if observed != campaign:
         raise CampaignAuthorityError("campaign authority receipt changed")
-    if "oracle_reviews" in admission.suite.experiment:
-        review_path = admission.suite.root / admission.suite.experiment["oracle_reviews"]
-        try:
-            review_digest = hashlib.sha256(review_path.read_bytes()).hexdigest()
-        except OSError as exc:
-            raise CampaignAuthorityError("oracle review evidence disappeared") from exc
-        if review_digest != observed.get("oracle_review_sha256"):
-            raise CampaignAuthorityError("oracle review authority changed before inference")
+    review_path = oracle_review_path(admission.suite)
+    try:
+        review_digest = (
+            hashlib.sha256(review_path.read_bytes()).hexdigest()
+            if review_path.is_file() else None
+        )
+    except OSError as exc:
+        raise CampaignAuthorityError("oracle review evidence disappeared") from exc
+    if review_digest != observed.get("oracle_review_sha256"):
+        raise CampaignAuthorityError("oracle review authority changed before inference")
     if admission.definition_id not in observed["selected_definitions"]:
         raise CampaignAuthorityError("trial is outside frozen campaign selection")
     expected = observed["task_conditions"].get(str(admission.task["id"]), {}).get(

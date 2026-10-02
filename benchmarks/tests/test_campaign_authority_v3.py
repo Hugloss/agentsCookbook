@@ -181,6 +181,22 @@ class CampaignAuthorityTests(unittest.TestCase):
             self.assertFalse((root / "results/.campaign/authority.json").exists())
             self.assertFalse((root / "results/.campaign/claims").exists())
 
+    def test_model_free_audit_rejects_stale_results_before_admission(self) -> None:
+        suite = _suite()
+        rows = suite.trial_definitions()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "results" / "old-receipt").mkdir(parents=True)
+            with mock.patch(
+                "benchmarks.harness.campaign_authority.admit_trial",
+                side_effect=AssertionError("stale results must fail first"),
+            ):
+                with self.assertRaisesRegex(CampaignAuthorityError, "no campaign authority"):
+                    audit_campaign(
+                        suite=suite, rows=rows, results_root=root / "results",
+                        harness_root=root, cache_root=root / "cache", work_root=root / "work",
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()

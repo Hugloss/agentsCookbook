@@ -35,7 +35,7 @@
     },
     "oracle_reviews": {
       "type": "string",
-      "const": "qualification/oracle-reviews.json"
+      "minLength": 1
     },
     "conditions": {
       "type": "array",

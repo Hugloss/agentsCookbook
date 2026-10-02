@@ -21,7 +21,10 @@ from benchmarks.harness.campaign_authority import (
     CampaignAuthorityError, admit_campaign, audit_campaign,
 )
 from benchmarks.harness.preflight import preflight_trial
-from benchmarks.harness.oracle_reviews import OracleReviewError, validate_oracle_reviews
+from benchmarks.harness.oracle_reviews import (
+    OracleReviewError, oracle_reviews_declared,
+    validate_oracle_reviews,
+)
 from benchmarks.harness.readiness import check_runtime_readiness
 from benchmarks.harness.runtime_authority import required_runtime_authority
 from benchmarks.harness.report import ReportError, build_report
@@ -455,10 +458,11 @@ def main(argv: list[str] | None = None) -> int:
         try:
             review = (
                 validate_oracle_reviews(suite, require_complete=False)
-                if "oracle_reviews" in suite.experiment else None
+                if oracle_reviews_declared(suite) else None
             )
             authority = audit_campaign(
-                suite=suite, rows=rows, harness_root=args.harness_root,
+                suite=suite, rows=rows, results_root=paths.results,
+                harness_root=args.harness_root,
                 cache_root=paths.cache, work_root=paths.work,
                 local_source=args.source, codex_auth=args.codex_auth,
                 source=runtime_source,

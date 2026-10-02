@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .identity import digest
@@ -15,12 +16,32 @@ class OracleReviewError(ValueError):
     pass
 
 
+def oracle_review_path(suite: SuiteDefinition) -> Path:
+    """Return the configured review path, including the legacy fallback."""
+    configured = suite.experiment.get("oracle_reviews")
+    candidate = (
+        suite.root / str(configured)
+        if configured
+        else suite.root / "qualification" / "oracle-reviews.json"
+    ).resolve()
+    try:
+        candidate.relative_to(suite.root.resolve())
+    except ValueError as exc:
+        raise OracleReviewError("oracle review path escapes suite root") from exc
+    return candidate
+
+
+def oracle_reviews_declared(suite: SuiteDefinition) -> bool:
+    path = oracle_review_path(suite)
+    return "oracle_reviews" in suite.experiment or path.is_file()
+
+
 def validate_oracle_reviews(
     suite: SuiteDefinition, *, require_complete: bool,
 ) -> dict[str, Any]:
-    path = suite.root / "qualification" / "oracle-reviews.json"
+    path = oracle_review_path(suite)
     if not path.is_file():
-        if require_complete:
+        if require_complete or "oracle_reviews" in suite.experiment:
             raise OracleReviewError("oracle review evidence is missing")
         return {"present": False, "first_reviewed_tasks": 0, "approved_tasks": 0, "complete": False}
     try:

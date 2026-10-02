@@ -43,6 +43,34 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
             with self.assertRaisesRegex(SuiteError, "oracle review evidence is missing"):
                 load_suite(copy)
 
+    def test_explicit_review_path_is_the_bound_review_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "suite"
+            shutil.copytree(SOURCE, copy)
+            experiment_path = copy / "experiment.json"
+            experiment = json.loads(experiment_path.read_text(encoding="utf-8"))
+            configured = "qualification/reviews-alt.json"
+            experiment["oracle_reviews"] = configured
+            alternate = copy / configured
+            alternate.write_bytes((copy / "qualification/oracle-reviews.json").read_bytes())
+            (copy / "qualification/oracle-reviews.json").unlink()
+            experiment_path.write_text(json.dumps(experiment), encoding="utf-8")
+            self.assertEqual(
+                validate_oracle_reviews(load_suite(copy), require_complete=False)["first_reviewed_tasks"],
+                12,
+            )
+
+    def test_review_path_cannot_escape_suite_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "suite"
+            shutil.copytree(SOURCE, copy)
+            experiment_path = copy / "experiment.json"
+            experiment = json.loads(experiment_path.read_text(encoding="utf-8"))
+            experiment["oracle_reviews"] = "../outside.json"
+            experiment_path.write_text(json.dumps(experiment), encoding="utf-8")
+            with self.assertRaisesRegex(SuiteError, "escapes suite root"):
+                load_suite(copy)
+
     def test_first_review_is_recorded_but_does_not_approve_campaign(self) -> None:
         result = validate_oracle_reviews(load_suite(SOURCE), require_complete=False)
         self.assertEqual(result["first_reviewed_tasks"], 12)

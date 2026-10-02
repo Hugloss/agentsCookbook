@@ -250,11 +250,12 @@ def load_suite(root: Path) -> SuiteDefinition:
         agents=agents,
     )
     if "oracle_reviews" in experiment or (root / "qualification" / "oracle-reviews.json").is_file():
-        from .oracle_reviews import OracleReviewError, validate_oracle_reviews
+        from .oracle_reviews import (
+            OracleReviewError, oracle_reviews_declared, validate_oracle_reviews,
+        )
         try:
-            if "oracle_reviews" in experiment and not (root / experiment["oracle_reviews"]).is_file():
-                raise OracleReviewError("oracle review evidence is missing")
-            validate_oracle_reviews(suite, require_complete=False)
+            if oracle_reviews_declared(suite):
+                validate_oracle_reviews(suite, require_complete=False)
         except OracleReviewError as exc:
             raise SuiteError(str(exc)) from exc
     return suite
