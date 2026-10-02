@@ -9,6 +9,7 @@ import platform
 import shutil
 from collections.abc import Mapping
 import tempfile
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,6 +66,7 @@ class TrialAdmission:
     mutation_authority: Any
     auth_mode: str
     subject_lifecycle_mode: SubjectLifecycleMode
+    admission_timings_ms: dict[str, int]
 
     def generated_globs(self) -> tuple[str, ...]:
         if self.subject_lifecycle_mode is SubjectLifecycleMode.ADAPTER:
@@ -378,6 +380,7 @@ def admit_trial(
     local_source: Path | None = None,
     codex_auth: Path | None = None,
     source: Mapping[str, str] | None = None,
+    harness_authority: dict[str, Any] | None = None,
 ) -> Iterator[TrialAdmission]:
     source = os.environ if source is None else source
     task = suite.tasks[task_id]
@@ -402,7 +405,18 @@ def admit_trial(
         **({"seed": replicate_id} if legacy_seed else {"replicate_id": replicate_id}),
     )
 
-    harness_authority = harness_identity(harness_root)
+    admission_started = time.monotonic()
+    timings_ms: dict[str, int] = {}
+
+    stage_started = time.monotonic()
+    effective_harness_authority = (
+        dict(harness_authority)
+        if harness_authority is not None
+        else harness_identity(harness_root)
+    )
+    timings_ms["harness_identity"] = int(
+        round((time.monotonic() - stage_started) * 1000)
+    )
 
     work_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
@@ -411,12 +425,19 @@ def admit_trial(
     ) as temporary:
         run_root = Path(temporary)
         workspace = run_root / "workspace"
+
+        stage_started = time.monotonic()
         materialize_repository(
             repository=task["repository"],
             destination=workspace,
             cache_root=cache_root,
             local_source=local_source,
         )
+        timings_ms["materialize"] = int(
+            round((time.monotonic() - stage_started) * 1000)
+        )
+
+        stage_started = time.monotonic()
         control_root = run_root / "control"
         environment = isolated_environment(control_root, source=source)
         try:
@@ -428,14 +449,26 @@ def admit_trial(
             control_root=control_root,
             environment=environment,
         )
+        timings_ms["environment"] = int(
+            round((time.monotonic() - stage_started) * 1000)
+        )
 
+        stage_started = time.monotonic()
         mutation = apply_mutation(
             context,
             suite_root=suite.root,
             mutation=task["mutation"],
         )
         _materialize_fixtures(suite.root, workspace, task.get("fixtures", []))
+        timings_ms["mutation_fixtures"] = int(
+            round((time.monotonic() - stage_started) * 1000)
+        )
+
+        stage_started = time.monotonic()
         admitted_state = snapshot(workspace)
+        timings_ms["snapshot"] = int(
+            round((time.monotonic() - stage_started) * 1000)
+        )
 
         subject = build_subject(suite.subjects[str(condition["subject"])])
         agent_definition = suite.agents[str(condition["agent"])]
@@ -478,6 +511,7 @@ def admit_trial(
         )
 
         lifecycle_mode = agent.subject_lifecycle_mode()
+        stage_started = time.monotonic()
         if lifecycle_mode is SubjectLifecycleMode.ADAPTER:
             subject_prepare = subject.prepare(context)
             agent_prepare = agent.prepare(context, subject)
@@ -491,7 +525,18 @@ def admit_trial(
             raise TrialAdmissionError(
                 f"unsupported subject lifecycle mode: {lifecycle_mode}"
             )
+        timings_ms["participant_prepare"] = int(
+            round((time.monotonic() - stage_started) * 1000)
+        )
+
+        stage_started = time.monotonic()
         oracle_health = oracle.healthcheck(context)
+        timings_ms["oracle_health"] = int(
+            round((time.monotonic() - stage_started) * 1000)
+        )
+        timings_ms["total"] = int(
+            round((time.monotonic() - admission_started) * 1000)
+        )
 
         yield TrialAdmission(
             suite=suite,
@@ -514,9 +559,10 @@ def admit_trial(
             subject_authority=_subject_authority(subject, subject_prepare),
             agent_authority=_agent_authority(agent, agent_prepare),
             oracle_authority=_oracle_authority(oracle, oracle_health),
-            harness_authority=harness_authority,
+            harness_authority=effective_harness_authority,
             environment_authority=environment_authority,
             mutation_authority=mutation.payload.get("identity"),
             auth_mode=auth_mode,
             subject_lifecycle_mode=lifecycle_mode,
+            admission_timings_ms=dict(timings_ms),
         )
