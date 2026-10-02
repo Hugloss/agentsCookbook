@@ -84,7 +84,7 @@ def _subject_tool_use(
     if not isinstance(names, list) or any(not isinstance(name, str) for name in names):
         tool_names: tuple[str, ...] = ()
     else:
-        tool_names = tuple(names)
+        tool_names = tuple(sorted(names))
     observability = agent.get("subject_tool_observability")
     if observability not in {"complete", "partial"}:
         observability = "unknown"
