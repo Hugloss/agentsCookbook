@@ -83,6 +83,32 @@ def _oracle_bool(receipt: dict[str, Any], name: str) -> bool | None:
     return value if isinstance(value, bool) else None
 
 
+def _semantic_success(receipt: dict[str, Any]) -> bool | None:
+    value = _oracle_bool(receipt, "semantic_success")
+    if value is not None:
+        return value
+    if receipt.get("status") in _VALID_OUTCOMES:
+        return receipt.get("status") == "PASS"
+    return None
+
+
+def _semantic_gradeable(receipt: dict[str, Any]) -> bool:
+    value = _oracle_bool(receipt, "semantic_gradeable")
+    if value is not None:
+        return value
+    return receipt.get("status") in _VALID_OUTCOMES
+
+
+def _replicate_id(receipt: dict[str, Any]) -> int:
+    """Return the frozen paired replicate identifier.
+
+    The historical receipt field is named seed. Native agent adapters do not
+    transport it as a provider/model sampling seed, so reports must not imply
+    deterministic inference from this value.
+    """
+    return int(receipt["execution"]["seed"])
+
+
 def _metric_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     metrics: dict[str, Any] = {}
     for name in _NUMERIC_AGENT_METRICS:
@@ -343,6 +369,23 @@ def _pair_key(receipt: dict[str, Any]) -> tuple[str, str, int, int]:
     )
 
 
+def _assistance_transition(
+    baseline: dict[str, Any],
+    assisted: dict[str, Any],
+) -> str | None:
+    left = _semantic_success(baseline)
+    right = _semantic_success(assisted)
+    if left is None or right is None:
+        return None
+    if not left and right:
+        return "gain"
+    if left and right:
+        return "preserved"
+    if not left and not right:
+        return "unresolved"
+    return "regression"
+
+
 def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     bare: dict[tuple[str, str, int, int], dict[str, Any]] = {}
     assisted: list[dict[str, Any]] = []
@@ -371,6 +414,7 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "agent_id": key[1],
             "trial_index": key[2],
             "seed": key[3],
+            "replicate_id": key[3],
             "condition_id": _condition_id(receipt),
             "subject_id": receipt["condition"]["subject_definition"]["id"],
             "bare_status": baseline["status"],
@@ -378,6 +422,7 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "task_success_delta": (
                 int(receipt["status"] == "PASS") - int(baseline["status"] == "PASS")
             ),
+            "assistance_transition": _assistance_transition(baseline, receipt),
         }
         for metric in (
             "duration_ms",
@@ -401,6 +446,65 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             str(row["condition_id"]),
         ),
     )
+
+
+def _paired_assistance_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
+    for row in rows:
+        transition = row.get("assistance_transition")
+        if isinstance(transition, str):
+            grouped[(str(row["agent_id"]), str(row["subject_id"]))][transition] += 1
+    return [
+        {
+            "agent_id": key[0],
+            "subject_id": key[1],
+            "total_pairs": sum(counts.values()),
+            "transitions": {
+                name: counts.get(name, 0)
+                for name in ("gain", "preserved", "unresolved", "regression")
+            },
+        }
+        for key, counts in sorted(grouped.items())
+    ]
+
+
+def _stability(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for receipt in receipts:
+        grouped[
+            (_task_id(receipt), _agent_id(receipt), _subject_id(receipt))
+        ].append(receipt)
+
+    rows: list[dict[str, Any]] = []
+    for key, group in sorted(grouped.items()):
+        valid = [row for row in group if row.get("status") in _VALID_OUTCOMES]
+        gradeable = [row for row in valid if _semantic_gradeable(row)]
+        correct = sum(_semantic_success(row) is True for row in gradeable)
+        if len(valid) != len(group):
+            state = "execution-unstable"
+        elif len(gradeable) != len(valid):
+            state = "not-gradeable" if not gradeable else "unstable"
+        elif correct == len(gradeable):
+            state = "stable-correct"
+        elif correct == 0:
+            state = "stable-incorrect"
+        else:
+            state = "unstable"
+        rows.append(
+            {
+                "task_id": key[0],
+                "agent_id": key[1],
+                "subject_id": key[2],
+                "replicates": len(group),
+                "replicate_ids": sorted(_replicate_id(row) for row in group),
+                "valid_outcomes": len(valid),
+                "gradeable_outcomes": len(gradeable),
+                "semantic_correct": correct,
+                "semantic_incorrect": len(gradeable) - correct,
+                "state": state,
+            }
+        )
+    return rows
 
 
 def _cross_agent_observations(
@@ -449,6 +553,7 @@ def _cross_agent_observations(
             "subject_id": key[1],
             "trial_index": key[2],
             "seed": key[3],
+            "replicate_id": key[3],
             "agents": dict(sorted(agents.items())),
         }
         for key, agents in sorted(grouped.items())
@@ -522,10 +627,12 @@ def build_report(
     )
     campaign_complete = not missing
     campaign_qualified = campaign_complete and invalid_outcomes == 0
+    paired_assistance = _paired_assistance(receipts)
+    stability = _stability(receipts)
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 4,
+            "version": 5,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
@@ -548,7 +655,9 @@ def build_report(
             condition: _aggregate_condition(rows)
             for condition, rows in sorted(by_condition.items())
         },
-        "paired_assistance": _paired_assistance(receipts),
+        "paired_assistance": paired_assistance,
+        "paired_assistance_summary": _paired_assistance_summary(paired_assistance),
+        "stability": stability,
         "agent_profiles": {
             agent: _aggregate_condition(rows)
             for agent, rows in sorted(by_agent.items())
@@ -568,6 +677,8 @@ def build_report(
             "invalid_outcomes_excluded_from_success_rates": True,
             "economics_include_invalid_and_incomplete_trials": True,
             "paired_assistance_scope": "valid-outcomes-only",
+            "replicate_identity_field": "execution.seed",
+            "replicate_identity_is_provider_sampling_seed": False,
             "cross_agent_rows_are_descriptive": True,
         },
     }
