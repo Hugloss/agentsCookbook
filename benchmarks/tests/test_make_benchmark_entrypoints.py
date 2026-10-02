@@ -11,9 +11,9 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from benchmarks.__main__ import main
+from benchmarks.__main__ import _assert_saved_run_selection, _guard_automatic_start, main
 from benchmarks.harness.runner import TrialRunResult, TrialRunnerError
-from benchmarks.harness.run_store import SavedRun
+from benchmarks.harness.run_store import RunStoreError, SavedRun
 from benchmarks.harness.selection import select_definitions
 from benchmarks.harness.suite import load_suite
 
@@ -45,9 +45,10 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         self.assertNotIn("-include .env", makefile)
         self.assertNotIn("awk -F=", makefile)
         for target, command in (
+            ("benchmark", "run --auto"),
             ("benchmark-check", "check"),
             ("benchmark-check-all", "preflight"),
-            ("benchmark-new", "prepare --new"),
+            ("benchmark-new", "run --new"),
             ("benchmark-resume", "run --resume"),
             ("benchmark-status", "status"),
             ("benchmark-report", "report"),
@@ -77,6 +78,101 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         self.assertNotIn("release-check:", makefile)
         self.assertIn("BENCHMARK_AGENT=\n", ENV_EXAMPLE.read_text(encoding="utf-8"))
 
+    def test_resume_selection_must_match_frozen_agents_before_admission(self) -> None:
+        suite = load_suite(
+            ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
+        )
+        rows = select_definitions(
+            suite,
+            tasks=("locate-prefix-path-enumerator",),
+            agents=("opencode-native",),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = SavedRun("000001", Path(tmp) / "runs/000001")
+            with mock.patch(
+                "benchmarks.__main__.read_campaign",
+                return_value={
+                    "selected_definitions": ["different"],
+                    "agents": {"codex-native": {}},
+                },
+            ):
+                with self.assertRaisesRegex(
+                    RunStoreError,
+                    "frozen agents=.*codex-native.*selected agents=.*opencode-native",
+                ):
+                    _assert_saved_run_selection(
+                        saved,
+                        suite=suite,
+                        rows=rows,
+                    )
+
+    def test_plain_benchmark_requires_explicit_choice_for_unfinished_match(self) -> None:
+        suite = load_suite(
+            ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
+        )
+        rows = select_definitions(
+            suite,
+            tasks=("locate-prefix-path-enumerator",),
+            agents=("opencode-native",),
+        )
+        selected = [str(row["definition_id"]) for row in rows]
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = SavedRun("000001", Path(tmp) / "runs/000001")
+            with (
+                mock.patch(
+                    "benchmarks.__main__.list_saved_runs",
+                    return_value=[saved],
+                ),
+                mock.patch(
+                    "benchmarks.__main__.read_campaign",
+                    return_value={
+                        "selected_definitions": selected,
+                        "agents": {"opencode-native": {}},
+                    },
+                ),
+                mock.patch(
+                    "benchmarks.__main__.campaign_status",
+                    return_value={
+                        "complete": False,
+                        "complete_trials": 17,
+                        "expected_trials": len(rows),
+                        "pending_trials": len(rows) - 17,
+                        "interrupted_trials": 0,
+                    },
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    RunStoreError,
+                    "choose explicitly: make benchmark-resume or make benchmark-new",
+                ):
+                    _guard_automatic_start(Path(tmp), suite=suite, rows=rows)
+
+    def test_plain_benchmark_starts_new_when_latest_selection_differs(self) -> None:
+        suite = load_suite(
+            ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
+        )
+        rows = select_definitions(
+            suite,
+            tasks=("locate-prefix-path-enumerator",),
+            agents=("opencode-native",),
+        )
+        with tempfile.TemporaryDirectory() as tmp, redirect_stderr(io.StringIO()):
+            saved = SavedRun("000001", Path(tmp) / "runs/000001")
+            with (
+                mock.patch(
+                    "benchmarks.__main__.list_saved_runs",
+                    return_value=[saved],
+                ),
+                mock.patch(
+                    "benchmarks.__main__.read_campaign",
+                    return_value={
+                        "selected_definitions": ["different"],
+                        "agents": {"codex-native": {}},
+                    },
+                ),
+            ):
+                _guard_automatic_start(Path(tmp), suite=suite, rows=rows)
+
     def test_make_dry_run_does_not_expand_configuration_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -86,7 +182,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 encoding="utf-8",
             )
             result = subprocess.run(
-                ("make", "-n", "-f", str(MAKEFILE), "benchmark-resume"),
+                ("make", "-n", "-f", str(MAKEFILE), "benchmark"),
                 cwd=root,
                 text=True,
                 capture_output=True,
@@ -167,6 +263,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             with (
                 mock.patch("benchmarks.__main__._resolve_config", return_value=config),
                 mock.patch("benchmarks.__main__.select_saved_run", return_value=SavedRun("000001", root)),
+                mock.patch("benchmarks.__main__._assert_saved_run_selection"),
                 mock.patch("benchmarks.__main__.admit_campaign", return_value={"campaign_id": "c" * 64}),
                 mock.patch("benchmarks.__main__.campaign_status", side_effect=[initial, final]),
                 mock.patch("benchmarks.__main__.run_trial", side_effect=fake_run),
@@ -210,6 +307,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             with (
                 mock.patch("benchmarks.__main__._resolve_config", return_value=config),
                 mock.patch("benchmarks.__main__.select_saved_run", return_value=SavedRun("000001", root)),
+                mock.patch("benchmarks.__main__._assert_saved_run_selection"),
                 mock.patch("benchmarks.__main__.admit_campaign", return_value={"campaign_id": "c" * 64}),
                 mock.patch("benchmarks.__main__.campaign_status", side_effect=[status, status]),
                 mock.patch("benchmarks.__main__.run_trial", side_effect=TrialRunnerError("launch claim changed")),
