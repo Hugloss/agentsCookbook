@@ -293,7 +293,7 @@ def run_pending_oracle_reviews(
         cache_root
         or Path(tempfile.gettempdir()) / "agentscookbook-oracle-review-cache"
     )
-    reviewed: list[dict[str, str]] = []
+    reviewed: list[dict[str, Any]] = []
 
     for task_id in pending:
         task = suite.tasks[task_id]
@@ -350,6 +350,7 @@ def run_pending_oracle_reviews(
                 "task_digest": decision["task_digest"],
                 "decision": decision["decision"],
                 "reason": decision["reason"],
+                "observed_owner": decision["observed_owner"],
                 "runtime": {
                     "host": "opencode",
                     "agent": REVIEWER_AGENT,
