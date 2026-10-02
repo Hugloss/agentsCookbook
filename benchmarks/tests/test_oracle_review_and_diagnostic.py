@@ -112,7 +112,7 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
                 validate_oracle_reviews(load_suite(copy), require_complete=False)[
                     "first_reviewed_tasks"
                 ],
-                12,
+                11,
             )
 
     def test_review_path_cannot_escape_suite_root(self) -> None:
