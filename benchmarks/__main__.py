@@ -34,6 +34,7 @@ from benchmarks.harness.readiness import check_runtime_readiness
 from benchmarks.harness.runtime_authority import required_runtime_authority
 from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import run_trial
+from benchmarks.harness.live_console import LiveTaskMatrix
 from benchmarks.harness.selection import (
     SelectionError,
     parse_agent_arguments,
@@ -570,6 +571,7 @@ def main(argv: list[str] | None = None) -> int:
     invalid = False
     assert paths.results is not None
     campaign = None
+    live_matrix = LiveTaskMatrix(suite, rows)
     if any("replicate_id" in row for row in rows):
         try:
             campaign = admit_campaign(
@@ -621,6 +623,9 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
             flush=True,
         )
+        summary = live_matrix.record(row, result.status)
+        if summary is not None:
+            print(summary, file=sys.stderr, flush=True)
         if result.status in {"INCOMPLETE", "INVALID", "CONTAMINATED"}:
             invalid = True
 
