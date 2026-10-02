@@ -35,11 +35,15 @@ def _portable_path(value: Path | str, *, repository_root: Path) -> Path:
     try:
         resolved.relative_to(repository_root)
     except ValueError as exc:
-        raise ChangeImpactError(f"changed path escapes repository root: {value}") from exc
+        raise ChangeImpactError(
+            f"changed path escapes repository root: {value}"
+        ) from exc
     return resolved
 
 
-def _module_for_changed_path(*, path: Path, source_root: Path, package_name: str) -> str | None:
+def _module_for_changed_path(
+    *, path: Path, source_root: Path, package_name: str
+) -> str | None:
     try:
         path.relative_to(source_root)
     except ValueError:
@@ -49,14 +53,17 @@ def _module_for_changed_path(*, path: Path, source_root: Path, package_name: str
     return module_path_for_file(path=path, root=source_root, package_name=package_name)
 
 
-def _source_entries(*, files: list[Path], repository_root: Path, cache: AnalysisCache) -> list[dict[str, str]]:
+def _source_entries(
+    *, files: list[Path], repository_root: Path, cache: AnalysisCache
+) -> list[dict[str, str]]:
     entries: list[dict[str, str]] = []
     for path in files:
         record = cache.get(path)
         entries.append(
             {
                 "path": report_path(path=path, anchor=repository_root),
-                "sha256": record.content_sha256 or f"unavailable:{record.parse_error or 'unknown'}",
+                "sha256": record.content_sha256
+                or f"unavailable:{record.parse_error or 'unknown'}",
             }
         )
     return entries
@@ -85,7 +92,9 @@ def _impact_paths(
         current_module, depth, chain = queue.popleft()
         if depth >= max_depth:
             continue
-        for importer in sorted(import_index.get(current_module, set()), key=lambda p: p.as_posix()):
+        for importer in sorted(
+            import_index.get(current_module, set()), key=lambda p: p.as_posix()
+        ):
             importer_module = module_by_path.get(importer)
             if importer_module is None:
                 continue
@@ -108,7 +117,9 @@ def _impact_paths(
                 elif candidate < previous:
                     impacted[importer] = candidate
             prior_depth = seen_depth.get(importer_module)
-            if next_depth < max_depth and (prior_depth is None or next_depth < prior_depth):
+            if next_depth < max_depth and (
+                prior_depth is None or next_depth < prior_depth
+            ):
                 seen_depth[importer_module] = next_depth
                 queue.append((importer_module, next_depth, next_chain))
 
@@ -138,7 +149,11 @@ def change_impact_audit(
 ) -> dict[str, object]:
     started = time.perf_counter()
     repository_root = repository_root.resolve()
-    source_root = (repository_root / source_root).resolve() if not source_root.is_absolute() else source_root.resolve()
+    source_root = (
+        (repository_root / source_root).resolve()
+        if not source_root.is_absolute()
+        else source_root.resolve()
+    )
     if impact_max_depth < 0:
         raise ChangeImpactError("impact_max_depth must be >= 0")
     if impact_max_sources < 1:
@@ -308,7 +323,9 @@ def change_impact_audit(
     cache = AnalysisCache()
     cache.prewarm(source_files)
     module_by_path = {
-        path: module_path_for_file(path=path, root=source_root, package_name=effective_package)
+        path: module_path_for_file(
+            path=path, root=source_root, package_name=effective_package
+        )
         for path in source_files
     }
     import_index = build_import_index(
@@ -327,12 +344,15 @@ def change_impact_audit(
     uncertainty: list[dict[str, object]] = []
     required_next: list[dict[str, object]] = []
     warnings: list[dict[str, object]] = [
-        {"code": "discovery_warning", "message": message} for message in discovery.warnings
+        {"code": "discovery_warning", "message": message}
+        for message in discovery.warnings
     ]
     if cache.read_failures:
         warnings.append({"code": "python_read_failures", "count": cache.read_failures})
     if cache.parse_failures:
-        warnings.append({"code": "python_parse_failures", "count": cache.parse_failures})
+        warnings.append(
+            {"code": "python_parse_failures", "count": cache.parse_failures}
+        )
 
     for path in changed:
         label = report_path(path=path, anchor=repository_root)
@@ -342,7 +362,9 @@ def change_impact_audit(
             package_name=effective_package,
         )
         if module is None:
-            changed_records.append({"path": label, "kind": "unsupported", "discovered": False})
+            changed_records.append(
+                {"path": label, "kind": "unsupported", "discovered": False}
+            )
             uncertainty.append(
                 {
                     "target": label,
@@ -396,7 +418,10 @@ def change_impact_audit(
     )
     impacted = sorted(
         impacted_raw.items(),
-        key=lambda item: (item[1][0], report_path(path=item[0], anchor=repository_root)),
+        key=lambda item: (
+            item[1][0],
+            report_path(path=item[0], anchor=repository_root),
+        ),
     )
     candidates: list[dict[str, object]] = []
     evidence_records: list[dict[str, object]] = []
@@ -435,7 +460,11 @@ def change_impact_audit(
     deferred: list[dict[str, object]] = []
     for item in deferred_raw:
         raw_target = Path(str(item["target"]))
-        target = report_path(path=raw_target, anchor=repository_root) if raw_target.is_absolute() else str(item["target"])
+        target = (
+            report_path(path=raw_target, anchor=repository_root)
+            if raw_target.is_absolute()
+            else str(item["target"])
+        )
         deferred.append({**item, "target": target})
     if deferred:
         uncertainty.append(
@@ -446,7 +475,9 @@ def change_impact_audit(
             }
         )
 
-    entries = _source_entries(files=source_files, repository_root=repository_root, cache=cache)
+    entries = _source_entries(
+        files=source_files, repository_root=repository_root, cache=cache
+    )
     # Missing changed source paths still affect decision identity even though no bytes exist.
     for item in changed_records:
         if item.get("kind") == "python_source" and not item.get("discovered"):
@@ -500,7 +531,9 @@ def change_impact_audit(
         },
         derived={
             "selected_impacted_source_count": len(candidates),
-            "direct_dependent_count": sum(1 for c in candidates if c["facts"]["impact_depth"] == 1),
+            "direct_dependent_count": sum(
+                1 for c in candidates if c["facts"]["impact_depth"] == 1
+            ),
         },
         interpretation={
             "relationship_boundary": "static reachability is not runtime behavior or edit authority"
@@ -514,7 +547,13 @@ def change_impact_audit(
         economics=economics,
     )
     if artifact_path is not None:
-        target = artifact_path if artifact_path.is_absolute() else repository_root / artifact_path
+        target = (
+            artifact_path
+            if artifact_path.is_absolute()
+            else repository_root / artifact_path
+        )
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        target.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
     return payload

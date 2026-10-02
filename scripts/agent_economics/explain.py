@@ -67,7 +67,9 @@ def explain(payload: dict[str, Any], *, target: str | None = None) -> dict[str, 
         }
     if tool == "quality-debt":
         result["summary"] = payload["derived"].get("summary", {})
-        result["baseline_comparison"] = payload["derived"].get("baseline_comparison", {})
+        result["baseline_comparison"] = payload["derived"].get(
+            "baseline_comparison", {}
+        )
     elif tool == "test-focus":
         result["verification_suggestions"] = payload["verification_suggestions"]
         result["required_next_evidence"] = payload["required_next_evidence"]
@@ -115,14 +117,20 @@ def _human(result: dict[str, Any]) -> str:
             lines.append("Uncertainty:")
             for item in uncertainty:
                 if isinstance(item, dict):
-                    lines.append(f"  - {item.get('code')}: {item.get('message') or item.get('reason')}")
+                    lines.append(
+                        f"  - {item.get('code')}: {item.get('message') or item.get('reason')}"
+                    )
     lines.append("")
-    lines.append("This is a projection of the artifact; it adds no edit recommendation or authority.")
+    lines.append(
+        "This is a projection of the artifact; it adds no edit recommendation or authority."
+    )
     return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Explain a probe artifact without adding new reasoning or recommendations.")
+    parser = argparse.ArgumentParser(
+        description="Explain a probe artifact without adding new reasoning or recommendations."
+    )
     parser.add_argument("artifact", type=Path)
     parser.add_argument("--target", default=None)
     parser.add_argument("--json", action="store_true")

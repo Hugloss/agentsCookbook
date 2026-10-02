@@ -132,7 +132,9 @@ def materialize_corpus(root: Path) -> None:
 
     _write(root / "src/samplepkg/helper_case.py", _oversized_source("VALUE = 2"))
     _write(root / "tests/support/helper_loader.py", "import samplepkg.helper_case\n")
-    _write(root / "tests/test_helper_behavior.py", "import checks.support.helper_loader\n")
+    _write(
+        root / "tests/test_helper_behavior.py", "import checks.support.helper_loader\n"
+    )
 
     _write(
         root / "src/samplepkg/package/__init__.py",
@@ -144,7 +146,10 @@ def materialize_corpus(root: Path) -> None:
     _write(root / "tests/test_exact_named.py", "import samplepkg.exact_named\n")
 
     _write(root / "src/samplepkg/mirrored_only.py", _oversized_source("VALUE = 5"))
-    _write(root / "tests/test_mirrored_only.py", "def test_placeholder():\n    assert True\n")
+    _write(
+        root / "tests/test_mirrored_only.py",
+        "def test_placeholder():\n    assert True\n",
+    )
 
     _write(root / "src/samplepkg/name_only_case.py", _oversized_source("VALUE = 6"))
     _write(
@@ -169,10 +174,14 @@ def materialize_corpus(root: Path) -> None:
     )
 
     _write(root / "src/samplepkg/shadow_name.py", _oversized_source("VALUE = 9"))
-    _write(root / "tests/test_shadow_name.py", "def test_unrelated():\n    assert True\n")
+    _write(
+        root / "tests/test_shadow_name.py", "def test_unrelated():\n    assert True\n"
+    )
 
     _write(root / "src/samplepkg/unrelated.py", _oversized_source("VALUE = 10"))
-    _write(root / "tests/test_other_behavior.py", "def test_other():\n    assert True\n")
+    _write(
+        root / "tests/test_other_behavior.py", "def test_other():\n    assert True\n"
+    )
 
     _write(
         root / "src/samplepkg/unsupported_dynamic.py",
@@ -213,9 +222,12 @@ def _run_probe(
         return original_ast_parse(*args, **kwargs)
 
     started = time.perf_counter()
-    with patch.object(Path, "read_bytes", counted_read_bytes), patch(
-        "ast.parse",
-        counted_ast_parse,
+    with (
+        patch.object(Path, "read_bytes", counted_read_bytes),
+        patch(
+            "ast.parse",
+            counted_ast_parse,
+        ),
     ):
         refactor_focus_audit(
             emit=emit,
@@ -279,7 +291,9 @@ def _classification(
 
     authority = expected_match.get("evidence_authority") if expected_match else None
     if case.expectation == "relevant_confirmed":
-        classification = "TRUE_RELEVANT" if authority == "confirmed" else "MISSED_RELEVANT"
+        classification = (
+            "TRUE_RELEVANT" if authority == "confirmed" else "MISSED_RELEVANT"
+        )
     elif authority == "confirmed":
         classification = "FALSE_RELEVANT"
     elif case.expectation == "irrelevant" and expected_match is None:
@@ -296,14 +310,15 @@ def _classification(
         if row.get("has_corresponding_tests"):
             failures.append("non-confirmed evidence set has_corresponding_tests=true")
         if row.get("test_sync_required_if_split"):
-            failures.append("non-confirmed evidence set test_sync_required_if_split=true")
+            failures.append(
+                "non-confirmed evidence set test_sync_required_if_split=true"
+            )
         if row.get("max_test_lines") != 0:
             failures.append("non-confirmed evidence influenced max_test_lines")
         if row.get("recommended_test_action") in forbidden_actions:
             failures.append("non-confirmed evidence prescribed a confirmed-test action")
 
     return classification, expected_match, failures
-
 
 
 def contract_candidate_as_legacy_row(candidate: dict[str, object]) -> dict[str, object]:
@@ -338,6 +353,7 @@ def contract_candidate_as_legacy_row(candidate: dict[str, object]) -> dict[str, 
         "recommended_strategy": recommendations.get("strategy"),
     }
 
+
 def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="agent-economics-refactor-focus-") as tmp:
         root = Path(tmp)
@@ -352,7 +368,11 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
         candidates = full["candidates"]
         assert isinstance(candidates, list)
-        rows = [contract_candidate_as_legacy_row(item) for item in candidates if isinstance(item, dict)]
+        rows = [
+            contract_candidate_as_legacy_row(item)
+            for item in candidates
+            if isinstance(item, dict)
+        ]
         rows_by_source = {
             row["source_path"]: row
             for row in rows
@@ -372,7 +392,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         for case in CASES:
             row = rows_by_source.get(case.source_path)
             if row is None:
-                counts["MISSED_RELEVANT"] += int(case.expectation == "relevant_confirmed")
+                counts["MISSED_RELEVANT"] += int(
+                    case.expectation == "relevant_confirmed"
+                )
                 failures.append(f"{case.name}: source row missing: {case.source_path}")
                 case_results.append(
                     {
@@ -403,7 +425,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         if counts["FALSE_RELEVANT"]:
             failures.append("qualification introduced false authority")
         if counts["MISSED_RELEVANT"]:
-            failures.append("qualification missed a relationship that must be confirmed")
+            failures.append(
+                "qualification missed a relationship that must be confirmed"
+            )
 
         tp = counts["TRUE_RELEVANT"]
         fp = counts["FALSE_RELEVANT"]
@@ -424,7 +448,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
         full_economics = full.get("economics")
         bounded_economics = bounded.get("economics")
-        if not isinstance(full_economics, dict) or not isinstance(bounded_economics, dict):
+        if not isinstance(full_economics, dict) or not isinstance(
+            bounded_economics, dict
+        ):
             failures.append("P2 economics block missing from probe artifact")
             full_economics = {}
             bounded_economics = {}
@@ -476,11 +502,13 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
         bounded_candidates = bounded["candidates"]
         assert isinstance(bounded_candidates, list)
-        bounded_rows = [contract_candidate_as_legacy_row(item) for item in bounded_candidates if isinstance(item, dict)]
+        bounded_rows = [
+            contract_candidate_as_legacy_row(item)
+            for item in bounded_candidates
+            if isinstance(item, dict)
+        ]
         evidence_paths = {
-            str(row["source_path"])
-            for row in bounded_rows
-            if isinstance(row, dict)
+            str(row["source_path"]) for row in bounded_rows if isinstance(row, dict)
         }
         for row in bounded_rows:
             if not isinstance(row, dict):
@@ -494,9 +522,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         expected_evidence_lines = 0
         for relative_path in evidence_paths:
             expected_evidence_lines += len(
-                (root / relative_path).read_text(
-                    encoding="utf-8", errors="replace"
-                ).splitlines()
+                (root / relative_path)
+                .read_text(encoding="utf-8", errors="replace")
+                .splitlines()
             )
         if bounded_economics.get("evidence_files_selected") != len(evidence_paths):
             failures.append(

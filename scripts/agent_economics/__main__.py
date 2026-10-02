@@ -23,10 +23,12 @@ def _help() -> str:
             if command.group == group:
                 lines.append(f"  {command.name:20} {command.summary}")
         lines.append("")
-    lines.extend((
-        "Run 'python -m agent_economics <command> --help' for command options.",
-        "Start in an unfamiliar repository with: python -m agent_economics doctor",
-    ))
+    lines.extend(
+        (
+            "Run 'python -m agent_economics <command> --help' for command options.",
+            "Start in an unfamiliar repository with: python -m agent_economics doctor",
+        )
+    )
     return "\n".join(lines)
 
 
@@ -41,7 +43,9 @@ def main(argv: list[str] | None = None) -> None:
     command = COMMAND_BY_NAME.get(args[0])
     if command is None:
         names = ", ".join(item.name for item in COMMANDS)
-        raise SystemExit(f"agent-economics: unknown command {args[0]!r}; available: {names}")
+        raise SystemExit(
+            f"agent-economics: unknown command {args[0]!r}; available: {names}"
+        )
     module = importlib.import_module(f".{command.module}", __package__)
     module.main(args[1:])
 

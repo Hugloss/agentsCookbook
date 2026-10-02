@@ -49,14 +49,24 @@ class Outcome:
         if self.mode not in {"baseline", "bridge"}:
             raise BenchmarkError("mode must be baseline or bridge")
         numeric = (
-            self.independent_qualification_activations, self.files_opened, self.evidence_bytes,
-            self.context_tokens_estimate, self.tool_calls, self.local_commands,
-            self.repair_iterations, self.focused_verifications,
-            self.broad_verifications, self.failed_edits, self.no_progress_stops,
+            self.independent_qualification_activations,
+            self.files_opened,
+            self.evidence_bytes,
+            self.context_tokens_estimate,
+            self.tool_calls,
+            self.local_commands,
+            self.repair_iterations,
+            self.focused_verifications,
+            self.broad_verifications,
+            self.failed_edits,
+            self.no_progress_stops,
         )
         if any(value < 0 for value in numeric) or self.bridge_elapsed_ms < 0:
             raise BenchmarkError("benchmark counters must be non-negative")
-        if self.seconds_to_first_correct_edit is not None and self.seconds_to_first_correct_edit < 0:
+        if (
+            self.seconds_to_first_correct_edit is not None
+            and self.seconds_to_first_correct_edit < 0
+        ):
             raise BenchmarkError("time-to-edit must be non-negative")
         for name in ("task_id", "treatment_id"):
             if not getattr(self, name).strip():
@@ -67,7 +77,9 @@ class Outcome:
         return self.task_id, self.treatment_id
 
 
-def load_outcomes(path: Path, *, max_bytes: int = 5_000_000, max_records: int = 10_000) -> list[Outcome]:
+def load_outcomes(
+    path: Path, *, max_bytes: int = 5_000_000, max_records: int = 10_000
+) -> list[Outcome]:
     size = path.stat().st_size
     if size > max_bytes:
         raise BenchmarkError("benchmark input exceeds byte bound")
@@ -89,8 +101,12 @@ def load_outcomes(path: Path, *, max_bytes: int = 5_000_000, max_records: int = 
 def _compatibility_errors(baseline: Outcome, bridge: Outcome) -> list[str]:
     errors: list[str] = []
     for field in (
-        "repository_id", "task_fixture_id", "corpus_id", "initial_source_id",
-        "agent_profile", "execution_environment_id",
+        "repository_id",
+        "task_fixture_id",
+        "corpus_id",
+        "initial_source_id",
+        "agent_profile",
+        "execution_environment_id",
         "independent_qualification_authority_id",
     ):
         left, right = getattr(baseline, field), getattr(bridge, field)
@@ -102,8 +118,12 @@ def _compatibility_errors(baseline: Outcome, bridge: Outcome) -> list[str]:
 def _strict_protocol_errors(baseline: Outcome, bridge: Outcome) -> list[str]:
     errors: list[str] = []
     shared_required = (
-        "repository_id", "task_fixture_id", "corpus_id", "initial_source_id",
-        "agent_profile", "execution_environment_id",
+        "repository_id",
+        "task_fixture_id",
+        "corpus_id",
+        "initial_source_id",
+        "agent_profile",
+        "execution_environment_id",
     )
     for field in shared_required:
         if not getattr(baseline, field) or not getattr(bridge, field):
@@ -144,7 +164,11 @@ def compare(
                 f"duplicate {outcome.mode} record for task {outcome.task_id} treatment {outcome.treatment_id}"
             )
         modes[outcome.mode] = outcome
-    incomplete = [key for key, modes in sorted(grouped.items()) if set(modes) != {"baseline", "bridge"}]
+    incomplete = [
+        key
+        for key, modes in sorted(grouped.items())
+        if set(modes) != {"baseline", "bridge"}
+    ]
     if incomplete and require_complete_pairs:
         raise BenchmarkError(f"incomplete benchmark pairs: {incomplete[:10]}")
     pairs = [
@@ -161,12 +185,22 @@ def compare(
         if strict_dogfood:
             protocol_errors = _strict_protocol_errors(baseline, bridge)
             if protocol_errors:
-                raise BenchmarkError(f"incomplete dogfood pair {key}: {', '.join(protocol_errors)}")
+                raise BenchmarkError(
+                    f"incomplete dogfood pair {key}: {', '.join(protocol_errors)}"
+                )
 
     metrics = [
-        "independent_qualification_activations", "files_opened", "evidence_bytes", "context_tokens_estimate",
-        "tool_calls", "local_commands", "repair_iterations", "focused_verifications",
-        "broad_verifications", "failed_edits", "no_progress_stops",
+        "independent_qualification_activations",
+        "files_opened",
+        "evidence_bytes",
+        "context_tokens_estimate",
+        "tool_calls",
+        "local_commands",
+        "repair_iterations",
+        "focused_verifications",
+        "broad_verifications",
+        "failed_edits",
+        "no_progress_stops",
     ]
     deltas: dict[str, dict[str, float]] = {}
     for metric in metrics:
@@ -176,13 +210,16 @@ def compare(
             "baseline_total": baseline_total,
             "bridge_total": bridge_total,
             "delta": bridge_total - baseline_total,
-            "reduction_fraction": (baseline_total - bridge_total) / baseline_total if baseline_total else 0.0,
+            "reduction_fraction": (baseline_total - bridge_total) / baseline_total
+            if baseline_total
+            else 0.0,
         }
 
     paired_times = [
         (b.seconds_to_first_correct_edit, g.seconds_to_first_correct_edit)
         for _, b, g in pairs
-        if b.seconds_to_first_correct_edit is not None and g.seconds_to_first_correct_edit is not None
+        if b.seconds_to_first_correct_edit is not None
+        and g.seconds_to_first_correct_edit is not None
     ]
     timing = {
         "paired_measurements": len(paired_times),
@@ -193,26 +230,54 @@ def compare(
     }
     protocol = {
         "bridge_receipts_bound": sum(
-            1 for _, _, g in pairs
-            if all((g.bridge_implementation_id, g.manifest_id, g.local_qualification_id, g.final_source_id))
+            1
+            for _, _, g in pairs
+            if all(
+                (
+                    g.bridge_implementation_id,
+                    g.manifest_id,
+                    g.local_qualification_id,
+                    g.final_source_id,
+                )
+            )
         ),
-        "independent_qualification_evidence_bound": sum(1 for _, _, g in pairs if g.independent_qualification_evidence_id is not None),
-        "oracle_opened_after_freeze": sum(1 for _, _, g in pairs if g.oracle_opened_after_freeze is True),
-        "oracle_protocol_unknown": sum(1 for _, _, g in pairs if g.oracle_opened_after_freeze is None),
+        "independent_qualification_evidence_bound": sum(
+            1
+            for _, _, g in pairs
+            if g.independent_qualification_evidence_id is not None
+        ),
+        "oracle_opened_after_freeze": sum(
+            1 for _, _, g in pairs if g.oracle_opened_after_freeze is True
+        ),
+        "oracle_protocol_unknown": sum(
+            1 for _, _, g in pairs if g.oracle_opened_after_freeze is None
+        ),
     }
     correctness = {
         "baseline_correct": sum(1 for _, b, _ in pairs if b.correct),
         "bridge_correct": sum(1 for _, _, g in pairs if g.correct),
         "paired_tasks": len(pairs),
         "incomplete_pairs": len(incomplete),
-        "local_independent_qualification_disagreements": sum(1 for _, _, g in pairs if g.local_independent_qualification_agree is False),
-        "local_independent_qualification_unknown": sum(1 for _, _, g in pairs if g.local_independent_qualification_agree is None),
+        "local_independent_qualification_disagreements": sum(
+            1 for _, _, g in pairs if g.local_independent_qualification_agree is False
+        ),
+        "local_independent_qualification_unknown": sum(
+            1 for _, _, g in pairs if g.local_independent_qualification_agree is None
+        ),
     }
     promotion = {
-        "correctness_not_reduced": correctness["bridge_correct"] >= correctness["baseline_correct"],
-        "independent_qualification_activations_not_increased": deltas["independent_qualification_activations"]["delta"] <= 0,
+        "correctness_not_reduced": correctness["bridge_correct"]
+        >= correctness["baseline_correct"],
+        "independent_qualification_activations_not_increased": deltas[
+            "independent_qualification_activations"
+        ]["delta"]
+        <= 0,
         "context_not_increased": deltas["context_tokens_estimate"]["delta"] <= 0,
-        "local_independent_qualification_disagreement_zero": correctness["local_independent_qualification_disagreements"] == 0 and correctness["local_independent_qualification_unknown"] == 0,
+        "local_independent_qualification_disagreement_zero": correctness[
+            "local_independent_qualification_disagreements"
+        ]
+        == 0
+        and correctness["local_independent_qualification_unknown"] == 0,
         "all_pairs_complete": correctness["incomplete_pairs"] == 0,
         "strict_dogfood_protocol": strict_dogfood,
     }
@@ -229,30 +294,62 @@ def compare(
             "promotion_evidence_is_not_a_verdict": True,
         },
     }
-    payload["identity"] = "sha256:" + hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    payload["identity"] = (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+    )
     return payload
 
 
-def outcome_template(*, task_id: str, treatment_id: str = "default") -> list[dict[str, object]]:
+def outcome_template(
+    *, task_id: str, treatment_id: str = "default"
+) -> list[dict[str, object]]:
     return [
-        asdict(Outcome(task_id=task_id, treatment_id=treatment_id, mode="baseline", correct=False)),
-        asdict(Outcome(task_id=task_id, treatment_id=treatment_id, mode="bridge", correct=False)),
+        asdict(
+            Outcome(
+                task_id=task_id,
+                treatment_id=treatment_id,
+                mode="baseline",
+                correct=False,
+            )
+        ),
+        asdict(
+            Outcome(
+                task_id=task_id, treatment_id=treatment_id, mode="bridge", correct=False
+            )
+        ),
     ]
 
 
 def main(argv: list[str] | None = None) -> None:
     import argparse
-    parser = argparse.ArgumentParser(description="Compare paired baseline and capability-bridge outcomes against repository-owned qualification authority.")
+
+    parser = argparse.ArgumentParser(
+        description="Compare paired baseline and capability-bridge outcomes against repository-owned qualification authority."
+    )
     parser.add_argument("--input", type=Path, help="JSONL Outcome records")
     parser.add_argument("--artifact", type=Path)
-    parser.add_argument("--template-task", help="emit a baseline/bridge JSONL template for this task id")
+    parser.add_argument(
+        "--template-task", help="emit a baseline/bridge JSONL template for this task id"
+    )
     parser.add_argument("--treatment-id", default="default")
-    parser.add_argument("--strict-dogfood", action="store_true", help="fail closed unless empirical closeout provenance is complete")
+    parser.add_argument(
+        "--strict-dogfood",
+        action="store_true",
+        help="fail closed unless empirical closeout provenance is complete",
+    )
     args = parser.parse_args(argv)
     if args.template_task:
-        print("\n".join(json.dumps(row, sort_keys=True) for row in outcome_template(task_id=args.template_task, treatment_id=args.treatment_id)))
+        print(
+            "\n".join(
+                json.dumps(row, sort_keys=True)
+                for row in outcome_template(
+                    task_id=args.template_task, treatment_id=args.treatment_id
+                )
+            )
+        )
         return
     if args.input is None:
         parser.error("--input is required unless --template-task is used")

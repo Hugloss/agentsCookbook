@@ -76,12 +76,8 @@ from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
 PILOT = Path("benchmarks/suites/repository-intelligence/pilot-v1")
-MATRIX_V2 = Path(
-    "benchmarks/suites/repository-intelligence/agent-matrix-v2"
-)
-HELDOUT_V1 = Path(
-    "benchmarks/suites/repository-intelligence/heldout-v1"
-)
+MATRIX_V2 = Path("benchmarks/suites/repository-intelligence/agent-matrix-v2")
+HELDOUT_V1 = Path("benchmarks/suites/repository-intelligence/heldout-v1")
 CYCLE = Path("benchmarks/suites/repository-intelligence/enola-cycle-reproduction-v1")
 PINNED_COMMIT = "0841a8822f417b8fd03af61c03779df8f1cdc941"
 PINNED_TREE = "65a32888329e308615647dda194f0e36c2afe2ac"
@@ -95,7 +91,9 @@ def _legacy_matrix_suite() -> SuiteDefinition:
     experiment = copy.deepcopy(suite.experiment)
     for condition in experiment["conditions"]:
         condition["seed"] = condition.pop("replicate_ids")[0]
-    return SuiteDefinition(suite.root, experiment, suite.tasks, suite.subjects, suite.agents)
+    return SuiteDefinition(
+        suite.root, experiment, suite.tasks, suite.subjects, suite.agents
+    )
 
 
 def _opencode_trial_environment(control: Path, root: Path) -> dict[str, str]:
@@ -421,9 +419,7 @@ class PilotExecutionTests(unittest.TestCase):
             3,
         )
         with self.assertRaises(SelectionError):
-            select_definitions(
-                suite, agents=("opencode-native",), condition="bare-sol"
-            )
+            select_definitions(suite, agents=("opencode-native",), condition="bare-sol")
 
     def test_suite_loader_enforces_repo_owned_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -559,9 +555,13 @@ class PilotExecutionTests(unittest.TestCase):
                 prepared = HashmarksSubject().prepare(context)
             observed.assert_not_called()
             self.assertFalse(prepared.payload["available"])
-            self.assertIn("PATH lookup is not benchmark authority", prepared.payload["reason"])
+            self.assertIn(
+                "PATH lookup is not benchmark authority", prepared.payload["reason"]
+            )
 
-    def test_hashmarks_source_selects_exact_executable_without_path_mutation(self) -> None:
+    def test_hashmarks_source_selects_exact_executable_without_path_mutation(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workspace = root / "workspace"
@@ -789,9 +789,7 @@ class PilotExecutionTests(unittest.TestCase):
         )
         self.assertIsInstance(agent, OpenCodeNativeAgent)
 
-        forbidden = json.loads(
-            json.dumps(suite.agents["opencode-native"])
-        )
+        forbidden = json.loads(json.dumps(suite.agents["opencode-native"]))
         forbidden["configuration"]["model"] = "liteLLM/gemma4"
         with self.assertRaises(AdapterConfigurationError):
             build_agent(forbidden, budgets=task["budgets"])
@@ -981,8 +979,7 @@ class PilotExecutionTests(unittest.TestCase):
                             "overlay_identity": {
                                 "shape": "flat",
                                 "selected_subject": "hashmarks",
-                                "subject_definition_source":
-                                    "benchmark-subject-exposure",
+                                "subject_definition_source": "benchmark-subject-exposure",
                                 "native_server_shadowed": True,
                                 "subject_exposure_sha256": "d" * 64,
                             },
@@ -1002,9 +999,7 @@ class PilotExecutionTests(unittest.TestCase):
                 prepared.payload["mcp_exposure"]["source"],
                 "benchmark-subject-exposure",
             )
-            self.assertTrue(
-                prepared.payload["mcp_exposure"]["native_server_shadowed"]
-            )
+            self.assertTrue(prepared.payload["mcp_exposure"]["native_server_shadowed"])
             self.assertEqual(
                 prepared.payload["native_subject_identity"]["executable_path"],
                 str(installed.resolve()),
@@ -1058,8 +1053,8 @@ class PilotExecutionTests(unittest.TestCase):
             runtime_result.stdout = b"{}"
             reason = (
                 "benchmark OpenCode MCP connection hashmarks is not connected; "
-                "exit=7; mcp-list=\"hashmarks: failed\"; "
-                "stderr=\"Hashmarks MCP support requires the optional extra\""
+                'exit=7; mcp-list="hashmarks: failed"; '
+                'stderr="Hashmarks MCP support requires the optional extra"'
             )
             with (
                 mock.patch(
@@ -1171,14 +1166,12 @@ class PilotExecutionTests(unittest.TestCase):
                                     "native Hashmarks workspace resolves outside "
                                     "trial workspace: /outside"
                                 ),
-                                "reason_code":
-                                    "hashmarks-workspace-outside-trial",
+                                "reason_code": "hashmarks-workspace-outside-trial",
                             },
                             "overlay_identity": {
                                 "shape": "flat",
                                 "selected_subject": "hashmarks",
-                                "subject_definition_source":
-                                    "benchmark-subject-exposure",
+                                "subject_definition_source": "benchmark-subject-exposure",
                                 "native_server_shadowed": True,
                                 "subject_exposure_sha256": "d" * 64,
                             },
@@ -1193,9 +1186,7 @@ class PilotExecutionTests(unittest.TestCase):
                 )
 
             self.assertFalse(prepared.payload["available"])
-            self.assertFalse(
-                prepared.payload["workspace_binding"]["verified"]
-            )
+            self.assertFalse(prepared.payload["workspace_binding"]["verified"])
             self.assertIn(
                 "outside trial workspace",
                 prepared.payload["reason"],
@@ -1211,9 +1202,7 @@ class PilotExecutionTests(unittest.TestCase):
             )
             self.assertNotIn(
                 "/outside",
-                json.dumps(
-                    prepared.payload["observed_identity"]["workspace_binding"]
-                ),
+                json.dumps(prepared.payload["observed_identity"]["workspace_binding"]),
             )
 
     def test_runner_preserves_agent_terminal_failure_reason(self) -> None:
@@ -1492,25 +1481,39 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(metrics["mcp_result_bytes"], len("evidence".encode()))
 
     def test_opencode_code_mode_counts_child_calls_without_guessing_bytes(self) -> None:
-        exported = {"messages": [{
-            "info": {"role": "assistant"},
-            "parts": [
+        exported = {
+            "messages": [
                 {
-                    "type": "tool", "tool": "execute",
-                    "state": {
-                        "output": "combined script output",
-                        "metadata": {"toolCalls": [
-                            {"tool": "hashmarks.find", "status": "completed"},
-                            {"tool": "tools.enola.explain", "status": "completed"},
-                        ]},
-                    },
-                },
-                {
-                    "type": "tool", "tool": "hashmarks_find",
-                    "state": {"output": "direct result"},
-                },
-            ],
-        }]}
+                    "info": {"role": "assistant"},
+                    "parts": [
+                        {
+                            "type": "tool",
+                            "tool": "execute",
+                            "state": {
+                                "output": "combined script output",
+                                "metadata": {
+                                    "toolCalls": [
+                                        {
+                                            "tool": "hashmarks.find",
+                                            "status": "completed",
+                                        },
+                                        {
+                                            "tool": "tools.enola.explain",
+                                            "status": "completed",
+                                        },
+                                    ]
+                                },
+                            },
+                        },
+                        {
+                            "type": "tool",
+                            "tool": "hashmarks_find",
+                            "state": {"output": "direct result"},
+                        },
+                    ],
+                }
+            ]
+        }
         metrics = opencode_metrics(
             exported,
             mcp_servers=("hashmarks", "enola"),
@@ -1529,65 +1532,70 @@ class PilotExecutionTests(unittest.TestCase):
             selected_server="hashmarks",
         )
         for name in (
-            "mcp_calls", "subject_mcp_calls", "subject_tool_invoked",
+            "mcp_calls",
+            "subject_mcp_calls",
+            "subject_tool_invoked",
             "mcp_result_bytes",
         ):
             self.assertNotIn(name, unknown)
 
     def test_codex_jsonl_separates_tool_availability_from_adoption(self) -> None:
-        raw = b"\n".join(
-            [
-                json.dumps({"type": "thread.started", "thread_id": "t"}).encode(),
-                json.dumps(
-                    {
-                        "type": "item.completed",
-                        "item": {
-                            "id": "m1",
-                            "type": "mcp_tool_call",
-                            "server": "hashmarks",
-                            "tool": "find",
-                            "arguments": {"query": "owner"},
-                            "result": {"content": "evidence"},
-                            "error": None,
-                            "status": "completed",
-                        },
-                    }
-                ).encode(),
-                json.dumps(
-                    {
-                        "type": "item.completed",
-                        "item": {
-                            "id": "c1",
-                            "type": "command_execution",
-                            "command": "git status",
-                            "aggregated_output": "",
-                            "exit_code": 0,
-                            "status": "completed",
-                        },
-                    }
-                ).encode(),
-                json.dumps(
-                    {
-                        "type": "item.completed",
-                        "item": {
-                            "id": "a1",
-                            "type": "agent_message",
-                            "text": '{"path":"x","symbol":"y"}',
-                        },
-                    }
-                ).encode(),
-                json.dumps(
-                    {
-                        "type": "turn.completed",
-                        "usage": {
-                            "input_tokens": 100,
-                            "cached_input_tokens": 20,
-                            "output_tokens": 12,
-                        },
-                    }
-                ).encode(),
-            ]
-        ) + b"\n"
+        raw = (
+            b"\n".join(
+                [
+                    json.dumps({"type": "thread.started", "thread_id": "t"}).encode(),
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {
+                                "id": "m1",
+                                "type": "mcp_tool_call",
+                                "server": "hashmarks",
+                                "tool": "find",
+                                "arguments": {"query": "owner"},
+                                "result": {"content": "evidence"},
+                                "error": None,
+                                "status": "completed",
+                            },
+                        }
+                    ).encode(),
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {
+                                "id": "c1",
+                                "type": "command_execution",
+                                "command": "git status",
+                                "aggregated_output": "",
+                                "exit_code": 0,
+                                "status": "completed",
+                            },
+                        }
+                    ).encode(),
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {
+                                "id": "a1",
+                                "type": "agent_message",
+                                "text": '{"path":"x","symbol":"y"}',
+                            },
+                        }
+                    ).encode(),
+                    json.dumps(
+                        {
+                            "type": "turn.completed",
+                            "usage": {
+                                "input_tokens": 100,
+                                "cached_input_tokens": 20,
+                                "output_tokens": 12,
+                            },
+                        }
+                    ).encode(),
+                ]
+            )
+            + b"\n"
+        )
         events, errors = parse_codex_jsonl(raw)
         self.assertEqual(errors, [])
         metrics = _metrics(events, subject_server="hashmarks")
@@ -1848,11 +1856,7 @@ class PilotExecutionTests(unittest.TestCase):
             receipts.append(
                 {
                     "definition_id": row["definition_id"],
-                    "trial_id": (
-                        "a" * 64
-                        if condition_id == "bare-sol"
-                        else "b" * 64
-                    ),
+                    "trial_id": ("a" * 64 if condition_id == "bare-sol" else "b" * 64),
                     "experiment": suite.experiment,
                     "task": suite.tasks[task_id],
                     "condition": suite.expanded_condition(condition),
@@ -1897,18 +1901,18 @@ class PilotExecutionTests(unittest.TestCase):
             {"codex-sol", "opencode-native"},
         )
         self.assertNotIn("winner", observations[0])
-        self.assertTrue(
-            report["authority"]["cross_agent_rows_are_descriptive"]
-        )
+        self.assertTrue(report["authority"]["cross_agent_rows_are_descriptive"])
 
     def test_report_excludes_unobserved_code_mode_adoption(self) -> None:
         suite = _legacy_matrix_suite()
         condition = next(
-            row for row in suite.experiment["conditions"]
+            row
+            for row in suite.experiment["conditions"]
             if row["id"] == "hashmarks-opencode-native"
         )
         selected = [
-            row for row in suite.trial_definitions()
+            row
+            for row in suite.trial_definitions()
             if row["condition_id"] == condition["id"]
         ][:2]
         receipts = []
@@ -1917,19 +1921,22 @@ class PilotExecutionTests(unittest.TestCase):
             if index == 0:
                 measurements["subject_tool_invoked"] = True
                 measurements["subject_mcp_calls"] = 1
-            receipts.append({
-                "definition_id": row["definition_id"],
-                "trial_id": ("a" if index == 0 else "b") * 64,
-                "experiment": suite.experiment,
-                "task": suite.tasks[row["task_id"]],
-                "condition": suite.expanded_condition(condition),
-                "status": "PASS",
-                "authority": {"subject": {"available": True}},
-                "execution": {"trial_index": 0, "seed": row["seed"]},
-                "measurements": {"agent": measurements},
-            })
+            receipts.append(
+                {
+                    "definition_id": row["definition_id"],
+                    "trial_id": ("a" if index == 0 else "b") * 64,
+                    "experiment": suite.experiment,
+                    "task": suite.tasks[row["task_id"]],
+                    "condition": suite.expanded_condition(condition),
+                    "status": "PASS",
+                    "authority": {"subject": {"available": True}},
+                    "execution": {"trial_index": 0, "seed": row["seed"]},
+                    "measurements": {"agent": measurements},
+                }
+            )
         with mock.patch(
-            "benchmarks.harness.report._receipts", return_value=receipts,
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
         ):
             report = build_report(
                 suite=suite,
@@ -1941,7 +1948,8 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(profile["subject_tool_adoption_denominator"], 1)
         self.assertEqual(profile["subject_tool_adoption_rate"], 1.0)
         self.assertEqual(
-            profile["metrics"]["subject_mcp_calls"]["observations"], 1,
+            profile["metrics"]["subject_mcp_calls"]["observations"],
+            1,
         )
 
         receipts[0]["authority"]["harness"] = {"working_copy_sha256": "a"}
@@ -1968,32 +1976,38 @@ class PilotExecutionTests(unittest.TestCase):
             ("hashmarks-opencode-native", "INVALID", "liteLLM/other", "b" * 64),
         ):
             condition = next(
-                row for row in suite.experiment["conditions"]
+                row
+                for row in suite.experiment["conditions"]
                 if row["id"] == condition_id
             )
-            receipts.append({
-                "definition_id": definitions[condition_id]["definition_id"],
-                "trial_id": ("c" if status == "PASS" else "d") * 64,
-                "experiment": suite.experiment,
-                "task": suite.tasks[task_id],
-                "condition": suite.expanded_condition(condition),
-                "status": status,
-                "authority": {
-                    "subject": {"available": True},
-                    "agent": {"observed": {
-                        "version": "opencode 1",
-                        "executable_sha256": "e" * 64,
-                        "auth_mode": "native-opencode",
-                        "model": model,
-                        "provider": "liteLLM",
-                        "native_config_sha256": config_hash,
-                    }},
-                },
-                "execution": {"trial_index": 0, "seed": 5201},
-                "measurements": {"agent": {}},
-            })
+            receipts.append(
+                {
+                    "definition_id": definitions[condition_id]["definition_id"],
+                    "trial_id": ("c" if status == "PASS" else "d") * 64,
+                    "experiment": suite.experiment,
+                    "task": suite.tasks[task_id],
+                    "condition": suite.expanded_condition(condition),
+                    "status": status,
+                    "authority": {
+                        "subject": {"available": True},
+                        "agent": {
+                            "observed": {
+                                "version": "opencode 1",
+                                "executable_sha256": "e" * 64,
+                                "auth_mode": "native-opencode",
+                                "model": model,
+                                "provider": "liteLLM",
+                                "native_config_sha256": config_hash,
+                            }
+                        },
+                    },
+                    "execution": {"trial_index": 0, "seed": 5201},
+                    "measurements": {"agent": {}},
+                }
+            )
         with mock.patch(
-            "benchmarks.harness.report._receipts", return_value=receipts,
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
         ):
             report = build_report(
                 suite=suite,
@@ -2091,9 +2105,7 @@ class PilotExecutionTests(unittest.TestCase):
                 build_report(
                     suite=suite,
                     results_root=Path("/unused"),
-                    selected_definitions={
-                        row["definition_id"] for row in selected
-                    },
+                    selected_definitions={row["definition_id"] for row in selected},
                 )
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -2114,9 +2126,7 @@ class PilotExecutionTests(unittest.TestCase):
                 status = campaign_status(
                     suite=suite,
                     results_root=results,
-                    selected_definitions={
-                        row["definition_id"] for row in selected
-                    },
+                    selected_definitions={row["definition_id"] for row in selected},
                 )
         self.assertTrue(status["complete"])
         self.assertFalse(status["qualified"])
@@ -2158,7 +2168,9 @@ class PilotExecutionTests(unittest.TestCase):
                         self.fail("admission should not yield")
             materialize.assert_not_called()
 
-    def test_agent_native_lifecycle_never_calls_standalone_subject_lifecycle(self) -> None:
+    def test_agent_native_lifecycle_never_calls_standalone_subject_lifecycle(
+        self,
+    ) -> None:
         suite = load_suite(MATRIX_V2)
         row = next(
             value
@@ -2220,26 +2232,18 @@ class PilotExecutionTests(unittest.TestCase):
                         admission.subject_lifecycle_mode,
                         SubjectLifecycleMode.AGENT_NATIVE,
                     )
-                    self.assertTrue(
-                        admission.subject_prepare.payload["available"]
-                    )
+                    self.assertTrue(admission.subject_prepare.payload["available"])
                     self.assertEqual(
-                        admission.subject_prepare.payload[
-                            "lifecycle_owner"
-                        ],
+                        admission.subject_prepare.payload["lifecycle_owner"],
                         "agent-native",
                     )
                     self.assertEqual(admission.generated_globs(), ())
                     self.assertEqual(
-                        admission.post_change(("x.py",)).payload[
-                            "lifecycle_owner"
-                        ],
+                        admission.post_change(("x.py",)).payload["lifecycle_owner"],
                         "agent-native",
                     )
                     self.assertEqual(
-                        admission.cleanup_subject().payload[
-                            "lifecycle_owner"
-                        ],
+                        admission.cleanup_subject().payload["lifecycle_owner"],
                         "agent-native",
                     )
 
@@ -2378,7 +2382,9 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertFalse(status["qualified"])
         self.assertEqual(status["rows"][0]["state"], "CONFLICT")
 
-    def test_preflight_reuses_shared_admission_and_rejects_recorded_incomplete(self) -> None:
+    def test_preflight_reuses_shared_admission_and_rejects_recorded_incomplete(
+        self,
+    ) -> None:
         suite = load_suite(MATRIX_V2)
         row = next(
             value
@@ -2599,7 +2605,9 @@ class PilotExecutionTests(unittest.TestCase):
                 "work_root": root / "work",
                 "local_source": source,
             }
-            with mock.patch.object(FakeAgent, "run", side_effect=AssertionError("model called")):
+            with mock.patch.object(
+                FakeAgent, "run", side_effect=AssertionError("model called")
+            ):
                 checked = preflight_trial(
                     suite=suite,
                     task_id="task",
@@ -2776,8 +2784,7 @@ class PilotExecutionTests(unittest.TestCase):
                     "input_tokens": 500,
                     "cached_input_tokens": 100,
                     "output_tokens": 20,
-                    "source_read_observability":
-                        "not-authoritatively-exposed-by-codex-jsonl",
+                    "source_read_observability": "not-authoritatively-exposed-by-codex-jsonl",
                 }
             },
         }

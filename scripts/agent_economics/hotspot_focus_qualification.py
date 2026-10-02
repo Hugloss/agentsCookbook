@@ -15,7 +15,9 @@ def _write(path: Path, text: str) -> None:
 
 
 def _git(root: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(root), *args], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(
+        ["git", "-C", str(root), *args], check=True, stdout=subprocess.DEVNULL
+    )
 
 
 def _commit(root: Path, message: str) -> None:
@@ -29,10 +31,21 @@ def main() -> None:
         _git(root, "init")
         _git(root, "config", "user.email", "one@example.invalid")
         _git(root, "config", "user.name", "One")
-        _write(root / "src/app/a.py", "def a(x):\n    if x:\n        return 1\n    return 0\n")
-        _write(root / "src/app/b.py", "from app.a import a\ndef b():\n    return a(True)\n")
-        _write(root / "src/app/c.py", "from app.a import a\ndef c():\n    return a(False)\n")
-        _write(root / "tests/test_a.py", "from app.a import a\ndef test_a():\n    assert a(True) == 1\n")
+        _write(
+            root / "src/app/a.py",
+            "def a(x):\n    if x:\n        return 1\n    return 0\n",
+        )
+        _write(
+            root / "src/app/b.py", "from app.a import a\ndef b():\n    return a(True)\n"
+        )
+        _write(
+            root / "src/app/c.py",
+            "from app.a import a\ndef c():\n    return a(False)\n",
+        )
+        _write(
+            root / "tests/test_a.py",
+            "from app.a import a\ndef test_a():\n    assert a(True) == 1\n",
+        )
         _commit(root, "initial")
         for i in range(3):
             with (root / "src/app/a.py").open("a", encoding="utf-8") as handle:
@@ -101,22 +114,29 @@ def main() -> None:
         except ValueError as exc:
             assert "byte bound" in str(exc)
         else:
-            raise AssertionError("tiny history byte bound must fail closed when history is required")
+            raise AssertionError(
+                "tiny history byte bound must fail closed when history is required"
+            )
 
-        print(json.dumps({
-            "status": "PASS",
-            "cases": [
-                "visible-independent-dimensions",
-                "lexicographic-ranking-no-opaque-score",
-                "static-fan-in",
-                "bounded-git-churn",
-                "anonymized-author-concentration",
-                "confirmed-test-evidence",
-                "static-only-unknown-not-zero",
-                "hard-history-byte-bound",
-                "common-contract",
-            ],
-        }, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "status": "PASS",
+                    "cases": [
+                        "visible-independent-dimensions",
+                        "lexicographic-ranking-no-opaque-score",
+                        "static-fan-in",
+                        "bounded-git-churn",
+                        "anonymized-author-concentration",
+                        "confirmed-test-evidence",
+                        "static-only-unknown-not-zero",
+                        "hard-history-byte-bound",
+                        "common-contract",
+                    ],
+                },
+                sort_keys=True,
+            )
+        )
 
 
 if __name__ == "__main__":

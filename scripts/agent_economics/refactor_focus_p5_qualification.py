@@ -96,15 +96,37 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
         _write(root / ".gitignore", "src/samplepkg/ignored.py\ntests/test_ignored.py\n")
         _write(root / "src/samplepkg/__init__.py", "")
-        _write(root / "src/samplepkg/tracked.py", "def tracked():\n    value = 1\n    return value\n")
-        _write(root / "src/samplepkg/generated/generated.py", "def generated():\n    value = 2\n    return value\n")
-        _write(root / "tests/test_tracked.py", "import samplepkg.tracked\n\ndef test_tracked():\n    assert True\n")
+        _write(
+            root / "src/samplepkg/tracked.py",
+            "def tracked():\n    value = 1\n    return value\n",
+        )
+        _write(
+            root / "src/samplepkg/generated/generated.py",
+            "def generated():\n    value = 2\n    return value\n",
+        )
+        _write(
+            root / "tests/test_tracked.py",
+            "import samplepkg.tracked\n\ndef test_tracked():\n    assert True\n",
+        )
         _write(root / "docs/_build/should_not_scan.py", "x = 1\n")
-        _git(root, "add", ".gitignore", "src", "tests/test_tracked.py", "docs/_build/should_not_scan.py")
+        _git(
+            root,
+            "add",
+            ".gitignore",
+            "src",
+            "tests/test_tracked.py",
+            "docs/_build/should_not_scan.py",
+        )
         _git(root, "commit", "-qm", "fixture")
 
-        _write(root / "src/samplepkg/untracked.py", "def untracked():\n    value = 3\n    return value\n")
-        _write(root / "src/samplepkg/ignored.py", "def ignored():\n    value = 4\n    return value\n")
+        _write(
+            root / "src/samplepkg/untracked.py",
+            "def untracked():\n    value = 3\n    return value\n",
+        )
+        _write(
+            root / "src/samplepkg/ignored.py",
+            "def ignored():\n    value = 4\n    return value\n",
+        )
         _write(root / "tests/test_ignored.py", "assert True\n")
 
         internal_link_supported = True
@@ -153,9 +175,13 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             repository_root=root,
             config=DiscoveryConfig(ignored_policy="include"),
         )
-        if "src/samplepkg/ignored.py" not in _relative(include_ignored.files_for("source"), root):
+        if "src/samplepkg/ignored.py" not in _relative(
+            include_ignored.files_for("source"), root
+        ):
             failures.append("ignored_policy=include did not admit ignored source")
-        if "tests/test_ignored.py" not in _relative(include_ignored.files_for("tests"), root):
+        if "tests/test_ignored.py" not in _relative(
+            include_ignored.files_for("tests"), root
+        ):
             failures.append("ignored_policy=include did not admit ignored test")
         if include_ignored.git_commands != 4:
             failures.append("ignored-inclusive discovery executed unexpected commands")
@@ -168,15 +194,23 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             repository_root=root,
             config=DiscoveryConfig(exclude_patterns=custom_excludes),
         )
-        if "src/samplepkg/generated/generated.py" in _relative(excluded.files_for("source"), root):
+        if "src/samplepkg/generated/generated.py" in _relative(
+            excluded.files_for("source"), root
+        ):
             failures.append("normalized repository-relative exclusion was ignored")
-        if not is_excluded_repo_path("docs/_build/should_not_scan.py", DEFAULT_EXCLUDE_PATTERNS):
+        if not is_excluded_repo_path(
+            "docs/_build/should_not_scan.py", DEFAULT_EXCLUDE_PATTERNS
+        ):
             failures.append("default docs/_build exclusion is ineffective")
-        if is_excluded_repo_path("src/docs/_build/should_not_scan.py", DEFAULT_EXCLUDE_PATTERNS):
+        if is_excluded_repo_path(
+            "src/docs/_build/should_not_scan.py", DEFAULT_EXCLUDE_PATTERNS
+        ):
             failures.append("repo-root docs/_build exclusion leaked into nested paths")
         anchored = normalize_exclude_patterns(["src/*.py"])
         if is_excluded_repo_path("src/pkg/deep.py", anchored):
-            failures.append("single-segment exclusion wildcard crossed a directory boundary")
+            failures.append(
+                "single-segment exclusion wildcard crossed a directory boundary"
+            )
         if not is_excluded_repo_path("src/direct.py", anchored):
             failures.append("anchored exclusion wildcard failed direct match")
         if normalize_exclude_patterns(["src\\generated\\**"]) != ("src/generated/**",):
@@ -195,7 +229,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         _expect_error(
             failures,
             "ignored without untracked",
-            lambda: DiscoveryConfig(untracked_policy="exclude", ignored_policy="include"),
+            lambda: DiscoveryConfig(
+                untracked_policy="exclude", ignored_policy="include"
+            ),
         )
 
         if internal_link_supported:
@@ -213,8 +249,12 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
                 repository_root=root,
                 config=DiscoveryConfig(symlink_policy="within-repo"),
             )
-            if "src/samplepkg/link.py" not in _relative(internal_only.files_for("source"), root):
-                failures.append("within-repo symlink policy did not admit internal file symlink")
+            if "src/samplepkg/link.py" not in _relative(
+                internal_only.files_for("source"), root
+            ):
+                failures.append(
+                    "within-repo symlink policy did not admit internal file symlink"
+                )
 
             external = Path(temp) / "external.py"
             _write(external, "x = 1\n")
@@ -295,7 +335,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         include_repo = contract_include.get("repository", {})
         exclude_repo = contract_exclude.get("repository", {})
         include_evidence = contract_include.get("evidence", {})
-        if not isinstance(include_config, dict) or not isinstance(include_config.get("values"), dict):
+        if not isinstance(include_config, dict) or not isinstance(
+            include_config.get("values"), dict
+        ):
             failures.append("P5 discovery configuration missing from probe contract")
         else:
             values = include_config["values"]
@@ -305,16 +347,22 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
                 failures.append("contract did not record untracked policy")
             if "src/samplepkg/generated/**" not in values.get("exclude_patterns", []):
                 failures.append("contract did not record effective exclusion patterns")
-        if not isinstance(include_evidence, dict) or not isinstance(include_evidence.get("discovery"), dict):
+        if not isinstance(include_evidence, dict) or not isinstance(
+            include_evidence.get("discovery"), dict
+        ):
             failures.append("contract did not publish discovery evidence")
         elif include_evidence["discovery"].get("backend") != "git":
             failures.append("contract discovery evidence did not record Git backend")
         if isinstance(include_config, dict) and isinstance(exclude_config, dict):
             if include_config.get("identity") == exclude_config.get("identity"):
-                failures.append("discovery policy change did not alter configuration identity")
+                failures.append(
+                    "discovery policy change did not alter configuration identity"
+                )
         if isinstance(include_repo, dict) and isinstance(exclude_repo, dict):
             if include_repo.get("identity") == exclude_repo.get("identity"):
-                failures.append("untracked policy change did not alter analyzed repository identity")
+                failures.append(
+                    "untracked policy change did not alter analyzed repository identity"
+                )
 
         observations = {
             "default_backend": default_result.backend,

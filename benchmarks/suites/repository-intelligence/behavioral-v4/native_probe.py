@@ -7,29 +7,42 @@ import sys
 from pathlib import Path
 
 from hashmarks import CodeMap
-from hashmarks.adapters import maven_dependency_observation, uv_lock_dependency_observation
+from hashmarks.adapters import (
+    maven_dependency_observation,
+    uv_lock_dependency_observation,
+)
 
 DIRECT_CASES = (
-    "post_change-00", "post_change-01",
-    "change_impact-00", "change_impact-03",
-    "verification-00", "verification-02",
-    "dependency_delta-00", "dependency_delta-01",
-    "correlation-00", "correlation-01",
-    "declarations-00", "declarations-01",
-    "freshness-00", "freshness-01",
-    "negative_bounds-00", "negative_bounds-02",
+    "post_change-00",
+    "post_change-01",
+    "change_impact-00",
+    "change_impact-03",
+    "verification-00",
+    "verification-02",
+    "dependency_delta-00",
+    "dependency_delta-01",
+    "correlation-00",
+    "correlation-01",
+    "declarations-00",
+    "declarations-01",
+    "freshness-00",
+    "freshness-01",
+    "negative_bounds-00",
+    "negative_bounds-02",
 )
 
 
 def _bundle(*anchors: dict, provider: str = "runtime-log") -> list[dict]:
-    return [{
-        "bundle_id": "external-observation",
-        "producer": {"kind": provider},
-        "completeness": "complete",
-        "scope": {"kind": "fixture"},
-        "truncation": "complete",
-        "anchors": list(anchors),
-    }]
+    return [
+        {
+            "bundle_id": "external-observation",
+            "producer": {"kind": provider},
+            "completeness": "complete",
+            "scope": {"kind": "fixture"},
+            "truncation": "complete",
+            "anchors": list(anchors),
+        }
+    ]
 
 
 def _declaration(path: str, value: str, provider: str) -> dict:
@@ -82,28 +95,42 @@ def observe(case_id: str, workspace: Path) -> dict:
             full = codemap.task_evidence(task)
             delta_bytes = len(json.dumps(delta, sort_keys=True).encode())
             full_bytes = len(json.dumps(full, sort_keys=True).encode())
-            return {"previous": previous, "delta": delta, "full": full,
-                    "delta_bytes": delta_bytes, "full_bytes": full_bytes,
-                    "smaller_than_full": delta_bytes < full_bytes}
+            return {
+                "previous": previous,
+                "delta": delta,
+                "full": full,
+                "delta_bytes": delta_bytes,
+                "full_bytes": full_bytes,
+                "smaller_than_full": delta_bytes < full_bytes,
+            }
         if case_id == "post_change-01":
             task = "change route widget behavior and verify route test"
             previous = codemap.task_evidence(task)
             path = base / "src/route.py"
             text = (workspace / path).read_text(encoding="utf-8")
-            (workspace / path).write_text(text.replace("engine_a", "engine_b"), encoding="utf-8")
+            (workspace / path).write_text(
+                text.replace("engine_a", "engine_b"), encoding="utf-8"
+            )
             delta = codemap.task_post_change_delta(
                 task, [str(path)], previous_evidence=previous
             )
             full = codemap.task_evidence(task)
             delta_bytes = len(json.dumps(delta, sort_keys=True).encode())
             full_bytes = len(json.dumps(full, sort_keys=True).encode())
-            return {"previous": previous, "delta": delta, "full": full,
-                    "delta_bytes": delta_bytes, "full_bytes": full_bytes,
-                    "smaller_than_full": delta_bytes < full_bytes}
+            return {
+                "previous": previous,
+                "delta": delta,
+                "full": full,
+                "delta_bytes": delta_bytes,
+                "full_bytes": full_bytes,
+                "smaller_than_full": delta_bytes < full_bytes,
+            }
         if case_id == "change_impact-00":
             path = base / "src/core.py"
             text = (workspace / path).read_text(encoding="utf-8")
-            (workspace / path).write_text(text.replace('"old"', '"new"'), encoding="utf-8")
+            (workspace / path).write_text(
+                text.replace('"old"', '"new"'), encoding="utf-8"
+            )
             return codemap.task_change_impact("shared route contract", [str(path)])
         if case_id == "change_impact-03":
             codemap.enrich_projects(
@@ -119,7 +146,8 @@ def observe(case_id: str, workspace: Path) -> dict:
                 else base / "tests/widget.test.ts"
             )
             return codemap.verification_plan(
-                str(path), symbol="test_contract" if case_id == "verification-00" else None
+                str(path),
+                symbol="test_contract" if case_id == "verification-00" else None,
             )
         if case_id == "dependency_delta-00":
             before = uv_lock_dependency_observation(
@@ -134,33 +162,39 @@ def observe(case_id: str, workspace: Path) -> dict:
         if case_id == "dependency_delta-01":
             before = maven_dependency_observation(
                 trees={"app": (workspace / base / "before/tree.json").read_bytes()},
-                inventories={}, complete_tree_contexts=("app",)
+                inventories={},
+                complete_tree_contexts=("app",),
             )
             after = maven_dependency_observation(
                 trees={"app": (workspace / base / "after/tree.json").read_bytes()},
-                inventories={}, complete_tree_contexts=("app",)
+                inventories={},
+                complete_tree_contexts=("app",),
             )
             left = codemap.dependency_resolution_evidence(before)
             right = codemap.dependency_resolution_evidence(after)
             return codemap.dependency_resolution_delta(left, right)
         if case_id == "correlation-00":
             return codemap.correlate_evidence(
-                _bundle({
-                    "anchor_id": "frame",
-                    "path": "/app/" + str(base / "src/worker.py"),
-                    "symbol": "process_output_data",
-                    "line": 2,
-                }),
+                _bundle(
+                    {
+                        "anchor_id": "frame",
+                        "path": "/app/" + str(base / "src/worker.py"),
+                        "symbol": "process_output_data",
+                        "line": 2,
+                    }
+                ),
                 path_mappings=[{"external_prefix": "/app", "repository_prefix": ""}],
             )
         if case_id == "correlation-01":
             return codemap.correlate_evidence(
-                _bundle({
-                    "anchor_id": "conflict",
-                    "path": str(base / "src/owner.py"),
-                    "symbol": "second",
-                    "line": 2,
-                })
+                _bundle(
+                    {
+                        "anchor_id": "conflict",
+                        "path": str(base / "src/owner.py"),
+                        "symbol": "second",
+                        "line": 2,
+                    }
+                )
             )
         if case_id.startswith("declarations-"):
             left = str(base / "pyproject.toml")
@@ -181,11 +215,15 @@ def observe(case_id: str, workspace: Path) -> dict:
             return codemap.outline(str(path))
         if case_id == "negative_bounds-00":
             narrow = codemap.task_entry_points("collision_owner", limit=1, per_role=1)
-            complete = codemap.task_entry_points("collision_owner", limit=20, per_role=3)
+            complete = codemap.task_entry_points(
+                "collision_owner", limit=20, per_role=3
+            )
             return {"narrow": narrow, "complete": complete}
         if case_id == "negative_bounds-02":
             task = json.loads(
-                (workspace / base / "observations/query.json").read_text(encoding="utf-8")
+                (workspace / base / "observations/query.json").read_text(
+                    encoding="utf-8"
+                )
             )["query"]
             return codemap.task_entry_points(task, limit=20)
     raise ValueError(f"no native probe for {case_id}")

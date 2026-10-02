@@ -142,9 +142,13 @@ def _validate_participant_references(
         if "replicate_ids" in condition:
             ids = condition["replicate_ids"]
             if len(ids) != condition["trials"] or len(set(ids)) != len(ids):
-                raise SuiteError(f"condition {condition.get('id')} has invalid replicate_ids")
+                raise SuiteError(
+                    f"condition {condition.get('id')} has invalid replicate_ids"
+                )
         elif "seed" not in condition:
-            raise SuiteError(f"condition {condition.get('id')} has no replicate identity")
+            raise SuiteError(
+                f"condition {condition.get('id')} has no replicate identity"
+            )
     grouped: dict[str, list[int]] = {}
     for condition in experiment.get("conditions", []):
         if "replicate_ids" not in condition:
@@ -249,10 +253,16 @@ def load_suite(root: Path) -> SuiteDefinition:
         subjects=subjects,
         agents=agents,
     )
-    if "oracle_reviews" in experiment or (root / "qualification" / "oracle-reviews.json").is_file():
+    if (
+        "oracle_reviews" in experiment
+        or (root / "qualification" / "oracle-reviews.json").is_file()
+    ):
         from .oracle_reviews import (
-            OracleReviewError, oracle_reviews_declared, validate_oracle_reviews,
+            OracleReviewError,
+            oracle_reviews_declared,
+            validate_oracle_reviews,
         )
+
         try:
             if oracle_reviews_declared(suite):
                 validate_oracle_reviews(suite, require_complete=False)

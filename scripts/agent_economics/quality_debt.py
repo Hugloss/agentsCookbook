@@ -8,7 +8,11 @@ import time
 from pathlib import Path
 
 from .bounded_process import ProcessLimits, run_bounded
-from .probe_contract import analyzed_input_identity, build_probe_contract, configuration_identity
+from .probe_contract import (
+    analyzed_input_identity,
+    build_probe_contract,
+    configuration_identity,
+)
 from .refactor_focus_paths import iso_utc_now
 
 TOOL_NAME = "quality-debt"
@@ -49,13 +53,12 @@ def _normalize_scope_path(root: Path, raw: str, *, kind: str) -> str:
 
 
 def _excluded(relative: str, excludes: tuple[str, ...]) -> bool:
-    return any(
-        relative == item or relative.startswith(item + "/")
-        for item in excludes
-    )
+    return any(relative == item or relative.startswith(item + "/") for item in excludes)
 
 
-def _validate_scope(root: Path, roots: tuple[str, ...], excludes: tuple[str, ...]) -> list[dict[str, str]]:
+def _validate_scope(
+    root: Path, roots: tuple[str, ...], excludes: tuple[str, ...]
+) -> list[dict[str, str]]:
     resolved_roots: list[tuple[str, Path]] = []
     seen: dict[Path, str] = {}
     for raw in roots:
@@ -63,7 +66,9 @@ def _validate_scope(root: Path, roots: tuple[str, ...], excludes: tuple[str, ...
         if not resolved.exists():
             raise QualityDebtError(f"configured root does not exist: {raw}")
         if resolved in seen:
-            raise QualityDebtError(f"duplicate configured root: {raw} resolves to {seen[resolved]}")
+            raise QualityDebtError(
+                f"duplicate configured root: {raw} resolves to {seen[resolved]}"
+            )
         for previous_raw, previous in resolved_roots:
             if resolved in previous.parents or previous in resolved.parents:
                 raise QualityDebtError(
@@ -76,11 +81,13 @@ def _validate_scope(root: Path, roots: tuple[str, ...], excludes: tuple[str, ...
     for raw, resolved in resolved_roots:
         relative = resolved.relative_to(root).as_posix()
         if _excluded(relative, excludes):
-            diagnostics.append({
-                "code": "configured_root_fully_excluded",
-                "root": raw,
-                "message": f"configured root is fully excluded: {raw}",
-            })
+            diagnostics.append(
+                {
+                    "code": "configured_root_fully_excluded",
+                    "root": raw,
+                    "message": f"configured root is fully excluded: {raw}",
+                }
+            )
     return diagnostics
 
 
@@ -99,14 +106,20 @@ def _source_identity(
         if not base.exists():
             raise QualityDebtError(f"configured root does not exist: {raw_root}")
         root_counts[raw_root] = 0
-        paths = [base] if base.is_file() else sorted(p for p in base.rglob("*") if p.is_file())
+        paths = (
+            [base]
+            if base.is_file()
+            else sorted(p for p in base.rglob("*") if p.is_file())
+        )
         for path in paths:
             relative = path.relative_to(root).as_posix()
             if path.suffix not in suffixes:
                 continue
             matching_excludes = [
-                item for item in excludes
-                if relative == item.rstrip("/") or relative.startswith(item.rstrip("/") + "/")
+                item
+                for item in excludes
+                if relative == item.rstrip("/")
+                or relative.startswith(item.rstrip("/") + "/")
             ]
             if matching_excludes:
                 for item in matching_excludes:
@@ -115,34 +128,55 @@ def _source_identity(
             root_counts[raw_root] += 1
             data = path.read_bytes()
             total += len(data)
-            entries.append({
-                "path": relative,
-                "sha256": hashlib.sha256(data).hexdigest(),
-            })
-    return analyzed_input_identity(entries), len(entries), total, {
-        "configured_roots": list(roots),
-        "root_file_counts": root_counts,
-        "excludes": list(excludes),
-        "excluded_python_files_by_rule": excluded_counts,
-        "analyzed_python_files": len(entries),
-    }
+            entries.append(
+                {
+                    "path": relative,
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                }
+            )
+    return (
+        analyzed_input_identity(entries),
+        len(entries),
+        total,
+        {
+            "configured_roots": list(roots),
+            "root_file_counts": root_counts,
+            "excludes": list(excludes),
+            "excluded_python_files_by_rule": excluded_counts,
+            "analyzed_python_files": len(entries),
+        },
+    )
 
 
 def _analyzer_version(root: Path, executable: str, timeout_seconds: float) -> str:
     result = run_bounded(
-        repository_root=root, argv=(executable, "--version"),
+        repository_root=root,
+        argv=(executable, "--version"),
         limits=ProcessLimits(timeout_seconds, 16_384, 16_384),
     )
     if result.executable_missing:
         raise QualityDebtError(f"analyzer executable unavailable: {executable}")
-    if result.timed_out or result.stdout_truncated or result.stderr_truncated or result.return_code != 0:
-        raise QualityDebtError("analyzer version command did not complete within bounds")
+    if (
+        result.timed_out
+        or result.stdout_truncated
+        or result.stderr_truncated
+        or result.return_code != 0
+    ):
+        raise QualityDebtError(
+            "analyzer version command did not complete within bounds"
+        )
     return result.stdout.decode("utf-8", errors="replace").strip()
 
 
 def _run_ruff(
-    root: Path, *, executable: str, roots: tuple[str, ...], limits: dict[str, int],
-    timeout_seconds: float, max_stdout_bytes: int, max_stderr_bytes: int,
+    root: Path,
+    *,
+    executable: str,
+    roots: tuple[str, ...],
+    limits: dict[str, int],
+    timeout_seconds: float,
+    max_stdout_bytes: int,
+    max_stderr_bytes: int,
     excludes: tuple[str, ...],
 ) -> tuple[list[dict[str, object]], dict[str, object], tuple[str, ...]]:
     unsupported = sorted(set(limits) - set(_RUFF_LIMIT_CONFIG))
@@ -157,12 +191,23 @@ def _run_ruff(
         for item in ("--config", f"{_RUFF_LIMIT_CONFIG[rule]} = {limits[rule]}")
     )
     argv = (
-        executable, "check", *roots, "--preview", "--select", ",".join(sorted(limits)),
-        "--isolated", "--config", "lint.per-file-ignores = {}", *limit_config_args,
-        *exclude_args, "--output-format", "json",
+        executable,
+        "check",
+        *roots,
+        "--preview",
+        "--select",
+        ",".join(sorted(limits)),
+        "--isolated",
+        "--config",
+        "lint.per-file-ignores = {}",
+        *limit_config_args,
+        *exclude_args,
+        "--output-format",
+        "json",
     )
     result = run_bounded(
-        repository_root=root, argv=argv,
+        repository_root=root,
+        argv=argv,
         limits=ProcessLimits(timeout_seconds, max_stdout_bytes, max_stderr_bytes),
     )
     if result.executable_missing:
@@ -198,7 +243,12 @@ def _findings(
         filename = diagnostic.get("filename")
         location = diagnostic.get("location")
         message = diagnostic.get("message")
-        if rule not in limits or not isinstance(filename, str) or not isinstance(location, dict) or not isinstance(message, str):
+        if (
+            rule not in limits
+            or not isinstance(filename, str)
+            or not isinstance(location, dict)
+            or not isinstance(message, str)
+        ):
             raise QualityDebtError("unrecognized analyzer diagnostic shape")
         line = location.get("row")
         if not isinstance(line, int) or line < 1:
@@ -208,9 +258,13 @@ def _findings(
             continue
         match = _OBSERVED_LIMIT.search(message)
         if match is None or int(match.group(2)) != limits[str(rule)]:
-            raise QualityDebtError(f"unrecognized analyzer {rule} diagnostic: {message}")
+            raise QualityDebtError(
+                f"unrecognized analyzer {rule} diagnostic: {message}"
+            )
         key = (relative, line)
-        row = grouped.setdefault(key, {"path": relative, "line": line, "violations": {}})
+        row = grouped.setdefault(
+            key, {"path": relative, "line": line, "violations": {}}
+        )
         violations = row["violations"]
         assert isinstance(violations, dict)
         violations[str(rule)] = int(match.group(1))
@@ -261,7 +315,9 @@ def _file_lengths(
     return oversized
 
 
-def _summary(findings: list[dict[str, object]], limits: dict[str, int], oversized: dict[str, int]) -> dict[str, object]:
+def _summary(
+    findings: list[dict[str, object]], limits: dict[str, int], oversized: dict[str, int]
+) -> dict[str, object]:
     files: dict[str, dict[str, int]] = {}
     for finding in findings:
         path = str(finding["path"])
@@ -269,13 +325,16 @@ def _summary(findings: list[dict[str, object]], limits: dict[str, int], oversize
         row["locations"] += 1
         violations = dict(finding["violations"])
         row["rule_findings"] += len(violations)
-        row["excess"] += sum(int(value) - limits[rule] for rule, value in violations.items())
+        row["excess"] += sum(
+            int(value) - limits[rule] for rule, value in violations.items()
+        )
     return {
         "locations": len(findings),
         "rule_findings": sum(len(dict(item["violations"])) for item in findings),
         "excess": sum(
             int(value) - limits[rule]
-            for item in findings for rule, value in dict(item["violations"]).items()
+            for item in findings
+            for rule, value in dict(item["violations"]).items()
         ),
         "oversized_files": oversized,
         "files": dict(sorted(files.items())),
@@ -291,7 +350,12 @@ def _comparison(
     if baseline is None:
         return {"state": "NO_BASELINE", "files": {}, "delta_excess": None}
     if baseline.get("schema") != "agent-economics-quality-debt-baseline.v1":
-        return {"state": "INCOMPARABLE_BASELINE", "reason": "schema_mismatch", "files": {}, "delta_excess": None}
+        return {
+            "state": "INCOMPARABLE_BASELINE",
+            "reason": "schema_mismatch",
+            "files": {},
+            "delta_excess": None,
+        }
     if baseline.get("comparable_identity") != comparable_identity:
         previous_values = baseline.get("comparable_values")
         if not isinstance(previous_values, dict):
@@ -333,7 +397,12 @@ def _comparison(
             }
     previous = baseline.get("summary")
     if not isinstance(previous, dict) or not isinstance(previous.get("files"), dict):
-        return {"state": "INCOMPARABLE_BASELINE", "reason": "invalid_summary", "files": {}, "delta_excess": None}
+        return {
+            "state": "INCOMPARABLE_BASELINE",
+            "reason": "invalid_summary",
+            "files": {},
+            "delta_excess": None,
+        }
     old_files, new_files = dict(previous["files"]), dict(current["files"])
     states: dict[str, dict[str, object]] = {}
     for path in sorted(set(old_files) | set(new_files)):
@@ -345,10 +414,14 @@ def _comparison(
             state = "RESOLVED"
         else:
             delta = int(after["excess"]) - int(before["excess"])
-            state = "INCREASED" if delta > 0 else ("REDUCED" if delta < 0 else "UNCHANGED")
+            state = (
+                "INCREASED" if delta > 0 else ("REDUCED" if delta < 0 else "UNCHANGED")
+            )
         states[path] = {
             "state": state,
-            "previous_excess": int(before["excess"]) if isinstance(before, dict) else None,
+            "previous_excess": int(before["excess"])
+            if isinstance(before, dict)
+            else None,
             "current_excess": int(after["excess"]) if isinstance(after, dict) else None,
         }
     delta = int(current["excess"]) - int(previous.get("excess", 0))
@@ -357,11 +430,18 @@ def _comparison(
 
 
 def quality_debt_audit(
-    *, repository_root: Path, roots: tuple[str, ...], limits: dict[str, int],
-    analyzer: str = "ruff", max_file_lines: int | None = None,
-    file_line_roots: tuple[str, ...] | None = None, excludes: tuple[str, ...] = (),
-    baseline_path: Path | None = None, artifact_path: Path | None = None,
-    timeout_seconds: float = 30.0, max_stdout_bytes: int = 2_000_000,
+    *,
+    repository_root: Path,
+    roots: tuple[str, ...],
+    limits: dict[str, int],
+    analyzer: str = "ruff",
+    max_file_lines: int | None = None,
+    file_line_roots: tuple[str, ...] | None = None,
+    excludes: tuple[str, ...] = (),
+    baseline_path: Path | None = None,
+    artifact_path: Path | None = None,
+    timeout_seconds: float = 30.0,
+    max_stdout_bytes: int = 2_000_000,
     max_stderr_bytes: int = 200_000,
 ) -> dict[str, object]:
     started = time.perf_counter()
@@ -372,13 +452,20 @@ def quality_debt_audit(
         raise QualityDebtError("max_file_lines must be positive")
     if analyzer != "ruff":
         raise QualityDebtError("only the ruff analyzer adapter is currently supported")
-    roots = tuple(_normalize_scope_path(root, item, kind="configured root") for item in roots)
-    excludes = tuple(_normalize_scope_path(root, item, kind="exclude") for item in excludes)
+    roots = tuple(
+        _normalize_scope_path(root, item, kind="configured root") for item in roots
+    )
+    excludes = tuple(
+        _normalize_scope_path(root, item, kind="exclude") for item in excludes
+    )
     if len(set(excludes)) != len(excludes):
-        raise QualityDebtError("duplicate excludes after repository-relative normalization")
+        raise QualityDebtError(
+            "duplicate excludes after repository-relative normalization"
+        )
     line_roots_raw = roots if file_line_roots is None else file_line_roots
     line_roots = tuple(
-        _normalize_scope_path(root, item, kind="file-line root") for item in line_roots_raw
+        _normalize_scope_path(root, item, kind="file-line root")
+        for item in line_roots_raw
     )
     scope_diagnostics = _validate_scope(root, roots, excludes)
     _validate_scope(root, line_roots, excludes)
@@ -388,18 +475,27 @@ def quality_debt_audit(
         root, roots, (".py",), excludes
     )
     diagnostics, execution, analyzer_argv = _run_ruff(
-        root, executable=executable, roots=roots, limits=limits,
-        timeout_seconds=timeout_seconds, max_stdout_bytes=max_stdout_bytes,
-        max_stderr_bytes=max_stderr_bytes, excludes=excludes,
+        root,
+        executable=executable,
+        roots=roots,
+        limits=limits,
+        timeout_seconds=timeout_seconds,
+        max_stdout_bytes=max_stdout_bytes,
+        max_stderr_bytes=max_stderr_bytes,
+        excludes=excludes,
     )
     findings = _findings(root, diagnostics, limits, excludes)
     detailed_findings = _detailed_findings(findings, limits)
     oversized = _file_lengths(root, line_roots, max_file_lines, excludes)
     summary = _summary(findings, limits, oversized)
     comparable_values = {
-        "analyzer": analyzer, "analyzer_version": version, "roots": list(roots),
-        "excludes": list(excludes), "file_line_roots": list(line_roots),
-        "limits": dict(sorted(limits.items())), "max_file_lines": max_file_lines,
+        "analyzer": analyzer,
+        "analyzer_version": version,
+        "roots": list(roots),
+        "excludes": list(excludes),
+        "file_line_roots": list(line_roots),
+        "limits": dict(sorted(limits.items())),
+        "max_file_lines": max_file_lines,
         "analyzer_configuration_mode": "isolated_explicit",
     }
     comparable_identity = configuration_identity(comparable_values)
@@ -416,36 +512,49 @@ def quality_debt_audit(
     comparison = _comparison(summary, baseline, comparable_identity, comparable_values)
     candidates = []
     for path, row in summary["files"].items():
-        candidates.append({
-            "target": path,
-            "facts": dict(row),
-            "evidence": {"analyzer": analyzer},
-            "derived": {"excess": row["excess"]},
-            "interpretation": {
-                "baseline_state": comparison.get("files", {}).get(path, {}).get("state")
-                if isinstance(comparison.get("files"), dict) else None
-            },
-            "recommendations": {},
-            "uncertainty": [],
-            "required_next_evidence": [
-                {
-                    "kind": "test_focus",
-                    "target": path,
-                    "reason": (
-                        "quality-debt magnitude does not establish edit safety; "
-                        "recover confirmed/supporting test ownership and affected "
-                        "verification before selecting this target for an edit"
-                    ),
-                }
-            ],
-            "verification_suggestions": [],
-        })
+        candidates.append(
+            {
+                "target": path,
+                "facts": dict(row),
+                "evidence": {"analyzer": analyzer},
+                "derived": {"excess": row["excess"]},
+                "interpretation": {
+                    "baseline_state": comparison.get("files", {})
+                    .get(path, {})
+                    .get("state")
+                    if isinstance(comparison.get("files"), dict)
+                    else None
+                },
+                "recommendations": {},
+                "uncertainty": [],
+                "required_next_evidence": [
+                    {
+                        "kind": "test_focus",
+                        "target": path,
+                        "reason": (
+                            "quality-debt magnitude does not establish edit safety; "
+                            "recover confirmed/supporting test ownership and affected "
+                            "verification before selecting this target for an edit"
+                        ),
+                    }
+                ],
+                "verification_suggestions": [],
+            }
+        )
     payload = build_probe_contract(
-        tool_name=TOOL_NAME, tool_version=TOOL_VERSION, generated_at=iso_utc_now(),
-        repository={"root": ".", "identity": source_identity, "identity_kind": "analyzed-source-content-sha256"},
+        tool_name=TOOL_NAME,
+        tool_version=TOOL_VERSION,
+        generated_at=iso_utc_now(),
+        repository={
+            "root": ".",
+            "identity": source_identity,
+            "identity_kind": "analyzed-source-content-sha256",
+        },
         configuration_values={
-            **comparable_values, "timeout_seconds": timeout_seconds,
-            "max_stdout_bytes": max_stdout_bytes, "max_stderr_bytes": max_stderr_bytes,
+            **comparable_values,
+            "timeout_seconds": timeout_seconds,
+            "max_stdout_bytes": max_stdout_bytes,
+            "max_stderr_bytes": max_stderr_bytes,
         },
         evidence={
             "analyzer": {
@@ -457,7 +566,8 @@ def quality_debt_audit(
                 "working_directory": ".",
             },
             "source_universe": {**source_universe, "diagnostics": scope_diagnostics},
-            "findings": findings, "detailed_findings": detailed_findings,
+            "findings": findings,
+            "detailed_findings": detailed_findings,
             "oversized_files": oversized,
             "comparable_identity": comparable_identity,
             "comparable_values": comparable_values,
@@ -467,18 +577,26 @@ def quality_debt_audit(
             "measurement_not_policy_authority": True,
             "baseline_growth_is_evidence_not_verdict": True,
         },
-        uncertainty=[] if comparison["state"] != "INCOMPARABLE_BASELINE" else [
-            {"code": "baseline_incomparable", "reason": comparison.get("reason")}
+        uncertainty=[]
+        if comparison["state"] != "INCOMPARABLE_BASELINE"
+        else [{"code": "baseline_incomparable", "reason": comparison.get("reason")}],
+        warnings=[
+            {
+                "code": "quality_debt_not_edit_authority",
+                "message": "Quality-debt measurements do not authorize source edits or certification.",
+            },
+            *scope_diagnostics,
         ],
-        warnings=[{
-            "code": "quality_debt_not_edit_authority",
-            "message": "Quality-debt measurements do not authorize source edits or certification.",
-        }, *scope_diagnostics],
-        candidates=sorted(candidates, key=lambda x: (-int(x["facts"]["excess"]), x["target"])),
-        required_next_evidence=[], deferred_evidence=[], verification_suggestions=[],
+        candidates=sorted(
+            candidates, key=lambda x: (-int(x["facts"]["excess"]), x["target"])
+        ),
+        required_next_evidence=[],
+        deferred_evidence=[],
+        verification_suggestions=[],
         economics={
             "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
-            "files_read": files_read, "source_bytes": source_bytes,
+            "files_read": files_read,
+            "source_bytes": source_bytes,
             "analyzer_stdout_bytes": execution["stdout_bytes"],
             "analyzer_stderr_bytes": execution["stderr_bytes"],
             "analyzer_elapsed_ms": execution["elapsed_ms"],
@@ -487,7 +605,9 @@ def quality_debt_audit(
     if artifact_path is not None:
         target = artifact_path if artifact_path.is_absolute() else root / artifact_path
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        target.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
     return payload
 
 

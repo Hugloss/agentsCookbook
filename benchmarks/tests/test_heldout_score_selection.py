@@ -13,8 +13,7 @@ from benchmarks.harness.suite import load_suite
 
 
 HELDOUT = (
-    Path(__file__).resolve().parents[1]
-    / "suites/repository-intelligence/heldout-v1"
+    Path(__file__).resolve().parents[1] / "suites/repository-intelligence/heldout-v1"
 )
 SCORE = HELDOUT / "score.py"
 
@@ -22,9 +21,7 @@ SCORE = HELDOUT / "score.py"
 class HeldoutScoreSelectionTests(unittest.TestCase):
     def test_score_covers_exactly_the_selected_agents(self) -> None:
         suite = load_suite(HELDOUT)
-        conditions = {
-            str(row["id"]): row for row in suite.experiment["conditions"]
-        }
+        conditions = {str(row["id"]): row for row in suite.experiment["conditions"]}
         score_main = runpy.run_path(str(SCORE))["main"]
 
         for value, agents in (
@@ -107,7 +104,9 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
                     else "not-applicable-single-agent-selection",
                 )
 
-    def test_offline_score_uses_projected_rows_and_preserves_output_on_failure(self) -> None:
+    def test_offline_score_uses_projected_rows_and_preserves_output_on_failure(
+        self,
+    ) -> None:
         score_main = runpy.run_path(str(SCORE))["main"]
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -118,12 +117,14 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
 
             def project(*, selected_definitions, **kwargs):
                 calls.append(len(selected_definitions))
-                return [{}], [{
-                    "current_definition_id": str(len(calls)),
-                    "source_trial_id": "a" * 64,
-                    "source_result_sha256": "b" * 64,
-                    "projection_identity": "c" * 64,
-                }]
+                return [{}], [
+                    {
+                        "current_definition_id": str(len(calls)),
+                        "source_trial_id": "a" * 64,
+                        "source_result_sha256": "b" * 64,
+                        "projection_identity": "c" * 64,
+                    }
+                ]
 
             def report(*, projected_receipts, selected_definitions, **kwargs):
                 self.assertEqual(projected_receipts, [{}])
@@ -145,14 +146,22 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
                 }
 
             argv = [
-                str(SCORE), "--regrade-source-results", str(source),
-                "--output", str(output), "--agent", "opencode-native",
+                str(SCORE),
+                "--regrade-source-results",
+                str(source),
+                "--output",
+                str(output),
+                "--agent",
+                "opencode-native",
             ]
             with (
-                mock.patch.dict(score_main.__globals__, {
-                    "project_campaign_receipts": project,
-                    "build_report": report,
-                }),
+                mock.patch.dict(
+                    score_main.__globals__,
+                    {
+                        "project_campaign_receipts": project,
+                        "build_report": report,
+                    },
+                ),
                 mock.patch.object(sys, "argv", argv),
             ):
                 self.assertEqual(score_main(), 0)
@@ -166,9 +175,12 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
 
             before = output.read_bytes()
             with (
-                mock.patch.dict(score_main.__globals__, {
-                    "project_campaign_receipts": fail,
-                }),
+                mock.patch.dict(
+                    score_main.__globals__,
+                    {
+                        "project_campaign_receipts": fail,
+                    },
+                ),
                 mock.patch.object(sys, "argv", argv),
                 self.assertRaisesRegex(SystemExit, "source changed"),
             ):

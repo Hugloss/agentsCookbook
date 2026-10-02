@@ -20,7 +20,10 @@ def _git_worktree(root: Path) -> bool:
         return False
     result = subprocess.run(
         ("git", "-C", str(root), "rev-parse", "--is-inside-work-tree"),
-        capture_output=True, text=True, timeout=3, check=False,
+        capture_output=True,
+        text=True,
+        timeout=3,
+        check=False,
     )
     return result.returncode == 0 and result.stdout.strip() == "true"
 
@@ -83,7 +86,9 @@ def _ruff_configuration(pyproject: dict[str, object]) -> dict[str, object]:
     excludes = ruff.get("extend-exclude")
     return {
         "limits": dict(sorted(limits.items())),
-        "extend_exclude": list(excludes) if isinstance(excludes, list) and all(isinstance(x, str) for x in excludes) else [],
+        "extend_exclude": list(excludes)
+        if isinstance(excludes, list) and all(isinstance(x, str) for x in excludes)
+        else [],
     }
 
 
@@ -102,7 +107,9 @@ def doctor(repository_root: Path) -> dict[str, object]:
     ruff = shutil.which("ruff")
     ruff_version = None
     if ruff is not None:
-        result = subprocess.run((ruff, "--version"), capture_output=True, text=True, timeout=3, check=False)
+        result = subprocess.run(
+            (ruff, "--version"), capture_output=True, text=True, timeout=3, check=False
+        )
         if result.returncode == 0:
             ruff_version = result.stdout.strip()
     package_suggestions = [
@@ -113,8 +120,14 @@ def doctor(repository_root: Path) -> dict[str, object]:
     analysis_roots = list(sources)
     analysis_roots.extend(conventional_quality_roots)
     quality_root_evidence = [
-        *({"path": item, "status": "DETECTED", "basis": "python_package_layout"} for item in sources),
-        *({"path": item, "status": "PROPOSED", "basis": "conventional_directory_name"} for item in conventional_quality_roots),
+        *(
+            {"path": item, "status": "DETECTED", "basis": "python_package_layout"}
+            for item in sources
+        ),
+        *(
+            {"path": item, "status": "PROPOSED", "basis": "conventional_directory_name"}
+            for item in conventional_quality_roots
+        ),
     ]
     ambiguity = []
     if len(sources) != 1:
@@ -130,16 +143,22 @@ def doctor(repository_root: Path) -> dict[str, object]:
         },
         "environment": {
             "python": sys.version.split()[0],
-            "ruff": {"available": ruff is not None, "resolved_executable": ruff, "version": ruff_version},
+            "ruff": {
+                "available": ruff is not None,
+                "resolved_executable": ruff,
+                "version": ruff_version,
+            },
         },
         "suggestions": {
             "source_roots": sources,
             "source_root_evidence": [
-                {"path": item, "status": "DETECTED", "basis": "python_package_layout"} for item in sources
+                {"path": item, "status": "DETECTED", "basis": "python_package_layout"}
+                for item in sources
             ],
             "tests_roots": tests,
             "test_root_evidence": [
-                {"path": item, "status": "DETECTED", "basis": "test_directory_layout"} for item in tests
+                {"path": item, "status": "DETECTED", "basis": "test_directory_layout"}
+                for item in tests
             ],
             "package_names": package_suggestions,
             "quality_analysis_roots": analysis_roots,
@@ -150,9 +169,14 @@ def doctor(repository_root: Path) -> dict[str, object]:
         "readiness": {
             "context_focus": "READY",
             "hotspot_focus": "READY" if len(sources) == 1 else "NEEDS_SOURCE_ROOT",
-            "test_focus": "READY" if len(sources) == 1 and len(tests) == 1 else "NEEDS_CONFIG",
+            "test_focus": "READY"
+            if len(sources) == 1 and len(tests) == 1
+            else "NEEDS_CONFIG",
             "quality_debt": (
-                "READY" if ruff is not None and bool(ruff_configuration.get("limits")) and bool(analysis_roots)
+                "READY"
+                if ruff is not None
+                and bool(ruff_configuration.get("limits"))
+                and bool(analysis_roots)
                 else ("NEEDS_LIMITS" if ruff is not None else "NEEDS_RUFF")
             ),
         },
@@ -192,10 +216,16 @@ def _human(payload: dict[str, object]) -> str:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Inspect Agent Economics readiness without modifying the repository.")
+    parser = argparse.ArgumentParser(
+        description="Inspect Agent Economics readiness without modifying the repository."
+    )
     parser.add_argument("--repository-root", type=Path, default=Path("."))
     parser.add_argument("--json", action="store_true")
-    parser.add_argument("--suggest-profile", action="store_true", help="Project detected facts into a review-only profile suggestion.")
+    parser.add_argument(
+        "--suggest-profile",
+        action="store_true",
+        help="Project detected facts into a review-only profile suggestion.",
+    )
     args = parser.parse_args(argv)
     try:
         payload = doctor(args.repository_root)
@@ -204,7 +234,11 @@ def main(argv: list[str] | None = None) -> None:
     if args.suggest_profile:
         print(json.dumps(profile_suggestion(payload), indent=2, sort_keys=True))
     else:
-        print(json.dumps(payload, indent=2, sort_keys=True) if args.json else _human(payload))
+        print(
+            json.dumps(payload, indent=2, sort_keys=True)
+            if args.json
+            else _human(payload)
+        )
 
 
 if __name__ == "__main__":

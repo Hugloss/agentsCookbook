@@ -79,13 +79,19 @@ def load_declared_ownership_hints(
         test_value = item.get("test")
         reason_value = item.get("reason", "repository declaration")
         if not isinstance(source_value, str) or not source_value.strip():
-            raise OwnershipHintsError(f"relationship {index} source must be a path string")
+            raise OwnershipHintsError(
+                f"relationship {index} source must be a path string"
+            )
         if not isinstance(test_value, str) or not test_value.strip():
-            raise OwnershipHintsError(f"relationship {index} test must be a path string")
+            raise OwnershipHintsError(
+                f"relationship {index} test must be a path string"
+            )
         if not isinstance(reason_value, str):
             raise OwnershipHintsError(f"relationship {index} reason must be a string")
 
-        source = _resolve_repository_relative(root, source_value, index=index, field="source")
+        source = _resolve_repository_relative(
+            root, source_value, index=index, field="source"
+        )
         test = _resolve_repository_relative(root, test_value, index=index, field="test")
         if source not in source_files:
             raise OwnershipHintsError(

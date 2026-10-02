@@ -17,23 +17,33 @@ def _receipt(task: str, subject: str, *, config: str, exposure: str) -> dict:
         "authority": {
             "harness": {"source": "same"},
             "environment": {"agent": "same"},
-            "agent": {"observed": {
-                "version": "opencode 1", "executable_sha256": "a" * 64,
-                "auth_mode": "native-opencode", "model": "provider/model",
-                "provider": "provider", "native_config_sha256": config,
-            }},
-            "subject": {"available": True, "observed": {
-                "source": "native-agent-runtime", "subject": subject,
-                "native_config_sha256": config,
-                "workspace_binding": {"verified": True},
-                "native_subject_identity": {
-                    "subject": subject, "executable_sha256": "b" * 64,
+            "agent": {
+                "observed": {
+                    "version": "opencode 1",
+                    "executable_sha256": "a" * 64,
+                    "auth_mode": "native-opencode",
+                    "model": "provider/model",
+                    "provider": "provider",
+                    "native_config_sha256": config,
+                }
+            },
+            "subject": {
+                "available": True,
+                "observed": {
+                    "source": "native-agent-runtime",
+                    "subject": subject,
+                    "native_config_sha256": config,
+                    "workspace_binding": {"verified": True},
+                    "native_subject_identity": {
+                        "subject": subject,
+                        "executable_sha256": "b" * 64,
+                    },
+                    "mcp_exposure": {
+                        "semantic_identity": {"subject": subject},
+                        "subject_exposure_sha256": exposure,
+                    },
                 },
-                "mcp_exposure": {
-                    "semantic_identity": {"subject": subject},
-                    "subject_exposure_sha256": exposure,
-                },
-            }},
+            },
         },
     }
 
@@ -48,7 +58,9 @@ class AuthorityScopeTests(unittest.TestCase):
         with self.assertRaisesRegex(ReportError, "mixed native config"):
             validate_comparability([left, mismatch])
 
-    def test_workspace_transport_hash_can_vary_but_subject_executable_cannot(self) -> None:
+    def test_workspace_transport_hash_can_vary_but_subject_executable_cannot(
+        self,
+    ) -> None:
         first = _receipt("task", "hashmarks", config="1" * 64, exposure="a" * 64)
         second = _receipt("task", "hashmarks", config="1" * 64, exposure="b" * 64)
         validate_comparability([first, second])

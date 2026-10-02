@@ -28,9 +28,7 @@ def _build_repo(root: Path) -> None:
     )
     _write(
         root / "src/samplepkg/feature_mixin.py",
-        "class FeatureMixin:\n"
-        "    def feature(self, value):\n"
-        "        return value\n",
+        "class FeatureMixin:\n    def feature(self, value):\n        return value\n",
     )
     _write(
         root / "src/samplepkg/facade.py",
@@ -46,15 +44,13 @@ def _build_repo(root: Path) -> None:
     _write(root / "src/samplepkg/core.py", "def normalize(x):\n    return x.strip()\n")
     _write(
         root / "src/samplepkg/locality.py",
-        "def structural_locality_delta(before, after):\n"
-        "    return after - before\n",
+        "def structural_locality_delta(before, after):\n    return after - before\n",
     )
     _write(root / "src/samplepkg/ambiguous_a.py", "def shared():\n    return 'a'\n")
     _write(root / "src/samplepkg/ambiguous_b.py", "def shared():\n    return 'b'\n")
     _write(
         root / "src/samplepkg/ambiguous_api.py",
-        "from .ambiguous_a import shared\n"
-        "from .ambiguous_b import shared\n",
+        "from .ambiguous_a import shared\nfrom .ambiguous_b import shared\n",
     )
     _write(
         root / "src/samplepkg/service.py",
@@ -132,7 +128,9 @@ def _paths(payload: dict[str, object], stage: str) -> list[str]:
     return sorted(
         str(item.get("path"))
         for item in suggestions
-        if isinstance(item, dict) and item.get("stage") == stage and item.get("kind") == "test_file"
+        if isinstance(item, dict)
+        and item.get("stage") == stage
+        and item.get("kind") == "test_file"
     )
 
 
@@ -185,7 +183,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
         ambiguous_a = _run(root, ["src/samplepkg/ambiguous_a.py"])
         if "tests/test_ambiguous_reexport.py" in _paths(ambiguous_a, "direct"):
-            failures.append("ambiguous static re-export became direct ownership authority")
+            failures.append(
+                "ambiguous static re-export became direct ownership authority"
+            )
 
         inherited = _run(root, ["src/samplepkg/feature_mixin.py"])
         inherited_direct = _paths(inherited, "direct")
@@ -197,7 +197,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
                 f"inherited method owning tests mismatch: {inherited_direct}"
             )
         if "tests/test_facade_only.py" in inherited_direct:
-            failures.append("facade-only call became inherited method ownership authority")
+            failures.append(
+                "facade-only call became inherited method ownership authority"
+            )
         inherited_candidates = inherited.get("candidates", [])
         if not isinstance(inherited_candidates, list) or not inherited_candidates:
             failures.append("inherited method candidate missing")
@@ -227,7 +229,11 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             ):
                 failures.append("object.__new__ inherited ownership provenance missing")
         interpretation = core.get("interpretation", {})
-        if not isinstance(interpretation, dict) or interpretation.get("sufficiency_rule") != "focused suggestions never prove broader verification unnecessary":
+        if (
+            not isinstance(interpretation, dict)
+            or interpretation.get("sufficiency_rule")
+            != "focused suggestions never prove broader verification unnecessary"
+        ):
             failures.append("focused verification sufficiency boundary missing")
         gates = [
             item
@@ -243,14 +249,26 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
         mirror = _run(root, ["src/samplepkg/mirror.py"])
         if _paths(mirror, "direct"):
-            failures.append("name/mirrored convention became direct ownership authority")
+            failures.append(
+                "name/mirrored convention became direct ownership authority"
+            )
         mirror_candidates = mirror.get("candidates", [])
         if not isinstance(mirror_candidates, list) or not mirror_candidates:
             failures.append("mirror candidate missing")
         else:
-            evidence = mirror_candidates[0].get("evidence", {}) if isinstance(mirror_candidates[0], dict) else {}
-            supporting = evidence.get("supporting", []) if isinstance(evidence, dict) else []
-            if not any(isinstance(item, dict) and item.get("test_path") == "tests/test_mirror.py" for item in supporting):
+            evidence = (
+                mirror_candidates[0].get("evidence", {})
+                if isinstance(mirror_candidates[0], dict)
+                else {}
+            )
+            supporting = (
+                evidence.get("supporting", []) if isinstance(evidence, dict) else []
+            )
+            if not any(
+                isinstance(item, dict)
+                and item.get("test_path") == "tests/test_mirror.py"
+                for item in supporting
+            ):
                 failures.append("name/mirrored supporting evidence missing")
             if not mirror_candidates[0].get("required_next_evidence"):
                 failures.append("unconfirmed source has no required next evidence")
@@ -263,12 +281,18 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         if _paths(config, "direct") or _paths(config, "affected"):
             failures.append("unsupported non-Python change fabricated focused tests")
         uncertainty = config.get("uncertainty", [])
-        if not any(isinstance(item, dict) and item.get("code") == "focused_test_mapping_unsupported" for item in uncertainty):
+        if not any(
+            isinstance(item, dict)
+            and item.get("code") == "focused_test_mapping_unsupported"
+            for item in uncertainty
+        ):
             failures.append("unsupported non-Python change did not publish uncertainty")
 
         missing = _run(root, ["src/samplepkg/deleted.py"])
         if not any(
-            isinstance(item, dict) and item.get("code") in {"changed_python_not_discovered", "changed_path_missing"}
+            isinstance(item, dict)
+            and item.get("code")
+            in {"changed_python_not_discovered", "changed_path_missing"}
             for item in missing.get("uncertainty", [])
         ):
             failures.append("missing/deleted path did not publish uncertainty")
@@ -277,7 +301,10 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         if len(_paths(bounded, "direct")) != 1:
             failures.append("max_tests_per_stage did not bound direct tests")
         deferred = bounded.get("deferred_evidence", [])
-        if not any(isinstance(item, dict) and item.get("stage") == "direct" for item in deferred):
+        if not any(
+            isinstance(item, dict) and item.get("stage") == "direct"
+            for item in deferred
+        ):
             failures.append("bounded direct test omission was not deferred explicitly")
 
         no_gates = test_focus_audit(
@@ -290,7 +317,8 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             discovery_mode="filesystem",
         )
         if not any(
-            isinstance(item, dict) and item.get("code") == "broader_verification_unspecified"
+            isinstance(item, dict)
+            and item.get("code") == "broader_verification_unspecified"
             for item in no_gates.get("uncertainty", [])
         ):
             failures.append("missing broader gates did not publish uncertainty")
@@ -300,13 +328,26 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         core_b = _run(root_b, ["src/samplepkg/core.py"])
         repo_a = core.get("repository", {})
         repo_b = core_b.get("repository", {})
-        if not isinstance(repo_a, dict) or not isinstance(repo_b, dict) or repo_a.get("identity") != repo_b.get("identity"):
+        if (
+            not isinstance(repo_a, dict)
+            or not isinstance(repo_b, dict)
+            or repo_a.get("identity") != repo_b.get("identity")
+        ):
             failures.append("repository identity depends on checkout location")
-        _write(root_b / "src/samplepkg/core.py", "def normalize(x):\n    return x.strip().lower()\n")
+        _write(
+            root_b / "src/samplepkg/core.py",
+            "def normalize(x):\n    return x.strip().lower()\n",
+        )
         core_b_changed = _run(root_b, ["src/samplepkg/core.py"])
         repo_b_changed = core_b_changed.get("repository", {})
-        if isinstance(repo_a, dict) and isinstance(repo_b_changed, dict) and repo_a.get("identity") == repo_b_changed.get("identity"):
-            failures.append("repository identity did not change after analyzed source changed")
+        if (
+            isinstance(repo_a, dict)
+            and isinstance(repo_b_changed, dict)
+            and repo_a.get("identity") == repo_b_changed.get("identity")
+        ):
+            failures.append(
+                "repository identity did not change after analyzed source changed"
+            )
 
         try:
             _run(root, ["../escape.py"])
@@ -324,7 +365,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             "bounded_direct": _paths(bounded, "direct"),
             "deferred_count": len(deferred) if isinstance(deferred, list) else None,
             "contract_errors": contract_errors,
-            "repository_identity": repo_a.get("identity") if isinstance(repo_a, dict) else None,
+            "repository_identity": repo_a.get("identity")
+            if isinstance(repo_a, dict)
+            else None,
             "economics": economics,
         }
 
@@ -337,12 +380,16 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     }
     if artifact_path is not None:
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        artifact_path.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        artifact_path.write_text(
+            json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
     return result
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Qualify P7 test-focus verification planning.")
+    parser = argparse.ArgumentParser(
+        description="Qualify P7 test-focus verification planning."
+    )
     parser.add_argument(
         "--artifact-path",
         type=Path,

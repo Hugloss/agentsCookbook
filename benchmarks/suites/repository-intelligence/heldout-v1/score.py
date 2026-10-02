@@ -39,8 +39,7 @@ def main() -> int:
         raise SystemExit("unknown benchmark agent(s): " + ", ".join(unknown))
     selected_agents = set(agents)
     conditions = {
-        str(condition["id"]): condition
-        for condition in suite.experiment["conditions"]
+        str(condition["id"]): condition for condition in suite.experiment["conditions"]
     }
     definitions = suite.trial_definitions()
     languages = {}
@@ -58,7 +57,8 @@ def main() -> int:
             and conditions[str(row["condition_id"])]["agent"] in selected_agents
         }
         expected = sum(
-            int(condition["trials"]) for condition in conditions.values()
+            int(condition["trials"])
+            for condition in conditions.values()
             if condition["agent"] in selected_agents
         ) * len(task_ids)
         if not task_ids or len(selected) != expected:
@@ -104,9 +104,7 @@ def main() -> int:
     payload = {
         "schema": "agents-cookbook-heldout-observer-outcomes.v7",
         "projection_mode": (
-            "offline-regrade"
-            if args.regrade_source_results is not None
-            else "live"
+            "offline-regrade" if args.regrade_source_results is not None else "live"
         ),
         "expected_trials": sum(row["expected_trials"] for row in languages.values()),
         "observed_trials": sum(row["observed_trials"] for row in languages.values()),
@@ -141,7 +139,9 @@ def main() -> int:
             all_lineage, key=lambda row: row["current_definition_id"]
         )
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{args.output.name}.", dir=args.output.parent)
+    fd, temporary = tempfile.mkstemp(
+        prefix=f".{args.output.name}.", dir=args.output.parent
+    )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             stream.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")

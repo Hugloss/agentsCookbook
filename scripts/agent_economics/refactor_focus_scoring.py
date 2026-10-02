@@ -32,9 +32,7 @@ def matches_with_authority(
     matches: list[MatchRecord],
     authority: str,
 ) -> list[MatchRecord]:
-    return [
-        match for match in matches if match["evidence_authority"] == authority
-    ]
+    return [match for match in matches if match["evidence_authority"] == authority]
 
 
 def confirmed_matches_for(matches: list[MatchRecord]) -> list[MatchRecord]:

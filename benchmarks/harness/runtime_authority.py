@@ -1,4 +1,5 @@
 """Explicit local runtime authority for benchmark participants."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping, MutableMapping
@@ -30,12 +31,12 @@ RUNTIME_AUTHORITY_ENV_KEYS = (
 
 def native_host_paths(source: Mapping[str, str]) -> dict[str, str]:
     home = Path(source.get("HOME") or Path.home()).expanduser().resolve()
-    xdg_config = Path(
-        source.get("XDG_CONFIG_HOME") or home / ".config"
-    ).expanduser().resolve()
-    codex_home = Path(
-        source.get("CODEX_HOME") or home / ".codex"
-    ).expanduser().resolve()
+    xdg_config = (
+        Path(source.get("XDG_CONFIG_HOME") or home / ".config").expanduser().resolve()
+    )
+    codex_home = (
+        Path(source.get("CODEX_HOME") or home / ".codex").expanduser().resolve()
+    )
     return {
         "home": str(home),
         "xdg_config_home": str(xdg_config),
@@ -83,9 +84,7 @@ def transport_runtime_authority(
 
     raw_passthrough = source.get("BENCHMARK_PASSTHROUGH_ENV_KEYS", "")
     passthrough = tuple(
-        name.strip()
-        for name in raw_passthrough.split(",")
-        if name.strip()
+        name.strip() for name in raw_passthrough.split(",") if name.strip()
     )
     invalid = [
         name

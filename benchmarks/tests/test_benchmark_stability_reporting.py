@@ -147,10 +147,7 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
             report = build_report(suite=suite, results_root=Path("/unused"))
 
         self.assertEqual(report["schema"]["version"], 7)
-        stability = {
-            row["subject_id"]: row
-            for row in report["stability"]
-        }
+        stability = {row["subject_id"]: row for row in report["stability"]}
         self.assertEqual(stability["none"]["state"], "unstable")
         self.assertEqual(stability["none"]["semantic_correct"], 2)
         self.assertEqual(stability["none"]["semantic_incorrect"], 1)
@@ -207,23 +204,26 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
             report = build_report(
                 suite=suite,
                 results_root=Path("/unused"),
-                selected_definitions={
-                    str(row["definition_id"]) for row in rows
-                },
+                selected_definitions={str(row["definition_id"]) for row in rows},
             )
         self.assertEqual(report["stability"][0]["state"], "execution-unstable")
         self.assertEqual(report["stability"][0]["valid_outcomes"], 2)
         self.assertEqual(report["stability"][0]["semantic_correct"], 2)
 
-    def test_missing_replicate_remains_visible_in_stability_and_pair_exclusions(self) -> None:
+    def test_missing_replicate_remains_visible_in_stability_and_pair_exclusions(
+        self,
+    ) -> None:
         suite = _suite()
         rows = suite.trial_definitions()
         bare = next(row for row in rows if row["condition_id"] == "bare")
-        with mock.patch("benchmarks.harness.report._receipts", return_value=[
-            _receipt(suite, bare, "PASS", "a" * 64)
-        ]):
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=[_receipt(suite, bare, "PASS", "a" * 64)],
+        ):
             report = build_report(
-                suite=suite, results_root=Path("/unused"), require_complete=False,
+                suite=suite,
+                results_root=Path("/unused"),
+                require_complete=False,
             )
         by_subject = {row["subject_id"]: row for row in report["stability"]}
         self.assertEqual(by_subject["none"]["replicates"], 3)

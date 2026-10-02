@@ -18,7 +18,9 @@ def _limits(values: list[str]) -> dict[str, int]:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Measure configured static-analysis debt without making policy decisions.")
+    parser = argparse.ArgumentParser(
+        description="Measure configured static-analysis debt without making policy decisions."
+    )
     parser.add_argument("--repository-root", type=Path, default=Path("."))
     parser.add_argument("--root", action="append", required=True)
     parser.add_argument("--limit", action="append", required=True)
@@ -35,21 +37,33 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--max-stderr-bytes", type=int, default=200_000)
     args = parser.parse_args(argv)
     payload = quality_debt_audit(
-        repository_root=args.repository_root, roots=tuple(args.root), limits=_limits(args.limit),
+        repository_root=args.repository_root,
+        roots=tuple(args.root),
+        limits=_limits(args.limit),
         max_file_lines=args.max_file_lines,
         file_line_roots=tuple(args.file_line_root) if args.file_line_root else None,
-        excludes=tuple(args.exclude), baseline_path=args.baseline, artifact_path=args.artifact,
-        timeout_seconds=args.timeout_seconds, max_stdout_bytes=args.max_stdout_bytes,
+        excludes=tuple(args.exclude),
+        baseline_path=args.baseline,
+        artifact_path=args.artifact,
+        timeout_seconds=args.timeout_seconds,
+        max_stdout_bytes=args.max_stdout_bytes,
         max_stderr_bytes=args.max_stderr_bytes,
     )
     if args.write_baseline:
         root = args.repository_root.resolve()
-        target = args.write_baseline if args.write_baseline.is_absolute() else root / args.write_baseline
+        target = (
+            args.write_baseline
+            if args.write_baseline.is_absolute()
+            else root / args.write_baseline
+        )
         resolved = target.resolve()
         resolved.relative_to(root)
         resolved.parent.mkdir(parents=True, exist_ok=True)
         temp = resolved.with_suffix(resolved.suffix + ".tmp")
-        temp.write_text(json.dumps(baseline_document(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        temp.write_text(
+            json.dumps(baseline_document(payload), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         temp.replace(resolved)
     if args.quiet:
         return

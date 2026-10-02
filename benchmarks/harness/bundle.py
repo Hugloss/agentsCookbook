@@ -1,4 +1,5 @@
 """Verification for published benchmark evidence bundles."""
+
 from __future__ import annotations
 
 import hashlib
@@ -26,9 +27,7 @@ def verify_bundle(directory: Path) -> tuple[bool, str | None]:
     if not is_complete_receipt(directory):
         return False, "result receipt is incomplete or invalid"
     try:
-        receipt = json.loads(
-            (directory / "result.json").read_text(encoding="utf-8")
-        )
+        receipt = json.loads((directory / "result.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False, "result receipt cannot be parsed"
 
@@ -117,15 +116,22 @@ def verify_bundle(directory: Path) -> tuple[bool, str | None]:
         trace = artifacts.get("agent_trace")
         scoring = receipt.get("scoring")
         authority = receipt.get("authority")
-        if not isinstance(trace, dict) or not isinstance(scoring, dict) or not isinstance(authority, dict):
+        if (
+            not isinstance(trace, dict)
+            or not isinstance(scoring, dict)
+            or not isinstance(authority, dict)
+        ):
             return False, "execution evidence is missing trace or scoring authority"
         try:
             evidence_identity = execution_evidence_id(
                 task=receipt["task"],
                 condition=receipt["condition"],
                 trial=execution["trial_index"],
-                **({"seed": execution["seed"]} if contract == EXECUTION_EVIDENCE_CONTRACT
-                   else {"replicate_id": execution["replicate_id"]}),
+                **(
+                    {"seed": execution["seed"]}
+                    if contract == EXECUTION_EVIDENCE_CONTRACT
+                    else {"replicate_id": execution["replicate_id"]}
+                ),
                 subject_identity=authority["subject"],
                 agent_identity=authority["agent"],
                 harness_identity=authority["harness"],
@@ -135,15 +141,23 @@ def verify_bundle(directory: Path) -> tuple[bool, str | None]:
                 workspace_root=execution["workspace_root"],
                 location_observation=execution["location_observation"],
                 agent_trace_sha256=trace["sha256"],
-                **({"campaign_id": execution["campaign_id"],
-                    "admitted_state_sha256": execution["admitted_state_sha256"]}
-                   if contract == REPLICATE_EVIDENCE_CONTRACT else {}),
+                **(
+                    {
+                        "campaign_id": execution["campaign_id"],
+                        "admitted_state_sha256": execution["admitted_state_sha256"],
+                    }
+                    if contract == REPLICATE_EVIDENCE_CONTRACT
+                    else {}
+                ),
             )
             projection_identity = score_projection_id(
                 execution_evidence=evidence_identity,
                 oracle_identity=authority["oracle"]["declared"],
-                **({"contract": REPLICATE_SCORE_CONTRACT}
-                   if contract == REPLICATE_EVIDENCE_CONTRACT else {}),
+                **(
+                    {"contract": REPLICATE_SCORE_CONTRACT}
+                    if contract == REPLICATE_EVIDENCE_CONTRACT
+                    else {}
+                ),
             )
         except (KeyError, TypeError, ValueError):
             return False, "execution evidence identity inputs are invalid"

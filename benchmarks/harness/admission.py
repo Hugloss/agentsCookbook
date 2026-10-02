@@ -390,7 +390,8 @@ def admit_trial(
     expanded_condition = suite.expanded_condition(condition)
     legacy_seed = "replicate_ids" not in condition
     replicate_id = (
-        int(condition["seed"]) + trial_index if legacy_seed
+        int(condition["seed"]) + trial_index
+        if legacy_seed
         else int(condition["replicate_ids"][trial_index])
     )
     definition = definition_id(

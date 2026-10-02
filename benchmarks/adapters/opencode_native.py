@@ -523,15 +523,12 @@ class OpenCodeNativeAgent:
         native_subject_identity = resolved.get("native_subject_identity")
         if not isinstance(native_subject_identity, dict):
             native_subject_identity = None
-        native_identity_verified = (
-            selected is None
-            or (
-                isinstance(native_subject_identity, dict)
-                and native_subject_identity.get("verified") is True
-                and isinstance(
-                    native_subject_identity.get("executable_sha256"),
-                    str,
-                )
+        native_identity_verified = selected is None or (
+            isinstance(native_subject_identity, dict)
+            and native_subject_identity.get("verified") is True
+            and isinstance(
+                native_subject_identity.get("executable_sha256"),
+                str,
             )
         )
         workspace_binding_identity = {
@@ -553,12 +550,8 @@ class OpenCodeNativeAgent:
             "selected_server": selected,
             "workspace_binding": workspace_binding_identity,
             "native_subject_identity": native_subject_identity,
-            "subject_exposure_sha256": overlay_identity.get(
-                "subject_exposure_sha256"
-            ),
-            "native_server_shadowed": overlay_identity.get(
-                "native_server_shadowed"
-            ),
+            "subject_exposure_sha256": overlay_identity.get("subject_exposure_sha256"),
+            "native_server_shadowed": overlay_identity.get("native_server_shadowed"),
             "overlay_sha256": hashlib.sha256(
                 canonical_json(overlay_identity)
             ).hexdigest(),

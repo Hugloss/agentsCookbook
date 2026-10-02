@@ -17,19 +17,23 @@ def qualify() -> None:
         "candidates": [
             {
                 "target": "pkg/hot.py",
-                "required_next_evidence": [{
-                    "kind": "test_focus",
-                    "target": "pkg/hot.py",
-                    "reason": "debt magnitude does not establish edit safety",
-                }],
+                "required_next_evidence": [
+                    {
+                        "kind": "test_focus",
+                        "target": "pkg/hot.py",
+                        "reason": "debt magnitude does not establish edit safety",
+                    }
+                ],
             },
             {
                 "target": "pkg/other.py",
-                "required_next_evidence": [{
-                    "kind": "test_focus",
-                    "target": "pkg/other.py",
-                    "reason": "recover test ownership",
-                }],
+                "required_next_evidence": [
+                    {
+                        "kind": "test_focus",
+                        "target": "pkg/other.py",
+                        "reason": "recover test ownership",
+                    }
+                ],
             },
         ],
     }
@@ -44,13 +48,15 @@ def qualify() -> None:
         raise AssertionError("multiple candidates without --target must fail closed")
 
     multiple_required = dict(payload)
-    multiple_required["candidates"] = [{
-        "target": "pkg/hot.py",
-        "required_next_evidence": [
-            {"kind": "test_focus", "reason": "first"},
-            {"kind": "test_focus", "reason": "second"},
-        ],
-    }]
+    multiple_required["candidates"] = [
+        {
+            "target": "pkg/hot.py",
+            "required_next_evidence": [
+                {"kind": "test_focus", "reason": "first"},
+                {"kind": "test_focus", "reason": "second"},
+            ],
+        }
+    ]
     try:
         next_evidence(multiple_required, target="pkg/hot.py", profile=profile)
     except EvidenceNextError:
@@ -66,18 +72,31 @@ def qualify() -> None:
             ],
             "test_roots": ["tests"],
             "test_root_evidence": [
-                {"path": "tests", "status": "DETECTED", "basis": "test_directory_layout"}
+                {
+                    "path": "tests",
+                    "status": "DETECTED",
+                    "basis": "test_directory_layout",
+                }
             ],
         },
         "quality_debt": {
             "analysis_roots": ["pkg", "scripts"],
             "analysis_root_evidence": [
                 {"path": "pkg", "status": "DETECTED", "basis": "python_package_layout"},
-                {"path": "scripts", "status": "PROPOSED", "basis": "conventional_directory_name"},
+                {
+                    "path": "scripts",
+                    "status": "PROPOSED",
+                    "basis": "conventional_directory_name",
+                },
             ],
         },
     }
-    proposed = next_evidence(payload, target="pkg/hot.py", profile=proposed_profile, python_argv=["uv", "run", "python"])
+    proposed = next_evidence(
+        payload,
+        target="pkg/hot.py",
+        profile=proposed_profile,
+        python_argv=["uv", "run", "python"],
+    )
     assert proposed["command"] is None
     assert proposed["unresolved"] == ["package_root_not_detected"]
     assert proposed["interpretation"]["profile_root_provenance_is_preserved"] is True
@@ -90,12 +109,21 @@ def qualify() -> None:
             ],
             "test_roots": ["tests"],
             "test_root_evidence": [
-                {"path": "tests", "status": "DETECTED", "basis": "test_directory_layout"}
+                {
+                    "path": "tests",
+                    "status": "DETECTED",
+                    "basis": "test_directory_layout",
+                }
             ],
         },
         "quality_debt": proposed_profile["quality_debt"],
     }
-    detected = next_evidence(payload, target="pkg/hot.py", profile=detected_profile, python_argv=["uv", "run", "python"])
+    detected = next_evidence(
+        payload,
+        target="pkg/hot.py",
+        profile=detected_profile,
+        python_argv=["uv", "run", "python"],
+    )
     assert detected["command"] is not None
     assert detected["unresolved"] == []
 
@@ -104,44 +132,67 @@ def qualify() -> None:
     assert no_runtime["unresolved"] == ["python_runtime_argv"]
 
     result = next_evidence(
-        payload, target="pkg/hot.py", profile=profile, python_argv=["uv", "run", "python"]
+        payload,
+        target="pkg/hot.py",
+        profile=profile,
+        python_argv=["uv", "run", "python"],
     )
     assert result["next_evidence"]["kind"] == "test_focus"
     assert result["command"] == [
-        "uv", "run", "python", "-m", "agent_economics", "test-focus",
-        "--repository-root", ".", "--source-root", "pkg",
-        "--tests-root", "tests", "--changed-path", "pkg/hot.py",
-        "--artifact-path", ".agent-artifacts/test-focus.json",
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "agent_economics",
+        "test-focus",
+        "--repository-root",
+        ".",
+        "--source-root",
+        "pkg",
+        "--tests-root",
+        "tests",
+        "--changed-path",
+        "pkg/hot.py",
+        "--artifact-path",
+        ".agent-artifacts/test-focus.json",
     ]
     assert result["unresolved"] == []
     assert result["interpretation"]["does_not_execute_command"] is True
     assert result["interpretation"]["does_not_authorize_edit"] is True
 
-    missing_profile = next_evidence(payload, target="pkg/hot.py", python_argv=["python"])
+    missing_profile = next_evidence(
+        payload, target="pkg/hot.py", python_argv=["python"]
+    )
     assert missing_profile["command"] is None
     assert missing_profile["unresolved"] == ["profile"]
 
     ambiguous = next_evidence(
         payload,
         target="pkg/hot.py",
-        profile={"repository": {"package_roots": ["pkg", "other"], "test_roots": ["tests"]}},
+        profile={
+            "repository": {"package_roots": ["pkg", "other"], "test_roots": ["tests"]}
+        },
         python_argv=["python"],
     )
     assert ambiguous["command"] is None
     assert ambiguous["unresolved"] == ["single_package_root"]
 
     try:
-        next_evidence(payload, target="missing.py", profile=profile, python_argv=["python"])
+        next_evidence(
+            payload, target="missing.py", profile=profile, python_argv=["python"]
+        )
     except EvidenceNextError:
         pass
     else:
         raise AssertionError("unknown target must fail closed")
 
     unsupported = dict(payload)
-    unsupported["candidates"] = [{
-        "target": "pkg/hot.py",
-        "required_next_evidence": [{"kind": "invented", "reason": "fixture"}],
-    }]
+    unsupported["candidates"] = [
+        {
+            "target": "pkg/hot.py",
+            "required_next_evidence": [{"kind": "invented", "reason": "fixture"}],
+        }
+    ]
     result = next_evidence(unsupported, profile=profile, python_argv=["python"])
     assert result["command"] is None
     assert result["unresolved"] == ["unsupported_next_evidence:invented"]
@@ -154,10 +205,21 @@ def qualify() -> None:
         profile_path.write_text(json.dumps(profile), encoding="utf-8")
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            next_main([
-                str(artifact_path), "--target", "pkg/hot.py", "--profile", str(profile_path),
-                "--python-command", "uv", "--python-command", "run", "--python-command", "python",
-            ])
+            next_main(
+                [
+                    str(artifact_path),
+                    "--target",
+                    "pkg/hot.py",
+                    "--profile",
+                    str(profile_path),
+                    "--python-command",
+                    "uv",
+                    "--python-command",
+                    "run",
+                    "--python-command",
+                    "python",
+                ]
+            )
         cli_result = json.loads(output.getvalue())
         assert cli_result["command"][:4] == ["uv", "run", "python", "-m"]
 
@@ -166,7 +228,6 @@ def qualify() -> None:
 
 if __name__ == "__main__":
     qualify()
-
 
 
 def test_next_evidence_stops_when_declared_boundaries_are_satisfied() -> None:
@@ -188,25 +249,26 @@ def test_next_evidence_stops_when_declared_boundaries_are_satisfied() -> None:
         target="src/a.py",
         sufficiency={
             "risk_boundaries": [{"identity": "behavior"}],
-            "proofs": [{
-                "boundary": "behavior",
-                "provider_reference": {
-                    "provider": "hashmarks",
-                    "evidence_identity": "sha256:behavior-proof",
-                },
-                "freshness": {"state": "fresh"},
-                "relationship": {
-                    "classification": "direct",
-                    "evidence_identity": "sha256:behavior-relationship",
-                },
-            }],
+            "proofs": [
+                {
+                    "boundary": "behavior",
+                    "provider_reference": {
+                        "provider": "hashmarks",
+                        "evidence_identity": "sha256:behavior-proof",
+                    },
+                    "freshness": {"state": "fresh"},
+                    "relationship": {
+                        "classification": "direct",
+                        "evidence_identity": "sha256:behavior-relationship",
+                    },
+                }
+            ],
         },
     )
 
     assert result["next_evidence"] is None
     assert result["command"] is None
     assert result["stop"]["stop_acquiring_evidence"] is True
-
 
 
 def test_next_evidence_reopens_only_for_proven_scope_expansion() -> None:
@@ -228,18 +290,20 @@ def test_next_evidence_reopens_only_for_proven_scope_expansion() -> None:
         target="src/a.py",
         sufficiency={
             "risk_boundaries": [{"identity": "behavior"}],
-            "proofs": [{
-                "boundary": "behavior",
-                "provider_reference": {
-                    "provider": "hashmarks",
-                    "evidence_identity": "sha256:behavior-proof",
-                },
-                "freshness": {"state": "fresh"},
-                "relationship": {
-                    "classification": "direct",
-                    "evidence_identity": "sha256:behavior-relationship",
-                },
-            }],
+            "proofs": [
+                {
+                    "boundary": "behavior",
+                    "provider_reference": {
+                        "provider": "hashmarks",
+                        "evidence_identity": "sha256:behavior-proof",
+                    },
+                    "freshness": {"state": "fresh"},
+                    "relationship": {
+                        "classification": "direct",
+                        "evidence_identity": "sha256:behavior-relationship",
+                    },
+                }
+            ],
             "scope_expansion_evidence": [
                 {
                     "provider": "hashmarks",

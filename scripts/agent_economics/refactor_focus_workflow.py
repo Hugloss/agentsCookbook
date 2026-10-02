@@ -121,7 +121,9 @@ def refactor_focus_audit(
         exclude_patterns=list(discovery_config.exclude_patterns),
         git_timeout_seconds=discovery_config.git_timeout_seconds,
         ownership_hints_path=(
-            ownership_hints_path.as_posix() if ownership_hints_path is not None else None
+            ownership_hints_path.as_posix()
+            if ownership_hints_path is not None
+            else None
         ),
     )
 
@@ -187,7 +189,9 @@ def refactor_focus_audit(
         discovery_warnings=list(discovery.warnings),
     )
 
-    test_lines_by_path = {path: analysis_cache.get(path).line_count for path in test_files}
+    test_lines_by_path = {
+        path: analysis_cache.get(path).line_count for path in test_files
+    }
     source_module_by_path = {
         path: module_path_for_file(
             path=path,

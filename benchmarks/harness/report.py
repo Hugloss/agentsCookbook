@@ -15,7 +15,9 @@ from benchmarks.adapters.oracles import (
 )
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.campaign_authority import (
-    CampaignAuthorityError, read_launch_claims, read_campaign,
+    CampaignAuthorityError,
+    read_launch_claims,
+    read_campaign,
 )
 from benchmarks.harness.suite import SuiteDefinition
 from benchmarks.harness.identity import digest, execution_task_contract
@@ -295,19 +297,26 @@ def _check_localization_grades(receipts: list[dict[str, Any]]) -> None:
             grade.get("semantic_status") not in {"CORRECT", "INCORRECT", "UNSCORABLE"}
             or grade.get("normalization_policy") != policy.get("normalization_policy")
             or grade.get("scoring_policy") != policy.get("scoring_policy")
-            or policy.get("normalization_policy") != REPOSITORY_LOCATION_NORMALIZATION_POLICY
+            or policy.get("normalization_policy")
+            != REPOSITORY_LOCATION_NORMALIZATION_POLICY
             or policy.get("scoring_policy") != REPOSITORY_LOCATION_SCORING_POLICY
             or grade.get("expected") != task["oracle"]["configuration"]["expected"]
-            or grade.get("semantic_success") != (grade.get("semantic_status") == "CORRECT")
-            or grade.get("semantic_gradeable") != (grade.get("semantic_status") != "UNSCORABLE")
+            or grade.get("semantic_success")
+            != (grade.get("semantic_status") == "CORRECT")
+            or grade.get("semantic_gradeable")
+            != (grade.get("semantic_status") != "UNSCORABLE")
             or not isinstance(observed, dict)
-            or observed.get("normalization_policy") != REPOSITORY_LOCATION_NORMALIZATION_POLICY
-            or grade != score_repository_location(
+            or observed.get("normalization_policy")
+            != REPOSITORY_LOCATION_NORMALIZATION_POLICY
+            or grade
+            != score_repository_location(
                 observed, expected=task["oracle"]["configuration"]["expected"]
             )
             or receipt["status"] != ("PASS" if grade.get("passed") else "FAIL")
         ):
-            raise ReportError("valid localization receipt has inconsistent oracle grade")
+            raise ReportError(
+                "valid localization receipt has inconsistent oracle grade"
+            )
 
 
 def _check_comparable_localization_scoring(
@@ -343,7 +352,8 @@ def _check_comparable_agents(receipts: list[dict[str, Any]]) -> None:
         ):
             continue
         global_identity = {
-            key: value for key, value in identity.items()
+            key: value
+            for key, value in identity.items()
             if key != "native_config_sha256"
         }
         prior_global = global_identities.setdefault(agent, global_identity)
@@ -390,7 +400,8 @@ def _check_comparable_evidence(receipts: list[dict[str, Any]]) -> None:
         observed = authority.get("observed")
         native = (
             observed.get("native_subject_identity")
-            if isinstance(observed, dict) else None
+            if isinstance(observed, dict)
+            else None
         )
         executable_hash = (
             native.get("executable_sha256") if isinstance(native, dict) else None
@@ -417,7 +428,8 @@ def _check_comparable_evidence(receipts: list[dict[str, Any]]) -> None:
                 "workspace_binding": observed.get("workspace_binding"),
                 "mcp_semantic_identity": (
                     exposure.get("semantic_identity")
-                    if isinstance(exposure, dict) else None
+                    if isinstance(exposure, dict)
+                    else None
                 ),
             }
         if subject in subjects and subjects[subject] != comparable_observed:
@@ -460,15 +472,17 @@ def _assistance_transition(
 
 def _pair_input_id(receipt: dict[str, Any]) -> str:
     authority = receipt.get("authority", {})
-    return digest({
-        "task": execution_task_contract(receipt["task"]),
-        "agent": _comparison_identity(receipt),
-        "harness": authority.get("harness"),
-        "environment": authority.get("environment"),
-        "mutation": authority.get("mutation"),
-        "admitted_state": receipt.get("execution", {}).get("admitted_state_sha256"),
-        "replicate_id": _replicate_id(receipt),
-    })
+    return digest(
+        {
+            "task": execution_task_contract(receipt["task"]),
+            "agent": _comparison_identity(receipt),
+            "harness": authority.get("harness"),
+            "environment": authority.get("environment"),
+            "mutation": authority.get("mutation"),
+            "admitted_state": receipt.get("execution", {}).get("admitted_state_sha256"),
+            "replicate_id": _replicate_id(receipt),
+        }
+    )
 
 
 def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -558,8 +572,10 @@ def _paired_assistance_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any
 
 
 def _stability(
-    receipts: list[dict[str, Any]], *,
-    expected: dict[str, dict[str, Any]], suite: SuiteDefinition,
+    receipts: list[dict[str, Any]],
+    *,
+    expected: dict[str, dict[str, Any]],
+    suite: SuiteDefinition,
 ) -> list[dict[str, Any]]:
     grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     expected_ids: dict[tuple[str, str, str], list[int]] = defaultdict(list)
@@ -569,9 +585,9 @@ def _stability(
         key = (str(row["task_id"]), str(condition["agent"]), str(condition["subject"]))
         expected_ids[key].append(int(row.get("replicate_id", row.get("seed"))))
     for receipt in receipts:
-        grouped[
-            (_task_id(receipt), _agent_id(receipt), _subject_id(receipt))
-        ].append(receipt)
+        grouped[(_task_id(receipt), _agent_id(receipt), _subject_id(receipt))].append(
+            receipt
+        )
 
     rows: list[dict[str, Any]] = []
     for key, identifiers in sorted(expected_ids.items()):
@@ -655,7 +671,8 @@ def _diagnostic(receipt: dict[str, Any]) -> dict[str, Any]:
 
 
 def _pair_exclusions(
-    *, expected: dict[str, dict[str, Any]],
+    *,
+    expected: dict[str, dict[str, Any]],
     by_definition: dict[str, list[dict[str, Any]]],
     suite: SuiteDefinition,
     interrupted: set[str] | None = None,
@@ -665,8 +682,11 @@ def _pair_exclusions(
     groups: dict[tuple[str, str, int], dict[str, dict[str, Any]]] = defaultdict(dict)
     for definition, row in expected.items():
         condition = conditions[row["condition_id"]]
-        key = (str(row["task_id"]), str(condition["agent"]),
-               int(row.get("replicate_id", row.get("seed"))))
+        key = (
+            str(row["task_id"]),
+            str(condition["agent"]),
+            int(row.get("replicate_id", row.get("seed"))),
+        )
         groups[key][str(condition["subject"])] = {
             "definition_id": definition,
             "receipt": by_definition.get(definition, [None])[0],
@@ -679,22 +699,36 @@ def _pair_exclusions(
                 continue
             left = bare["receipt"] if bare else None
             right = arm["receipt"]
-            if left and right and all(
-                row.get("status") in _VALID_OUTCOMES for row in (left, right)
+            if (
+                left
+                and right
+                and all(row.get("status") in _VALID_OUTCOMES for row in (left, right))
             ):
                 continue
-            exclusions.append({
-                "task_id": key[0], "agent_id": key[1],
-                "replicate_id": key[2], "subject_id": subject,
-                "bare_definition_id": bare["definition_id"] if bare else None,
-                "assisted_definition_id": arm["definition_id"],
-                "bare_status": left.get("status") if left else (
-                    "INTERRUPTED" if bare and bare["definition_id"] in interrupted else "MISSING"
-                ),
-                "assisted_status": right.get("status") if right else (
-                    "INTERRUPTED" if arm["definition_id"] in interrupted else "MISSING"
-                ),
-            })
+            exclusions.append(
+                {
+                    "task_id": key[0],
+                    "agent_id": key[1],
+                    "replicate_id": key[2],
+                    "subject_id": subject,
+                    "bare_definition_id": bare["definition_id"] if bare else None,
+                    "assisted_definition_id": arm["definition_id"],
+                    "bare_status": left.get("status")
+                    if left
+                    else (
+                        "INTERRUPTED"
+                        if bare and bare["definition_id"] in interrupted
+                        else "MISSING"
+                    ),
+                    "assisted_status": right.get("status")
+                    if right
+                    else (
+                        "INTERRUPTED"
+                        if arm["definition_id"] in interrupted
+                        else "MISSING"
+                    ),
+                }
+            )
     return exclusions
 
 
@@ -760,7 +794,9 @@ def build_report(
     selection: dict[str, Any] | None = None,
     projected_receipts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    receipts = _receipts(results_root) if projected_receipts is None else projected_receipts
+    receipts = (
+        _receipts(results_root) if projected_receipts is None else projected_receipts
+    )
     all_expected = {str(row["definition_id"]): row for row in suite.trial_definitions()}
     expected = (
         all_expected
@@ -804,18 +840,27 @@ def build_report(
         try:
             manifest = read_campaign(results_root)
             campaign_id = manifest["campaign_id"]
-            if projected_receipts is None and not set(expected).issubset(set(manifest["selected_definitions"])):
+            if projected_receipts is None and not set(expected).issubset(
+                set(manifest["selected_definitions"])
+            ):
                 raise CampaignAuthorityError("report selection exceeds frozen campaign")
             launch_claims = read_launch_claims(results_root, campaign_id)
             if not set(launch_claims).issubset(set(manifest["selected_definitions"])):
-                raise CampaignAuthorityError("launch claim exceeds frozen campaign selection")
+                raise CampaignAuthorityError(
+                    "launch claim exceeds frozen campaign selection"
+                )
             interrupted = set(launch_claims)
         except CampaignAuthorityError as exc:
             raise ReportError(str(exc)) from exc
         for receipt in receipts:
-            if receipt.get("definition_id") in expected and receipt.get("execution", {}).get("campaign_id") != campaign_id:
+            if (
+                receipt.get("definition_id") in expected
+                and receipt.get("execution", {}).get("campaign_id") != campaign_id
+            ):
                 raise ReportError("receipt belongs to a different campaign authority")
-            if projected_receipts is None and launch_claims.get(receipt["definition_id"]) != receipt.get("trial_id"):
+            if projected_receipts is None and launch_claims.get(
+                receipt["definition_id"]
+            ) != receipt.get("trial_id"):
                 raise ReportError("receipt has no matching launch claim")
 
     missing = sorted(set(expected) - set(by_definition))
@@ -834,15 +879,16 @@ def build_report(
 
     statuses = Counter(str(row.get("status")) for row in receipts)
     invalid_outcomes = sum(
-        statuses.get(status, 0)
-        for status in ("INCOMPLETE", "INVALID", "CONTAMINATED")
+        statuses.get(status, 0) for status in ("INCOMPLETE", "INVALID", "CONTAMINATED")
     )
     campaign_complete = not missing
     campaign_qualified = campaign_complete and invalid_outcomes == 0
     paired_assistance = _paired_assistance(receipts)
     stability = _stability(receipts, expected=expected, suite=suite)
     pair_exclusions = _pair_exclusions(
-        expected=expected, by_definition=by_definition, suite=suite,
+        expected=expected,
+        by_definition=by_definition,
+        suite=suite,
         interrupted=interrupted,
     )
     return {
@@ -909,9 +955,9 @@ def build_report(
             "economics_include_invalid_and_incomplete_trials": True,
             "paired_assistance_scope": "valid-outcomes-only",
             "replicate_identity_field": (
-                "execution.replicate_id" if any(
-                    "replicate_id" in row["execution"] for row in receipts
-                ) else "execution.seed"
+                "execution.replicate_id"
+                if any("replicate_id" in row["execution"] for row in receipts)
+                else "execution.seed"
             ),
             "replicate_identity_is_provider_sampling_seed": False,
             "cross_agent_rows_are_descriptive": True,

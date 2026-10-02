@@ -1,4 +1,5 @@
 """Stable identities for frozen benchmark definitions and observed executions."""
+
 from __future__ import annotations
 
 import hashlib
@@ -14,7 +15,8 @@ REPLICATE_SCORE_CONTRACT = "benchmark-score-projection.v3"
 
 def canonical_json(value: Any) -> bytes:
     return (
-        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
+        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        + "\n"
     ).encode()
 
 
@@ -39,10 +41,14 @@ def definition_id(
             "task": task,
             "condition": condition,
             "trial": trial,
-            **({"seed": seed} if seed is not None else {
-                "identity_contract": "benchmark-definition.v2",
-                "replicate_id": replicate_id,
-            }),
+            **(
+                {"seed": seed}
+                if seed is not None
+                else {
+                    "identity_contract": "benchmark-definition.v2",
+                    "replicate_id": replicate_id,
+                }
+            ),
         }
     )
 
@@ -118,15 +124,22 @@ def execution_evidence_id(
     return digest(
         {
             "contract": (
-                EXECUTION_EVIDENCE_CONTRACT if seed is not None
+                EXECUTION_EVIDENCE_CONTRACT
+                if seed is not None
                 else REPLICATE_EVIDENCE_CONTRACT
             ),
             "task": execution_task_contract(task),
             "condition": condition,
             "trial": trial,
             **({"seed": seed} if seed is not None else {"replicate_id": replicate_id}),
-            **({} if seed is not None else {"campaign_id": campaign_id,
-                                            "admitted_state_sha256": admitted_state_sha256}),
+            **(
+                {}
+                if seed is not None
+                else {
+                    "campaign_id": campaign_id,
+                    "admitted_state_sha256": admitted_state_sha256,
+                }
+            ),
             "subject": subject_identity,
             "agent": agent_identity,
             "harness": harness_identity,

@@ -1,4 +1,5 @@
 """Observed executable identity for benchmark participants."""
+
 from __future__ import annotations
 
 import hashlib
@@ -24,11 +25,7 @@ def resolve_native_executable(
     *,
     environment: Mapping[str, str] | None = None,
 ) -> str | None:
-    effective = (
-        dict(environment)
-        if environment is not None
-        else context.environment
-    )
+    effective = dict(environment) if environment is not None else context.environment
     resolved = shutil.which(command, path=effective.get("PATH"))
     return str(Path(resolved).resolve()) if resolved else None
 
@@ -50,9 +47,7 @@ def observe_executable(
         repository_root=context.workspace,
         argv=(command, *version_args),
         environment=(
-            dict(environment)
-            if environment is not None
-            else context.environment
+            dict(environment) if environment is not None else context.environment
         ),
         limits=ProcessLimits(
             timeout_seconds=timeout_seconds,

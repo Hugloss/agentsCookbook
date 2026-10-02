@@ -39,14 +39,12 @@ def _repo(root: Path) -> None:
     _write(
         root / "src/payments/retry_policy.py",
         "def should_retry_payment(error):\n"
-        "    \"\"\"Retry idempotent payment failures.\"\"\"\n"
+        '    """Retry idempotent payment failures."""\n'
         "    return error.transient\n",
     )
     _write(
         root / "web/checkout.ts",
-        "export function submitPayment() {\n"
-        "  return retryCheckout();\n"
-        "}\n",
+        "export function submitPayment() {\n  return retryCheckout();\n}\n",
     )
     _write(
         root / "docs/reliability.md",
@@ -57,7 +55,10 @@ def _repo(root: Path) -> None:
     _write(root / "ignored/ignored.py", "payment retry idempotency\n")
     _git(root, "add", ".gitignore", "src", "web", "docs")
     _git(root, "commit", "-qm", "fixture")
-    _write(root / "src/payments/untracked_guard.py", "def payment_retry_guard():\n    return True\n")
+    _write(
+        root / "src/payments/untracked_guard.py",
+        "def payment_retry_guard():\n    return True\n",
+    )
 
 
 def _run(
@@ -72,8 +73,17 @@ def _run(
     return context_focus_audit(
         task=task,
         repository_root=root,
-        context_budget=context_budget or ContextBudget(max_files=4, max_lines=200, max_bytes=50_000, max_tokens=10_000),
-        scan_budget=scan_budget or ScanBudget(max_files=100, max_bytes=500_000, max_file_bytes=100_000, max_anchors_per_file=4),
+        context_budget=context_budget
+        or ContextBudget(
+            max_files=4, max_lines=200, max_bytes=50_000, max_tokens=10_000
+        ),
+        scan_budget=scan_budget
+        or ScanBudget(
+            max_files=100,
+            max_bytes=500_000,
+            max_file_bytes=100_000,
+            max_anchors_per_file=4,
+        ),
         discovery_config=discovery_config or DiscoveryConfig(mode="git"),
         repository_intelligence_path=intelligence,
     )
@@ -124,24 +134,35 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
         tight = _run(
             root,
-            context_budget=ContextBudget(max_files=1, max_lines=200, max_bytes=50_000, max_tokens=10_000),
+            context_budget=ContextBudget(
+                max_files=1, max_lines=200, max_bytes=50_000, max_tokens=10_000
+            ),
         )
         tight_candidates = tight.get("candidates", [])
         if not isinstance(tight_candidates, list) or len(tight_candidates) != 1:
-            failures.append("max_files=1 did not produce exactly one selected candidate")
+            failures.append(
+                "max_files=1 did not produce exactly one selected candidate"
+            )
         deferred = tight.get("deferred_evidence", [])
         if not isinstance(deferred, list) or not any(
-            isinstance(item, dict) and "context max_files" in str(item.get("reason")) for item in deferred
+            isinstance(item, dict) and "context max_files" in str(item.get("reason"))
+            for item in deferred
         ):
             failures.append("context file-budget deferral was not explicit")
 
         scan_limited = _run(
             root,
-            scan_budget=ScanBudget(max_files=1, max_bytes=500_000, max_file_bytes=100_000, max_anchors_per_file=4),
+            scan_budget=ScanBudget(
+                max_files=1,
+                max_bytes=500_000,
+                max_file_bytes=100_000,
+                max_anchors_per_file=4,
+            ),
         )
         uncertainty = scan_limited.get("uncertainty", [])
         if not isinstance(uncertainty, list) or not any(
-            isinstance(item, dict) and item.get("code") == "repository_not_fully_content_scanned"
+            isinstance(item, dict)
+            and item.get("code") == "repository_not_fully_content_scanned"
             for item in uncertainty
         ):
             failures.append("scan truncation did not publish uncertainty")
@@ -159,7 +180,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
                         {
                             "path": "src/security/opaque.rs",
                             "score": 95,
-                            "reasons": ["ownership/impact evidence for credential lease renewal"],
+                            "reasons": [
+                                "ownership/impact evidence for credential lease renewal"
+                            ],
                             "symbols": ["gate"],
                         },
                         {
@@ -173,15 +196,22 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             ),
             encoding="utf-8",
         )
-        external = _run(root, task="credential lease renewal", intelligence=intelligence)
+        external = _run(
+            root, task="credential lease renewal", intelligence=intelligence
+        )
         ext_targets = [
-            item.get("target") for item in external.get("candidates", []) if isinstance(item, dict)
+            item.get("target")
+            for item in external.get("candidates", [])
+            if isinstance(item, dict)
         ]
         if not ext_targets or ext_targets[0] != "src/security/opaque.rs":
-            failures.append(f"external intelligence did not rescue vocabulary mismatch: {ext_targets}")
+            failures.append(
+                f"external intelligence did not rescue vocabulary mismatch: {ext_targets}"
+            )
         warnings = external.get("warnings", [])
         if not isinstance(warnings, list) or not any(
-            isinstance(item, dict) and item.get("code") == "stale_external_intelligence_paths"
+            isinstance(item, dict)
+            and item.get("code") == "stale_external_intelligence_paths"
             for item in warnings
         ):
             failures.append("stale external intelligence path did not produce warning")
@@ -191,7 +221,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
                 if isinstance(evidence, dict):
                     for anchor in evidence.get("anchors", []):
                         if isinstance(anchor, dict) and "preview" in anchor:
-                            failures.append("source preview leaked into context-focus artifact")
+                            failures.append(
+                                "source preview leaked into context-focus artifact"
+                            )
 
         tiny_intelligence_limit_failed = False
         try:
@@ -208,9 +240,13 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             failures.append("repository intelligence byte bound did not fail closed")
 
         interpretation = external.get("interpretation", {})
-        if not isinstance(interpretation, dict) or interpretation.get(
-            "external_intelligence_is_ranking_support_not_repository_authority"
-        ) is not True:
+        if (
+            not isinstance(interpretation, dict)
+            or interpretation.get(
+                "external_intelligence_is_ranking_support_not_repository_authority"
+            )
+            is not True
+        ):
             failures.append("external intelligence authority boundary missing")
 
         inside_intelligence = root / "context-intelligence.json"
@@ -230,16 +266,23 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             ),
             encoding="utf-8",
         )
-        inside = _run(root, task="credential lease renewal", intelligence=inside_intelligence)
+        inside = _run(
+            root, task="credential lease renewal", intelligence=inside_intelligence
+        )
         inside_targets = [
-            item.get("target") for item in inside.get("candidates", []) if isinstance(item, dict)
+            item.get("target")
+            for item in inside.get("candidates", [])
+            if isinstance(item, dict)
         ]
         if "context-intelligence.json" in inside_targets:
-            failures.append("repository intelligence auxiliary file became a context candidate")
+            failures.append(
+                "repository intelligence auxiliary file became a context candidate"
+            )
         inside_econ = inside.get("economics", {})
-        if not isinstance(inside_econ, dict) or int(
-            inside_econ.get("auxiliary_inputs_excluded_from_context", 0)
-        ) < 1:
+        if (
+            not isinstance(inside_econ, dict)
+            or int(inside_econ.get("auxiliary_inputs_excluded_from_context", 0)) < 1
+        ):
             failures.append("auxiliary context-input exclusion was not measured")
         inside_intelligence.unlink()
 
@@ -252,20 +295,26 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         if not isinstance(base_repo, dict) or not isinstance(tracked_repo, dict):
             failures.append("repository identities missing")
         elif base_repo.get("identity") == tracked_repo.get("identity"):
-            failures.append("discovery path-set identity did not change when untracked input was excluded")
+            failures.append(
+                "discovery path-set identity did not change when untracked input was excluded"
+            )
         base_cfg = baseline.get("configuration", {})
         tracked_cfg = tracked_only.get("configuration", {})
         if not isinstance(base_cfg, dict) or not isinstance(tracked_cfg, dict):
             failures.append("configuration identities missing")
         elif base_cfg.get("identity") == tracked_cfg.get("identity"):
-            failures.append("discovery policy did not invalidate configuration identity")
+            failures.append(
+                "discovery policy did not invalidate configuration identity"
+            )
 
         task_changed = _run(root, task="checkout payment")
         task_repo = task_changed.get("repository", {})
         task_cfg = task_changed.get("configuration", {})
         if isinstance(base_repo, dict) and isinstance(task_repo, dict):
             if base_repo.get("identity") != task_repo.get("identity"):
-                failures.append("repository path-set identity incorrectly depends on task text")
+                failures.append(
+                    "repository path-set identity incorrectly depends on task text"
+                )
         if isinstance(base_cfg, dict) and isinstance(task_cfg, dict):
             if base_cfg.get("identity") == task_cfg.get("identity"):
                 failures.append("task text did not invalidate configuration identity")
@@ -285,8 +334,16 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             config=DiscoveryConfig(mode="git"),
             suffixes=(".py", ".ts", ".md", ".rs"),
         )
-        generic_paths = {path.absolute().relative_to(root).as_posix() for path in generic.files_for("repo")}
-        for expected in {"src/payments/retry_policy.py", "web/checkout.ts", "docs/reliability.md", "src/security/opaque.rs"}:
+        generic_paths = {
+            path.absolute().relative_to(root).as_posix()
+            for path in generic.files_for("repo")
+        }
+        for expected in {
+            "src/payments/retry_policy.py",
+            "web/checkout.ts",
+            "docs/reliability.md",
+            "src/security/opaque.rs",
+        }:
             if expected not in generic_paths:
                 failures.append(f"generic discovery missed {expected}")
 
@@ -295,7 +352,8 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             failures.append("unmatched task unexpectedly selected lexical candidates")
         no_match_uncertainty = no_match.get("uncertainty", [])
         if not isinstance(no_match_uncertainty, list) or not any(
-            isinstance(item, dict) and item.get("code") == "no_context_candidate_selected"
+            isinstance(item, dict)
+            and item.get("code") == "no_context_candidate_selected"
             for item in no_match_uncertainty
         ):
             failures.append("no-match case did not publish uncertainty")
@@ -309,12 +367,20 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
         observations = {
             "baseline_targets": targets,
-            "baseline_repository_identity": base_repo.get("identity") if isinstance(base_repo, dict) else None,
-            "baseline_configuration_identity": base_cfg.get("identity") if isinstance(base_cfg, dict) else None,
+            "baseline_repository_identity": base_repo.get("identity")
+            if isinstance(base_repo, dict)
+            else None,
+            "baseline_configuration_identity": base_cfg.get("identity")
+            if isinstance(base_cfg, dict)
+            else None,
             "baseline_files_read": econ.get("files_read"),
             "baseline_bytes_read": econ.get("bytes_read"),
-            "tight_selected_count": len(tight_candidates) if isinstance(tight_candidates, list) else None,
-            "scan_limited_files_read": scan_econ.get("files_read") if isinstance(scan_econ, dict) else None,
+            "tight_selected_count": len(tight_candidates)
+            if isinstance(tight_candidates, list)
+            else None,
+            "scan_limited_files_read": scan_econ.get("files_read")
+            if isinstance(scan_econ, dict)
+            else None,
             "external_targets": ext_targets,
             "generic_discovered_count": len(generic_paths),
             "contract_errors": contract_errors,
@@ -329,7 +395,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     }
     if artifact_path is not None:
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        artifact_path.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        artifact_path.write_text(
+            json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
     return result
 
 

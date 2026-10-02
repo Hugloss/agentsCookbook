@@ -1,4 +1,5 @@
 """Resumable campaign identities, paths, and status."""
+
 from __future__ import annotations
 
 import json
@@ -8,7 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from .bundle import verify_bundle
-from .campaign_authority import CampaignAuthorityError, read_launch_claims, read_campaign
+from .campaign_authority import (
+    CampaignAuthorityError,
+    read_launch_claims,
+    read_campaign,
+)
 from .identity import definition_id, execution_id
 from .receipt import is_complete_receipt
 from .report import ReportError, validate_comparability
@@ -73,11 +78,7 @@ class CampaignPaths:
 
 
 def pending(specs: list[TrialSpec], results_root: Path) -> list[TrialSpec]:
-    return [
-        spec
-        for spec in specs
-        if not is_complete_receipt(results_root / spec.id)
-    ]
+    return [spec for spec in specs if not is_complete_receipt(results_root / spec.id)]
 
 
 def resolve_campaign_paths(
@@ -105,9 +106,7 @@ def resolve_campaign_paths(
     if results is None and not results_optional:
         raise CampaignError("provide --root or --results")
     if need_execution and (cache is None or work is None):
-        raise CampaignError(
-            "execution requires --root or both --cache and --work"
-        )
+        raise CampaignError("execution requires --root or both --cache and --work")
     return CampaignPaths(
         root=None,
         cache=cache.resolve() if cache is not None else None,
@@ -123,13 +122,9 @@ def campaign_status(
     selected_definitions: set[str],
 ) -> dict[str, Any]:
     all_rows = suite.trial_definitions()
-    all_definitions = {
-        str(row["definition_id"]): row for row in all_rows
-    }
+    all_definitions = {str(row["definition_id"]): row for row in all_rows}
     definitions = {
-        key: row
-        for key, row in all_definitions.items()
-        if key in selected_definitions
+        key: row for key, row in all_definitions.items() if key in selected_definitions
     }
     if set(definitions) != selected_definitions:
         raise CampaignError(
@@ -143,7 +138,9 @@ def campaign_status(
         try:
             manifest = read_campaign(results_root)
             if not selected_definitions.issubset(set(manifest["selected_definitions"])):
-                raise CampaignAuthorityError("status selection exceeds campaign selection")
+                raise CampaignAuthorityError(
+                    "status selection exceeds campaign selection"
+                )
             launch_claims = read_launch_claims(results_root, manifest["campaign_id"])
             claims = set(launch_claims)
             if not claims.issubset(set(manifest["selected_definitions"])):
@@ -162,13 +159,9 @@ def campaign_status(
                 continue
             valid, reason = verify_bundle(directory)
             if not valid:
-                corrupt.append(
-                    {"directory": str(directory), "reason": str(reason)}
-                )
+                corrupt.append({"directory": str(directory), "reason": str(reason)})
                 continue
-            value = json.loads(
-                (directory / "result.json").read_text(encoding="utf-8")
-            )
+            value = json.loads((directory / "result.json").read_text(encoding="utf-8"))
             definition = value.get("definition_id")
             if not isinstance(definition, str):
                 corrupt.append(
@@ -179,11 +172,30 @@ def campaign_status(
                 )
                 continue
             if definition in definitions:
-                if new_contract and campaign_error is None and value.get("execution", {}).get("campaign_id") != manifest["campaign_id"]:
-                    corrupt.append({"directory": str(directory), "reason": "receipt campaign authority mismatch"})
+                if (
+                    new_contract
+                    and campaign_error is None
+                    and value.get("execution", {}).get("campaign_id")
+                    != manifest["campaign_id"]
+                ):
+                    corrupt.append(
+                        {
+                            "directory": str(directory),
+                            "reason": "receipt campaign authority mismatch",
+                        }
+                    )
                     continue
-                if new_contract and campaign_error is None and launch_claims.get(definition) != value.get("trial_id"):
-                    corrupt.append({"directory": str(directory), "reason": "receipt has no matching launch claim"})
+                if (
+                    new_contract
+                    and campaign_error is None
+                    and launch_claims.get(definition) != value.get("trial_id")
+                ):
+                    corrupt.append(
+                        {
+                            "directory": str(directory),
+                            "reason": "receipt has no matching launch claim",
+                        }
+                    )
                     continue
                 receipts[definition].append(value)
             elif definition not in all_definitions:
@@ -211,9 +223,7 @@ def campaign_status(
         else:
             state = "CONFLICT"
             outcome = None
-            trial_ids = sorted(
-                str(value.get("trial_id")) for value in found
-            )
+            trial_ids = sorted(str(value.get("trial_id")) for value in found)
         state_counts[state] += 1
         rows.append(
             {
@@ -227,11 +237,7 @@ def campaign_status(
             }
         )
 
-    completed_receipts = [
-        values[0]
-        for values in receipts.values()
-        if len(values) == 1
-    ]
+    completed_receipts = [values[0] for values in receipts.values() if len(values) == 1]
     comparability_error = None
     try:
         validate_comparability(completed_receipts)

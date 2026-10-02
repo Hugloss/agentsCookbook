@@ -35,9 +35,12 @@ def _nonempty(value: object) -> bool:
 
 
 def _identity(payload: Mapping[str, object]) -> str:
-    return "sha256:" + hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    return (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+    )
 
 
 def _normalize_test_references(
@@ -106,7 +109,9 @@ def post_edit_change_set_evidence(
         not _nonempty(row["path"]) or not _nonempty(row["evidence_identity"])
         for row in normalized_sources
     ):
-        raise ValueError("changed_source_references must contain identified source files")
+        raise ValueError(
+            "changed_source_references must contain identified source files"
+        )
     semantic = {
         "schema": POST_EDIT_CHANGE_SET_SCHEMA,
         "pre_edit_source_identity": pre_edit_source_identity,
@@ -405,12 +410,16 @@ def behavior_preservation_readiness(
         "schema": SCHEMA,
         "target": target,
         "source_identity": source_identity,
-        "boundaries": sorted(normalized_boundaries, key=lambda row: str(row["identity"])),
+        "boundaries": sorted(
+            normalized_boundaries, key=lambda row: str(row["identity"])
+        ),
         "test_references": normalized_tests,
         "test_ownership_evidence": normalized_ownership,
         "execution_receipt": normalized_receipt,
         "repository_gates": normalized_gates,
-        "coverage_evidence": dict(coverage_evidence) if coverage_evidence is not None else None,
+        "coverage_evidence": dict(coverage_evidence)
+        if coverage_evidence is not None
+        else None,
         "status": status,
         "unresolved_evidence": unresolved,
         "boundaries_requiring_test_strengthening": strengthening,
@@ -455,11 +464,16 @@ def behavior_preservation_receipt(
 ) -> dict[str, object]:
     """Bind post-edit verification to frozen pre-edit behavior evidence."""
     unresolved: list[str] = []
-    if pre_edit_evidence.get("schema") != SCHEMA or pre_edit_evidence.get("status") != READY:
+    if (
+        pre_edit_evidence.get("schema") != SCHEMA
+        or pre_edit_evidence.get("status") != READY
+    ):
         unresolved.append("ready-pre-edit-evidence")
     pre_edit_evidence_identity = pre_edit_evidence.get("evidence_identity")
     pre_edit_source_identity = pre_edit_evidence.get("source_identity")
-    if not _nonempty(pre_edit_evidence_identity) or not _nonempty(pre_edit_source_identity):
+    if not _nonempty(pre_edit_evidence_identity) or not _nonempty(
+        pre_edit_source_identity
+    ):
         unresolved.append("identified-pre-edit-evidence")
     if not _nonempty(post_edit_repository_identity):
         unresolved.append("post-edit-repository-identity")
@@ -517,7 +531,9 @@ def behavior_preservation_receipt(
         receipt_tests = post_edit_execution_receipt.get("test_evidence_identities")
         normalized_execution = {
             "source_identity": post_edit_execution_receipt.get("source_identity"),
-            "repository_identity": post_edit_execution_receipt.get("repository_identity"),
+            "repository_identity": post_edit_execution_receipt.get(
+                "repository_identity"
+            ),
             "status": post_edit_execution_receipt.get("status"),
             "test_evidence_identities": sorted(str(item) for item in receipt_tests)
             if isinstance(receipt_tests, Sequence)
@@ -527,7 +543,8 @@ def behavior_preservation_receipt(
         }
         execution_ok = (
             normalized_execution["source_identity"] == post_edit_source_identity
-            and normalized_execution["repository_identity"] == post_edit_repository_identity
+            and normalized_execution["repository_identity"]
+            == post_edit_repository_identity
             and normalized_execution["status"] == "PASS"
             and normalized_execution["test_evidence_identities"]
             == sorted(row["evidence_identity"] for row in frozen_tests)
@@ -599,7 +616,9 @@ def behavior_preservation_receipt(
             "architectural_improvement_proven": False,
         },
         "required_next_evidence": (
-            [{"kind": "resolve_post_edit_evidence", "items": unresolved}] if unresolved else []
+            [{"kind": "resolve_post_edit_evidence", "items": unresolved}]
+            if unresolved
+            else []
         ),
     }
 
@@ -644,9 +663,7 @@ def behavior_preservation_debt_delta(
 
     repository_reduction = pre_repository_excess - post_repository_excess
     target_reduction = pre_target_excess - post_target_excess
-    outside_target_delta = (
-        post_repository_excess - post_target_excess
-    ) - (
+    outside_target_delta = (post_repository_excess - post_target_excess) - (
         pre_repository_excess - pre_target_excess
     )
     preservation_verified = preservation_receipt.get("status") == PRESERVED
@@ -670,21 +687,16 @@ def behavior_preservation_debt_delta(
     if decision_valid and snapshot_valid:
         assert isinstance(locality_decision, Mapping)
         assert isinstance(post_locality_snapshot, Mapping)
-        if (
-            locality_decision.get("post_snapshot_identity")
-            != post_locality_snapshot.get("evidence_identity")
-        ):
+        if locality_decision.get(
+            "post_snapshot_identity"
+        ) != post_locality_snapshot.get("evidence_identity"):
             locality_reasons.append("post-locality-snapshot-binding")
-        if (
-            post_locality_snapshot.get("repository_identity")
-            != preservation_receipt.get("post_edit_repository_identity")
-        ):
+        if post_locality_snapshot.get(
+            "repository_identity"
+        ) != preservation_receipt.get("post_edit_repository_identity"):
             locality_reasons.append("post-edit-repository-binding")
         locality_target = str(post_locality_snapshot.get("target") or "")
-        if not (
-            locality_target == target
-            or locality_target.startswith(f"{target}::")
-        ):
+        if not (locality_target == target or locality_target.startswith(f"{target}::")):
             locality_reasons.append("cleanup-target-binding")
         if post_locality_snapshot.get("provider") != "hashmarks":
             locality_reasons.append("independent-hashmarks-provider")
@@ -716,8 +728,7 @@ def behavior_preservation_debt_delta(
     locality_reasons = sorted(set(locality_reasons))
     locality_verified = not locality_reasons
     comparable = (
-        measurement_configuration_identity
-        == post_measurement_configuration_identity
+        measurement_configuration_identity == post_measurement_configuration_identity
         and pre_measurement_identity != post_measurement_identity
     )
 
@@ -770,4 +781,3 @@ def behavior_preservation_debt_delta(
             "ruff_or_analyzer_reduction_alone_closes_cleanup": False,
         },
     }
-

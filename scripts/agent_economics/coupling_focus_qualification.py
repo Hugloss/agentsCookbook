@@ -76,16 +76,22 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         targets = [candidate["target"] for candidate in payload["candidates"]]
         if targets != ["src/alpha.py"]:
             failures.append(f"unexpected coupling candidates: {targets!r}")
-        if payload["candidates"] and payload["candidates"][0]["facts"]["shared_commits"] != 3:
+        if (
+            payload["candidates"]
+            and payload["candidates"][0]["facts"]["shared_commits"] != 3
+        ):
             failures.append("shared commit count is incorrect")
         if payload["economics"]["oversized_commits_skipped"] != 1:
             failures.append("mega-commit suppression was not exercised")
         if not any(
-            item.get("code") == "correlation_not_dependency" for item in payload["warnings"]
+            item.get("code") == "correlation_not_dependency"
+            for item in payload["warnings"]
         ):
             failures.append("correlation-vs-dependency warning missing")
         if payload["interpretation"].get("dependency_authority") is not False:
-            failures.append("historical co-change incorrectly gained dependency authority")
+            failures.append(
+                "historical co-change incorrectly gained dependency authority"
+            )
         contract_errors = validate_probe_contract(payload)
         if contract_errors:
             failures.append(f"common contract invalid: {contract_errors}")
@@ -187,7 +193,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
                 else None
             ),
             "target_commits": payload["derived"]["target_commit_count"],
-            "oversized_commits_skipped": payload["economics"]["oversized_commits_skipped"],
+            "oversized_commits_skipped": payload["economics"][
+                "oversized_commits_skipped"
+            ],
             "history_truncated": any(
                 item.get("code") == "history_window_truncated"
                 for item in truncated["uncertainty"]

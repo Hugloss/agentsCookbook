@@ -37,13 +37,20 @@ def oracle_reviews_declared(suite: SuiteDefinition) -> bool:
 
 
 def validate_oracle_reviews(
-    suite: SuiteDefinition, *, require_complete: bool,
+    suite: SuiteDefinition,
+    *,
+    require_complete: bool,
 ) -> dict[str, Any]:
     path = oracle_review_path(suite)
     if not path.is_file():
         if require_complete or "oracle_reviews" in suite.experiment:
             raise OracleReviewError("oracle review evidence is missing")
-        return {"present": False, "first_reviewed_tasks": 0, "approved_tasks": 0, "complete": False}
+        return {
+            "present": False,
+            "first_reviewed_tasks": 0,
+            "approved_tasks": 0,
+            "complete": False,
+        }
     try:
         evidence = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -61,13 +68,20 @@ def validate_oracle_reviews(
         if not isinstance(row, dict):
             raise OracleReviewError(f"oracle review missing for {task_id}")
         task_digest = digest(task)
-        if row.get("task_digest") != task_digest or row.get("repository") != task["repository"]:
+        if (
+            row.get("task_digest") != task_digest
+            or row.get("repository") != task["repository"]
+        ):
             raise OracleReviewError(f"stale oracle review for {task_id}")
         if task["oracle"]["adapter"] == "repository-location-json":
             expected = task["oracle"]["configuration"]["expected"]
             if row.get("owner") != expected:
                 raise OracleReviewError(f"oracle review owner differs for {task_id}")
-        if not isinstance(row.get("alternatives"), list) or not isinstance(row.get("evidence"), str) or not row["evidence"].strip():
+        if (
+            not isinstance(row.get("alternatives"), list)
+            or not isinstance(row.get("evidence"), str)
+            or not row["evidence"].strip()
+        ):
             raise OracleReviewError(f"oracle review rationale missing for {task_id}")
         reviews = row.get("reviews")
         if not isinstance(reviews, list):
@@ -89,7 +103,9 @@ def validate_oracle_reviews(
             reviewers.add(review["reviewer"])
         if reviewers:
             first_reviewed += 1
-        if len(reviewers) < 2 or any(review["decision"] != "unique" for review in reviews):
+        if len(reviewers) < 2 or any(
+            review["decision"] != "unique" for review in reviews
+        ):
             pending.append(task_id)
     if require_complete and pending:
         raise OracleReviewError(

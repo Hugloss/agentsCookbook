@@ -70,14 +70,14 @@ def resolve_import_from_module(
         return module
 
     package_parts = (
-        current_module_parts
-        if current_is_package
-        else current_module_parts[:-1]
+        current_module_parts if current_is_package else current_module_parts[:-1]
     )
     ascend = level - 1
     if ascend > len(package_parts):
         return ""
-    base_parts = package_parts[: len(package_parts) - ascend] if ascend else package_parts
+    base_parts = (
+        package_parts[: len(package_parts) - ascend] if ascend else package_parts
+    )
     if module:
         return ".".join((*base_parts, module))
     return ".".join(base_parts)
@@ -206,7 +206,9 @@ def parse_dynamic_loaded_source_modules(
 def literal_dynamic_module_name_for_call(node: ast.Call) -> str | None:
     if not node.args:
         return None
-    if not isinstance(node.args[0], ast.Constant) or not isinstance(node.args[0].value, str):
+    if not isinstance(node.args[0], ast.Constant) or not isinstance(
+        node.args[0].value, str
+    ):
         return None
     value = node.args[0].value.strip()
     if not value or value.startswith("."):

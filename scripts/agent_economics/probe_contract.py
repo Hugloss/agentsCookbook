@@ -127,8 +127,10 @@ def validate_probe_contract(payload: object) -> list[str]:
             errors.append(f"schema.version must be {SCHEMA_VERSION!r}")
 
     tool = payload.get("tool")
-    if not isinstance(tool, dict) or not isinstance(tool.get("name"), str) or not isinstance(
-        tool.get("version"), str
+    if (
+        not isinstance(tool, dict)
+        or not isinstance(tool.get("name"), str)
+        or not isinstance(tool.get("version"), str)
     ):
         errors.append("tool must contain string name and version")
 
@@ -181,10 +183,20 @@ def validate_probe_contract(payload: object) -> list[str]:
                     errors.append(f"candidate {index} missing field: {key}")
             if not isinstance(candidate.get("target"), str):
                 errors.append(f"candidate {index} target must be a string")
-            for key in ("facts", "evidence", "derived", "interpretation", "recommendations"):
+            for key in (
+                "facts",
+                "evidence",
+                "derived",
+                "interpretation",
+                "recommendations",
+            ):
                 if not isinstance(candidate.get(key), dict):
                     errors.append(f"candidate {index} {key} must be an object")
-            for key in ("uncertainty", "required_next_evidence", "verification_suggestions"):
+            for key in (
+                "uncertainty",
+                "required_next_evidence",
+                "verification_suggestions",
+            ):
                 if not isinstance(candidate.get(key), list):
                     errors.append(f"candidate {index} {key} must be a list")
             facts = candidate.get("facts")

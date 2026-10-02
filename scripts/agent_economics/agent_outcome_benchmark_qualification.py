@@ -92,10 +92,7 @@ def main() -> None:
     result = compare(outcomes)
     assert result["schema"]["version"] == 3
     assert result["correctness"]["paired_tasks"] == 2
-    assert (
-        result["metrics"]["independent_qualification_activations"]["delta"]
-        == -3.0
-    )
+    assert result["metrics"]["independent_qualification_activations"]["delta"] == -3.0
     assert result["timing"]["paired_measurements"] == 1
     assert result["authority"]["automatic_promotion"] is False
     assert result["authority"]["promotion_evidence_is_not_a_verdict"] is True
@@ -129,9 +126,7 @@ def main() -> None:
         ]
     )
     assert (
-        unknown_qualification["correctness"][
-            "local_independent_qualification_unknown"
-        ]
+        unknown_qualification["correctness"]["local_independent_qualification_unknown"]
         == 1
     )
     assert (
@@ -301,10 +296,7 @@ def main() -> None:
         ]
     )
     assert bound["experiment_protocol"]["bridge_receipts_bound"] == 1
-    assert (
-        bound["experiment_protocol"]["independent_qualification_evidence_bound"]
-        == 1
-    )
+    assert bound["experiment_protocol"]["independent_qualification_evidence_bound"] == 1
 
     with tempfile.TemporaryDirectory() as temp:
         path = Path(temp) / "outcomes.jsonl"

@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-CASES = json.loads(r'''{
+CASES = json.loads(r"""{
     "post_change-00": {
         "expected": {
             "changed_path": "benchmark_case/post_change_00/src/engine.py",
@@ -104,7 +104,7 @@ CASES = json.loads(r'''{
         },
         "file_checks": []
     }
-}''')
+}""")
 
 
 def _final_message() -> object:

@@ -15,7 +15,10 @@ from typing import Any
 from benchmarks.harness.admission import TrialAdmissionError, admit_trial
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.campaign_authority import (
-    CampaignAuthorityError, claim_launch, launch_state, verify_trial_authority,
+    CampaignAuthorityError,
+    claim_launch,
+    launch_state,
+    verify_trial_authority,
 )
 from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.events import append_event, seal_events
@@ -163,10 +166,7 @@ def _reason_for_agent(observation: Observation) -> str | None:
     if terminal.get("type") != "turn.completed":
         reason = terminal.get("reason")
         if isinstance(reason, str) and reason:
-            return (
-                f"agent terminal event was {terminal.get('type')}: "
-                f"{reason}"
-            )
+            return f"agent terminal event was {terminal.get('type')}: {reason}"
         return f"agent terminal event was {terminal.get('type')}"
     answer = observation.payload.get("final_message")
     if not isinstance(answer, str) or not answer.strip():
@@ -207,7 +207,8 @@ def run_trial(
             expanded_condition = admission.expanded_condition
             replicate_id = admission.replicate_id
             identity_field = (
-                {"seed": replicate_id} if admission.legacy_seed
+                {"seed": replicate_id}
+                if admission.legacy_seed
                 else {"replicate_id": replicate_id}
             )
             definition = admission.definition_id
@@ -231,21 +232,28 @@ def run_trial(
             final_dir = results_root / trial_id
             if not admission.legacy_seed:
                 if campaign is None:
-                    raise TrialRunnerError("replicate trial requires campaign authority")
+                    raise TrialRunnerError(
+                        "replicate trial requires campaign authority"
+                    )
                 verify_trial_authority(
-                    results_root=results_root, campaign=campaign,
+                    results_root=results_root,
+                    campaign=campaign,
                     admission=admission,
                 )
                 state = launch_state(
-                    results_root=results_root, campaign=campaign,
-                    definition_id=definition, trial_id=trial_id,
+                    results_root=results_root,
+                    campaign=campaign,
+                    definition_id=definition,
+                    trial_id=trial_id,
                 )
                 if state == "INTERRUPTED":
                     raise TrialRunnerError(
                         "trial was launched without a complete receipt; use a new campaign root"
                     )
                 if final_dir.exists() and state != "COMPLETE":
-                    raise TrialRunnerError("result exists without a matching launch claim")
+                    raise TrialRunnerError(
+                        "result exists without a matching launch claim"
+                    )
             if final_dir.exists():
                 valid, invalid_reason = verify_bundle(final_dir)
                 if not valid:
@@ -318,8 +326,10 @@ def run_trial(
             if status is None:
                 if campaign is not None:
                     claim_launch(
-                        results_root=results_root, campaign=campaign,
-                        definition_id=definition, trial_id=trial_id,
+                        results_root=results_root,
+                        campaign=campaign,
+                        definition_id=definition,
+                        trial_id=trial_id,
                     )
                 emit(
                     "agent.started",
@@ -335,7 +345,10 @@ def run_trial(
                 except Exception as exc:
                     agent_observation = Observation(
                         {
-                            "terminal_event": {"type": "turn.failed", "reason": str(exc)},
+                            "terminal_event": {
+                                "type": "turn.failed",
+                                "reason": str(exc),
+                            },
                             "terminal_complete": False,
                             "final_message": None,
                             "process": {},
@@ -351,7 +364,9 @@ def run_trial(
                 )
                 try:
                     if isinstance(oracle, RepositoryLocationOracle):
-                        location_observation = oracle.observe(context, agent_observation)
+                        location_observation = oracle.observe(
+                            context, agent_observation
+                        )
                     budget_violation = agent_observation.payload.get("budget_violation")
                     agent_reason = _reason_for_agent(agent_observation)
                     if isinstance(budget_violation, str) and budget_violation:
@@ -454,12 +469,14 @@ def run_trial(
 
             agent_answer = agent_observation.payload.get("final_message")
             workspace_root = str(context.workspace.resolve())
-            trace_sha256 = hashlib.sha256(agent_observation.raw.encode("utf-8")).hexdigest()
+            trace_sha256 = hashlib.sha256(
+                agent_observation.raw.encode("utf-8")
+            ).hexdigest()
             execution_evidence = execution_evidence_id(
                 task=task,
                 condition=expanded_condition,
                 trial=trial_index,
-            **identity_field,
+                **identity_field,
                 subject_identity=subject_authority,
                 agent_identity=agent_authority,
                 harness_identity=harness_authority,
@@ -468,16 +485,24 @@ def run_trial(
                 agent_answer=agent_answer,
                 workspace_root=workspace_root,
                 location_observation=location_observation,
-            agent_trace_sha256=trace_sha256,
-            **({"campaign_id": campaign["campaign_id"],
-                "admitted_state_sha256": digest(admitted_state)}
-               if campaign is not None and not admission.legacy_seed else {}),
+                agent_trace_sha256=trace_sha256,
+                **(
+                    {
+                        "campaign_id": campaign["campaign_id"],
+                        "admitted_state_sha256": digest(admitted_state),
+                    }
+                    if campaign is not None and not admission.legacy_seed
+                    else {}
+                ),
             )
             score_projection = score_projection_id(
                 execution_evidence=execution_evidence,
                 oracle_identity=oracle_authority["declared"],
-                **({"contract": "benchmark-score-projection.v3"}
-                   if not admission.legacy_seed else {}),
+                **(
+                    {"contract": "benchmark-score-projection.v3"}
+                    if not admission.legacy_seed
+                    else {}
+                ),
             )
 
             receipt: dict[str, Any] = {
@@ -497,8 +522,11 @@ def run_trial(
                 },
                 "execution": {
                     **identity_field,
-                    **({"campaign_id": campaign["campaign_id"]}
-                       if campaign is not None and not admission.legacy_seed else {}),
+                    **(
+                        {"campaign_id": campaign["campaign_id"]}
+                        if campaign is not None and not admission.legacy_seed
+                        else {}
+                    ),
                     "trial_index": trial_index,
                     "events": event_evidence,
                     "agent_terminal": agent_observation.payload.get("terminal_event"),
@@ -507,7 +535,8 @@ def run_trial(
                     "admitted_state_sha256": digest(admitted_state),
                     "location_observation": location_observation,
                     "evidence_contract": (
-                        EXECUTION_EVIDENCE_CONTRACT if admission.legacy_seed
+                        EXECUTION_EVIDENCE_CONTRACT
+                        if admission.legacy_seed
                         else "benchmark-execution-evidence.v3"
                     ),
                     "evidence_identity": execution_evidence,

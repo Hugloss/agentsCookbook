@@ -145,10 +145,7 @@ def main() -> None:
         "scenario:gamma": 1,
     }
     assert result["qualification_authorities"] == ["authority:a", "authority:b"]
-    assert (
-        result["benchmark"]["promotion_evidence"]["strict_dogfood_protocol"]
-        is True
-    )
+    assert result["benchmark"]["promotion_evidence"]["strict_dogfood_protocol"] is True
     assert result["authority"]["automatic_promotion"] is False
     assert (
         result["authority"]["repository_qualification_authority_is_consumer_owned"]
@@ -157,22 +154,14 @@ def main() -> None:
 
     missing = deepcopy(campaign)
     missing["tasks"] = [
-        row
-        for row in campaign["tasks"]
-        if row["scenario_id"] != "scenario:gamma"
+        row for row in campaign["tasks"] if row["scenario_id"] != "scenario:gamma"
     ]
-    missing_outcomes = [
-        outcome
-        for outcome in outcomes
-        if outcome.task_id != "task-c"
-    ]
+    missing_outcomes = [outcome for outcome in outcomes if outcome.task_id != "task-c"]
     _expect_error(lambda: validate_campaign(missing_outcomes, missing))
 
     too_many_repositories_required = deepcopy(campaign)
     too_many_repositories_required["minimum_distinct_repositories"] = 3
-    _expect_error(
-        lambda: validate_campaign(outcomes, too_many_repositories_required)
-    )
+    _expect_error(lambda: validate_campaign(outcomes, too_many_repositories_required))
 
     undeclared_scenario = deepcopy(campaign)
     undeclared_scenario["tasks"][0]["scenario_id"] = "scenario:undeclared"
@@ -195,15 +184,15 @@ def main() -> None:
     _expect_error(lambda: validate_campaign(outcomes, bad_measurement))
 
     reused_receipt = deepcopy(campaign)
-    reused_receipt["tasks"][1]["baseline_isolation_evidence_id"] = campaign[
-        "tasks"
-    ][0]["baseline_isolation_evidence_id"]
+    reused_receipt["tasks"][1]["baseline_isolation_evidence_id"] = campaign["tasks"][0][
+        "baseline_isolation_evidence_id"
+    ]
     _expect_error(lambda: validate_campaign(outcomes, reused_receipt))
 
     wrong_producer_source = deepcopy(campaign)
-    wrong_producer_source[
-        "producer_qualification_implementation_id"
-    ] = "implementation:other"
+    wrong_producer_source["producer_qualification_implementation_id"] = (
+        "implementation:other"
+    )
     _expect_error(lambda: validate_campaign(outcomes, wrong_producer_source))
 
     no_cleanup = deepcopy(campaign)
@@ -238,9 +227,7 @@ def main() -> None:
     )
     campaign_reused = deepcopy(campaign)
     campaign_reused["tasks"][1]["baseline_session_id"] = outcomes[0].run_id
-    _expect_error(
-        lambda: validate_campaign(reused_outcome_run, campaign_reused)
-    )
+    _expect_error(lambda: validate_campaign(reused_outcome_run, campaign_reused))
 
     unregistered = list(outcomes)
     extra_pair, _ = _pair(

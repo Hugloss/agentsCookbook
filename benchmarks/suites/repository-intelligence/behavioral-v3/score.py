@@ -34,7 +34,11 @@ def score(*, suite_root: Path, results: Path, agents: tuple[str, ...]) -> dict:
     )
     families = {}
     for family in FAMILIES:
-        tasks = {task_id for task_id, task in suite.tasks.items() if task.get("family") == family}
+        tasks = {
+            task_id
+            for task_id, task in suite.tasks.items()
+            if task.get("family") == family
+        }
         selected = {
             row["definition_id"]
             for row in definitions
@@ -88,7 +92,9 @@ def main() -> int:
     except (ValueError, ReportError) as exc:
         parser.exit(2, f"ERROR: {exc}\n")
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    args.output.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return 0
 
 

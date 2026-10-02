@@ -33,13 +33,23 @@ def tracked_workspace_state(
     listing = run_bounded(
         repository_root=root,
         argv=("git", "ls-files", "-z"),
-        limits=ProcessLimits(timeout_seconds=10.0, max_stdout_bytes=max_path_bytes, max_stderr_bytes=100_000),
+        limits=ProcessLimits(
+            timeout_seconds=10.0,
+            max_stdout_bytes=max_path_bytes,
+            max_stderr_bytes=100_000,
+        ),
     )
-    if listing.executable_missing or listing.return_code != 0 or listing.stdout_truncated:
+    if (
+        listing.executable_missing
+        or listing.return_code != 0
+        or listing.stdout_truncated
+    ):
         raise WorkspaceStateError("cannot obtain bounded tracked-file listing")
     raw_paths = [p for p in listing.stdout.split(b"\0") if p]
     if len(raw_paths) > max_paths:
-        raise WorkspaceStateError(f"tracked file count exceeds configured bound: {max_paths}")
+        raise WorkspaceStateError(
+            f"tracked file count exceeds configured bound: {max_paths}"
+        )
     entries: list[dict[str, object]] = []
     total_bytes = 0
     for raw in raw_paths:
@@ -56,10 +66,14 @@ def tracked_workspace_state(
         elif path.is_file():
             size = path.stat().st_size
             if size > max_file_bytes:
-                raise WorkspaceStateError(f"tracked file exceeds configured byte bound: {rel}")
+                raise WorkspaceStateError(
+                    f"tracked file exceeds configured byte bound: {rel}"
+                )
             total_bytes += size
             if total_bytes > max_total_bytes:
-                raise WorkspaceStateError("tracked workspace exceeds configured cumulative byte bound")
+                raise WorkspaceStateError(
+                    "tracked workspace exceeds configured cumulative byte bound"
+                )
             sha = _hash_file(path)
             kind = "file"
         else:
@@ -79,10 +93,9 @@ def tracked_workspace_state(
     }
 
 
-def changed_tracked_paths(before: dict[str, object], after: dict[str, object]) -> list[str]:
+def changed_tracked_paths(
+    before: dict[str, object], after: dict[str, object]
+) -> list[str]:
     b = {str(e["path"]): e for e in before.get("entries", []) if isinstance(e, dict)}
     a = {str(e["path"]): e for e in after.get("entries", []) if isinstance(e, dict)}
-    return sorted(
-        path for path in set(b) | set(a)
-        if b.get(path) != a.get(path)
-    )
+    return sorted(path for path in set(b) | set(a) if b.get(path) != a.get(path))

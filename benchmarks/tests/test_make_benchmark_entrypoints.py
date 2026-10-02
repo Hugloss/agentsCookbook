@@ -39,7 +39,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             "mktemp -d /tmp/agentscookbook-heldout-v1-localization-qualification.XXXXXX",
             makefile,
         )
-        self.assertIn("--root \"$$qualification_root\" --require-qualified", makefile)
+        self.assertIn('--root "$$qualification_root" --require-qualified', makefile)
         self.assertIn("--subject none --subject hashmarks --subject enola", makefile)
         self.assertIn("--task locate-repository-content-identity", makefile)
         self.assertIn("--task locate-terminal-run-check", makefile)
@@ -84,16 +84,25 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
 
     def test_regrade_score_dispatches_without_runtime_config(self) -> None:
         suite = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
-        with tempfile.TemporaryDirectory() as tmp, mock.patch(
-            "benchmarks.__main__.subprocess.run"
-        ) as run:
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch("benchmarks.__main__.subprocess.run") as run,
+        ):
             run.return_value.returncode = 0
             self.assertEqual(
-                main([
-                    "regrade-score", "--suite", str(suite),
-                    "--source-results", tmp, "--agent", "opencode-native",
-                    "--output", str(Path(tmp).parent / "score.json"),
-                ]),
+                main(
+                    [
+                        "regrade-score",
+                        "--suite",
+                        str(suite),
+                        "--source-results",
+                        tmp,
+                        "--agent",
+                        "opencode-native",
+                        "--output",
+                        str(Path(tmp).parent / "score.json"),
+                    ]
+                ),
                 0,
             )
             self.assertIn("--regrade-source-results", run.call_args.args[0])

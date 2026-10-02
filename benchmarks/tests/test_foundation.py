@@ -39,8 +39,12 @@ class FoundationTests(unittest.TestCase):
             "mutation_identity": None,
         }
         self.assertNotEqual(
-            execution_id(subject_identity={"id": "hashmarks", "version": "1"}, **common),
-            execution_id(subject_identity={"id": "hashmarks", "version": "2"}, **common),
+            execution_id(
+                subject_identity={"id": "hashmarks", "version": "1"}, **common
+            ),
+            execution_id(
+                subject_identity={"id": "hashmarks", "version": "2"}, **common
+            ),
         )
 
     def test_receipt_is_verified_before_complete(self) -> None:

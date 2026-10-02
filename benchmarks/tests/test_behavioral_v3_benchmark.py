@@ -9,8 +9,7 @@ from pathlib import Path
 from benchmarks.harness.suite import load_suite
 
 ROOT = (
-    Path(__file__).resolve().parents[1]
-    / "suites/repository-intelligence/behavioral-v3"
+    Path(__file__).resolve().parents[1] / "suites/repository-intelligence/behavioral-v3"
 )
 
 

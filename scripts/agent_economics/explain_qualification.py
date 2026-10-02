@@ -15,26 +15,34 @@ def _payload(tool: str) -> dict[str, object]:
         derived={
             "summary": {"locations": 4, "rule_findings": 6, "excess": 19, "files": {}},
             "baseline_comparison": {"state": "REDUCED"},
-        } if tool == "quality-debt" else {},
+        }
+        if tool == "quality-debt"
+        else {},
         interpretation={},
         uncertainty=[],
         warnings=[{"code": "fixture", "message": "fixture warning"}],
-        candidates=[{
-            "target": "pkg/hot.py",
-            "facts": {"excess": 19},
-            "evidence": {"analyzer": "ruff"},
-            "derived": {"excess": 19},
-            "interpretation": {},
-            "recommendations": {},
-            "uncertainty": [],
-            "required_next_evidence": [{"kind": "test_focus", "reason": "recover test evidence"}],
-            "verification_suggestions": [{
-                "kind": "test_file",
-                "stage": "affected",
-                "path": "tests/test_hot.py",
-                "reason": "confirmed owner of a dependent source",
-            }],
-        }],
+        candidates=[
+            {
+                "target": "pkg/hot.py",
+                "facts": {"excess": 19},
+                "evidence": {"analyzer": "ruff"},
+                "derived": {"excess": 19},
+                "interpretation": {},
+                "recommendations": {},
+                "uncertainty": [],
+                "required_next_evidence": [
+                    {"kind": "test_focus", "reason": "recover test evidence"}
+                ],
+                "verification_suggestions": [
+                    {
+                        "kind": "test_file",
+                        "stage": "affected",
+                        "path": "tests/test_hot.py",
+                        "reason": "confirmed owner of a dependent source",
+                    }
+                ],
+            }
+        ],
         required_next_evidence=[],
         deferred_evidence=[],
         verification_suggestions=[],
@@ -53,7 +61,10 @@ def qualify() -> None:
     assert result["interpretation"]["does_not_add_recommendations"] is True
 
     multi = _payload("quality-debt")
-    multi["candidates"] = [*multi["candidates"], {**multi["candidates"][0], "target": "pkg/other.py"}]
+    multi["candidates"] = [
+        *multi["candidates"],
+        {**multi["candidates"][0], "target": "pkg/other.py"},
+    ]
     try:
         explain(multi)
     except ExplainError:
@@ -85,6 +96,7 @@ def qualify() -> None:
     assert "verification_suggestions" in test_result
     assert test_result["tool"] == "test-focus"
     from .explain import _human
+
     human = _human(explain(_payload("test-focus"), target="pkg/hot.py"))
     assert "Verification suggestions:" in human
     assert "tests/test_hot.py" in human

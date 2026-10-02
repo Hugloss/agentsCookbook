@@ -31,9 +31,7 @@ class EnolaSubject:
     def _executable(self, context: TrialContext) -> str:
         resolved = resolve_native_executable(context, "enola")
         if resolved is None:
-            raise ValueError(
-                "enola is not available on the native PATH"
-            )
+            raise ValueError("enola is not available on the native PATH")
         return resolved
 
     def _config(self, context: TrialContext) -> Path:

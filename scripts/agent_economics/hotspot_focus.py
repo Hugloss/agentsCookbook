@@ -18,7 +18,10 @@ from .refactor_focus_discovery import (
     discover_python_roots,
 )
 from .refactor_focus_imports import build_import_index, internal_imports_for_file
-from .refactor_focus_matching import build_test_ownership_evidence, ownership_map_from_evidence
+from .refactor_focus_matching import (
+    build_test_ownership_evidence,
+    ownership_map_from_evidence,
+)
 from .refactor_focus_paths import iso_utc_now, module_path_for_file, report_path
 
 TOOL_NAME = "hotspot-focus"
@@ -45,9 +48,13 @@ def _bounded_git(
         limits=ProcessLimits(timeout_seconds, max_stdout_bytes, 100_000),
     )
     if result.timed_out:
-        raise HotspotFocusError(f"Git command timed out after {timeout_seconds} seconds")
+        raise HotspotFocusError(
+            f"Git command timed out after {timeout_seconds} seconds"
+        )
     if result.stdout_truncated:
-        raise HotspotFocusError(f"Git history output exceeded configured byte bound: {max_stdout_bytes}")
+        raise HotspotFocusError(
+            f"Git history output exceeded configured byte bound: {max_stdout_bytes}"
+        )
     if result.executable_missing or result.return_code != 0:
         raise HotspotFocusError("Git command failed")
     return result.stdout
@@ -130,36 +137,51 @@ def _branch_points(tree: ast.AST | None) -> int | None:
     return sum(isinstance(node, kinds) for node in ast.walk(tree))
 
 
-def _largest_definitions(tree: ast.AST | None, limit: int = 5) -> list[dict[str, object]]:
+def _largest_definitions(
+    tree: ast.AST | None, limit: int = 5
+) -> list[dict[str, object]]:
     if tree is None:
         return []
     rows: list[dict[str, object]] = []
+
     def walk(body: list[ast.stmt], prefix: tuple[str, ...] = ()) -> None:
         for node in body:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                lines = max(1, getattr(node, "end_lineno", node.lineno) - node.lineno + 1)
+                lines = max(
+                    1, getattr(node, "end_lineno", node.lineno) - node.lineno + 1
+                )
                 qualified = ".".join((*prefix, node.name))
-                rows.append({
-                    "kind": type(node).__name__, "qualified_name": qualified,
-                    "start_line": node.lineno, "end_line": getattr(node, "end_lineno", node.lineno),
-                    "lines": lines,
-                })
+                rows.append(
+                    {
+                        "kind": type(node).__name__,
+                        "qualified_name": qualified,
+                        "start_line": node.lineno,
+                        "end_line": getattr(node, "end_lineno", node.lineno),
+                        "lines": lines,
+                    }
+                )
                 walk(node.body, (*prefix, node.name))
+
     walk(getattr(tree, "body", []))
-    return sorted(rows, key=lambda row: (-int(row["lines"]), str(row["qualified_name"])))[:limit]
+    return sorted(
+        rows, key=lambda row: (-int(row["lines"]), str(row["qualified_name"]))
+    )[:limit]
 
 
 def _largest_function(tree: ast.AST | None) -> int | None:
     if tree is None:
         return None
     rows = [
-        row for row in _largest_definitions(tree, limit=1_000_000)
+        row
+        for row in _largest_definitions(tree, limit=1_000_000)
         if row["kind"] in {"FunctionDef", "AsyncFunctionDef"}
     ]
     return max((int(row["lines"]) for row in rows), default=0)
 
 
-def _rank_key(candidate: dict[str, object], dimensions: tuple[str, ...]) -> tuple[object, ...]:
+def _rank_key(
+    candidate: dict[str, object], dimensions: tuple[str, ...]
+) -> tuple[object, ...]:
     facts = candidate["facts"]
     assert isinstance(facts, dict)
     keys: list[object] = []
@@ -196,11 +218,20 @@ def hotspot_focus_audit(
     if history_policy not in {"auto", "required", "disabled"}:
         raise HotspotFocusError("history_policy must be auto, required, or disabled")
     allowed_dimensions = {
-        "source_lines", "branch_points", "largest_function_lines",
-        "fan_in", "fan_out", "churn_commits", "churn_lines",
-        "distinct_authors", "top_author_share", "confirmed_tests",
+        "source_lines",
+        "branch_points",
+        "largest_function_lines",
+        "fan_in",
+        "fan_out",
+        "churn_commits",
+        "churn_lines",
+        "distinct_authors",
+        "top_author_share",
+        "confirmed_tests",
     }
-    if not ranking_dimensions or any(d not in allowed_dimensions for d in ranking_dimensions):
+    if not ranking_dimensions or any(
+        d not in allowed_dimensions for d in ranking_dimensions
+    ):
         raise HotspotFocusError("ranking_dimensions contains an unsupported dimension")
     if not source_root.exists():
         raise HotspotFocusError(f"source root does not exist: {source_root}")
@@ -209,22 +240,32 @@ def hotspot_focus_audit(
         if tests_root is not None:
             tests_root.relative_to(repository_root)
     except ValueError as exc:
-        raise HotspotFocusError("configured roots must stay inside repository_root") from exc
+        raise HotspotFocusError(
+            "configured roots must stay inside repository_root"
+        ) from exc
 
     requested_excludes = list(DEFAULT_EXCLUDE_PATTERNS)
     requested_excludes.extend(exclude_patterns or ())
     try:
         discovery = discover_python_roots(
-            roots={"source": source_root, **({"tests": tests_root} if tests_root is not None else {})},
+            roots={
+                "source": source_root,
+                **({"tests": tests_root} if tests_root is not None else {}),
+            },
             repository_root=repository_root,
-            config=DiscoveryConfig(mode=discovery_mode, exclude_patterns=tuple(requested_excludes)),
+            config=DiscoveryConfig(
+                mode=discovery_mode, exclude_patterns=tuple(requested_excludes)
+            ),
         )
     except DiscoveryError as exc:
         raise HotspotFocusError(str(exc)) from exc
     source_files = list(discovery.files_for("source"))
-    all_test_files = list(discovery.files_for("tests")) if tests_root is not None else []
+    all_test_files = (
+        list(discovery.files_for("tests")) if tests_root is not None else []
+    )
     test_files = [
-        path for path in all_test_files
+        path
+        for path in all_test_files
         if path.name.startswith("test_") or path.name.endswith("_test.py")
     ]
 
@@ -272,10 +313,12 @@ def hotspot_focus_audit(
             if history_policy == "required":
                 raise
             history_meta = {"available": False, "reason": type(exc).__name__}
-            history_uncertainty.append({
-                "code": "git_history_unavailable",
-                "message": "Git history evidence is unavailable; history dimensions remain unknown, not zero.",
-            })
+            history_uncertainty.append(
+                {
+                    "code": "git_history_unavailable",
+                    "message": "Git history evidence is unavailable; history dimensions remain unknown, not zero.",
+                }
+            )
 
     candidates: list[dict[str, object]] = []
     identity_entries: list[dict[str, str]] = []
@@ -295,7 +338,9 @@ def hotspot_focus_audit(
         fan_out = len({m for m in imports if m in module_to_path})
         hist = history.get(relative) if bool(history_meta.get("available")) else None
         authors = hist.get("authors") if isinstance(hist, dict) else None
-        distinct_authors: int | None = len(authors) if isinstance(authors, Counter) else None
+        distinct_authors: int | None = (
+            len(authors) if isinstance(authors, Counter) else None
+        )
         top_author_share: float | None = None
         if isinstance(authors, Counter) and authors:
             top_author_share = round(max(authors.values()) / sum(authors.values()), 6)
@@ -313,98 +358,132 @@ def hotspot_focus_audit(
             "churn_commits": churn_commits,
             "churn_additions": additions,
             "churn_deletions": deletions,
-            "churn_lines": additions + deletions if additions is not None and deletions is not None else None,
+            "churn_lines": additions + deletions
+            if additions is not None and deletions is not None
+            else None,
             "distinct_authors": distinct_authors,
             "top_author_share": top_author_share,
-            "confirmed_tests": len(owners.get(path, set())) if tests_root is not None else None,
+            "confirmed_tests": len(owners.get(path, set()))
+            if tests_root is not None
+            else None,
         }
         candidate_uncertainty: list[dict[str, object]] = []
         if record.parse_error:
-            candidate_uncertainty.append({"code": "python_parse_unavailable", "detail": record.parse_error})
+            candidate_uncertainty.append(
+                {"code": "python_parse_unavailable", "detail": record.parse_error}
+            )
         if tests_root is None or not tests_root.exists():
-            candidate_uncertainty.append({
-                "code": "test_evidence_unavailable",
-                "message": "No available test root was supplied; confirmed_tests is unknown, not zero.",
-            })
+            candidate_uncertainty.append(
+                {
+                    "code": "test_evidence_unavailable",
+                    "message": "No available test root was supplied; confirmed_tests is unknown, not zero.",
+                }
+            )
         elif not owners.get(path):
-            candidate_uncertainty.append({
-                "code": "no_confirmed_test_owner",
-                "message": "No confirmed test owner was recovered; this is evidence absence, not proof of no tests.",
-            })
+            candidate_uncertainty.append(
+                {
+                    "code": "no_confirmed_test_owner",
+                    "message": "No confirmed test owner was recovered; this is evidence absence, not proof of no tests.",
+                }
+            )
         if not bool(history_meta.get("available")):
-            candidate_uncertainty.append({
-                "code": "history_dimensions_unknown",
-                "message": "Churn and author-concentration dimensions are unavailable.",
-            })
-        candidates.append({
-            "target": relative,
-            "facts": facts,
-            "evidence": {
-                "static_module": module,
-                "confirmed_test_paths": sorted(
-                    report_path(path=p, anchor=repository_root) for p in owners.get(path, set())
-                ),
-            },
-            "derived": {},
-            "interpretation": {
-                "ranking_dimensions": list(ranking_dimensions),
-                "ranking_is_investigation_priority_only": True,
-            },
-            "recommendations": {"next_action": "inspect_before_edit"},
-            "uncertainty": candidate_uncertainty,
-            "required_next_evidence": [
-                {"kind": "read_target_and_contracts", "reason": "hotspot ranking is not edit authority"}
-            ],
-            "verification_suggestions": [],
-        })
+            candidate_uncertainty.append(
+                {
+                    "code": "history_dimensions_unknown",
+                    "message": "Churn and author-concentration dimensions are unavailable.",
+                }
+            )
+        candidates.append(
+            {
+                "target": relative,
+                "facts": facts,
+                "evidence": {
+                    "static_module": module,
+                    "confirmed_test_paths": sorted(
+                        report_path(path=p, anchor=repository_root)
+                        for p in owners.get(path, set())
+                    ),
+                },
+                "derived": {},
+                "interpretation": {
+                    "ranking_dimensions": list(ranking_dimensions),
+                    "ranking_is_investigation_priority_only": True,
+                },
+                "recommendations": {"next_action": "inspect_before_edit"},
+                "uncertainty": candidate_uncertainty,
+                "required_next_evidence": [
+                    {
+                        "kind": "read_target_and_contracts",
+                        "reason": "hotspot ranking is not edit authority",
+                    }
+                ],
+                "verification_suggestions": [],
+            }
+        )
 
     # Bind every evidence class that can affect the result, not only source bytes.
     if tests_root is not None:
         for test_path in all_test_files:
             test_record = cache.get(test_path)
             if test_record.content_sha256 is not None:
-                identity_entries.append({
-                    "path": "@tests/" + report_path(path=test_path, anchor=repository_root),
-                    "sha256": test_record.content_sha256,
-                })
+                identity_entries.append(
+                    {
+                        "path": "@tests/"
+                        + report_path(path=test_path, anchor=repository_root),
+                        "sha256": test_record.content_sha256,
+                    }
+                )
         if not all_test_files:
-            identity_entries.append({
-                "path": "@tests-state",
-                "sha256": hashlib.sha256(b"enabled-empty").hexdigest(),
-            })
+            identity_entries.append(
+                {
+                    "path": "@tests-state",
+                    "sha256": hashlib.sha256(b"enabled-empty").hexdigest(),
+                }
+            )
     else:
-        identity_entries.append({
-            "path": "@tests-state",
-            "sha256": hashlib.sha256(b"disabled").hexdigest(),
-        })
+        identity_entries.append(
+            {
+                "path": "@tests-state",
+                "sha256": hashlib.sha256(b"disabled").hexdigest(),
+            }
+        )
     history_marker = (
         str(history_meta.get("history_identity"))
         if history_meta.get("available")
         else "unavailable:" + str(history_meta.get("reason"))
     )
-    identity_entries.append({
-        "path": "@history-state",
-        "sha256": hashlib.sha256(history_marker.encode("utf-8")).hexdigest(),
-    })
+    identity_entries.append(
+        {
+            "path": "@history-state",
+            "sha256": hashlib.sha256(history_marker.encode("utf-8")).hexdigest(),
+        }
+    )
 
     candidates.sort(key=lambda c: _rank_key(c, ranking_dimensions))
     selected = candidates[:top_n]
     deferred = [
-        {"target": str(c["target"]), "reason": "outside configured top_n hotspot budget"}
+        {
+            "target": str(c["target"]),
+            "reason": "outside configured top_n hotspot budget",
+        }
         for c in candidates[top_n:]
     ]
     uncertainty = list(history_uncertainty)
     if deferred:
-        uncertainty.append({
-            "code": "hotspot_candidate_budget_exhausted",
-            "message": "Some source candidates were omitted by top_n.",
-            "count": len(deferred),
-        })
+        uncertainty.append(
+            {
+                "code": "hotspot_candidate_budget_exhausted",
+                "message": "Some source candidates were omitted by top_n.",
+                "count": len(deferred),
+            }
+        )
     if tests_root is None or not tests_root.exists():
-        uncertainty.append({
-            "code": "test_tree_unavailable",
-            "message": "Test ownership was not measured; do not interpret this as weak verification.",
-        })
+        uncertainty.append(
+            {
+                "code": "test_tree_unavailable",
+                "message": "Test ownership was not measured; do not interpret this as weak verification.",
+            }
+        )
 
     repository = {
         "root": ".",
@@ -414,7 +493,9 @@ def hotspot_focus_audit(
     }
     config = {
         "source_root": report_path(path=source_root, anchor=repository_root),
-        "tests_root": report_path(path=tests_root, anchor=repository_root) if tests_root is not None else None,
+        "tests_root": report_path(path=tests_root, anchor=repository_root)
+        if tests_root is not None
+        else None,
         "package_name": package_name,
         "tests_package_name": tests_package_name,
         "top_n": top_n,
@@ -445,13 +526,19 @@ def hotspot_focus_audit(
             "ranking_authority": "investigation_priority_only",
         },
         uncertainty=uncertainty,
-        warnings=[{
-            "code": "ranking_not_edit_authority",
-            "message": "Hotspot ordering prioritizes investigation only; it does not authorize refactoring.",
-        }],
+        warnings=[
+            {
+                "code": "ranking_not_edit_authority",
+                "message": "Hotspot ordering prioritizes investigation only; it does not authorize refactoring.",
+            }
+        ],
         candidates=selected,
         required_next_evidence=[
-            {"target": c["target"], "kind": "inspect_target_and_contracts", "reason": "ranking is non-authoritative"}
+            {
+                "target": c["target"],
+                "kind": "inspect_target_and_contracts",
+                "reason": "ranking is non-authoritative",
+            }
             for c in selected
         ],
         deferred_evidence=deferred,
@@ -462,11 +549,19 @@ def hotspot_focus_audit(
             "source_candidates": len(candidates),
             "selected_candidates": len(selected),
             "deferred_candidates": len(deferred),
-            "history_bytes_read": history_meta.get("bytes_read") if history_meta.get("available") else None,
+            "history_bytes_read": history_meta.get("bytes_read")
+            if history_meta.get("available")
+            else None,
         },
     )
     if artifact_path is not None:
-        target = artifact_path if artifact_path.is_absolute() else repository_root / artifact_path
+        target = (
+            artifact_path
+            if artifact_path.is_absolute()
+            else repository_root / artifact_path
+        )
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        target.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
     return payload

@@ -7,28 +7,56 @@ from .test_focus_cli import build_parser as test_parser
 
 
 def qualify() -> None:
-    test = test_parser().parse_args([
-        "--source-root", "pkg", "--changed-path", "pkg/a.py",
-        "--artifact", "a.json", "--format", "json", "--quiet",
-    ])
+    test = test_parser().parse_args(
+        [
+            "--source-root",
+            "pkg",
+            "--changed-path",
+            "pkg/a.py",
+            "--artifact",
+            "a.json",
+            "--format",
+            "json",
+            "--quiet",
+        ]
+    )
     assert test.artifact.as_posix() == "a.json"
     assert test.format == "json" and test.quiet is True
 
-    legacy_test = test_parser().parse_args([
-        "--source-root", "pkg", "--changed-path", "pkg/a.py",
-        "--artifact-path", "old.json",
-    ])
+    legacy_test = test_parser().parse_args(
+        [
+            "--source-root",
+            "pkg",
+            "--changed-path",
+            "pkg/a.py",
+            "--artifact-path",
+            "old.json",
+        ]
+    )
     assert legacy_test.artifact.as_posix() == "old.json"
 
-    context = context_parser().parse_args([
-        "--task", "x", "--artifact", "c.json", "--format", "json", "--quiet",
-    ])
+    context = context_parser().parse_args(
+        [
+            "--task",
+            "x",
+            "--artifact",
+            "c.json",
+            "--format",
+            "json",
+            "--quiet",
+        ]
+    )
     assert context.artifact.as_posix() == "c.json"
     assert context.format == "json" and context.quiet is True
 
-    legacy_context = context_parser().parse_args([
-        "--task", "x", "--artifact-path", "old-context.json",
-    ])
+    legacy_context = context_parser().parse_args(
+        [
+            "--task",
+            "x",
+            "--artifact-path",
+            "old-context.json",
+        ]
+    )
     assert legacy_context.artifact.as_posix() == "old-context.json"
 
     for main in (quality_main, hotspot_main):

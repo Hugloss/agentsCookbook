@@ -243,7 +243,9 @@ def build_refactor_focus_contract(
             if key in verification_seen:
                 continue
             verification_seen.add(key)
-            verification_suggestions.append({"target": row["source_path"], **dict(item)})
+            verification_suggestions.append(
+                {"target": row["source_path"], **dict(item)}
+            )
 
     warnings: list[dict[str, object]] = []
     if int(economics.get("read_failures", 0)):
@@ -265,7 +267,10 @@ def build_refactor_focus_contract(
         warnings.append({"code": "discovery_warning", "message": message})
     if discovery_result.symlinks_excluded:
         warnings.append(
-            {"code": "discovery_symlinks_excluded", "count": discovery_result.symlinks_excluded}
+            {
+                "code": "discovery_symlinks_excluded",
+                "count": discovery_result.symlinks_excluded,
+            }
         )
     if discovery_result.missing_files:
         warnings.append(

@@ -1,4 +1,5 @@
 """Workspace contamination classification with explicit frozen allowances."""
+
 from __future__ import annotations
 
 import fnmatch
@@ -35,11 +36,7 @@ def classify_contamination(
     )
     unexpected: dict[str, list[str]] = {}
     for kind, paths in diff.items():
-        values = [
-            path
-            for path in paths
-            if not _matches(path, allowed_change_globs)
-        ]
+        values = [path for path in paths if not _matches(path, allowed_change_globs)]
         if values:
             unexpected[kind] = values
     return {

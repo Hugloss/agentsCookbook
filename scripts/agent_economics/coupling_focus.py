@@ -37,7 +37,9 @@ def _portable_path(value: Path | str, *, repository_root: Path) -> str:
     try:
         relative = resolved.relative_to(repository_root)
     except ValueError as exc:
-        raise CouplingFocusError(f"target path escapes repository root: {value}") from exc
+        raise CouplingFocusError(
+            f"target path escapes repository root: {value}"
+        ) from exc
     return relative.as_posix()
 
 
@@ -56,16 +58,24 @@ def _run_git(
         limits=ProcessLimits(timeout_seconds, max_stdout_bytes, 100_000),
     )
     if result.timed_out:
-        raise CouplingFocusError(f"git history command timed out after {timeout_seconds} seconds")
+        raise CouplingFocusError(
+            f"git history command timed out after {timeout_seconds} seconds"
+        )
     if result.stdout_truncated:
-        raise CouplingFocusError(f"git history output exceeded configured byte bound: {max_stdout_bytes}")
+        raise CouplingFocusError(
+            f"git history output exceeded configured byte bound: {max_stdout_bytes}"
+        )
     if result.executable_missing or result.return_code != 0:
         raise CouplingFocusError(f"git history command failed: {' '.join(args)}")
     return result.stdout
 
 
 def _require_git_root(repository_root: Path, *, timeout_seconds: float) -> None:
-    raw = _run_git(repository_root, ["rev-parse", "--show-toplevel"], timeout_seconds=timeout_seconds)
+    raw = _run_git(
+        repository_root,
+        ["rev-parse", "--show-toplevel"],
+        timeout_seconds=timeout_seconds,
+    )
     top = Path(raw.decode("utf-8", errors="replace").strip()).resolve()
     if top != repository_root.resolve():
         raise CouplingFocusError(
@@ -96,7 +106,9 @@ def _parse_log(raw: bytes) -> list[tuple[str, tuple[str, ...]]]:
 
 
 def _head_identity(repository_root: Path, *, timeout_seconds: float) -> str:
-    raw = _run_git(repository_root, ["rev-parse", "HEAD"], timeout_seconds=timeout_seconds)
+    raw = _run_git(
+        repository_root, ["rev-parse", "HEAD"], timeout_seconds=timeout_seconds
+    )
     return raw.decode("ascii", errors="replace").strip()
 
 
@@ -137,19 +149,27 @@ def coupling_focus_audit(
         raise CouplingFocusError(f"repository root does not exist: {repository_root}")
     _require_git_root(repository_root, timeout_seconds=git_timeout_seconds)
 
-    targets = sorted({_portable_path(p, repository_root=repository_root) for p in target_paths})
+    targets = sorted(
+        {_portable_path(p, repository_root=repository_root) for p in target_paths}
+    )
     if not targets:
         raise CouplingFocusError("at least one target path is required")
     requested_excludes = list(DEFAULT_EXCLUDE_PATTERNS if use_default_excludes else ())
     requested_excludes.extend(exclude_patterns or ())
     try:
         excludes = normalize_exclude_patterns(requested_excludes)
-        suffixes = tuple(normalize_suffixes(candidate_suffixes)) if candidate_suffixes else ()
+        suffixes = (
+            tuple(normalize_suffixes(candidate_suffixes)) if candidate_suffixes else ()
+        )
     except DiscoveryError as exc:
         raise CouplingFocusError(str(exc)) from exc
-    excluded_targets = [path for path in targets if is_excluded_repo_path(path, excludes)]
+    excluded_targets = [
+        path for path in targets if is_excluded_repo_path(path, excludes)
+    ]
     if excluded_targets:
-        raise CouplingFocusError(f"target path excluded by discovery policy: {excluded_targets[0]}")
+        raise CouplingFocusError(
+            f"target path excluded by discovery policy: {excluded_targets[0]}"
+        )
 
     log_args = [
         "log",
@@ -178,7 +198,9 @@ def coupling_focus_audit(
         timeout_seconds=git_timeout_seconds,
     )
     try:
-        total_commit_count = int(raw_total.decode("ascii", errors="replace").strip() or "0")
+        total_commit_count = int(
+            raw_total.decode("ascii", errors="replace").strip() or "0"
+        )
     except ValueError as exc:
         raise CouplingFocusError("cannot parse repository commit count") from exc
     head = _head_identity(repository_root, timeout_seconds=git_timeout_seconds)
@@ -202,7 +224,9 @@ def coupling_focus_audit(
         return True
 
     for commit_hash, raw_paths in commits:
-        paths = sorted({p for p in raw_paths if p and not is_excluded_repo_path(p, excludes)})
+        paths = sorted(
+            {p for p in raw_paths if p and not is_excluded_repo_path(p, excludes)}
+        )
         if not paths:
             empty_skipped += 1
             continue
@@ -278,7 +302,10 @@ def coupling_focus_audit(
     )
     selected = candidates[:top_n]
     deferred = [
-        {"target": str(c["target"]), "reason": "outside configured top_n coupling budget"}
+        {
+            "target": str(c["target"]),
+            "reason": "outside configured top_n coupling budget",
+        }
         for c in candidates[top_n:]
     ]
 
@@ -332,7 +359,10 @@ def coupling_focus_audit(
 
     repository_entries = [
         {"path": "<git-head>", "sha256": hashlib.sha256(head.encode()).hexdigest()},
-        {"path": "<targets>", "sha256": hashlib.sha256("\n".join(targets).encode()).hexdigest()},
+        {
+            "path": "<targets>",
+            "sha256": hashlib.sha256("\n".join(targets).encode()).hexdigest(),
+        },
     ]
     repository = {
         "root": ".",
@@ -399,7 +429,12 @@ def coupling_focus_audit(
             "selected_candidate_count": len(selected),
         },
         interpretation={
-            "ranking_policy": ["shared_commits_desc", "target_coverage_desc", "jaccard_desc", "path"],
+            "ranking_policy": [
+                "shared_commits_desc",
+                "target_coverage_desc",
+                "jaccard_desc",
+                "path",
+            ],
             "dependency_authority": False,
         },
         uncertainty=uncertainty,
@@ -411,7 +446,13 @@ def coupling_focus_audit(
         economics=economics,
     )
     if artifact_path is not None:
-        target = artifact_path if artifact_path.is_absolute() else repository_root / artifact_path
+        target = (
+            artifact_path
+            if artifact_path.is_absolute()
+            else repository_root / artifact_path
+        )
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        target.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
     return payload

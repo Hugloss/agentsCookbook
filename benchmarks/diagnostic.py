@@ -20,11 +20,20 @@ class DiagnosticError(ValueError):
 
 
 _SCORE_REPORT_FIELDS = (
-    "expected_trials", "observed_trials", "status_counts",
-    "campaign_qualification", "conditions", "paired_assistance",
-    "paired_assistance_summary", "paired_assistance_exclusions",
-    "expected_assistance_pairs", "stability", "diagnostics",
-    "agent_profiles", "cross_agent_observations", "task_agent_authority",
+    "expected_trials",
+    "observed_trials",
+    "status_counts",
+    "campaign_qualification",
+    "conditions",
+    "paired_assistance",
+    "paired_assistance_summary",
+    "paired_assistance_exclusions",
+    "expected_assistance_pairs",
+    "stability",
+    "diagnostics",
+    "agent_profiles",
+    "cross_agent_observations",
+    "task_agent_authority",
 )
 
 
@@ -56,7 +65,11 @@ def _copy_artifact(source_root: Path, destination: Path, relative: str) -> None:
 
 
 def prepare_diagnostic_suite(
-    *, source_suite: Path, source_results: Path, score_path: Path, destination: Path,
+    *,
+    source_suite: Path,
+    source_results: Path,
+    score_path: Path,
+    destination: Path,
     include_tasks: set[str],
 ) -> dict[str, Any]:
     suite = load_suite(source_suite)
@@ -66,8 +79,12 @@ def prepare_diagnostic_suite(
         score = json.loads(score_path.read_text(encoding="utf-8"))
         campaign = read_campaign(source_results)
     except (OSError, ValueError, CampaignAuthorityError) as exc:
-        raise DiagnosticError("diagnostic source score or campaign cannot be read") from exc
-    qualification = score.get("campaign_qualification") if isinstance(score, dict) else None
+        raise DiagnosticError(
+            "diagnostic source score or campaign cannot be read"
+        ) from exc
+    qualification = (
+        score.get("campaign_qualification") if isinstance(score, dict) else None
+    )
     if (
         not isinstance(score, dict)
         or score.get("schema") != "agents-cookbook-heldout-observer-outcomes.v7"
@@ -75,7 +92,9 @@ def prepare_diagnostic_suite(
         or not isinstance(qualification, dict)
         or qualification.get("status") != "QUALIFIED"
     ):
-        raise DiagnosticError("diagnostic selection requires a qualified live official score")
+        raise DiagnosticError(
+            "diagnostic selection requires a qualified live official score"
+        )
     selection = score.get("selection")
     agents = selection.get("agents") if isinstance(selection, dict) else None
     if (
@@ -93,18 +112,22 @@ def prepare_diagnostic_suite(
     totals = {"expected_trials": 0, "observed_trials": 0}
     for language in ("python", "typescript"):
         task_ids = sorted(
-            task_id for task_id, task in suite.tasks.items()
+            task_id
+            for task_id, task in suite.tasks.items()
             if str(task.get("family", "")).startswith(language + "-")
         )
         selected = {
-            str(row["definition_id"]) for row in suite.trial_definitions()
+            str(row["definition_id"])
+            for row in suite.trial_definitions()
             if row["task_id"] in task_ids
             and conditions[row["condition_id"]]["agent"] in agents
         }
         try:
             report = build_report(
-                suite=suite, results_root=source_results,
-                selected_definitions=selected, require_complete=True,
+                suite=suite,
+                results_root=source_results,
+                selected_definitions=selected,
+                require_complete=True,
             )
         except ReportError as exc:
             raise DiagnosticError(f"source campaign is not qualified: {exc}") from exc
@@ -114,8 +137,10 @@ def prepare_diagnostic_suite(
             or not isinstance(source_language, dict)
             or set(source_language) != {"task_ids", *_SCORE_REPORT_FIELDS}
             or source_language.get("task_ids") != task_ids
-            or any(source_language.get(field) != report[field]
-                   for field in _SCORE_REPORT_FIELDS)
+            or any(
+                source_language.get(field) != report[field]
+                for field in _SCORE_REPORT_FIELDS
+            )
         ):
             raise DiagnosticError("score disagrees with verified source campaign")
         totals["expected_trials"] += report["expected_trials"]
@@ -126,7 +151,9 @@ def prepare_diagnostic_suite(
         language: languages[language]["campaign_qualification"]
         for language in ("python", "typescript")
     }:
-        raise DiagnosticError("score qualification summary differs from source campaign")
+        raise DiagnosticError(
+            "score qualification summary differs from source campaign"
+        )
     selected = _selected_tasks(score, include_tasks)
     if not selected or not selected.issubset(suite.tasks):
         raise DiagnosticError("diagnostic selection is empty or has unknown tasks")
@@ -134,7 +161,9 @@ def prepare_diagnostic_suite(
     if destination.exists():
         raise DiagnosticError("diagnostic suite destination already exists")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = Path(tempfile.mkdtemp(prefix=".diagnostic-suite-", dir=destination.parent))
+    temporary = Path(
+        tempfile.mkdtemp(prefix=".diagnostic-suite-", dir=destination.parent)
+    )
     try:
         experiment = dict(suite.experiment)
         experiment["id"] = str(experiment["id"]) + "-diagnostic-10"
