@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -132,9 +133,67 @@ Decision rules:
 
 For repository-location tasks, observed_owner must exactly name the source
 location you actually inspected. Explain the source evidence briefly. End your
-response with exactly one line:
+response with exactly one line. Do not wrap that line in Markdown:
 {DECISION_PREFIX}{rendered_decision}
 """
+
+def _bounded_answer_preview(value: str, *, limit: int = 1200) -> str:
+    rendered = value.strip().replace("\x00", "")
+    if len(rendered) <= limit:
+        return rendered
+    return rendered[:limit] + "…"
+
+
+def _decision_payloads(stdout: str) -> list[str]:
+    """Return explicit decision envelopes without fuzzy JSON extraction."""
+    candidates: list[str] = []
+
+    for raw_line in stdout.splitlines():
+        line = raw_line.strip()
+        if line.startswith("`") and line.endswith("`"):
+            line = line.strip("`").strip()
+        if line.startswith(DECISION_PREFIX):
+            candidates.append(line[len(DECISION_PREFIX) :].strip())
+
+    stripped = stdout.strip()
+    try:
+        whole = json.loads(stripped)
+    except json.JSONDecodeError:
+        whole = None
+    if isinstance(whole, dict):
+        candidates.append(stripped)
+
+    fenced = re.findall(
+        r"```(?:json)?\s*\n(.*?)\n```",
+        stdout,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    for payload in fenced:
+        candidate = payload.strip()
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            candidates.append(candidate)
+
+    unique: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            normalized = json.dumps(
+                json.loads(candidate),
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        except json.JSONDecodeError:
+            normalized = candidate
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(candidate)
+    return unique
+
 
 def _parse_decision(
     stdout: str,
@@ -143,20 +202,21 @@ def _parse_decision(
     task_digest: str,
     expected_owner: dict[str, str] | None,
 ) -> dict[str, Any]:
-    matches = [
-        line[len(DECISION_PREFIX) :].strip()
-        for line in stdout.splitlines()
-        if line.startswith(DECISION_PREFIX)
-    ]
-    if len(matches) != 1:
+    candidates = _decision_payloads(stdout)
+    if len(candidates) != 1:
+        preview = _bounded_answer_preview(stdout)
         raise OracleReviewError(
-            "independent reviewer must emit exactly one benchmark oracle decision"
+            "independent reviewer must emit exactly one explicit benchmark oracle "
+            f"decision; found {len(candidates)} candidate(s); "
+            f"terminal answer preview={preview!r}"
         )
     try:
-        value = json.loads(matches[0])
+        value = json.loads(candidates[0])
     except ValueError as exc:
+        preview = _bounded_answer_preview(stdout)
         raise OracleReviewError(
-            "independent reviewer decision is not valid JSON"
+            "independent reviewer decision is not valid JSON; "
+            f"terminal answer preview={preview!r}"
         ) from exc
     if not isinstance(value, dict):
         raise OracleReviewError("independent reviewer decision must be one JSON object")

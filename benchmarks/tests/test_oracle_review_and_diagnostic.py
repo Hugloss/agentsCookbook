@@ -47,6 +47,19 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    @staticmethod
+    def _valid_oracle_decision_payload(task_digest: str) -> dict[str, object]:
+        return {
+            "task_id": "locate-repository-content-identity",
+            "task_digest": task_digest,
+            "decision": "unique",
+            "reason": "Independent source inspection found one semantic owner.",
+            "observed_owner": {
+                "path": "hashmarks/test_shards.py",
+                "symbol": "repository_content_identity",
+            },
+        }
+
     def test_qualified_label_without_source_campaign_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -339,6 +352,103 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
                 task_id="locate-repository-content-identity",
                 task_digest=row["task_digest"],
                 expected_owner=task["oracle"]["configuration"]["expected"],
+            )
+
+    def test_review_decision_accepts_backticked_tagged_line(self) -> None:
+        row = json.loads(
+            (SOURCE / "qualification/oracle-reviews.json").read_text(
+                encoding="utf-8"
+            )
+        )["tasks"]["locate-repository-content-identity"]
+        payload = self._valid_oracle_decision_payload(row["task_digest"])
+        result = _parse_decision(
+            "Evidence checked.\n  `"
+            + DECISION_PREFIX
+            + json.dumps(payload)
+            + "`",
+            task_id="locate-repository-content-identity",
+            task_digest=row["task_digest"],
+            expected_owner=payload["observed_owner"],
+        )
+        self.assertEqual(result["decision"], "unique")
+
+    def test_review_decision_accepts_whole_json_object(self) -> None:
+        row = json.loads(
+            (SOURCE / "qualification/oracle-reviews.json").read_text(
+                encoding="utf-8"
+            )
+        )["tasks"]["locate-repository-content-identity"]
+        payload = self._valid_oracle_decision_payload(row["task_digest"])
+        result = _parse_decision(
+            json.dumps(payload),
+            task_id="locate-repository-content-identity",
+            task_digest=row["task_digest"],
+            expected_owner=payload["observed_owner"],
+        )
+        self.assertEqual(result["decision"], "unique")
+
+    def test_review_decision_accepts_single_json_fence(self) -> None:
+        row = json.loads(
+            (SOURCE / "qualification/oracle-reviews.json").read_text(
+                encoding="utf-8"
+            )
+        )["tasks"]["locate-repository-content-identity"]
+        payload = self._valid_oracle_decision_payload(row["task_digest"])
+        result = _parse_decision(
+            "Evidence checked.\n```json\n"
+            + json.dumps(payload)
+            + "\n```",
+            task_id="locate-repository-content-identity",
+            task_digest=row["task_digest"],
+            expected_owner=payload["observed_owner"],
+        )
+        self.assertEqual(result["decision"], "unique")
+
+    def test_review_decision_rejects_json_hidden_in_prose_with_preview(self) -> None:
+        row = json.loads(
+            (SOURCE / "qualification/oracle-reviews.json").read_text(
+                encoding="utf-8"
+            )
+        )["tasks"]["locate-repository-content-identity"]
+        payload = self._valid_oracle_decision_payload(row["task_digest"])
+        answer = "I think this is the result: " + json.dumps(payload) + " thanks."
+        with self.assertRaisesRegex(
+            OracleReviewError,
+            "terminal answer preview",
+        ):
+            _parse_decision(
+                answer,
+                task_id="locate-repository-content-identity",
+                task_digest=row["task_digest"],
+                expected_owner=payload["observed_owner"],
+            )
+
+    def test_review_decision_rejects_multiple_conflicting_candidates(self) -> None:
+        row = json.loads(
+            (SOURCE / "qualification/oracle-reviews.json").read_text(
+                encoding="utf-8"
+            )
+        )["tasks"]["locate-repository-content-identity"]
+        first = self._valid_oracle_decision_payload(row["task_digest"])
+        second = dict(first)
+        second["decision"] = "ambiguous"
+        second["reason"] = "Another owner is also defensible."
+        answer = (
+            DECISION_PREFIX
+            + json.dumps(first)
+            + "\n"
+            + DECISION_PREFIX
+            + json.dumps(second)
+        )
+        with self.assertRaisesRegex(
+            OracleReviewError,
+            "found 2 candidate",
+        ):
+            _parse_decision(
+                answer,
+                task_id="locate-repository-content-identity",
+                task_digest=row["task_digest"],
+                expected_owner=first["observed_owner"],
             )
 
     def test_non_unique_review_does_not_request_another_reviewer(self) -> None:
