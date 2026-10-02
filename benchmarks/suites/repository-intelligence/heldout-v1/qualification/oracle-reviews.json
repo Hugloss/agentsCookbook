@@ -159,18 +159,18 @@
         {
           "decision": "unique",
           "observed_owner": {
-          "path": "hashmarks/test_shards.py",
-          "symbol": "repository_content_identity"
+            "path": "hashmarks/test_shards.py",
+            "symbol": "repository_content_identity"
           },
           "reason": "repository_content_identity in hashmarks/test_shards.py:305 computes the identity and is used by work_selection_envelope:431 and validate_work_selection_repository_binding:897.",
           "reviewer": "opencode-plan-independent-oracle-review",
           "runtime": {
-          "agent": "plan",
-          "command_identity": "sha256:e5449d9da828831f64403d1791cadd711fb15b038485e452c2ab9891abffbb98",
-          "host": "opencode"
+            "agent": "plan",
+            "command_identity": "sha256:e5449d9da828831f64403d1791cadd711fb15b038485e452c2ab9891abffbb98",
+            "host": "opencode"
           },
           "task_digest": "6e581dd9cca8bcbabf61b872f75e1ca6e3cdecde8298669226f40964b63cf872"
-          }
+        }
       ],
       "task_digest": "6e581dd9cca8bcbabf61b872f75e1ca6e3cdecde8298669226f40964b63cf872",
       "review_requirement": {
@@ -334,10 +334,10 @@
           "decision": "unique",
           "reason": "The pinned receipt.is_complete_receipt requires result.json, result.sha256, and completion.json with matching hashes; the mutation changes this owner and the focused test rejects a partial result.",
           "reviewer": "codex-independent-audit-2026-10-02",
-          "task_digest": "c85102601549670085952104f4975025fe24b29324393ced4beba40144383fe1"
+          "task_digest": "3b1df25c2b593c95e95d2aa2eb1290afcb0a2983205b005199804c4acc39f703"
         }
       ],
-      "task_digest": "c85102601549670085952104f4975025fe24b29324393ced4beba40144383fe1",
+      "task_digest": "3b1df25c2b593c95e95d2aa2eb1290afcb0a2983205b005199804c4acc39f703",
       "review_requirement": {
         "minimum_independent_reviews": 1,
         "escalation_reason": null
