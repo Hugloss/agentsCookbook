@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import subprocess
 import io
+import json
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
 from benchmarks.__main__ import main
+from benchmarks.harness.runner import TrialRunResult, TrialRunnerError
+from benchmarks.harness.selection import select_definitions
+from benchmarks.harness.suite import load_suite
 
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
@@ -26,6 +30,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             ("benchmark-check", "check"),
             ("benchmark-check-all", "preflight"),
             ("benchmark", "run"),
+            ("benchmark-status", "status"),
             ("benchmark-report", "report"),
             ("benchmark-score", "score"),
         ):
@@ -88,6 +93,119 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             args = ["status", "--suite", str(suite), "--results", tmp]
             self.assertEqual(main(args), 0)
             self.assertEqual(main([*args, "--require-qualified"]), 2)
+
+    def test_run_keeps_stdout_json_and_prints_verified_summary(self) -> None:
+        suite_path = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
+        suite = load_suite(suite_path)
+        rows = select_definitions(
+            suite,
+            tasks=("locate-prefix-path-enumerator",),
+            agents=("opencode-native",),
+            condition="hashmarks-opencode-native",
+        )
+        initial = {
+            "rows": [
+                {"definition_id": row["definition_id"], "state": "PENDING"}
+                for row in rows
+            ],
+            "complete_trials": 0,
+            "pending_trials": len(rows),
+            "interrupted_trials": 0,
+            "qualified": False,
+            "outcomes": {},
+        }
+        final = {
+            **initial,
+            "complete_trials": len(rows),
+            "pending_trials": 0,
+            "qualified": True,
+            "outcomes": {"PASS": len(rows)},
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = mock.Mock()
+            config.runtime_environment.return_value = {}
+
+            def fake_run(**kwargs):
+                row = next(item for item in rows if item["trial"] == kwargs["trial_index"])
+                result_dir = root / "results" / (str(row["trial"]) * 64)
+                result_dir.mkdir(parents=True)
+                (result_dir / "result.json").write_text(
+                    json.dumps({"definition_id": row["definition_id"], "status": "PASS"}),
+                    encoding="utf-8",
+                )
+                kwargs["on_progress"]("publication")
+                return TrialRunResult(
+                    trial_id=result_dir.name,
+                    definition_id=str(row["definition_id"]),
+                    status="PASS",
+                    result_dir=result_dir,
+                    reused=False,
+                )
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                mock.patch("benchmarks.__main__._resolve_config", return_value=config),
+                mock.patch("benchmarks.__main__.admit_campaign", return_value={"campaign_id": "c" * 64}),
+                mock.patch("benchmarks.__main__.campaign_status", side_effect=[initial, final]),
+                mock.patch("benchmarks.__main__.run_trial", side_effect=fake_run),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                exit_code = main([
+                    "run", "--env-file", str(root / "unused.env"),
+                    "--suite", str(suite_path), "--root", str(root),
+                    "--harness-root", str(ROOT), "--task", "locate-prefix-path-enumerator",
+                    "--agent", "opencode-native", "--condition", "hashmarks-opencode-native",
+                ])
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(json.loads(stdout.getvalue())), 3)
+        self.assertIn("RUN SUMMARY processed 3/3 | verified 3/3", stderr.getvalue())
+        self.assertIn("qualified True", stderr.getvalue())
+
+    def test_run_abort_reports_active_trial_without_stdout_result(self) -> None:
+        suite_path = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
+        suite = load_suite(suite_path)
+        rows = select_definitions(
+            suite,
+            tasks=("locate-prefix-path-enumerator",),
+            agents=("opencode-native",),
+            condition="hashmarks-opencode-native",
+        )
+        status = {
+            "rows": [{"definition_id": row["definition_id"], "state": "PENDING"} for row in rows],
+            "complete_trials": 0,
+            "pending_trials": len(rows),
+            "interrupted_trials": 0,
+            "qualified": False,
+            "outcomes": {},
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config = mock.Mock()
+            config.runtime_environment.return_value = {}
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                mock.patch("benchmarks.__main__._resolve_config", return_value=config),
+                mock.patch("benchmarks.__main__.admit_campaign", return_value={"campaign_id": "c" * 64}),
+                mock.patch("benchmarks.__main__.campaign_status", side_effect=[status, status]),
+                mock.patch("benchmarks.__main__.run_trial", side_effect=TrialRunnerError("launch claim changed")),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                exit_code = main([
+                    "run", "--env-file", str(root / "unused.env"),
+                    "--suite", str(suite_path), "--root", str(root),
+                    "--harness-root", str(ROOT), "--task", "locate-prefix-path-enumerator",
+                    "--agent", "opencode-native", "--condition", "hashmarks-opencode-native",
+                ])
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("ABORT locate-prefix-path-enumerator", stderr.getvalue())
+        self.assertIn("stage admission", stderr.getvalue())
+        self.assertIn("CAMPAIGN verified 0/3", stderr.getvalue())
 
     def test_regrade_score_dispatches_without_runtime_config(self) -> None:
         suite = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"

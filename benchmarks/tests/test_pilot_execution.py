@@ -2700,6 +2700,96 @@ class PilotExecutionTests(unittest.TestCase):
                     results_root=root / "results",
                 )
 
+    def test_interrupted_launch_is_sealed_incomplete_without_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            admission = SimpleNamespace(
+                trial_id="a" * 64,
+                definition_id="b" * 64,
+                context=SimpleNamespace(workspace=workspace),
+                legacy_seed=False,
+                replicate_id=6201,
+                trial_index=0,
+                task={
+                    "id": "task",
+                    "prompt": "find owner",
+                    "mode": "read_only",
+                    "budgets": {"timeout_seconds": 1},
+                    "contamination": {
+                        "allowed_change_globs": [],
+                        "allowed_generated_globs": [],
+                    },
+                },
+                expanded_condition={"id": "condition"},
+                admitted_state={"files": []},
+                mutation=Observation({}, "", {}),
+                subject=FakeSubject(),
+                agent=mock.Mock(),
+                oracle=FakeOracle(),
+                auth_mode="not-applicable",
+                mutation_authority=None,
+                subject_authority={"declared": {"id": "none"}},
+                agent_authority={"declared": {"id": "agent"}},
+                oracle_authority={"declared": {"id": "oracle", "version": "1"}},
+                harness_authority={"commit": "old-authority"},
+                environment_authority={"runtime": "old-authority"},
+                suite=SimpleNamespace(
+                    experiment={"id": "experiment", "suite": "test"}
+                ),
+                subject_prepare=Observation({}, "", {}),
+                agent_prepare=Observation({}, "", {}),
+                oracle_health=Observation({}, "", {}),
+                cleanup_subject=lambda: Observation(
+                    {"lifecycle_owner": "recovery"},
+                    "",
+                    {},
+                ),
+            )
+            stages = []
+            with (
+                mock.patch("benchmarks.harness.runner.admit_trial", return_value=nullcontext(admission)),
+                mock.patch("benchmarks.harness.runner.verify_trial_authority"),
+                mock.patch("benchmarks.harness.runner.launch_state", return_value="INTERRUPTED"),
+                mock.patch("benchmarks.harness.runner.claim_launch") as claim,
+            ):
+                result = run_trial(
+                    suite=admission.suite,
+                    task_id="task",
+                    condition_id="condition",
+                    trial_index=0,
+                    harness_root=root,
+                    cache_root=root / "cache",
+                    results_root=root / "results",
+                    work_root=root / "work",
+                    campaign={"campaign_id": "c" * 64},
+                    on_progress=stages.append,
+                )
+            admission.agent.run.assert_not_called()
+            claim.assert_not_called()
+            self.assertEqual(stages, ["admission", "recovery"])
+
+            self.assertEqual(result.status, "INCOMPLETE")
+            self.assertTrue(result.recovered)
+            self.assertFalse(result.reused)
+            self.assertEqual(result.stage, "campaign-recovery")
+            self.assertEqual(result.reason_code, "interrupted-launch")
+            valid, reason = verify_bundle(result.result_dir)
+            self.assertTrue(valid, reason)
+            receipt = json.loads(
+                (result.result_dir / "result.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                receipt["diagnostic"]["reason_code"],
+                "interrupted-launch",
+            )
+            self.assertIsNone(receipt["execution"]["agent_answer"])
+            self.assertEqual(
+                receipt["scoring"]["oracle_grade"]["valid"],
+                False,
+            )
+
     def test_report_economics_keep_invalid_trial_costs(self) -> None:
         experiment = {
             "id": "economics",

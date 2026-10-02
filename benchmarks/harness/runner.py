@@ -7,10 +7,11 @@ import json
 import os
 import shutil
 import tempfile
+import traceback
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from benchmarks.harness.admission import TrialAdmissionError, admit_trial
 from benchmarks.harness.bundle import verify_bundle
@@ -51,6 +52,10 @@ class TrialRunResult:
     result_dir: Path
     reused: bool
     reason: str | None = None
+    stage: str | None = None
+    reason_code: str | None = None
+    diagnostic: str | None = None
+    recovered: bool = False
 
 
 def _validate_result_receipt(receipt: dict[str, Any]) -> None:
@@ -147,31 +152,222 @@ def _reason_for_oracle_failure(grade: Observation) -> str:
     return rendered
 
 
-def _reason_for_agent(observation: Observation) -> str | None:
+def _agent_failure(observation: Observation) -> tuple[str, str] | None:
     process = observation.payload.get("process")
     if isinstance(process, dict):
         if process.get("executable_missing"):
-            return "agent executable unavailable"
+            return "agent-executable-unavailable", "agent executable unavailable"
         if process.get("timed_out"):
-            return "agent execution timed out"
+            return "agent-timeout", "agent execution timed out"
         if process.get("stdout_truncated") or process.get("stderr_truncated"):
-            return "agent execution evidence exceeded configured bounds"
+            return (
+                "agent-evidence-truncated",
+                "agent execution evidence exceeded configured bounds",
+            )
         if process.get("return_code") not in (None, 0):
-            return f"agent process exited with status {process['return_code']}"
+            return (
+                "agent-process-nonzero",
+                f"agent process exited with status {process['return_code']}",
+            )
     if observation.payload.get("jsonl_parse_errors"):
-        return "agent JSONL evidence is malformed"
+        return "agent-jsonl-malformed", "agent JSONL evidence is malformed"
     terminal = observation.payload.get("terminal_event")
     if not isinstance(terminal, dict):
-        return "agent emitted no terminal event"
+        return "agent-terminal-missing", "agent emitted no terminal event"
     if terminal.get("type") != "turn.completed":
         reason = terminal.get("reason")
+        rendered = f"agent terminal event was {terminal.get('type')}"
         if isinstance(reason, str) and reason:
-            return f"agent terminal event was {terminal.get('type')}: {reason}"
-        return f"agent terminal event was {terminal.get('type')}"
+            rendered += f": {reason}"
+        return "agent-terminal-failed", rendered
     answer = observation.payload.get("final_message")
     if not isinstance(answer, str) or not answer.strip():
-        return "agent completed without a final assistant answer"
+        return (
+            "agent-final-answer-missing",
+            "agent completed without a final assistant answer",
+        )
     return None
+
+
+def _reason_for_agent(observation: Observation) -> str | None:
+    failure = _agent_failure(observation)
+    return failure[1] if failure is not None else None
+
+
+def _bounded_diagnostic(value: str | None, *, limit: int = 8_000) -> str | None:
+    if not isinstance(value, str):
+        return None
+    rendered = value.strip()
+    if not rendered:
+        return None
+    if len(rendered) <= limit:
+        return rendered
+    return rendered[:limit] + "…"
+
+
+def _recover_interrupted_launch(
+    *,
+    admission: Any,
+    results_root: Path,
+    campaign: dict[str, Any],
+) -> TrialRunResult:
+    """Seal a previously claimed crash as INCOMPLETE without relaunching the model."""
+    reason = "previous trial launch was interrupted before a complete receipt"
+    stage = "campaign-recovery"
+    reason_code = "interrupted-launch"
+    diagnostic_detail = (
+        "A durable launch claim exists but no complete receipt was published. "
+        "The trial is recorded as INCOMPLETE and is not retried."
+    )
+    trial_id = admission.trial_id
+    run_root = admission.context.workspace.parent
+    event_path = run_root / "events.jsonl"
+    append_event(
+        event_path,
+        trial_id=trial_id,
+        sequence=0,
+        kind="trial.recovered_interruption",
+        payload={
+            "definition_id": admission.definition_id,
+            "reason_code": reason_code,
+        },
+    )
+    event_evidence = seal_events(event_path, trial_id=trial_id)
+    event_seal_path = event_path.with_name(event_path.name + ".seal.json")
+
+    cleanup_payload: dict[str, Any]
+    try:
+        cleanup_payload = admission.cleanup_subject().payload
+    except Exception as exc:
+        cleanup_payload = {"error": str(exc)}
+
+    identity_field = (
+        {"seed": admission.replicate_id}
+        if admission.legacy_seed
+        else {"replicate_id": admission.replicate_id}
+    )
+    agent_trace = ""
+    workspace_root = str(admission.context.workspace.resolve())
+    admitted_state_sha256 = digest(admission.admitted_state)
+    trace_sha256 = hashlib.sha256(agent_trace.encode("utf-8")).hexdigest()
+    execution_evidence = execution_evidence_id(
+        task=admission.task,
+        condition=admission.expanded_condition,
+        trial=admission.trial_index,
+        **identity_field,
+        subject_identity=admission.subject_authority,
+        agent_identity=admission.agent_authority,
+        harness_identity=admission.harness_authority,
+        environment_identity=admission.environment_authority,
+        mutation_identity=admission.mutation_authority,
+        agent_answer=None,
+        workspace_root=workspace_root,
+        location_observation=None,
+        agent_trace_sha256=trace_sha256,
+        **(
+            {
+                "campaign_id": campaign["campaign_id"],
+                "admitted_state_sha256": admitted_state_sha256,
+            }
+            if not admission.legacy_seed
+            else {}
+        ),
+    )
+    score_projection = score_projection_id(
+        execution_evidence=execution_evidence,
+        oracle_identity=admission.oracle_authority["declared"],
+        **(
+            {"contract": "benchmark-score-projection.v3"}
+            if not admission.legacy_seed
+            else {}
+        ),
+    )
+    receipt: dict[str, Any] = {
+        "definition_id": admission.definition_id,
+        "trial_id": trial_id,
+        "experiment": admission.suite.experiment,
+        "task": admission.task,
+        "condition": admission.expanded_condition,
+        "status": TrialStatus.INCOMPLETE.value,
+        "authority": {
+            "subject": admission.subject_authority,
+            "agent": admission.agent_authority,
+            "oracle": admission.oracle_authority,
+            "harness": admission.harness_authority,
+            "environment": admission.environment_authority,
+            "mutation": admission.mutation_authority,
+        },
+        "execution": {
+            **identity_field,
+            **(
+                {"campaign_id": campaign["campaign_id"]}
+                if not admission.legacy_seed
+                else {}
+            ),
+            "trial_index": admission.trial_index,
+            "events": event_evidence,
+            "agent_terminal": {
+                "type": "turn.failed",
+                "reason": reason,
+            },
+            "agent_answer": None,
+            "workspace_root": workspace_root,
+            "admitted_state_sha256": admitted_state_sha256,
+            "location_observation": None,
+            "evidence_contract": (
+                EXECUTION_EVIDENCE_CONTRACT
+                if admission.legacy_seed
+                else "benchmark-execution-evidence.v3"
+            ),
+            "evidence_identity": execution_evidence,
+        },
+        "scoring": {
+            "projection_identity": score_projection,
+            "oracle_grade": {
+                "passed": False,
+                "valid": False,
+                "reason": "not graded because prior launch was interrupted",
+            },
+        },
+        "diagnostic": {
+            "stage": stage,
+            "reason_code": reason_code,
+            "detail": diagnostic_detail,
+        },
+        "measurements": {
+            "subject_prepare": admission.subject_prepare.measurements,
+            "agent_prepare": admission.agent_prepare.measurements,
+            "oracle_health": admission.oracle_health.measurements,
+            "oracle_grade": {},
+            "contamination": {
+                "contaminated": None,
+                "diff": {"added": [], "removed": [], "changed": []},
+                "not_observed": "interrupted launch recovery",
+            },
+            "subject_cleanup": cleanup_payload,
+        },
+        "reason": reason,
+    }
+    result_dir = _publish_bundle(
+        results_root=results_root,
+        trial_id=trial_id,
+        event_path=event_path,
+        event_seal_path=event_seal_path,
+        agent_trace=agent_trace,
+        receipt=receipt,
+    )
+    return TrialRunResult(
+        trial_id=trial_id,
+        definition_id=admission.definition_id,
+        status=TrialStatus.INCOMPLETE.value,
+        result_dir=result_dir,
+        reused=False,
+        reason=reason,
+        stage=stage,
+        reason_code=reason_code,
+        diagnostic=diagnostic_detail,
+        recovered=True,
+    )
 
 
 def run_trial(
@@ -188,8 +384,14 @@ def run_trial(
     codex_auth: Path | None = None,
     source: Mapping[str, str] | None = None,
     campaign: dict[str, Any] | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> TrialRunResult:
+    def emit_stage(value: str) -> None:
+        if on_progress is not None:
+            on_progress(value)
+
     try:
+        emit_stage("admission")
         admission_context = admit_trial(
             suite=suite,
             task_id=task_id,
@@ -247,14 +449,18 @@ def run_trial(
                     trial_id=trial_id,
                 )
                 if state == "INTERRUPTED":
-                    raise TrialRunnerError(
-                        "trial was launched without a complete receipt; use a new campaign root"
+                    emit_stage("recovery")
+                    return _recover_interrupted_launch(
+                        admission=admission,
+                        results_root=results_root,
+                        campaign=campaign,
                     )
                 if final_dir.exists() and state != "COMPLETE":
                     raise TrialRunnerError(
                         "result exists without a matching launch claim"
                     )
             if final_dir.exists():
+                emit_stage("reuse")
                 valid, invalid_reason = verify_bundle(final_dir)
                 if not valid:
                     raise TrialRunnerError(
@@ -264,6 +470,9 @@ def run_trial(
                 existing = json.loads(
                     (final_dir / "result.json").read_text(encoding="utf-8")
                 )
+                diagnostic = existing.get("diagnostic")
+                if not isinstance(diagnostic, dict):
+                    diagnostic = {}
                 return TrialRunResult(
                     trial_id=trial_id,
                     definition_id=definition,
@@ -271,6 +480,10 @@ def run_trial(
                     result_dir=final_dir,
                     reused=True,
                     reason=existing.get("reason"),
+                    stage=diagnostic.get("stage"),
+                    reason_code=diagnostic.get("reason_code"),
+                    diagnostic=diagnostic.get("detail"),
+                    recovered=False,
                 )
 
             run_root = context.workspace.parent
@@ -319,7 +532,14 @@ def run_trial(
                 {},
             )
             location_observation: dict[str, Any] | None = None
+            stage: str | None = None
+            reason_code: str | None = None
+            diagnostic_detail: str | None = None
+            agent_exception_traceback: str | None = None
             status, reason = admission.initial_outcome()
+            if status is not None:
+                stage = "admission"
+                reason_code = "admission-initial-outcome"
             if not admission.legacy_seed and status is not None:
                 raise TrialRunnerError(f"pre-model admission failed: {reason}")
 
@@ -340,9 +560,11 @@ def run_trial(
                         "mode": task["mode"],
                     },
                 )
+                emit_stage("agent-execution")
                 try:
                     agent_observation = agent.run(context, task["prompt"], subject)
                 except Exception as exc:
+                    agent_exception_traceback = traceback.format_exc()
                     agent_observation = Observation(
                         {
                             "terminal_event": {
@@ -362,19 +584,27 @@ def run_trial(
                         "measurements": agent_observation.measurements,
                     },
                 )
+                emit_stage("grading")
                 try:
                     if isinstance(oracle, RepositoryLocationOracle):
                         location_observation = oracle.observe(
                             context, agent_observation
                         )
                     budget_violation = agent_observation.payload.get("budget_violation")
-                    agent_reason = _reason_for_agent(agent_observation)
+                    agent_failure = _agent_failure(agent_observation)
                     if isinstance(budget_violation, str) and budget_violation:
                         status = TrialStatus.INVALID
                         reason = budget_violation
-                    elif agent_reason is not None:
+                        stage = "agent-execution"
+                        reason_code = "agent-budget-violation"
+                        diagnostic_detail = _bounded_diagnostic(budget_violation)
+                    elif agent_failure is not None:
                         status = TrialStatus.INCOMPLETE
-                        reason = agent_reason
+                        reason_code, reason = agent_failure
+                        stage = "agent-execution"
+                        diagnostic_detail = _bounded_diagnostic(
+                            agent_exception_traceback or reason
+                        )
                     else:
                         grade = (
                             oracle.grade_observed(location_observation)
@@ -392,6 +622,11 @@ def run_trial(
                         if grade.payload.get("valid") is False:
                             status = TrialStatus.INVALID
                             reason = "independent oracle could not complete grading"
+                            stage = "oracle-grading"
+                            reason_code = "oracle-invalid"
+                            diagnostic_detail = _bounded_diagnostic(
+                                str(grade.payload.get("reason") or reason)
+                            )
                         else:
                             status = (
                                 TrialStatus.PASS
@@ -400,11 +635,18 @@ def run_trial(
                             )
                             if status is TrialStatus.FAIL:
                                 reason = _reason_for_oracle_failure(grade)
+                                stage = "oracle-grading"
+                                reason_code = "oracle-mismatch"
+                                diagnostic_detail = _bounded_diagnostic(reason)
                 except Exception as exc:
                     status = TrialStatus.INCOMPLETE
                     reason = f"post-execution observation failed: {exc}"
+                    stage = "post-execution-observation"
+                    reason_code = "post-execution-observation-exception"
+                    diagnostic_detail = _bounded_diagnostic(traceback.format_exc())
                     emit("trial.observation_failed", {"reason": reason})
 
+            emit_stage("verification")
             try:
                 observed_state = snapshot(context.workspace)
                 contamination_config = task["contamination"]
@@ -430,10 +672,16 @@ def run_trial(
                 }
                 status = TrialStatus.INCOMPLETE
                 reason = f"workspace observation failed: {exc}"
+                stage = "workspace-observation"
+                reason_code = "workspace-observation-exception"
+                diagnostic_detail = _bounded_diagnostic(traceback.format_exc())
             emit("trial.contamination", contamination)
             if contamination["contaminated"]:
                 status = TrialStatus.CONTAMINATED
                 reason = "workspace changed outside frozen contamination allowances"
+                stage = "contamination"
+                reason_code = "workspace-contamination"
+                diagnostic_detail = _bounded_diagnostic(reason)
 
             changed_paths = tuple(
                 sorted(
@@ -455,6 +703,9 @@ def run_trial(
                 except Exception as exc:
                     status = TrialStatus.INCOMPLETE
                     reason = f"subject post-change failed: {exc}"
+                    stage = "subject-post-change"
+                    reason_code = "subject-post-change-exception"
+                    diagnostic_detail = _bounded_diagnostic(traceback.format_exc())
                     emit("subject.post_change_failed", {"reason": reason})
             try:
                 cleanup = admission.cleanup_subject()
@@ -462,6 +713,9 @@ def run_trial(
             except Exception as exc:
                 status = TrialStatus.INCOMPLETE
                 reason = f"subject cleanup failed: {exc}"
+                stage = "subject-cleanup"
+                reason_code = "subject-cleanup-exception"
+                diagnostic_detail = _bounded_diagnostic(traceback.format_exc())
                 emit("subject.cleanup_failed", {"reason": reason})
 
             event_evidence = seal_events(event_path, trial_id=trial_id)
@@ -545,6 +799,11 @@ def run_trial(
                     "projection_identity": score_projection,
                     "oracle_grade": grade.payload,
                 },
+                "diagnostic": {
+                    "stage": stage,
+                    "reason_code": reason_code,
+                    "detail": diagnostic_detail,
+                },
                 "measurements": {
                     "subject_prepare": subject_prepare.measurements,
                     "agent_prepare": agent_prepare.measurements,
@@ -555,6 +814,7 @@ def run_trial(
                 },
                 "reason": reason,
             }
+            emit_stage("publication")
             result_dir = _publish_bundle(
                 results_root=results_root,
                 trial_id=trial_id,
@@ -570,6 +830,10 @@ def run_trial(
                 result_dir=result_dir,
                 reused=False,
                 reason=reason,
+                stage=stage,
+                reason_code=reason_code,
+                diagnostic=diagnostic_detail,
+                recovered=False,
             )
     except (TrialAdmissionError, CampaignAuthorityError) as exc:
         raise TrialRunnerError(str(exc)) from exc

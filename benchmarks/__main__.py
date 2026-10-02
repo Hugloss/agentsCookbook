@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -33,7 +34,13 @@ from benchmarks.harness.oracle_review_runner import run_pending_oracle_reviews
 from benchmarks.harness.readiness import check_runtime_readiness
 from benchmarks.harness.runtime_authority import required_runtime_authority
 from benchmarks.harness.report import ReportError, build_report
-from benchmarks.harness.runner import run_trial
+from benchmarks.harness.runner import TrialRunnerError, run_trial
+from benchmarks.harness.live_console import (
+    LiveCampaignProgress,
+    LiveTaskMatrix,
+    TrialHeartbeat,
+    render_trial_failure,
+)
 from benchmarks.harness.selection import (
     SelectionError,
     parse_agent_arguments,
@@ -567,9 +574,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if payload["ready"] else 2
 
     results = []
-    invalid = False
     assert paths.results is not None
     campaign = None
+    live_matrix = LiveTaskMatrix(suite, rows)
+    run_started = time.monotonic()
+    conditions = {
+        str(condition["id"]): condition
+        for condition in suite.experiment["conditions"]
+    }
     if any("replicate_id" in row for row in rows):
         try:
             campaign = admit_campaign(
@@ -585,26 +597,91 @@ def main(argv: list[str] | None = None) -> int:
             )
         except (CampaignAuthorityError, OracleReviewError) as exc:
             raise SystemExit(f"campaign admission failed: {exc}") from exc
+    selected_definitions = {str(row["definition_id"]) for row in rows}
+    initial_status = campaign_status(
+        suite=suite,
+        results_root=paths.results,
+        selected_definitions=selected_definitions,
+    )
+    live_progress = LiveCampaignProgress(suite, rows, initial_status)
+    print(
+        f"CAMPAIGN {len(rows)} trials | verified {initial_status['complete_trials']} | "
+        f"pending {initial_status['pending_trials']} | "
+        f"interrupted {initial_status['interrupted_trials']} | "
+        "completed receipts will be reused; interrupted launches will be sealed "
+        "INCOMPLETE without retry",
+        file=sys.stderr,
+        flush=True,
+    )
     for row in rows:
         print(
-            f"starting {row['task_id']} / {row['condition_id']} trial {row['trial']}",
+            live_progress.start_line(
+                row,
+                elapsed=time.monotonic() - run_started,
+            ),
             file=sys.stderr,
             flush=True,
         )
-        result = run_trial(
-            suite=suite,
-            task_id=str(row["task_id"]),
-            condition_id=str(row["condition_id"]),
-            trial_index=int(row["trial"]),
-            harness_root=args.harness_root,
-            cache_root=paths.cache,
-            results_root=paths.results,
-            work_root=paths.work,
-            local_source=args.source,
-            codex_auth=args.codex_auth,
-            source=runtime_source,
-            campaign=campaign,
+        trial_started = time.monotonic()
+        heartbeat = TrialHeartbeat(
+            progress=live_progress,
+            row=row,
+            run_started=run_started,
+            emit=lambda line: print(line, file=sys.stderr, flush=True),
         )
+        try:
+            with heartbeat:
+                result = run_trial(
+                    suite=suite,
+                    task_id=str(row["task_id"]),
+                    condition_id=str(row["condition_id"]),
+                    trial_index=int(row["trial"]),
+                    harness_root=args.harness_root,
+                    cache_root=paths.cache,
+                    results_root=paths.results,
+                    work_root=paths.work,
+                    local_source=args.source,
+                    codex_auth=args.codex_auth,
+                    source=runtime_source,
+                    campaign=campaign,
+                    on_progress=heartbeat.update_stage,
+                )
+            receipt = json.loads((result.result_dir / "result.json").read_text(encoding="utf-8"))
+            summary = live_matrix.record(row, receipt)
+        except Exception as exc:
+            print(
+                live_progress.abort_line(
+                    row,
+                    stage=heartbeat.stage,
+                    elapsed=time.monotonic() - run_started,
+                    error=exc,
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
+            try:
+                observed = campaign_status(
+                    suite=suite,
+                    results_root=paths.results,
+                    selected_definitions=selected_definitions,
+                )
+                print(
+                    f"CAMPAIGN verified {observed['complete_trials']}/{len(rows)} | "
+                    f"pending {observed['pending_trials']} | "
+                    f"interrupted {observed['interrupted_trials']} | "
+                    f"qualified {observed['qualified']}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            except Exception as status_exc:
+                print(
+                    f"CAMPAIGN status unavailable after abort: {status_exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            if isinstance(exc, (TrialRunnerError, ReportError, CampaignError, OSError, ValueError)):
+                return 2
+            raise
         results.append(
             {
                 "trial_id": result.trial_id,
@@ -612,7 +689,11 @@ def main(argv: list[str] | None = None) -> int:
                 "status": result.status,
                 "result_dir": str(result.result_dir),
                 "reused": result.reused,
+                "recovered": result.recovered,
                 "reason": result.reason,
+                "stage": result.stage,
+                "reason_code": result.reason_code,
+                "diagnostic": result.diagnostic,
             }
         )
         detail = f": {result.reason}" if result.reason else ""
@@ -621,11 +702,89 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
             flush=True,
         )
-        if result.status in {"INCOMPLETE", "INVALID", "CONTAMINATED"}:
-            invalid = True
+        condition = conditions[str(row["condition_id"])]
+        failure = render_trial_failure(
+            row=row,
+            subject=str(condition["subject"]),
+            result=result,
+        )
+        if failure is not None:
+            print(failure, file=sys.stderr, flush=True)
+        print(
+            live_progress.finish_line(
+                result,
+                elapsed=time.monotonic() - run_started,
+                trial_seconds=time.monotonic() - trial_started,
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
+        if summary is not None:
+            print(summary, file=sys.stderr, flush=True)
 
+    try:
+        final_status = campaign_status(
+            suite=suite,
+            results_root=paths.results,
+            selected_definitions=selected_definitions,
+        )
+    except Exception as exc:
+        print(
+            f"ABORT final campaign verification | processed {len(results)}/{len(rows)} | {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        print(json.dumps(results, indent=2, sort_keys=True))
+        return 2
+    print(
+        f"RUN SUMMARY processed {len(results)}/{len(rows)} | "
+        f"verified {final_status['complete_trials']}/{len(rows)} | "
+        f"outcomes {json.dumps(final_status['outcomes'], sort_keys=True)} | "
+        f"qualified {final_status['qualified']} | "
+        f"run elapsed {int(time.monotonic() - run_started)}s",
+        file=sys.stderr,
+        flush=True,
+    )
+    if not final_status["qualified"]:
+        blockers = [
+            f"{label} {final_status[key]}"
+            for key, label in (
+                ("pending_trials", "pending"),
+                ("interrupted_trials", "interrupted"),
+                ("conflicting_trials", "conflicting"),
+                ("unresolved_outcome_trials", "non-outcome receipts"),
+            )
+            if final_status.get(key)
+        ]
+        blockers.extend(
+            f"{label} {len(final_status[key])}"
+            for key, label in (
+                ("corrupt_bundles", "corrupt bundles"),
+                ("foreign_bundles", "foreign bundles"),
+            )
+            if final_status.get(key)
+        )
+        blockers.extend(
+            f"{label}: {final_status[key]}"
+            for key, label in (
+                ("comparability_error", "comparability"),
+                ("campaign_authority_error", "campaign authority"),
+            )
+            if final_status.get(key)
+        )
+        print(
+            "NOT QUALIFIED: "
+            + (", ".join(blockers) if blockers else "inspect campaign status"),
+            file=sys.stderr,
+            flush=True,
+        )
+        print(
+            "Next: inspect benchmark status and report with the same selectors",
+            file=sys.stderr,
+            flush=True,
+        )
     print(json.dumps(results, indent=2, sort_keys=True))
-    return 2 if invalid else 0
+    return 0 if final_status["qualified"] else 2
 
 
 if __name__ == "__main__":

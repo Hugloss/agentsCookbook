@@ -213,7 +213,7 @@ uv run --no-project python -m benchmarks run \
   --subject enola
 ```
 
-The runner reuses valid existing receipts, so rerunning the command resumes a partially completed campaign instead of starting completed definitions again.
+The runner reuses valid existing receipts, so rerunning the command resumes a partially completed campaign instead of starting completed definitions again. Live stderr shows processed definitions in this invocation separately from verified receipts in the campaign. During a long trial it prints an activity heartbeat every 30 seconds with the current stage and elapsed time. The execution ETA estimates remaining pending executions from trials executed in this invocation; it is not a qualification estimate and stays `estimating...` until a sample exists. Run elapsed time resets on each invocation.
 
 Inspect resumability without invoking any agent:
 
@@ -227,6 +227,8 @@ uv run --no-project python -m benchmarks status \
 ```
 
 `status.complete` means every selected definition has a verified immutable receipt. `status.qualified` additionally requires every receipt to be a valid experimental outcome (`PASS`, `FAIL`, or `NO_QUALIFYING_DEFECT`). A campaign can therefore be structurally complete but not qualified.
+
+Each complete status row includes the receipt's diagnostic stage and reason code when available. Report diagnostics include the same fields and mark older receipts without them as `legacy-inferred`. The detailed diagnostic remains in `result.json`; compact status and report output do not copy tracebacks. A final run summary on stderr reports verified receipts, outcome counts, and qualification. The run exits nonzero when the final selected campaign is not qualified.
 
 Finally:
 
