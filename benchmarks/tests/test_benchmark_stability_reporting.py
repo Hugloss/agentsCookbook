@@ -150,7 +150,7 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         ):
             report = build_report(suite=suite, results_root=Path("/unused"))
 
-        self.assertEqual(report["schema"]["version"], 7)
+        self.assertEqual(report["schema"]["version"], 8)
         stability = {row["subject_id"]: row for row in report["stability"]}
         self.assertEqual(stability["none"]["state"], "unstable")
         self.assertEqual(stability["none"]["semantic_correct"], 2)
@@ -184,6 +184,59 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertFalse(
             report["authority"]["replicate_identity_is_provider_sampling_seed"]
         )
+
+    def test_subject_adoption_distinguishes_available_but_unused_tools(self) -> None:
+        suite = _suite()
+        rows = [
+            row
+            for row in suite.trial_definitions()
+            if row["condition_id"] == "hashmarks"
+        ]
+        receipts = []
+        for index, row in enumerate(rows):
+            receipt = _receipt(
+                suite,
+                row,
+                "FAIL" if index == 1 else "PASS",
+                chr(ord("a") + index) * 64,
+            )
+            receipt["authority"]["subject"]["available"] = True
+            receipt["measurements"]["agent"] = {
+                "subject_tool_configured": True,
+                "subject_tool_invoked": False,
+                "subject_mcp_calls": 0,
+                "subject_tool_names": [],
+            }
+            receipt["scoring"] = {
+                "oracle_grade": {
+                    "format_compliant": False if index == 1 else True,
+                    "semantic_gradeable": False if index == 1 else True,
+                    "semantic_status": "UNSCORABLE" if index == 1 else "CORRECT",
+                    "semantic_success": False if index == 1 else True,
+                }
+            }
+            receipts.append(receipt)
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+                selected_definitions={str(row["definition_id"]) for row in rows},
+            )
+
+        self.assertEqual(len(report["subject_adoption"]), 1)
+        adoption = report["subject_adoption"][0]
+        self.assertEqual(adoption["subject_id"], "hashmarks")
+        self.assertEqual(adoption["trials"], 3)
+        self.assertEqual(adoption["configured_trials"], 3)
+        self.assertEqual(adoption["invoked_trials"], 0)
+        self.assertEqual(adoption["not_invoked_trials"], 3)
+        self.assertEqual(adoption["subject_mcp_calls"], 0)
+        self.assertEqual(adoption["output_contract_failures"], 1)
+        self.assertEqual(adoption["state"], "configured-never-invoked")
 
     def test_non_outcome_is_execution_instability_not_semantic_failure(self) -> None:
         suite = _suite()
