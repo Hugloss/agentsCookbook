@@ -407,10 +407,12 @@ def render_trial_failure(
     """Render stable failure fields before bounded raw diagnostic evidence."""
     if result.status == "PASS":
         return None
+    replicate_id = row.get("replicate_id", row.get("seed"))
     lines = [
         "",
         f"FAILURE {row['task_id']}",
-        f"Replicate: {row['trial']}",
+        f"Replicate ordinal: {int(row['trial']) + 1}",
+        f"Replicate ID: {replicate_id if replicate_id is not None else 'unknown'}",
         f"Condition: {row['condition_id']}",
         f"Subject: {_subject_label(subject)}",
         f"Status: {result.status}",
