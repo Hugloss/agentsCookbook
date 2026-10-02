@@ -28,8 +28,8 @@ benchmark-qualify-localization:
 			--task locate-directory-pruning \
 			--task locate-mcp-task-evidence \
 			--task locate-repository-content-identity \
-			--task locate-terminal-run-check; then run_status=0; else run_status=1; fi; \
-		if uv run --no-project python -m benchmarks status --env-file .env \
+			--task locate-terminal-run-check; then \
+		uv run --no-project python -m benchmarks status --env-file .env \
 			--root "$$qualification_root" --require-qualified \
 			--subject none --subject hashmarks --subject enola \
 			--task locate-prefix-path-enumerator \
@@ -37,8 +37,8 @@ benchmark-qualify-localization:
 			--task locate-directory-pruning \
 			--task locate-mcp-task-evidence \
 			--task locate-repository-content-identity \
-			--task locate-terminal-run-check; then status_status=0; else status_status=1; fi; \
-		test $run_status -eq 0 && test $status_status -eq 0
+			--task locate-terminal-run-check; \
+		else exit 1; fi
 
 benchmark-evidence-validate:
 	@uv run --no-project python -m benchmarks.evidence validate \
