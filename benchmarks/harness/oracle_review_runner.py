@@ -65,7 +65,9 @@ def _parse_decision(stdout: str, *, task_id: str, task_digest: str) -> dict[str,
     try:
         value = json.loads(matches[0])
     except ValueError as exc:
-        raise OracleReviewError("independent reviewer decision is not valid JSON") from exc
+        raise OracleReviewError(
+            "independent reviewer decision is not valid JSON"
+        ) from exc
     if not isinstance(value, dict):
         raise OracleReviewError("independent reviewer decision must be one JSON object")
     if value.get("task_id") != task_id or value.get("task_digest") != task_digest:
@@ -92,6 +94,7 @@ def _run_review(workspace: Path, prompt: str) -> dict[str, str]:
             max_stdout_bytes=1_000_000,
             max_stderr_bytes=200_000,
         ),
+        environment={"AGENTS_COOKBOOK_RUN_DIR": ""},
         close_stdin=True,
     )
     if result.executable_missing:
@@ -146,14 +149,28 @@ def run_pending_oracle_reviews(
 
     review_path = oracle_review_path(suite)
     evidence = json.loads(review_path.read_text(encoding="utf-8"))
-    cache = cache_root or Path(tempfile.gettempdir()) / "agentscookbook-oracle-review-cache"
+    cache = (
+        cache_root
+        or Path(tempfile.gettempdir()) / "agentscookbook-oracle-review-cache"
+    )
     reviewed: list[dict[str, str]] = []
 
     for task_id in pending:
         task = suite.tasks[task_id]
         row = evidence["tasks"][task_id]
         requirement = row["review_requirement"]
-        if len(row["reviews"]) >= int(requirement["minimum_independent_reviews"]):
+        minimum_reviews = int(requirement["minimum_independent_reviews"])
+        if len(row["reviews"]) >= minimum_reviews:
+            non_unique = [
+                review
+                for review in row["reviews"]
+                if review.get("decision") != "unique"
+            ]
+            if non_unique:
+                raise OracleReviewError(
+                    f"{task_id} has a non-unique independent review; "
+                    "repair or retire the task instead of adding another reviewer"
+                )
             continue
         if REVIEWER_ID in {review.get("reviewer") for review in row["reviews"]}:
             raise OracleReviewError(
