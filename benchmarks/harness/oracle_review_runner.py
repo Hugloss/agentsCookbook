@@ -133,7 +133,13 @@ response with exactly one line:
 {DECISION_PREFIX}{rendered_decision}
 """
 
-def _parse_decision(stdout: str, *, task_id: str, task_digest: str) -> dict[str, str]:
+def _parse_decision(
+    stdout: str,
+    *,
+    task_id: str,
+    task_digest: str,
+    expected_owner: dict[str, str] | None,
+) -> dict[str, Any]:
     matches = [
         line[len(DECISION_PREFIX) :].strip()
         for line in stdout.splitlines()
@@ -158,11 +164,17 @@ def _parse_decision(stdout: str, *, task_id: str, task_digest: str) -> dict[str,
     reason = value.get("reason")
     if not isinstance(reason, str) or not reason.strip():
         raise OracleReviewError("independent reviewer reason is missing")
+    if expected_owner is not None and value.get("observed_owner") != expected_owner:
+        raise OracleReviewError(
+            "independent reviewer did not observe the deterministically present "
+            "expected owner; no semantic review evidence was recorded"
+        )
     return {
         "task_id": task_id,
         "task_digest": task_digest,
         "decision": str(value["decision"]),
         "reason": reason.strip(),
+        "observed_owner": value.get("observed_owner"),
     }
 
 
