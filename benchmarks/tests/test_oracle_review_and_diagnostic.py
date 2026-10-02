@@ -143,6 +143,7 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             copy = Path(tmp) / "suite"
             shutil.copytree(SOURCE, copy)
+            suite = load_suite(copy)
             review_path = copy / "qualification/oracle-reviews.json"
             evidence = json.loads(review_path.read_text(encoding="utf-8"))
             requirement = evidence["tasks"]["locate-repository-content-identity"][
@@ -154,7 +155,7 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
                 OracleReviewError,
                 "escalated oracle review reason missing",
             ):
-                validate_oracle_reviews(load_suite(copy), require_complete=False)
+                validate_oracle_reviews(suite, require_complete=False)
 
     def test_oracle_review_cli_prints_next_action_and_succeeds(self) -> None:
         output = io.StringIO()
