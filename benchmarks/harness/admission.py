@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 from benchmarks.adapters.codex import seed_codex_auth
 from benchmarks.adapters.registry import build_agent, build_oracle, build_subject
-from benchmarks.harness.identity import definition_id, execution_id
+from benchmarks.harness.identity import definition_id, digest, execution_id
 from benchmarks.harness.model import (
     Observation,
     SubjectLifecycleMode,
@@ -468,6 +468,16 @@ def admit_trial(
         admitted_state = snapshot(workspace)
         timings_ms["snapshot"] = int(
             round((time.monotonic() - stage_started) * 1000)
+        )
+        context = dataclasses.replace(
+            context,
+            admission_scope=digest(
+                {
+                    "task_id": task_id,
+                    "workspace": admitted_state,
+                    "mutation": mutation.payload.get("identity"),
+                }
+            ),
         )
 
         subject = build_subject(suite.subjects[str(condition["subject"])])

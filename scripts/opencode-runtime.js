@@ -261,6 +261,22 @@ function inlineConfig(env) {
   return parsed;
 }
 
+function readBaseConfigSnapshot(filePath) {
+  if (!filePath) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(path.resolve(filePath), 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `benchmark base OpenCode config cannot be read: ${error.message || error}`,
+    );
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('benchmark base OpenCode config must be a JSON object');
+  }
+  return parsed;
+}
+
 function readBenchmarkExposure(filePath, selectedSubject, repoDir) {
   if (!selectedSubject) {
     if (filePath) {
@@ -1010,17 +1026,25 @@ function prepareBenchmarkConfig({
   pure = true,
   probe = true,
   agentName,
+  baseConfig = null,
+  includeBaseConfig = false,
 }) {
   if (typeof agentName !== 'string' || !agentName) {
     throw new Error('benchmark OpenCode agent name is required');
   }
-  const base = readNativeConfig({
-    opencodeBin,
-    repoDir,
-    env,
-    pure,
-    agentName,
-  });
+  const base = baseConfig
+    ? {
+      status: 'completed',
+      inspection: inspectConfig(baseConfig, agentName),
+      config: baseConfig,
+    }
+    : readNativeConfig({
+      opencodeBin,
+      repoDir,
+      env,
+      pure,
+      agentName,
+    });
   if (base.status !== 'completed') {
     return {
       status: 'failed',
@@ -1028,6 +1052,7 @@ function prepareBenchmarkConfig({
       inspection: base.inspection,
     };
   }
+  const baseConfigSource = baseConfig ? 'task-cache' : 'fresh';
   try {
     if (selectedSubject && (!subjectExposure || subjectExposure.name !== selectedSubject)) {
       throw new Error(`benchmark subject ${selectedSubject} has no matching exposure`);
@@ -1099,6 +1124,8 @@ function prepareBenchmarkConfig({
       status: 'completed',
       inspection: base.inspection,
       effective_inspection: effectiveInspection,
+      base_config_source: baseConfigSource,
+      ...(includeBaseConfig ? { base_config_snapshot: base.config } : {}),
       selected_server: overlay.selected,
       workspace_binding: workspaceBinding,
       native_subject_identity: subjectExecutable,
@@ -1267,6 +1294,9 @@ async function main(argv) {
     )
     : null;
   if (command === 'inspect-config') {
+    const baseConfig = benchmarkMode
+      ? readBaseConfigSnapshot(options['base-config-file'])
+      : null;
     const result = benchmarkMode
       ? prepareBenchmarkConfig({
         repoDir,
@@ -1274,6 +1304,8 @@ async function main(argv) {
         selectedSubject,
         subjectExposure,
         agentName: options.agent,
+        baseConfig,
+        includeBaseConfig: options['emit-base-config'] === 'true',
       })
       : resolveNativeConfig({ repoDir, env: process.env });
     const { environment, ...safe } = result;
@@ -1352,6 +1384,7 @@ module.exports = {
   benchmarkOverlay,
   prepareBenchmarkConfig,
   providerFromModel,
+  readBaseConfigSnapshot,
   readBenchmarkExposure,
   readJsonText,
   resolveNativeConfig,
