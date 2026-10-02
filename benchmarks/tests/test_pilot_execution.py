@@ -62,6 +62,7 @@ from benchmarks.harness.report import ReportError, build_report
 from benchmarks.harness.runner import (
     _reason_for_agent,
     _reason_for_oracle_failure,
+    _recover_interrupted_launch,
     run_trial,
 )
 from benchmarks.harness.runtime_authority import (
@@ -2699,6 +2700,74 @@ class PilotExecutionTests(unittest.TestCase):
                     suite=suite,
                     results_root=root / "results",
                 )
+
+    def test_interrupted_launch_is_sealed_incomplete_without_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            admission = SimpleNamespace(
+                trial_id="a" * 64,
+                definition_id="b" * 64,
+                context=SimpleNamespace(workspace=workspace),
+                legacy_seed=False,
+                replicate_id=6201,
+                trial_index=0,
+                task={
+                    "id": "task",
+                    "prompt": "find owner",
+                    "mode": "read_only",
+                    "budgets": {"timeout_seconds": 1},
+                    "contamination": {
+                        "allowed_change_globs": [],
+                        "allowed_generated_globs": [],
+                    },
+                },
+                expanded_condition={"id": "condition"},
+                admitted_state={"files": []},
+                mutation_authority=None,
+                subject_authority={"declared": {"id": "none"}},
+                agent_authority={"declared": {"id": "agent"}},
+                oracle_authority={"declared": {"id": "oracle", "version": "1"}},
+                harness_authority={"commit": "old-authority"},
+                environment_authority={"runtime": "old-authority"},
+                suite=SimpleNamespace(
+                    experiment={"id": "experiment", "suite": "test"}
+                ),
+                subject_prepare=Observation({}, "", {}),
+                agent_prepare=Observation({}, "", {}),
+                oracle_health=Observation({}, "", {}),
+                cleanup_subject=lambda: Observation(
+                    {"lifecycle_owner": "recovery"},
+                    "",
+                    {},
+                ),
+            )
+            result = _recover_interrupted_launch(
+                admission=admission,
+                results_root=root / "results",
+                campaign={"campaign_id": "c" * 64},
+            )
+
+            self.assertEqual(result.status, "INCOMPLETE")
+            self.assertTrue(result.recovered)
+            self.assertFalse(result.reused)
+            self.assertEqual(result.stage, "campaign-recovery")
+            self.assertEqual(result.reason_code, "interrupted-launch")
+            valid, reason = verify_bundle(result.result_dir)
+            self.assertTrue(valid, reason)
+            receipt = json.loads(
+                (result.result_dir / "result.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                receipt["diagnostic"]["reason_code"],
+                "interrupted-launch",
+            )
+            self.assertIsNone(receipt["execution"]["agent_answer"])
+            self.assertEqual(
+                receipt["scoring"]["oracle_grade"]["valid"],
+                False,
+            )
 
     def test_report_economics_keep_invalid_trial_costs(self) -> None:
         experiment = {
