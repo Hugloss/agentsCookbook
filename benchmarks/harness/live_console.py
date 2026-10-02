@@ -295,6 +295,50 @@ class LiveTaskMatrix:
                     )
                 )
 
+                lines.extend(["", "Subject use by replicate"])
+                adoption_headers = [
+                    "Replicate ID",
+                    *(label(condition_id) for condition_id in assisted_conditions),
+                ]
+                adoption_rows: list[list[str]] = []
+                for trial in trial_indexes:
+                    replicate_label = (
+                        str(next(iter(replicate_ids[trial])))
+                        if len(replicate_ids[trial]) == 1
+                        else f"trial {trial} (mixed IDs)"
+                    )
+                    cells = [replicate_label]
+                    for condition_id in assisted_conditions:
+                        receipt = next(
+                            (
+                                receipt
+                                for row, observed_condition, receipt in outcomes
+                                if int(row["trial"]) == trial
+                                and observed_condition == condition_id
+                            ),
+                            None,
+                        )
+                        if receipt is None:
+                            cells.append("-")
+                            continue
+                        invoked, calls, names, observability = _subject_tool_use(receipt)
+                        state = (
+                            "used"
+                            if invoked is True
+                            else "not-used"
+                            if invoked is False
+                            else "unknown"
+                        )
+                        detail = ",".join(names)
+                        count = f" calls={calls}" if calls is not None else ""
+                        tools = f" {detail}" if detail else ""
+                        observation = (
+                            f" [{observability}]" if observability != "unknown" else ""
+                        )
+                        cells.append(f"{state}{tools}{count}{observation}")
+                    adoption_rows.append(cells)
+                lines.extend(_render_table(adoption_headers, adoption_rows))
+
         return "\n".join(lines)
 
 
@@ -570,6 +614,27 @@ def render_trial_failure(
         f"Reason: {result.reason or 'none'}",
         f"Evidence: {result.result_dir}",
     ]
+    if receipt is not None:
+        semantic = _display_outcome(receipt)
+        grade = receipt.get("scoring", {}).get("oracle_grade", {})
+        format_compliant = (
+            grade.get("format_compliant") if isinstance(grade, dict) else None
+        )
+        lines.extend(
+            [
+                f"Semantic outcome: {semantic}",
+                (
+                    "Format compliant: "
+                    + (
+                        "yes"
+                        if format_compliant is True
+                        else "no"
+                        if format_compliant is False
+                        else "unknown"
+                    )
+                ),
+            ]
+        )
     if subject != "none" and receipt is not None:
         invoked, calls, names, observability = _subject_tool_use(receipt)
         lines.extend(
