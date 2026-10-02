@@ -196,12 +196,25 @@ def _token_metrics(exported: dict[str, Any]) -> tuple[int, int, int]:
     return input_tokens, output_tokens, cached_tokens
 
 
+def _subject_tool_name(name: str, selected_server: str | None) -> str:
+    if selected_server is None:
+        return name
+    for prefix in (
+        f"tools.{selected_server}.",
+        f"{selected_server}.",
+        f"{selected_server}_",
+    ):
+        if name.startswith(prefix):
+            return name[len(prefix) :]
+    return name
+
+
 def _metrics(
     exported: dict[str, Any],
     *,
     mcp_servers: tuple[str, ...],
     selected_server: str | None,
-) -> dict[str, int | float | str | bool]:
+) -> dict[str, Any]:
     parts = _parts(_assistant_messages(exported))
     tool_parts = [part for part in parts if part.get("type") == "tool"]
     names = [name for part in tool_parts if (name := _tool_name(part))]
@@ -234,16 +247,18 @@ def _metrics(
         )
     ]
     mcp_calls = direct_mcp_calls + nested_mcp_calls
-    subject_calls = [
-        name
-        for name in mcp_calls
-        if selected_server
-        and (
-            name.startswith(f"{selected_server}_")
-            or name.startswith(f"{selected_server}.")
-            or name.startswith(f"tools.{selected_server}.")
+    def is_subject_call(name: str) -> bool:
+        return bool(
+            selected_server
+            and (
+                name.startswith(f"{selected_server}_")
+                or name.startswith(f"{selected_server}.")
+                or name.startswith(f"tools.{selected_server}.")
+            )
         )
-    ]
+
+    direct_subject_calls = [name for name in direct_mcp_calls if is_subject_call(name)]
+    subject_calls = [name for name in mcp_calls if is_subject_call(name)]
     command_calls = [
         name for name in names if name in {"bash", "shell", "terminal", "run"}
     ]
@@ -270,7 +285,7 @@ def _metrics(
             )
             result_bytes += len(rendered.encode("utf-8"))
     input_tokens, output_tokens, cached_tokens = _token_metrics(exported)
-    metrics: dict[str, int | float | str | bool] = {
+    metrics: dict[str, Any] = {
         "event_count": len(parts),
         "command_calls": len(command_calls),
         "file_change_events": len(file_changes),
@@ -281,6 +296,22 @@ def _metrics(
         "output_tokens": output_tokens,
         "source_read_observability": ("not-authoritatively-exposed-by-opencode-export"),
     }
+    if selected_server is not None:
+        observed_subject_calls = (
+            subject_calls if nested_observable else direct_subject_calls
+        )
+        metrics.update(
+            subject_mcp_calls_observed=len(observed_subject_calls),
+            subject_tool_names=sorted(
+                {
+                    _subject_tool_name(name, selected_server)
+                    for name in observed_subject_calls
+                }
+            ),
+            subject_tool_observability=(
+                "complete" if nested_observable else "partial"
+            ),
+        )
     if nested_observable:
         metrics.update(
             mcp_calls=len(mcp_calls),
@@ -289,6 +320,10 @@ def _metrics(
         )
         if not nested_mcp_calls:
             metrics["mcp_result_bytes"] = result_bytes
+    elif direct_subject_calls:
+        # Direct exported MCP calls are authoritative positive evidence even
+        # when nested execute() metadata is incomplete. Absence remains unknown.
+        metrics["subject_tool_invoked"] = True
     return metrics
 
 
