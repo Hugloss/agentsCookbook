@@ -29,6 +29,7 @@ from benchmarks.harness.oracle_reviews import (
     oracle_reviews_declared,
     validate_oracle_reviews,
 )
+from benchmarks.harness.oracle_review_runner import run_pending_oracle_reviews
 from benchmarks.harness.readiness import check_runtime_readiness
 from benchmarks.harness.runtime_authority import required_runtime_authority
 from benchmarks.harness.report import ReportError, build_report
@@ -112,6 +113,8 @@ def _parser() -> argparse.ArgumentParser:
 
     review = sub.add_parser("oracle-review")
     review.add_argument("--suite", type=Path, required=True)
+    review.add_argument("--execute", action="store_true")
+    review.add_argument("--cache", type=Path)
 
     check = sub.add_parser("check")
     check.add_argument("--suite", type=Path)
@@ -285,6 +288,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "oracle-review":
         suite = load_suite(args.suite)
         try:
+            if args.execute:
+                result = run_pending_oracle_reviews(
+                    suite,
+                    cache_root=args.cache,
+                )
+                print(json.dumps(result, indent=2, sort_keys=True))
+                if not result["complete"]:
+                    print(
+                        "Next: make benchmark-oracle-review-check",
+                        file=sys.stderr,
+                    )
+                return 0
             print(oracle_review_guide(suite))
         except OracleReviewError as exc:
             raise SystemExit(f"oracle review unavailable: {exc}") from exc
