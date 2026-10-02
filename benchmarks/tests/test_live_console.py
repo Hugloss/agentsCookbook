@@ -28,7 +28,16 @@ class LiveTaskMatrixTests(unittest.TestCase):
         ]
         return suite, rows
 
-    def _receipt(self, suite, row, status, *, gradeable=True):
+    def _receipt(
+        self,
+        suite,
+        row,
+        status,
+        *,
+        gradeable=True,
+        invoked=None,
+        subject_mcp_calls=None,
+    ):
         condition = next(
             item for item in suite.experiment["conditions"]
             if item["id"] == row["condition_id"]
@@ -52,7 +61,22 @@ class LiveTaskMatrixTests(unittest.TestCase):
             "scoring": {
                 "oracle_grade": {
                     "semantic_gradeable": gradeable,
-                    "semantic_success": status == "PASS",
+                    "semantic_success": status == "PASS" if gradeable else False,
+                    "semantic_status": (
+                        "CORRECT"
+                        if gradeable and status == "PASS"
+                        else "INCORRECT"
+                        if gradeable and status == "FAIL"
+                        else "UNSCORABLE"
+                        if not gradeable
+                        else None
+                    ),
+                }
+            },
+            "measurements": {
+                "agent": {
+                    "subject_tool_invoked": invoked,
+                    "subject_mcp_calls": subject_mcp_calls,
                 }
             },
         }
@@ -95,6 +119,17 @@ class LiveTaskMatrixTests(unittest.TestCase):
                     suite,
                     row,
                     statuses[(row["condition_id"], row["trial"])],
+                    invoked=(
+                        row["trial"] != 2
+                        if row["condition_id"] == "hashmarks-opencode-native"
+                        else None
+                    ),
+                    subject_mcp_calls=(
+                        row["trial"] + 1
+                        if row["condition_id"] == "hashmarks-opencode-native"
+                        and row["trial"] != 2
+                        else 0
+                    ),
                 ),
             )
             if value is not None:
@@ -130,6 +165,15 @@ class LiveTaskMatrixTests(unittest.TestCase):
         )
         self.assertIn(
             "Enola     | 1    | 0         | 1          | 0          | 1",
+            rendered,
+        )
+        self.assertIn("Subject tool use", rendered)
+        self.assertIn(
+            "Hashmarks | 2       | 1           | 0       | 3",
+            rendered,
+        )
+        self.assertIn(
+            "Enola     | 0       | 0           | 3       | 0",
             rendered,
         )
 
@@ -181,6 +225,27 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn("verified 2/9", resumed)
         self.assertIn("avg 1m00s/execution", resumed)
         self.assertIn("execution ETA 7m00s", resumed)
+
+    def test_eta_uses_condition_specific_runtime_samples(self) -> None:
+        suite, rows = self._prefix_opencode_rows()
+        progress = LiveCampaignProgress(suite, rows, self._status(rows))
+
+        for row, seconds in ((rows[0], 60.0), (rows[1], 60.0), (rows[3], 180.0)):
+            progress.finish_line(
+                TrialRunResult(
+                    trial_id="a" * 64,
+                    definition_id=row["definition_id"],
+                    status="PASS",
+                    result_dir=Path("/tmp/result"),
+                    reused=False,
+                ),
+                elapsed=seconds,
+                trial_seconds=seconds,
+            )
+
+        start = progress.start_line(rows[4], elapsed=300.0)
+        self.assertIn("pending 6", start)
+        self.assertIn("execution ETA 12m00s", start)
 
     def test_failure_envelope_is_agent_readable_and_preserves_diagnostic(self) -> None:
         _, rows = self._prefix_opencode_rows()
@@ -255,6 +320,7 @@ class LiveTaskMatrixTests(unittest.TestCase):
                 row, self._receipt(suite, row, status, gradeable=gradeable)
             ) or rendered
         assert rendered is not None
+        self.assertIn("6201         | UNGRADABLE", rendered)
         self.assertIn("Hashmarks | 2    | 0         | 0          | 0          | 1", rendered)
 
     def test_same_subject_conditions_have_distinct_columns(self) -> None:
