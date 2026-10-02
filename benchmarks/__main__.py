@@ -707,6 +707,7 @@ def main(argv: list[str] | None = None) -> int:
             row=row,
             subject=str(condition["subject"]),
             result=result,
+            receipt=receipt,
         )
         if failure is not None:
             print(failure, file=sys.stderr, flush=True)
