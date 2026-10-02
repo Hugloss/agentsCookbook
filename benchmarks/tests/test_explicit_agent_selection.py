@@ -54,6 +54,7 @@ class ExplicitAgentSelectionTests(unittest.TestCase):
         args = _parser().parse_args(
             [
                 "run",
+                "--resume",
                 "--suite",
                 "suite",
                 "--harness-root",

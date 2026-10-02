@@ -19,6 +19,9 @@ from benchmarks.harness.campaign_authority import (
     CampaignAuthorityError,
     claim_launch,
     launch_state,
+    record_interrupted_attempt,
+    retire_completed_events,
+    start_attempt_events,
     verify_trial_authority,
 )
 from benchmarks.harness.contamination import classify_contamination
@@ -78,6 +81,14 @@ def _artifact(path: Path) -> dict[str, Any]:
     }
 
 
+def _fsync_path(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def _publish_bundle(
     *,
     results_root: Path,
@@ -104,6 +115,8 @@ def _publish_bundle(
             agent_trace,
             encoding="utf-8",
         )
+        for name in ("events.jsonl", "events.jsonl.seal.json", "agent-trace.jsonl"):
+            _fsync_path(bundle / name)
         receipt["execution"]["artifacts"] = {
             "events": _artifact(bundle / "events.jsonl"),
             "events_seal": _artifact(bundle / "events.jsonl.seal.json"),
@@ -111,21 +124,14 @@ def _publish_bundle(
         }
         _validate_result_receipt(receipt)
         write_receipt(bundle, receipt)
+        _fsync_path(bundle)
         os.rename(bundle, final_dir)
         valid, reason = verify_bundle(final_dir)
         if not valid:
-            shutil.rmtree(final_dir, ignore_errors=True)
             raise TrialRunnerError(
                 f"published trial bundle failed verification: {reason}"
             )
-        try:
-            fd = os.open(results_root, os.O_RDONLY)
-            try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-        except OSError:
-            pass
+        _fsync_path(results_root)
     except BaseException:
         shutil.rmtree(bundle, ignore_errors=True)
         raise
@@ -244,171 +250,6 @@ def _bounded_diagnostic(value: str | None, *, limit: int = 8_000) -> str | None:
     return rendered[:limit] + "…"
 
 
-def _recover_interrupted_launch(
-    *,
-    admission: Any,
-    results_root: Path,
-    campaign: dict[str, Any],
-) -> TrialRunResult:
-    """Seal a previously claimed crash as INCOMPLETE without relaunching the model."""
-    reason = "previous trial launch was interrupted before a complete receipt"
-    stage = "campaign-recovery"
-    reason_code = "interrupted-launch"
-    diagnostic_detail = (
-        "A durable launch claim exists but no complete receipt was published. "
-        "The trial is recorded as INCOMPLETE and is not retried."
-    )
-    trial_id = admission.trial_id
-    run_root = admission.context.workspace.parent
-    event_path = run_root / "events.jsonl"
-    append_event(
-        event_path,
-        trial_id=trial_id,
-        sequence=0,
-        kind="trial.recovered_interruption",
-        payload={
-            "definition_id": admission.definition_id,
-            "reason_code": reason_code,
-        },
-    )
-    event_evidence = seal_events(event_path, trial_id=trial_id)
-    event_seal_path = event_path.with_name(event_path.name + ".seal.json")
-
-    cleanup_payload: dict[str, Any]
-    try:
-        cleanup_payload = admission.cleanup_subject().payload
-    except Exception as exc:
-        cleanup_payload = {"error": str(exc)}
-
-    identity_field = (
-        {"seed": admission.replicate_id}
-        if admission.legacy_seed
-        else {"replicate_id": admission.replicate_id}
-    )
-    agent_trace = ""
-    workspace_root = str(admission.context.workspace.resolve())
-    admitted_state_sha256 = digest(admission.admitted_state)
-    trace_sha256 = hashlib.sha256(agent_trace.encode("utf-8")).hexdigest()
-    execution_evidence = execution_evidence_id(
-        task=admission.task,
-        condition=admission.expanded_condition,
-        trial=admission.trial_index,
-        **identity_field,
-        subject_identity=admission.subject_authority,
-        agent_identity=admission.agent_authority,
-        harness_identity=admission.harness_authority,
-        environment_identity=admission.environment_authority,
-        mutation_identity=admission.mutation_authority,
-        agent_answer=None,
-        workspace_root=workspace_root,
-        location_observation=None,
-        agent_trace_sha256=trace_sha256,
-        **(
-            {
-                "campaign_id": campaign["campaign_id"],
-                "admitted_state_sha256": admitted_state_sha256,
-            }
-            if not admission.legacy_seed
-            else {}
-        ),
-    )
-    score_projection = score_projection_id(
-        execution_evidence=execution_evidence,
-        oracle_identity=admission.oracle_authority["declared"],
-        **(
-            {"contract": "benchmark-score-projection.v3"}
-            if not admission.legacy_seed
-            else {}
-        ),
-    )
-    receipt: dict[str, Any] = {
-        "definition_id": admission.definition_id,
-        "trial_id": trial_id,
-        "experiment": admission.suite.experiment,
-        "task": admission.task,
-        "condition": admission.expanded_condition,
-        "status": TrialStatus.INCOMPLETE.value,
-        "authority": {
-            "subject": admission.subject_authority,
-            "agent": admission.agent_authority,
-            "oracle": admission.oracle_authority,
-            "harness": admission.harness_authority,
-            "environment": admission.environment_authority,
-            "mutation": admission.mutation_authority,
-        },
-        "execution": {
-            **identity_field,
-            **(
-                {"campaign_id": campaign["campaign_id"]}
-                if not admission.legacy_seed
-                else {}
-            ),
-            "trial_index": admission.trial_index,
-            "events": event_evidence,
-            "agent_terminal": {
-                "type": "turn.failed",
-                "reason": reason,
-            },
-            "agent_answer": None,
-            "workspace_root": workspace_root,
-            "admitted_state_sha256": admitted_state_sha256,
-            "location_observation": None,
-            "evidence_contract": (
-                EXECUTION_EVIDENCE_CONTRACT
-                if admission.legacy_seed
-                else "benchmark-execution-evidence.v3"
-            ),
-            "evidence_identity": execution_evidence,
-        },
-        "scoring": {
-            "projection_identity": score_projection,
-            "oracle_grade": {
-                "passed": False,
-                "valid": False,
-                "reason": "not graded because prior launch was interrupted",
-            },
-        },
-        "diagnostic": {
-            "stage": stage,
-            "reason_code": reason_code,
-            "detail": diagnostic_detail,
-        },
-        "measurements": {
-            "subject_prepare": admission.subject_prepare.measurements,
-            "agent_prepare": admission.agent_prepare.measurements,
-            "oracle_health": admission.oracle_health.measurements,
-            "oracle_grade": {},
-            "contamination": {
-                "contaminated": None,
-                "diff": {"added": [], "removed": [], "changed": []},
-                "not_observed": "interrupted launch recovery",
-            },
-            "subject_cleanup": cleanup_payload,
-        },
-        "reason": reason,
-    }
-    result_dir = _publish_bundle(
-        results_root=results_root,
-        trial_id=trial_id,
-        event_path=event_path,
-        event_seal_path=event_seal_path,
-        agent_trace=agent_trace,
-        receipt=receipt,
-    )
-    return TrialRunResult(
-        trial_id=trial_id,
-        definition_id=admission.definition_id,
-        status=TrialStatus.INCOMPLETE.value,
-        result_dir=result_dir,
-        reused=False,
-        reason=reason,
-        stage=stage,
-        reason_code=reason_code,
-        diagnostic=diagnostic_detail,
-        recovered=True,
-    )
-
-
 def run_trial(
     *,
     suite: SuiteDefinition,
@@ -471,6 +312,7 @@ def run_trial(
             auth_mode = admission.auth_mode
             trial_id = admission.trial_id
             final_dir = results_root / trial_id
+            recovered_interruption_attempt: int | None = None
             if not admission.legacy_seed:
                 if campaign is None:
                     raise TrialRunnerError(
@@ -489,11 +331,14 @@ def run_trial(
                 )
                 if state == "INTERRUPTED":
                     emit_stage("recovery")
-                    return _recover_interrupted_launch(
-                        admission=admission,
+                    recovered_interruption_attempt = record_interrupted_attempt(
                         results_root=results_root,
                         campaign=campaign,
+                        definition_id=definition,
+                        trial_id=trial_id,
                     )
+                if state == "CORRUPT":
+                    raise TrialRunnerError(f"existing trial bundle is corrupt: {final_dir}")
                 if final_dir.exists() and state != "COMPLETE":
                     raise TrialRunnerError(
                         "result exists without a matching launch claim"
@@ -555,6 +400,15 @@ def run_trial(
                 {**agent_prepare.payload, "auth_mode": auth_mode},
             )
             emit("oracle.health", oracle_health.payload)
+            if recovered_interruption_attempt is not None:
+                emit(
+                    "trial.recovered_interruption",
+                    {
+                        "definition_id": definition,
+                        "attempt": recovered_interruption_attempt,
+                        "reason_code": "interrupted-launch",
+                    },
+                )
 
             agent_observation = Observation(
                 {
@@ -575,6 +429,7 @@ def run_trial(
             reason_code: str | None = None
             diagnostic_detail: str | None = None
             agent_exception_traceback: str | None = None
+            launch_attempt: int | None = None
             status, reason = admission.initial_outcome()
             if status is not None:
                 stage = "admission"
@@ -584,11 +439,17 @@ def run_trial(
 
             if status is None:
                 if campaign is not None:
-                    claim_launch(
+                    launch_attempt = claim_launch(
                         results_root=results_root,
                         campaign=campaign,
                         definition_id=definition,
                         trial_id=trial_id,
+                    )
+                    event_path = start_attempt_events(
+                        results_root,
+                        definition,
+                        launch_attempt,
+                        event_path.read_bytes(),
                     )
                 emit(
                     "agent.started",
@@ -597,6 +458,11 @@ def run_trial(
                             agent_prepare.payload.get("mcp_exposure") is not None
                         ),
                         "mode": task["mode"],
+                        **(
+                            {"attempt": launch_attempt}
+                            if launch_attempt is not None
+                            else {}
+                        ),
                     },
                 )
                 emit_stage("agent-execution")
@@ -863,6 +729,11 @@ def run_trial(
                 agent_trace=agent_observation.raw,
                 receipt=receipt,
             )
+            if launch_attempt is not None:
+                try:
+                    retire_completed_events(results_root, definition, launch_attempt)
+                except OSError:
+                    pass  # The verified bundle already contains the sealed stream.
             return TrialRunResult(
                 trial_id=trial_id,
                 definition_id=definition,
@@ -873,7 +744,7 @@ def run_trial(
                 stage=stage,
                 reason_code=reason_code,
                 diagnostic=diagnostic_detail,
-                recovered=False,
+                recovered=recovered_interruption_attempt is not None,
             )
     except (TrialAdmissionError, CampaignAuthorityError) as exc:
         raise TrialRunnerError(str(exc)) from exc

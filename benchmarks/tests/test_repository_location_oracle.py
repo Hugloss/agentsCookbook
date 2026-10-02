@@ -109,6 +109,7 @@ class RepositoryLocationOracleTests(unittest.TestCase):
                         "campaign_id": campaign_id,
                         "definition_id": definition_id or "b" * 64,
                         "trial_id": trial_id,
+                        "attempt": 1,
                     }
                 )
             )
@@ -658,6 +659,7 @@ class RepositoryLocationOracleTests(unittest.TestCase):
                         )["campaign_id"],
                         "definition_id": row["definition_id"],
                         "trial_id": "b" * 64,
+                        "attempt": 1,
                     }
                 )
             )
@@ -675,6 +677,7 @@ class RepositoryLocationOracleTests(unittest.TestCase):
                         )["campaign_id"],
                         "definition_id": row["definition_id"],
                         "trial_id": "a" * 64,
+                        "attempt": 1,
                     }
                 )
             )
@@ -687,6 +690,7 @@ class RepositoryLocationOracleTests(unittest.TestCase):
                         )["campaign_id"],
                         "definition_id": "c" * 64,
                         "trial_id": "d" * 64,
+                        "attempt": 1,
                     }
                 )
             )

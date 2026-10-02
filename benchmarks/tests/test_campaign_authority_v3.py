@@ -14,6 +14,8 @@ from benchmarks.harness.campaign_authority import (
     claim_launch,
     launch_state,
     read_campaign,
+    read_interrupted_attempts,
+    record_interrupted_attempt,
 )
 from benchmarks.harness.identity import definition_id, execution_evidence_id
 from benchmarks.harness.suite import SuiteDefinition
@@ -125,7 +127,7 @@ class CampaignAuthorityTests(unittest.TestCase):
                 self.assertEqual(len(seen), 8)
                 self.assertEqual(audited, campaign)
                 self.assertEqual(
-                    campaign["contract"], "benchmark-campaign-authority.v2"
+                    campaign["contract"], "benchmark-campaign-authority.v3"
                 )
                 self.assertNotEqual(
                     campaign["task_conditions"]["task-a"]["bare"]["agent"][
@@ -139,11 +141,14 @@ class CampaignAuthorityTests(unittest.TestCase):
                 self.assertEqual(admit_campaign(**options), campaign)
                 with self.assertRaisesRegex(CampaignAuthorityError, "selection"):
                     admit_campaign(**{**options, "rows": rows[:1]})
-                claim_launch(
-                    results_root=root / "results",
-                    campaign=campaign,
-                    definition_id=rows[0]["definition_id"],
-                    trial_id="a" * 64,
+                self.assertEqual(
+                    claim_launch(
+                        results_root=root / "results",
+                        campaign=campaign,
+                        definition_id=rows[0]["definition_id"],
+                        trial_id="a" * 64,
+                    ),
+                    1,
                 )
                 self.assertEqual(
                     launch_state(
@@ -161,6 +166,41 @@ class CampaignAuthorityTests(unittest.TestCase):
                         definition_id=rows[0]["definition_id"],
                         trial_id="a" * 64,
                     )
+                self.assertEqual(
+                    record_interrupted_attempt(
+                        results_root=root / "results",
+                        campaign=campaign,
+                        definition_id=rows[0]["definition_id"],
+                        trial_id="a" * 64,
+                    ),
+                    1,
+                )
+                self.assertEqual(
+                    launch_state(
+                        results_root=root / "results",
+                        campaign=campaign,
+                        definition_id=rows[0]["definition_id"],
+                        trial_id="a" * 64,
+                    ),
+                    "UNCLAIMED",
+                )
+                attempts = read_interrupted_attempts(
+                    root / "results",
+                    campaign["campaign_id"],
+                )
+                self.assertEqual(
+                    attempts[rows[0]["definition_id"]][0]["attempt"],
+                    1,
+                )
+                self.assertEqual(
+                    claim_launch(
+                        results_root=root / "results",
+                        campaign=campaign,
+                        definition_id=rows[0]["definition_id"],
+                        trial_id="a" * 64,
+                    ),
+                    2,
+                )
 
             def drifted(admission):
                 value = _fake_condition_authority(admission)

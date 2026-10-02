@@ -13,6 +13,7 @@ from unittest import mock
 
 from benchmarks.__main__ import main
 from benchmarks.harness.runner import TrialRunResult, TrialRunnerError
+from benchmarks.harness.run_store import SavedRun
 from benchmarks.harness.selection import select_definitions
 from benchmarks.harness.suite import load_suite
 
@@ -22,6 +23,23 @@ ENV_EXAMPLE = ROOT / ".env.example"
 
 
 class BenchmarkMakeEntrypointTests(unittest.TestCase):
+    def test_local_campaign_example_is_durable_and_ignored(self) -> None:
+        env_example = ENV_EXAMPLE.read_text(encoding="utf-8")
+        gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8-sig")
+        self.assertIn(
+            "BENCHMARK_CAMPAIGN_ROOT=.benchmark-runs/heldout-v1",
+            env_example,
+        )
+        self.assertIn(
+            "BENCHMARK_SCORE_OUTPUT_PATH=heldout-report.json",
+            env_example,
+        )
+        self.assertIn(".benchmark-runs/", gitignore)
+        self.assertNotIn(
+            "BENCHMARK_CAMPAIGN_ROOT=/tmp/agentscookbook-heldout-v1",
+            env_example,
+        )
+
     def test_make_delegates_configuration_to_cli(self) -> None:
         makefile = MAKEFILE.read_text(encoding="utf-8")
         self.assertNotIn("-include .env", makefile)
@@ -29,7 +47,8 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         for target, command in (
             ("benchmark-check", "check"),
             ("benchmark-check-all", "preflight"),
-            ("benchmark", "run"),
+            ("benchmark-new", "prepare --new"),
+            ("benchmark-resume", "run --resume"),
             ("benchmark-status", "status"),
             ("benchmark-report", "report"),
             ("benchmark-score", "score"),
@@ -48,7 +67,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         )
         self.assertIn("benchmark-qualify-localization:", makefile)
         self.assertIn(
-            "mktemp -d /tmp/agentscookbook-heldout-v1-localization-qualification.XXXXXX",
+            "mktemp -d .benchmark-runs/heldout-v1/qualification.XXXXXX",
             makefile,
         )
         self.assertIn('--root "$$qualification_root" --require-qualified', makefile)
@@ -67,7 +86,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 encoding="utf-8",
             )
             result = subprocess.run(
-                ("make", "-n", "-f", str(MAKEFILE), "benchmark"),
+                ("make", "-n", "-f", str(MAKEFILE), "benchmark-resume"),
                 cwd=root,
                 text=True,
                 capture_output=True,
@@ -84,7 +103,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 SystemExit, "benchmark env file does not exist"
             ):
-                main(["run", "--env-file", str(file)])
+                main(["run", "--resume", "--env-file", str(file)])
             self.assertEqual(list(Path(tmp).iterdir()), [])
 
     def test_status_can_require_qualified_campaign(self) -> None:
@@ -147,6 +166,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             stderr = io.StringIO()
             with (
                 mock.patch("benchmarks.__main__._resolve_config", return_value=config),
+                mock.patch("benchmarks.__main__.select_saved_run", return_value=SavedRun("000001", root)),
                 mock.patch("benchmarks.__main__.admit_campaign", return_value={"campaign_id": "c" * 64}),
                 mock.patch("benchmarks.__main__.campaign_status", side_effect=[initial, final]),
                 mock.patch("benchmarks.__main__.run_trial", side_effect=fake_run),
@@ -154,7 +174,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 redirect_stderr(stderr),
             ):
                 exit_code = main([
-                    "run", "--env-file", str(root / "unused.env"),
+                    "run", "--resume", "--env-file", str(root / "unused.env"),
                     "--suite", str(suite_path), "--root", str(root),
                     "--harness-root", str(ROOT), "--task", "locate-prefix-path-enumerator",
                     "--agent", "opencode-native", "--condition", "hashmarks-opencode-native",
@@ -189,6 +209,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             stderr = io.StringIO()
             with (
                 mock.patch("benchmarks.__main__._resolve_config", return_value=config),
+                mock.patch("benchmarks.__main__.select_saved_run", return_value=SavedRun("000001", root)),
                 mock.patch("benchmarks.__main__.admit_campaign", return_value={"campaign_id": "c" * 64}),
                 mock.patch("benchmarks.__main__.campaign_status", side_effect=[status, status]),
                 mock.patch("benchmarks.__main__.run_trial", side_effect=TrialRunnerError("launch claim changed")),
@@ -196,7 +217,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 redirect_stderr(stderr),
             ):
                 exit_code = main([
-                    "run", "--env-file", str(root / "unused.env"),
+                    "run", "--resume", "--env-file", str(root / "unused.env"),
                     "--suite", str(suite_path), "--root", str(root),
                     "--harness-root", str(ROOT), "--task", "locate-prefix-path-enumerator",
                     "--agent", "opencode-native", "--condition", "hashmarks-opencode-native",
@@ -242,4 +263,4 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(SystemExit, "BENCHMARK_AGENT"):
-                main(["run", "--env-file", str(file), "--agent", "codex-native"])
+                main(["run", "--resume", "--env-file", str(file), "--agent", "codex-native"])

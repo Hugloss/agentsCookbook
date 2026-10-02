@@ -2765,11 +2765,28 @@ class PilotExecutionTests(unittest.TestCase):
                     results_root=root / "results",
                 )
 
-    def test_interrupted_launch_is_sealed_incomplete_without_retry(self) -> None:
+    def test_interrupted_launch_is_recorded_then_retried_explicitly(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workspace = root / "workspace"
             workspace.mkdir()
+            agent = mock.Mock()
+            agent.run.return_value = Observation(
+                {
+                    "terminal_event": {"type": "turn.completed"},
+                    "terminal_complete": True,
+                    "final_message": '{"ok":true}',
+                    "jsonl_parse_errors": [],
+                    "process": {
+                        "executable_missing": False,
+                        "timed_out": False,
+                        "stdout_truncated": False,
+                        "stderr_truncated": False,
+                    },
+                },
+                '{"type":"turn.completed"}\n',
+                {},
+            )
             admission = SimpleNamespace(
                 trial_id="a" * 64,
                 definition_id="b" * 64,
@@ -2779,6 +2796,7 @@ class PilotExecutionTests(unittest.TestCase):
                 trial_index=0,
                 task={
                     "id": "task",
+                    "repository": {"path": "."},
                     "prompt": "find owner",
                     "mode": "read_only",
                     "budgets": {"timeout_seconds": 1},
@@ -2788,10 +2806,10 @@ class PilotExecutionTests(unittest.TestCase):
                     },
                 },
                 expanded_condition={"id": "condition"},
-                admitted_state={"files": []},
+                admitted_state={"files": {}},
                 mutation=Observation({}, "", {}),
                 subject=FakeSubject(),
-                agent=mock.Mock(),
+                agent=agent,
                 oracle=FakeOracle(),
                 auth_mode="not-applicable",
                 mutation_authority=None,
@@ -2811,13 +2829,37 @@ class PilotExecutionTests(unittest.TestCase):
                     "",
                     {},
                 ),
+                generated_globs=lambda: (),
+                post_change=lambda changed_paths: Observation(
+                    {"changed_paths": list(changed_paths)},
+                    "",
+                    {},
+                ),
+                initial_outcome=lambda: (None, None),
             )
             stages = []
             with (
-                mock.patch("benchmarks.harness.runner.admit_trial", return_value=nullcontext(admission)),
+                mock.patch(
+                    "benchmarks.harness.runner.admit_trial",
+                    return_value=nullcontext(admission),
+                ),
                 mock.patch("benchmarks.harness.runner.verify_trial_authority"),
-                mock.patch("benchmarks.harness.runner.launch_state", return_value="INTERRUPTED"),
-                mock.patch("benchmarks.harness.runner.claim_launch") as claim,
+                mock.patch(
+                    "benchmarks.harness.runner.launch_state",
+                    return_value="INTERRUPTED",
+                ),
+                mock.patch(
+                    "benchmarks.harness.runner.record_interrupted_attempt",
+                    return_value=1,
+                ) as interrupted,
+                mock.patch(
+                    "benchmarks.harness.runner.claim_launch",
+                    return_value=2,
+                ) as claim,
+                mock.patch(
+                    "benchmarks.harness.runner.snapshot",
+                    return_value={"files": {}},
+                ),
             ):
                 result = run_trial(
                     suite=admission.suite,
@@ -2831,29 +2873,21 @@ class PilotExecutionTests(unittest.TestCase):
                     campaign={"campaign_id": "c" * 64},
                     on_progress=stages.append,
                 )
-            admission.agent.run.assert_not_called()
-            claim.assert_not_called()
-            self.assertEqual(stages, ["admission", "recovery"])
 
-            self.assertEqual(result.status, "INCOMPLETE")
+            interrupted.assert_called_once()
+            claim.assert_called_once()
+            agent.run.assert_called_once()
+            self.assertEqual(stages[0:2], ["admission", "recovery"])
+            self.assertIn("agent-execution", stages)
             self.assertTrue(result.recovered)
             self.assertFalse(result.reused)
-            self.assertEqual(result.stage, "campaign-recovery")
-            self.assertEqual(result.reason_code, "interrupted-launch")
+            self.assertEqual(result.status, "PASS")
             valid, reason = verify_bundle(result.result_dir)
             self.assertTrue(valid, reason)
-            receipt = json.loads(
-                (result.result_dir / "result.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(
-                receipt["diagnostic"]["reason_code"],
-                "interrupted-launch",
-            )
-            self.assertIsNone(receipt["execution"]["agent_answer"])
-            self.assertEqual(
-                receipt["scoring"]["oracle_grade"]["valid"],
-                False,
-            )
+            events = (result.result_dir / "events.jsonl").read_text(encoding="utf-8")
+            self.assertIn('"kind":"trial.recovered_interruption"', events)
+            self.assertIn('"attempt":1', events)
+            self.assertIn('"attempt":2', events)
 
     def test_report_economics_keep_invalid_trial_costs(self) -> None:
         experiment = {
