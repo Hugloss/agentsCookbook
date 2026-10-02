@@ -26,14 +26,18 @@ benchmark-qualify-localization:
 			--task locate-prefix-path-enumerator \
 			--task locate-stale-index-removal \
 			--task locate-directory-pruning \
-			--task locate-mcp-task-evidence; run_status=$$?; \
+			--task locate-mcp-task-evidence \
+			--task locate-repository-content-identity \
+			--task locate-terminal-run-check; run_status=$?; \
 		uv run --no-project python -m benchmarks status --env-file .env \
 			--root "$$qualification_root" --require-qualified \
 			--subject none --subject hashmarks --subject enola \
 			--task locate-prefix-path-enumerator \
 			--task locate-stale-index-removal \
 			--task locate-directory-pruning \
-			--task locate-mcp-task-evidence; status_status=$$?; \
+			--task locate-mcp-task-evidence \
+			--task locate-repository-content-identity \
+			--task locate-terminal-run-check; status_status=$?; \
 		test $$run_status -eq 0 && test $$status_status -eq 0
 
 benchmark-evidence-validate:
