@@ -6,6 +6,8 @@ This directory owns reusable, product-neutral experiments for agents, tools, evi
 
 The harness is the experiment authority. A product under test never grades itself.
 
+Repository-location scoring keeps semantic correctness and answer-format compliance separate. One unambiguous JSON object, whether bare, in one JSON fence, or in one JSON fence surrounded by prose, may be semantically gradeable; only the bare exact object is format-compliant. Multiple fences, duplicate keys, malformed JSON, or prose with only inline JSON remain ungradeable. Any change to this interpretation advances the frozen experiment/scoring authority before a new campaign.
+
 A benchmark suite freezes repository commit and tree identity, task, mutation digest, oracle identity, conditions, budgets, and scoring before campaign execution. Observed outcomes are preserved as `PASS`, `FAIL`, `INCOMPLETE`, `INVALID`, `CONTAMINATED`, or `NO_QUALIFYING_DEFECT`; infrastructure failures are never silently converted into product failures.
 
 The optional [multidomain v2 suite](suites/repository-intelligence/multidomain-v2/README.md)
