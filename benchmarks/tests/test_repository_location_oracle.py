@@ -327,7 +327,7 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             self.assertEqual(grade.payload["semantic_status"], "INCORRECT")
             self.assertTrue(grade.payload["format_compliant"])
 
-    def test_prose_around_json_is_rejected(self) -> None:
+    def test_prose_around_inline_json_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             context = self._context(Path(tmp))
             grade = self._grade(
@@ -340,6 +340,47 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             self.assertEqual(grade.payload["semantic_status"], "UNSCORABLE")
             self.assertFalse(grade.payload["format_compliant"])
             self.assertIn("actual_text", grade.payload)
+
+    def test_one_json_fence_inside_prose_preserves_semantics_not_format(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            context = self._context(Path(tmp))
+            grade = self._grade(
+                context,
+                "I have completed the objective.\n\n"
+                "```json\n"
+                '{"path":"hashmarks/codemap/repository_index_store.py",'
+                '"symbol":"paths_under"}\n'
+                "```\n"
+                "Done.",
+            )
+            self.assertTrue(grade.payload["passed"])
+            self.assertTrue(grade.payload["semantic_success"])
+            self.assertTrue(grade.payload["semantic_gradeable"])
+            self.assertEqual(grade.payload["semantic_status"], "CORRECT")
+            self.assertFalse(grade.payload["format_compliant"])
+            self.assertEqual(
+                grade.payload["answer_shape"],
+                "PROSE_WITH_JSON_FENCE",
+            )
+            self.assertIn(
+                "embedded-json-fence-extracted",
+                grade.payload["normalizations"],
+            )
+
+    def test_multiple_json_fences_remain_ungradeable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            context = self._context(Path(tmp))
+            grade = self._grade(
+                context,
+                "First:\n```json\n"
+                '{"path":"hashmarks/codemap/repository_index_store.py",'
+                '"symbol":"paths_under"}\n```\n'
+                "Second:\n```json\n{}\n```",
+            )
+            self.assertFalse(grade.payload["semantic_success"])
+            self.assertFalse(grade.payload["semantic_gradeable"])
+            self.assertFalse(grade.payload["format_compliant"])
+            self.assertIn("multiple code fences", grade.payload["reason"])
 
     def test_malformed_json_fence_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

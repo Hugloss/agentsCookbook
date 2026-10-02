@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,7 +18,7 @@ def _text(payload: bytes) -> str:
     return payload.decode("utf-8", errors="replace")
 
 
-REPOSITORY_LOCATION_NORMALIZATION_POLICY = "repository-location-normalization.v2"
+REPOSITORY_LOCATION_NORMALIZATION_POLICY = "repository-location-normalization.v3"
 REPOSITORY_LOCATION_SCORING_POLICY = "repository-location-score.v2"
 
 
@@ -125,20 +126,37 @@ def observe_repository_location(
     payload = stripped
     observed["answer_shape"] = "BARE_JSON"
     observed["format_compliant"] = True
-    if stripped.startswith("```"):
-        observed["answer_shape"] = "JSON_FENCE"
-        observed["format_compliant"] = False
-        lines = stripped.splitlines()
-        if len(lines) < 3 or lines[0] != "```json" or lines[-1] != "```":
-            observed["reason"] = "answer is not one bare JSON object or one json fence"
-            observed["actual_text"] = final_message
-            return observed
-        payload = "\n".join(lines[1:-1]).strip()
-        observed["normalizations"].append("json-fence-unwrapped")
-        if "```" in payload:
+
+    fence_pattern = re.compile(
+        r"```json[ \t]*\r?\n(?P<payload>.*?)\r?\n```",
+        re.DOTALL,
+    )
+    fence_matches = list(fence_pattern.finditer(stripped))
+    fence_tokens = stripped.count("```")
+    if fence_matches:
+        if len(fence_matches) != 1 or fence_tokens != 2:
+            observed["answer_shape"] = "PROSE_OR_MALFORMED"
+            observed["format_compliant"] = False
             observed["reason"] = "answer contains nested or multiple code fences"
             observed["actual_text"] = final_message
             return observed
+        match = fence_matches[0]
+        prefix = stripped[: match.start()].strip()
+        suffix = stripped[match.end() :].strip()
+        payload = match.group("payload").strip()
+        observed["format_compliant"] = False
+        if prefix or suffix:
+            observed["answer_shape"] = "PROSE_WITH_JSON_FENCE"
+            observed["normalizations"].append("embedded-json-fence-extracted")
+        else:
+            observed["answer_shape"] = "JSON_FENCE"
+            observed["normalizations"].append("json-fence-unwrapped")
+    elif stripped.startswith("```") or "```" in stripped:
+        observed["answer_shape"] = "PROSE_OR_MALFORMED"
+        observed["format_compliant"] = False
+        observed["reason"] = "answer is not one bare JSON object or one json fence"
+        observed["actual_text"] = final_message
+        return observed
 
     try:
         actual = json.loads(payload, object_pairs_hook=_unique_json_object)
