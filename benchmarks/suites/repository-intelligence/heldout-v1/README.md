@@ -138,6 +138,7 @@ BENCHMARK_AGENT=opencode-native
 If `BENCHMARK_AGENT` is absent or empty, selected-agent targets stop before any preflight or agent run.
 
 ```sh
+# Only runs if committed review policy says more evidence is required.
 make benchmark-oracle-review
 make benchmark-oracle-review-check
 make benchmark-check
@@ -149,7 +150,7 @@ make benchmark-report
 make benchmark-score
 ```
 
-- `benchmark-oracle-review` prints only tasks that still need review. Most tasks qualify after one independent source audit; evidence-escalated tasks include the reason they require another reviewer. It never writes an approval or runs a benchmark model.
+- `benchmark-oracle-review` executes only reviews still required by the committed review-depth policy. It materializes the pinned target repository, invokes the installed read-only `plan-fact-auditor` through native OpenCode, withholds prior review rationale, and records the task-bound decision in `qualification/oracle-reviews.json`. Most tasks qualify after one independent source audit; evidence-escalated tasks alone incur the extra reviewer cost. It never runs benchmark trial models.
 - `benchmark-oracle-review-check` is the fail-closed proof gate. If reviews are incomplete it prints the next Make command instead of leaving the user at a dead end.
 - `benchmark-check` tests all six distinct agent/subject pairs once: each agent with bare tools, Hashmarks, and Enola. It uses one disposable smoke workspace, invokes no model, creates no trial, and exits.
 - `benchmark-campaign-audit` observes every selected task/condition and checks cross-task runtime identity and paired input equivalence before inference. It publishes no campaign authority or launch claim. It reports `ready_for_campaign: false` and exits 2 while independent oracle reviews are pending; it cannot waive the run gate. Run it after changing the suite, runtime, or model selection and before a costly campaign.
