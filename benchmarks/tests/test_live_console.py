@@ -194,6 +194,10 @@ class LiveTaskMatrixTests(unittest.TestCase):
         )
         self.assertIn("complete", rendered)
         self.assertIn("unknown", rendered)
+        self.assertIn("Subject use by replicate", rendered)
+        self.assertIn("6201", rendered)
+        self.assertIn("used find,task_evidence calls=1 [complete]", rendered)
+        self.assertIn("not-used calls=0 [complete]", rendered)
 
     def test_campaign_admission_renderer_exposes_model_free_step_progress(self) -> None:
         line = render_campaign_admission(
@@ -322,6 +326,8 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn("Stage: agent-execution", rendered)
         self.assertIn("Reason code: agent-terminal-failed", rendered)
         self.assertIn("Evidence: /tmp/evidence", rendered)
+        self.assertIn("Semantic outcome: INCOMPLETE", rendered)
+        self.assertIn("Format compliant: unknown", rendered)
         self.assertIn("--- diagnostic ---", rendered)
         self.assertIn("ValueError: boom", rendered)
 
@@ -358,6 +364,8 @@ class LiveTaskMatrixTests(unittest.TestCase):
             receipt=receipt,
         )
         assert rendered is not None
+        self.assertIn("Semantic outcome: FAIL", rendered)
+        self.assertIn("Format compliant: unknown", rendered)
         self.assertIn("Subject tool invoked: yes", rendered)
         self.assertIn("Subject MCP calls observed: 2", rendered)
         self.assertIn("Subject tools observed: find,task_evidence", rendered)
