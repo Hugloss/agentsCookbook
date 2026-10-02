@@ -293,6 +293,44 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn("--- diagnostic ---", rendered)
         self.assertIn("ValueError: boom", rendered)
 
+    def test_assisted_failure_shows_subject_tool_attribution(self) -> None:
+        suite, rows = self._prefix_opencode_rows()
+        row = next(
+            item
+            for item in rows
+            if item["condition_id"] == "hashmarks-opencode-native"
+        )
+        result = TrialRunResult(
+            trial_id="a" * 64,
+            definition_id=row["definition_id"],
+            status="FAIL",
+            result_dir=Path("/tmp/evidence"),
+            reused=False,
+            reason="repository location differs from frozen oracle",
+            stage="oracle-grading",
+            reason_code="oracle-mismatch",
+        )
+        receipt = self._receipt(
+            suite,
+            row,
+            "FAIL",
+            invoked=True,
+            subject_mcp_calls=2,
+            tool_names=["find", "task_evidence"],
+            tool_observability="complete",
+        )
+        rendered = render_trial_failure(
+            row=row,
+            subject="hashmarks",
+            result=result,
+            receipt=receipt,
+        )
+        assert rendered is not None
+        self.assertIn("Subject tool invoked: yes", rendered)
+        self.assertIn("Subject MCP calls observed: 2", rendered)
+        self.assertIn("Subject tools observed: find,task_evidence", rendered)
+        self.assertIn("Subject tool observation: complete", rendered)
+
     def test_recovered_failure_explicitly_says_model_was_not_retried(self) -> None:
         _, rows = self._prefix_opencode_rows()
         result = TrialRunResult(
