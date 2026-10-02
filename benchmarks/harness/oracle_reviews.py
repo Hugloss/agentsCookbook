@@ -61,6 +61,7 @@ def validate_oracle_reviews(
     if not isinstance(rows, dict):
         raise OracleReviewError("oracle review task map is missing")
     pending = []
+    escalated = []
     first_reviewed = 0
     for task_id in suite.experiment["tasks"]:
         task = suite.tasks[task_id]
@@ -83,6 +84,25 @@ def validate_oracle_reviews(
             or not row["evidence"].strip()
         ):
             raise OracleReviewError(f"oracle review rationale missing for {task_id}")
+        requirement = row.get("review_requirement")
+        if not isinstance(requirement, dict):
+            raise OracleReviewError(f"oracle review requirement missing for {task_id}")
+        minimum_reviews = requirement.get("minimum_independent_reviews")
+        escalation_reason = requirement.get("escalation_reason")
+        if minimum_reviews not in {1, 2}:
+            raise OracleReviewError(
+                f"invalid oracle review requirement for {task_id}"
+            )
+        if minimum_reviews == 2:
+            if not isinstance(escalation_reason, str) or not escalation_reason.strip():
+                raise OracleReviewError(
+                    f"escalated oracle review reason missing for {task_id}"
+                )
+        elif escalation_reason is not None:
+            raise OracleReviewError(
+                f"non-escalated oracle review cannot carry escalation reason for {task_id}"
+            )
+
         reviews = row.get("reviews")
         if not isinstance(reviews, list):
             raise OracleReviewError(f"oracle reviews malformed for {task_id}")
@@ -103,16 +123,26 @@ def validate_oracle_reviews(
             reviewers.add(review["reviewer"])
         if reviewers:
             first_reviewed += 1
-        if len(reviewers) < 2 or any(
+        if minimum_reviews == 2:
+            escalated.append(task_id)
+        if len(reviewers) < minimum_reviews or any(
             review["decision"] != "unique" for review in reviews
         ):
             pending.append(task_id)
     approved = len(suite.experiment["tasks"]) - len(pending)
     if require_complete and pending:
+        detail = (
+            f"{len(pending)} task(s) still need independent review or resolution."
+        )
+        if pending == escalated:
+            detail = (
+                f"{len(pending)} evidence-escalated task(s) still need the required "
+                "additional independent review."
+            )
         raise OracleReviewError(
             "independent oracle review incomplete: "
             f"{approved}/{len(suite.experiment['tasks'])} tasks approved; "
-            f"{len(pending)} still need a second independent review.\n"
+            f"{detail}\n"
             "Next: make benchmark-oracle-review\n"
             "Then: make benchmark-oracle-review-check"
         )
@@ -121,6 +151,7 @@ def validate_oracle_reviews(
         "first_reviewed_tasks": first_reviewed,
         "approved_tasks": approved,
         "pending_tasks": pending,
+        "escalated_tasks": escalated,
         "complete": not pending,
     }
 
@@ -141,12 +172,15 @@ def oracle_review_guide(suite: SuiteDefinition) -> str:
 
     evidence = json.loads(path.read_text(encoding="utf-8"))
     rows = evidence["tasks"]
+    escalated = set(result.get("escalated_tasks", []))
     lines = [
         f"Oracle review BLOCKED: {approved}/{total} tasks approved; "
-        f"{len(pending)} need another independent review.",
+        f"{len(pending)} task(s) still require review.",
         "",
+        "One independent source review is the default.",
+        "A second review is required only for evidence-escalated tasks.",
         "This command does not self-approve benchmark truth.",
-        "Give the packet below to a distinct independent reviewer.",
+        "Give only the pending packet below to a distinct independent reviewer.",
         f"Record accepted decisions in: {path.relative_to(suite.root)}",
         "",
     ]
@@ -159,13 +193,24 @@ def oracle_review_guide(suite: SuiteDefinition) -> str:
             if isinstance(owner, dict)
             else "repair oracle / no repository-location owner"
         )
+        requirement = row["review_requirement"]
         lines.extend(
             [
                 f"- {task_id}",
                 f"  repository: {task['repository']['url']}",
                 f"  commit: {task['repository']['commit']}",
                 f"  expected owner: {owner_text}",
+                f"  required independent reviews: "
+                f"{requirement['minimum_independent_reviews']}",
                 f"  existing independent reviews: {len(row.get('reviews', []))}",
+                *(
+                    [
+                        f"  escalation reason: "
+                        f"{requirement['escalation_reason']}"
+                    ]
+                    if task_id in escalated
+                    else []
+                ),
             ]
         )
     lines.extend(
@@ -176,7 +221,7 @@ def oracle_review_guide(suite: SuiteDefinition) -> str:
             "If any task has more than one defensible owner, mark it ambiguous "
             "and repair or retire the task instead of weakening grading.",
             "",
-            "After recording the second independent reviews:",
+            "After recording the required independent review(s):",
             "  make benchmark-oracle-review-check",
             "  make benchmark",
         ]
