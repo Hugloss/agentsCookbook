@@ -373,6 +373,7 @@ def render_campaign_admission(event: dict[str, Any], *, elapsed: float) -> str:
                     ("snapshot", "snapshot"),
                     ("participant_prepare", "prepare"),
                     ("oracle_health", "oracle"),
+                    ("condition_authority", "authority"),
                     ("total", "total"),
                 )
                 if isinstance(timings.get(key), (int, float))
@@ -385,6 +386,18 @@ def render_campaign_admission(event: dict[str, Any], *, elapsed: float) -> str:
         return (
             f"ADMISSION [{index}/{total}] {task_id} / {condition_id} | "
             f"checking authority | admission elapsed {_duration(elapsed)}"
+        )
+    if stage == "campaign-harness-authority":
+        duration_ms = event.get("duration_ms")
+        detail = (
+            f" | {int(duration_ms)}ms"
+            if isinstance(duration_ms, (int, float))
+            else ""
+        )
+        return (
+            "ADMISSION harness authority | "
+            f"{event.get('status') or 'checking'}{detail} | "
+            f"admission elapsed {_duration(elapsed)}"
         )
     if stage == "oracle-review":
         return (
