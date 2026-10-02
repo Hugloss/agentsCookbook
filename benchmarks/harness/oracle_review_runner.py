@@ -133,12 +133,12 @@ Decision rules:
 
 For repository-location tasks, observed_owner must exactly name the source
 location you actually inspected. Explain the source evidence briefly. End your
-response with exactly one line:
+response with exactly one line. Do not wrap that line in Markdown:
 {DECISION_PREFIX}{rendered_decision}
 """
 
 def _bounded_answer_preview(value: str, *, limit: int = 1200) -> str:
-    rendered = value.strip().replace("\\x00", "")
+    rendered = value.strip().replace("\x00", "")
     if len(rendered) <= limit:
         return rendered
     return rendered[:limit] + "…"
@@ -164,7 +164,7 @@ def _decision_payloads(stdout: str) -> list[str]:
         candidates.append(stripped)
 
     fenced = re.findall(
-        r"```(?:json)?\\s*\\n(.*?)\\n```",
+        r"```(?:json)?\s*\n(.*?)\n```",
         stdout,
         flags=re.IGNORECASE | re.DOTALL,
     )
