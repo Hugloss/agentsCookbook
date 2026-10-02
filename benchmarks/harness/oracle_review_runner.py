@@ -22,6 +22,9 @@ from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 REVIEWER_AGENT = "plan"
 REVIEWER_ID = "opencode-plan-independent-oracle-review"
 DECISION_PREFIX = "BENCHMARK_ORACLE_DECISION="
+_RUNTIME_SCRIPT = (
+    Path(__file__).resolve().parents[2] / "scripts" / "opencode-runtime.js"
+)
 
 
 def _verify_expected_owner(
