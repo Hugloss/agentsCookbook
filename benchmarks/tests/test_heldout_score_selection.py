@@ -51,6 +51,8 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
                         },
                         "conditions": {},
                         "paired_assistance": [],
+                        "paired_assistance_summary": [],
+                        "stability": [],
                         "agent_profiles": {},
                         "cross_agent_observations": [],
                     }
@@ -84,7 +86,7 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
                 payload = json.loads(output.read_text(encoding="utf-8"))
                 self.assertEqual(
                     payload["schema"],
-                    "agents-cookbook-heldout-observer-outcomes.v4",
+                    "agents-cookbook-heldout-observer-outcomes.v5",
                 )
                 self.assertEqual(payload["selection"], {"agents": sorted(agents)})
                 self.assertEqual(payload["projection_mode"], "live")
@@ -128,6 +130,8 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
                     "campaign_qualification": {"status": "QUALIFIED"},
                     "conditions": {},
                     "paired_assistance": [],
+                    "paired_assistance_summary": [],
+                    "stability": [],
                     "agent_profiles": {},
                     "cross_agent_observations": [],
                 }
