@@ -311,6 +311,38 @@ def _duration(value: float | None) -> str:
     return f"{seconds}s"
 
 
+def render_campaign_admission(event: dict[str, Any], *, elapsed: float) -> str:
+    """Render model-free campaign admission progress without owning authority."""
+    stage = str(event.get("stage") or "unknown")
+    if stage == "condition-authority":
+        index = event.get("index")
+        total = event.get("total")
+        task_id = event.get("task_id")
+        condition_id = event.get("condition_id")
+        return (
+            f"ADMISSION [{index}/{total}] {task_id} / {condition_id} | "
+            f"checking authority | run elapsed {_duration(elapsed)}"
+        )
+    if stage == "oracle-review":
+        return (
+            "ADMISSION oracle review | "
+            f"{event.get('status') or 'checking'} | "
+            f"run elapsed {_duration(elapsed)}"
+        )
+    if stage == "campaign-authority":
+        total = event.get("total")
+        suffix = f" | conditions {total}" if total is not None else ""
+        return (
+            "ADMISSION campaign authority | "
+            f"{event.get('status') or 'checking'}{suffix} | "
+            f"run elapsed {_duration(elapsed)}"
+        )
+    return (
+        f"ADMISSION {stage} | {event.get('status') or 'checking'} | "
+        f"run elapsed {_duration(elapsed)}"
+    )
+
+
 class LiveCampaignProgress:
     """Render bounded human/agent-readable campaign progress and ETA."""
 
