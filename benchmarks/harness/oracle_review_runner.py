@@ -326,12 +326,22 @@ def run_pending_oracle_reviews(
                 destination=workspace,
                 cache_root=cache,
             )
-            prompt = _review_prompt(task_id, task)
-            runtime = _run_review(workspace, prompt)
+            expected_owner = _verify_expected_owner(workspace, task)
+            prompt = _review_prompt(
+                task_id,
+                task,
+                expected_owner=expected_owner,
+            )
+            runtime = _run_review(
+                workspace,
+                prompt,
+                task_id=task_id,
+            )
             decision = _parse_decision(
                 runtime["stdout"],
                 task_id=task_id,
                 task_digest=digest(task),
+                expected_owner=expected_owner,
             )
 
         row["reviews"].append(
