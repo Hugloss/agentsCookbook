@@ -31,9 +31,10 @@
     },
     "locate-mcp-task-evidence": {
       "alternatives": [
-        "CodeMap.task_evidence computes evidence behind the surface but is not the MCP method asked for."
+        "mcp_server.py::task_evidence is the MCP transport registration wrapper; it delegates to HashmarksMcpSurface.task_evidence and does not own bounded consumer semantics.",
+        "CodeMap.task_evidence computes repository evidence behind the surface but is not the consumer-facing semantic MCP surface method asked for."
       ],
-      "evidence": "McpSurface.task_evidence is the consumer-facing MCP method; it validates bounds and returns CodeMap task evidence through _read.",
+      "evidence": "HashmarksMcpSurface.task_evidence in hashmarks/mcp_surface.py validates bounded task, limit, per_role, and token_budget input and returns CodeMap task evidence through _read; hashmarks/mcp_server.py::task_evidence only registers the transport tool and delegates to surface.task_evidence.",
       "owner": {
         "path": "hashmarks/mcp_surface.py",
         "symbol": "task_evidence"
@@ -46,12 +47,12 @@
       "reviews": [
         {
           "decision": "unique",
-          "reason": "McpSurface.task_evidence is the consumer-facing MCP method; it validates bounds and returns CodeMap task evidence through _read.",
+          "reason": "HashmarksMcpSurface.task_evidence owns the bounded consumer-facing semantics; the same-named mcp_server.py function is only the server.tool transport wrapper and delegates directly to surface.task_evidence.",
           "reviewer": "codex-independent-audit-2026-10-02",
-          "task_digest": "88722dfe356c1b119145d0d296de47c43327a396b9abe0df407d77142e68d41f"
+          "task_digest": "4eea2bbefe8f6632e0a1f44c6d96ed70e04287e6c4234a7e08775c612940c0dc"
         }
       ],
-      "task_digest": "88722dfe356c1b119145d0d296de47c43327a396b9abe0df407d77142e68d41f",
+      "task_digest": "4eea2bbefe8f6632e0a1f44c6d96ed70e04287e6c4234a7e08775c612940c0dc",
       "review_requirement": {
         "minimum_independent_reviews": 1,
         "escalation_reason": null
@@ -159,18 +160,18 @@
         {
           "decision": "unique",
           "observed_owner": {
-          "path": "hashmarks/test_shards.py",
-          "symbol": "repository_content_identity"
+            "path": "hashmarks/test_shards.py",
+            "symbol": "repository_content_identity"
           },
           "reason": "repository_content_identity in hashmarks/test_shards.py:305 computes the identity and is used by work_selection_envelope:431 and validate_work_selection_repository_binding:897.",
           "reviewer": "opencode-plan-independent-oracle-review",
           "runtime": {
-          "agent": "plan",
-          "command_identity": "sha256:e5449d9da828831f64403d1791cadd711fb15b038485e452c2ab9891abffbb98",
-          "host": "opencode"
+            "agent": "plan",
+            "command_identity": "sha256:e5449d9da828831f64403d1791cadd711fb15b038485e452c2ab9891abffbb98",
+            "host": "opencode"
           },
           "task_digest": "6e581dd9cca8bcbabf61b872f75e1ca6e3cdecde8298669226f40964b63cf872"
-          }
+        }
       ],
       "task_digest": "6e581dd9cca8bcbabf61b872f75e1ca6e3cdecde8298669226f40964b63cf872",
       "review_requirement": {
