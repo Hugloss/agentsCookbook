@@ -39,6 +39,7 @@ from benchmarks.harness.live_console import (
     LiveCampaignProgress,
     LiveTaskMatrix,
     TrialHeartbeat,
+    render_campaign_admission,
     render_trial_failure,
 )
 from benchmarks.harness.selection import (
@@ -594,6 +595,14 @@ def main(argv: list[str] | None = None) -> int:
                 local_source=args.source,
                 codex_auth=args.codex_auth,
                 source=runtime_source,
+                on_progress=lambda event: print(
+                    render_campaign_admission(
+                        event,
+                        elapsed=time.monotonic() - run_started,
+                    ),
+                    file=sys.stderr,
+                    flush=True,
+                ),
             )
         except (CampaignAuthorityError, OracleReviewError) as exc:
             raise SystemExit(f"campaign admission failed: {exc}") from exc
