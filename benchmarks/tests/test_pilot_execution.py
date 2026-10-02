@@ -2829,6 +2829,12 @@ class PilotExecutionTests(unittest.TestCase):
                     "",
                     {},
                 ),
+                generated_globs=lambda: (),
+                post_change=lambda changed_paths: Observation(
+                    {"changed_paths": list(changed_paths)},
+                    "",
+                    {},
+                ),
                 initial_outcome=lambda: (None, None),
             )
             stages = []
