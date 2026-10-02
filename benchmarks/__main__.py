@@ -578,7 +578,7 @@ def main(argv: list[str] | None = None) -> int:
     campaign = None
     live_matrix = LiveTaskMatrix(suite, rows)
     live_progress = LiveCampaignProgress(suite, rows)
-    campaign_started = time.monotonic()
+    campaign_started_at = time.time()
     conditions = {
         str(condition["id"]): condition
         for condition in suite.experiment["conditions"]
@@ -598,11 +598,24 @@ def main(argv: list[str] | None = None) -> int:
             )
         except (CampaignAuthorityError, OracleReviewError) as exc:
             raise SystemExit(f"campaign admission failed: {exc}") from exc
+        authority_path = paths.results / ".campaign" / "authority.json"
+        try:
+            campaign_started_at = authority_path.stat().st_mtime
+        except OSError:
+            campaign_started_at = time.time()
+    print(
+        f"CAMPAIGN {len(rows)} trials | "
+        f"elapsed {int(max(0, time.time() - campaign_started_at))}s | "
+        "completed receipts will be reused; interrupted launches will be sealed "
+        "INCOMPLETE without retry",
+        file=sys.stderr,
+        flush=True,
+    )
     for row in rows:
         print(
             live_progress.start_line(
                 row,
-                elapsed=time.monotonic() - campaign_started,
+                elapsed=time.time() - campaign_started_at,
             ),
             file=sys.stderr,
             flush=True,
@@ -653,7 +666,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             live_progress.finish_line(
                 result,
-                elapsed=time.monotonic() - campaign_started,
+                elapsed=time.time() - campaign_started_at,
                 trial_seconds=time.monotonic() - trial_started,
             ),
             file=sys.stderr,
