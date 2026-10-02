@@ -335,25 +335,40 @@ def _selected_agent_ids(suite, rows: list[dict[str, object]]) -> list[str]:
     )
 
 
+def _assert_saved_run_agents(
+    saved: SavedRun,
+    agents: list[str] | tuple[str, ...] | set[str],
+) -> dict[str, object]:
+    """Bind resume/scoring to the campaign's frozen agent population."""
+    manifest = read_campaign(saved.root / "results")
+    frozen_agents = sorted(str(value) for value in manifest.get("agents", {}))
+    selected_agents = sorted(set(str(value) for value in agents))
+    if frozen_agents != selected_agents:
+        raise RunStoreError(
+            f"saved run {saved.run_id} agent selection does not match "
+            f"BENCHMARK_AGENT (frozen={frozen_agents}, "
+            f"selected={selected_agents}); use the frozen agent set to resume "
+            "or score, or start a new run"
+        )
+    return manifest
+
+
 def _assert_saved_run_selection(
     saved: SavedRun,
     *,
     suite,
     rows: list[dict[str, object]],
 ) -> dict[str, object]:
-    """Fail before admission when selected agents/tasks differ from the saved run."""
-    manifest = read_campaign(saved.root / "results")
+    """Fail before admission when selected tasks/conditions differ from the run."""
+    selected_agents = _selected_agent_ids(suite, rows)
+    manifest = _assert_saved_run_agents(saved, selected_agents)
     selected = {str(row["definition_id"]) for row in rows}
     frozen = set(manifest["selected_definitions"])
     if frozen != selected:
-        frozen_agents = sorted(str(value) for value in manifest.get("agents", {}))
-        selected_agents = _selected_agent_ids(suite, rows)
         raise RunStoreError(
-            f"saved run {saved.run_id} selection does not match current benchmark "
-            f"selection (frozen agents={frozen_agents}, "
-            f"selected agents={selected_agents}); "
-            "set BENCHMARK_AGENT to the run's frozen agent set or use "
-            "make benchmark-new"
+            f"saved run {saved.run_id} frozen definition selection does not "
+            "match the current benchmark selection; use the same task/subject/"
+            "condition selection to resume, or use make benchmark-new"
         )
     return manifest
 
@@ -497,16 +512,9 @@ def main(argv: list[str] | None = None) -> int:
             )
         try:
             saved = select_saved_run(args.root, args.run_id)
-            manifest = read_campaign(saved.root / "results")
+            _assert_saved_run_agents(saved, args.agent)
         except (RunStoreError, CampaignAuthorityError) as exc:
             raise SystemExit(str(exc)) from exc
-        frozen_agents = set(str(value) for value in manifest.get("agents", {}))
-        selected_agents = set(args.agent)
-        if frozen_agents != selected_agents:
-            raise SystemExit(
-                "benchmark score agent selection does not match saved run: "
-                f"frozen={sorted(frozen_agents)}, selected={sorted(selected_agents)}"
-            )
         if not explicit_score_output:
             if args.output.is_absolute() or len(args.output.parts) != 1:
                 raise SystemExit("BENCHMARK_SCORE_OUTPUT_PATH must be a filename within each saved run")
