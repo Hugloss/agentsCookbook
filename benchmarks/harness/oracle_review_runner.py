@@ -18,8 +18,8 @@ from benchmarks.harness.source import materialize_repository
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
-REVIEWER_AGENT = "plan-fact-auditor"
-REVIEWER_ID = "opencode-plan-fact-auditor-independent"
+REVIEWER_AGENT = "plan"
+REVIEWER_ID = "opencode-plan-independent-oracle-review"
 DECISION_PREFIX = "BENCHMARK_ORACLE_DECISION="
 
 
@@ -108,8 +108,7 @@ def _run_review(workspace: Path, prompt: str) -> dict[str, str]:
     )
     if result.executable_missing:
         raise OracleReviewError(
-            "OpenCode is required for independent oracle review; install it and "
-            "run scripts/link-opencode-local.sh"
+            "OpenCode is required for independent oracle review; install it first"
         )
     if (
         result.timed_out
