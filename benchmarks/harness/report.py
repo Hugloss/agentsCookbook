@@ -373,6 +373,8 @@ def _assistance_transition(
     baseline: dict[str, Any],
     assisted: dict[str, Any],
 ) -> str | None:
+    if not _semantic_gradeable(baseline) or not _semantic_gradeable(assisted):
+        return None
     left = _semantic_success(baseline)
     right = _semantic_success(assisted)
     if left is None or right is None:
