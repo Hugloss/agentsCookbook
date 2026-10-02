@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -20,6 +20,7 @@ from benchmarks.harness.campaign_authority import (
     CampaignAuthorityError,
     claim_launch,
     launch_state,
+    read_campaign,
     read_interrupted_attempts,
     record_interrupted_attempt,
     start_attempt_events,
@@ -53,6 +54,65 @@ def _campaign(results: Path, definitions: list[str]) -> dict:
 
 
 class SavedRunRecoveryTests(unittest.TestCase):
+    def test_admission_progress_reaches_prepare_new_run_and_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            suite = Path("benchmarks/suites/repository-intelligence/heldout-v1")
+            config = SimpleNamespace(
+                runtime_environment=lambda: {},
+                require=lambda *_keys: None,
+            )
+
+            def admit_with_progress(**kwargs):
+                progress = kwargs["on_progress"]
+                progress({"stage": "oracle-review", "status": "checking"})
+                existing = (kwargs["results_root"] / ".campaign/authority.json").exists()
+                progress({
+                    "stage": "campaign-authority",
+                    "status": "reused" if existing else "published",
+                })
+                if existing:
+                    return read_campaign(kwargs["results_root"])
+                return _campaign(
+                    kwargs["results_root"],
+                    [str(row["definition_id"]) for row in kwargs["rows"]],
+                )
+
+            common = [
+                "--suite", str(suite),
+                "--root", str(root),
+                "--env-file", str(root / "unused.env"),
+                "--agent", "opencode-native",
+            ]
+            with (
+                mock.patch("benchmarks.__main__._resolve_config", return_value=config),
+                mock.patch("benchmarks.__main__.admit_campaign", side_effect=admit_with_progress) as admit,
+                mock.patch("benchmarks.__main__._execute_run", return_value=0) as execute,
+            ):
+                for command in (
+                    ["prepare", "--new", *common],
+                    ["run", "--new", *common],
+                    ["run", "--resume", "--run-id", "000002", *common],
+                ):
+                    with self.subTest(command=command[:2]):
+                        stdout, stderr = io.StringIO(), io.StringIO()
+                        with redirect_stdout(stdout), redirect_stderr(stderr):
+                            self.assertEqual(main(command), 0)
+                        self.assertIn("ADMISSION oracle review | checking", stderr.getvalue())
+                        expected_status = "reused" if "--resume" in command else "published"
+                        self.assertIn(
+                            f"ADMISSION campaign authority | {expected_status}",
+                            stderr.getvalue(),
+                        )
+                        self.assertIn("admission elapsed", stderr.getvalue())
+                        if command[0] == "prepare":
+                            self.assertEqual(json.loads(stdout.getvalue())["run_id"], "000001")
+                        else:
+                            self.assertEqual(stdout.getvalue(), "")
+
+            self.assertEqual(admit.call_count, 3)
+            self.assertEqual(execute.call_count, 2)
+
     def test_new_runs_are_numbered_and_latest_never_overwrites_history(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

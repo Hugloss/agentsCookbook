@@ -1538,6 +1538,9 @@ class PilotExecutionTests(unittest.TestCase):
         )
         self.assertEqual(metrics["mcp_calls"], 1)
         self.assertEqual(metrics["subject_mcp_calls"], 1)
+        self.assertEqual(metrics["subject_mcp_calls_observed"], 1)
+        self.assertEqual(metrics["subject_tool_names"], ["find"])
+        self.assertEqual(metrics["subject_tool_observability"], "complete")
         self.assertTrue(metrics["subject_tool_invoked"])
         self.assertEqual(metrics["command_calls"], 1)
         self.assertEqual(metrics["input_tokens"], 100)
@@ -1587,22 +1590,25 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(metrics["tool_calls"], 2)
         self.assertEqual(metrics["mcp_calls"], 3)
         self.assertEqual(metrics["subject_mcp_calls"], 2)
+        self.assertEqual(metrics["subject_mcp_calls_observed"], 2)
+        self.assertEqual(metrics["subject_tool_names"], ["find"])
+        self.assertEqual(metrics["subject_tool_observability"], "complete")
         self.assertTrue(metrics["subject_tool_invoked"])
         self.assertNotIn("mcp_result_bytes", metrics)
 
         exported["messages"][0]["parts"][0]["state"].pop("metadata")
-        unknown = opencode_metrics(
+        partial = opencode_metrics(
             exported,
             mcp_servers=("hashmarks", "enola"),
             selected_server="hashmarks",
         )
-        for name in (
-            "mcp_calls",
-            "subject_mcp_calls",
-            "subject_tool_invoked",
-            "mcp_result_bytes",
-        ):
-            self.assertNotIn(name, unknown)
+        self.assertNotIn("mcp_calls", partial)
+        self.assertNotIn("subject_mcp_calls", partial)
+        self.assertNotIn("mcp_result_bytes", partial)
+        self.assertEqual(partial["subject_mcp_calls_observed"], 1)
+        self.assertEqual(partial["subject_tool_names"], ["find"])
+        self.assertEqual(partial["subject_tool_observability"], "partial")
+        self.assertTrue(partial["subject_tool_invoked"])
 
     def test_codex_jsonl_separates_tool_availability_from_adoption(self) -> None:
         raw = (

@@ -118,10 +118,31 @@ class CampaignAuthorityTests(unittest.TestCase):
                     side_effect=_fake_condition_authority,
                 ),
             ):
+                progress = []
                 audited = audit_campaign(
-                    **{k: v for k, v in options.items() if k != "results_root"}
+                    **{k: v for k, v in options.items() if k != "results_root"},
+                    on_progress=progress.append,
                 )
                 self.assertEqual(len(seen), 4)
+                condition_progress = [
+                    row for row in progress if row["stage"] == "condition-authority"
+                ]
+                self.assertEqual(len(condition_progress), 4)
+                self.assertEqual(
+                    [row["index"] for row in condition_progress],
+                    [1, 2, 3, 4],
+                )
+                self.assertTrue(
+                    all(row["total"] == 4 for row in condition_progress)
+                )
+                self.assertEqual(
+                    progress[-1],
+                    {
+                        "stage": "campaign-authority",
+                        "status": "verified",
+                        "total": 4,
+                    },
+                )
                 self.assertFalse((root / "results/.campaign").exists())
                 campaign = admit_campaign(**options)
                 self.assertEqual(len(seen), 8)

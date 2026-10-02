@@ -9,7 +9,7 @@ import os
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, Mapping
+from typing import Any, Callable, Iterator, Mapping
 
 from .admission import TrialAdmission, admit_trial
 from .bundle import verify_bundle
@@ -395,6 +395,7 @@ def audit_campaign(
     local_source: Path | None = None,
     codex_auth: Path | None = None,
     source: Mapping[str, str] | None = None,
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Observe every selected condition without inference or publishing authority.
 
@@ -425,7 +426,20 @@ def audit_campaign(
     agents: dict[str, dict[str, Any]] = {}
     subjects: dict[str, dict[str, Any]] = {}
     task_inputs: dict[str, str] = {}
-    for (task_id, condition), row in sorted(representatives.items()):
+    ordered_representatives = sorted(representatives.items())
+    for index, ((task_id, condition), row) in enumerate(
+        ordered_representatives, start=1
+    ):
+        if on_progress is not None:
+            on_progress(
+                {
+                    "stage": "condition-authority",
+                    "index": index,
+                    "total": len(ordered_representatives),
+                    "task_id": task_id,
+                    "condition_id": condition,
+                }
+            )
         with admit_trial(
             suite=suite,
             task_id=str(row["task_id"]),
@@ -518,6 +532,14 @@ def audit_campaign(
         ),
     }
     payload["campaign_id"] = digest(payload)
+    if on_progress is not None:
+        on_progress(
+            {
+                "stage": "campaign-authority",
+                "status": "verified",
+                "total": len(ordered_representatives),
+            }
+        )
     if (
         results_root is not None
         and (results_root / ".campaign" / "authority.json").exists()
@@ -540,9 +562,12 @@ def admit_campaign(
     local_source: Path | None = None,
     codex_auth: Path | None = None,
     source: Mapping[str, str] | None = None,
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Check every selected condition without inference, then freeze its authority."""
     if oracle_reviews_declared(suite):
+        if on_progress is not None:
+            on_progress({"stage": "oracle-review", "status": "checking"})
         validate_oracle_reviews(suite, require_complete=True)
     directory = results_root / ".campaign"
     with _locked(directory):
@@ -566,6 +591,7 @@ def admit_campaign(
             local_source=local_source,
             codex_auth=codex_auth,
             source=source,
+            on_progress=on_progress,
         )
         if existing:
             if _read_manifest(directory) != payload:
@@ -574,6 +600,13 @@ def admit_campaign(
                 )
         else:
             _write_manifest(directory, payload)
+        if on_progress is not None:
+            on_progress(
+                {
+                    "stage": "campaign-authority",
+                    "status": "reused" if existing else "published",
+                }
+            )
         return payload
 
 

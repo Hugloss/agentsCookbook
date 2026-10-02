@@ -51,6 +51,46 @@ def _render_table(headers: list[str], rows: list[list[str]]) -> list[str]:
     ]
 
 
+def _display_outcome(receipt: dict[str, Any]) -> str:
+    status = str(receipt.get("status") or "UNKNOWN")
+    grade = receipt.get("scoring", {}).get("oracle_grade", {})
+    if not isinstance(grade, dict):
+        return status
+    if grade.get("semantic_gradeable") is False:
+        return "UNGRADABLE"
+    semantic_status = grade.get("semantic_status")
+    if semantic_status == "CORRECT":
+        return "PASS"
+    if semantic_status == "INCORRECT":
+        return "FAIL"
+    return status
+
+
+def _subject_tool_use(
+    receipt: dict[str, Any],
+) -> tuple[bool | None, int | None, tuple[str, ...], str]:
+    agent = receipt.get("measurements", {}).get("agent", {})
+    if not isinstance(agent, dict):
+        return None, None, (), "unknown"
+    invoked = agent.get("subject_tool_invoked")
+    if not isinstance(invoked, bool):
+        invoked = None
+    calls = agent.get("subject_mcp_calls")
+    if isinstance(calls, bool) or not isinstance(calls, int):
+        calls = agent.get("subject_mcp_calls_observed")
+    if isinstance(calls, bool) or not isinstance(calls, int):
+        calls = None
+    names = agent.get("subject_tool_names")
+    if not isinstance(names, list) or any(not isinstance(name, str) for name in names):
+        tool_names: tuple[str, ...] = ()
+    else:
+        tool_names = tuple(sorted(names))
+    observability = agent.get("subject_tool_observability")
+    if observability not in {"complete", "partial"}:
+        observability = "unknown"
+    return invoked, calls, tool_names, observability
+
+
 class LiveTaskMatrix:
     """Project completed task/agent groups into compact terminal matrices."""
 
@@ -115,7 +155,7 @@ class LiveTaskMatrix:
                 row.get("replicate_id", row.get("seed", row["trial"]))
             )
         by_trial_condition = {
-            (int(row["trial"]), condition_id): str(receipt["status"])
+            (int(row["trial"]), condition_id): _display_outcome(receipt)
             for row, condition_id, receipt in outcomes
         }
 
@@ -199,6 +239,106 @@ class LiveTaskMatrix:
                     )
                 )
 
+                lines.extend(["", "Subject tool use"])
+                usage_rows: list[list[str]] = []
+                for condition_id in assisted_conditions:
+                    usage = [
+                        _subject_tool_use(receipt)
+                        for _row, observed_condition, receipt in outcomes
+                        if observed_condition == condition_id
+                    ]
+                    invoked = sum(value is True for value, *_rest in usage)
+                    not_invoked = sum(value is False for value, *_rest in usage)
+                    unknown = sum(value is None for value, *_rest in usage)
+                    total_calls = sum(
+                        calls
+                        for _value, calls, _names, _observability in usage
+                        if calls is not None
+                    )
+                    tool_names = sorted(
+                        {
+                            name
+                            for _value, _calls, names, _observability in usage
+                            for name in names
+                        }
+                    )
+                    observability = sorted(
+                        {
+                            value
+                            for _invoked, _calls, _names, value in usage
+                            if value != "unknown"
+                        }
+                    )
+                    usage_rows.append(
+                        [
+                            label(condition_id),
+                            str(invoked),
+                            str(not_invoked),
+                            str(unknown),
+                            str(total_calls),
+                            ",".join(tool_names) or "-",
+                            ",".join(observability) or "unknown",
+                        ]
+                    )
+                lines.extend(
+                    _render_table(
+                        [
+                            "Subject",
+                            "Invoked",
+                            "Not invoked",
+                            "Unknown",
+                            "Observed calls",
+                            "Tools",
+                            "Observation",
+                        ],
+                        usage_rows,
+                    )
+                )
+
+                lines.extend(["", "Subject use by replicate"])
+                adoption_headers = [
+                    "Replicate ID",
+                    *(label(condition_id) for condition_id in assisted_conditions),
+                ]
+                adoption_rows: list[list[str]] = []
+                for trial in trial_indexes:
+                    replicate_label = (
+                        str(next(iter(replicate_ids[trial])))
+                        if len(replicate_ids[trial]) == 1
+                        else f"trial {trial} (mixed IDs)"
+                    )
+                    cells = [replicate_label]
+                    for condition_id in assisted_conditions:
+                        receipt = next(
+                            (
+                                receipt
+                                for row, observed_condition, receipt in outcomes
+                                if int(row["trial"]) == trial
+                                and observed_condition == condition_id
+                            ),
+                            None,
+                        )
+                        if receipt is None:
+                            cells.append("-")
+                            continue
+                        invoked, calls, names, observability = _subject_tool_use(receipt)
+                        state = (
+                            "used"
+                            if invoked is True
+                            else "not-used"
+                            if invoked is False
+                            else "unknown"
+                        )
+                        detail = ",".join(names)
+                        count = f" calls={calls}" if calls is not None else ""
+                        tools = f" {detail}" if detail else ""
+                        observation = (
+                            f" [{observability}]" if observability != "unknown" else ""
+                        )
+                        cells.append(f"{state}{tools}{count}{observation}")
+                    adoption_rows.append(cells)
+                lines.extend(_render_table(adoption_headers, adoption_rows))
+
         return "\n".join(lines)
 
 
@@ -213,6 +353,38 @@ def _duration(value: float | None) -> str:
     if minutes:
         return f"{minutes}m{seconds:02d}s"
     return f"{seconds}s"
+
+
+def render_campaign_admission(event: dict[str, Any], *, elapsed: float) -> str:
+    """Render model-free campaign admission progress without owning authority."""
+    stage = str(event.get("stage") or "unknown")
+    if stage == "condition-authority":
+        index = event.get("index")
+        total = event.get("total")
+        task_id = event.get("task_id")
+        condition_id = event.get("condition_id")
+        return (
+            f"ADMISSION [{index}/{total}] {task_id} / {condition_id} | "
+            f"checking authority | admission elapsed {_duration(elapsed)}"
+        )
+    if stage == "oracle-review":
+        return (
+            "ADMISSION oracle review | "
+            f"{event.get('status') or 'checking'} | "
+            f"admission elapsed {_duration(elapsed)}"
+        )
+    if stage == "campaign-authority":
+        total = event.get("total")
+        suffix = f" | conditions {total}" if total is not None else ""
+        return (
+            "ADMISSION campaign authority | "
+            f"{event.get('status') or 'checking'}{suffix} | "
+            f"admission elapsed {_duration(elapsed)}"
+        )
+    return (
+        f"ADMISSION {stage} | {event.get('status') or 'checking'} | "
+        f"admission elapsed {_duration(elapsed)}"
+    )
 
 
 class LiveCampaignProgress:
@@ -231,6 +403,11 @@ class LiveCampaignProgress:
         self._total = len(selected_rows)
         self._processed = 0
         self._durations: list[float] = []
+        self._durations_by_condition: dict[str, list[float]] = {}
+        self._definition_condition = {
+            str(row["definition_id"]): str(row["condition_id"])
+            for row in selected_rows
+        }
         self._states = {
             str(row["definition_id"]): str(row["state"])
             for row in initial_status["rows"]
@@ -276,8 +453,12 @@ class LiveCampaignProgress:
             elif previous == "INTERRUPTED":
                 self._interrupted -= 1
             self._states[result.definition_id] = "COMPLETE"
-        if not result.reused and not result.recovered and trial_seconds > 0:
+        if not result.reused and trial_seconds > 0:
             self._durations.append(trial_seconds)
+            condition_id = self._definition_condition[result.definition_id]
+            self._durations_by_condition.setdefault(condition_id, []).append(
+                trial_seconds
+            )
         eta = self._eta()
         mode = (
             "reused"
@@ -325,11 +506,22 @@ class LiveCampaignProgress:
         )
 
     def _eta(self) -> float | None:
-        if self._pending <= 0:
+        if self._pending + self._interrupted <= 0:
             return 0.0
         if not self._durations:
             return None
-        return mean(self._durations) * self._pending
+        fallback = mean(self._durations)
+        remaining = [
+            definition_id
+            for definition_id, state in self._states.items()
+            if state in {"PENDING", "INTERRUPTED"}
+        ]
+        estimate = 0.0
+        for definition_id in remaining:
+            condition_id = self._definition_condition.get(definition_id)
+            samples = self._durations_by_condition.get(str(condition_id), [])
+            estimate += mean(samples) if samples else fallback
+        return estimate
 
 
 class TrialHeartbeat:
@@ -403,6 +595,7 @@ def render_trial_failure(
     row: dict[str, Any],
     subject: str,
     result: TrialRunResult,
+    receipt: dict[str, Any] | None = None,
 ) -> str | None:
     """Render stable failure fields before bounded raw diagnostic evidence."""
     if result.status == "PASS":
@@ -421,8 +614,51 @@ def render_trial_failure(
         f"Reason: {result.reason or 'none'}",
         f"Evidence: {result.result_dir}",
     ]
+    if receipt is not None:
+        semantic = _display_outcome(receipt)
+        grade = receipt.get("scoring", {}).get("oracle_grade", {})
+        format_compliant = (
+            grade.get("format_compliant") if isinstance(grade, dict) else None
+        )
+        lines.extend(
+            [
+                f"Semantic outcome: {semantic}",
+                (
+                    "Format compliant: "
+                    + (
+                        "yes"
+                        if format_compliant is True
+                        else "no"
+                        if format_compliant is False
+                        else "unknown"
+                    )
+                ),
+            ]
+        )
+    if subject != "none" and receipt is not None:
+        invoked, calls, names, observability = _subject_tool_use(receipt)
+        lines.extend(
+            [
+                (
+                    "Subject tool invoked: "
+                    + (
+                        "yes"
+                        if invoked is True
+                        else "no"
+                        if invoked is False
+                        else "unknown"
+                    )
+                ),
+                f"Subject MCP calls observed: {calls if calls is not None else 'unknown'}",
+                f"Subject tools observed: {','.join(names) if names else '-'}",
+                f"Subject tool observation: {observability}",
+            ]
+        )
     if result.recovered:
-        lines.append("Recovery: prior interrupted launch sealed; model was not retried")
+        lines.append(
+            "Recovery: prior interrupted attempt preserved; "
+            "execution retried as a numbered attempt"
+        )
     if result.diagnostic:
         lines.extend(["", "--- diagnostic ---", result.diagnostic])
     return "\n".join(lines)

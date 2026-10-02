@@ -8,6 +8,7 @@ from benchmarks.harness.live_console import (
     LiveCampaignProgress,
     LiveTaskMatrix,
     TrialHeartbeat,
+    render_campaign_admission,
     render_trial_failure,
 )
 from benchmarks.harness.runner import TrialRunResult
@@ -28,7 +29,18 @@ class LiveTaskMatrixTests(unittest.TestCase):
         ]
         return suite, rows
 
-    def _receipt(self, suite, row, status, *, gradeable=True):
+    def _receipt(
+        self,
+        suite,
+        row,
+        status,
+        *,
+        gradeable=True,
+        invoked=None,
+        subject_mcp_calls=None,
+        tool_names=None,
+        tool_observability=None,
+    ):
         condition = next(
             item for item in suite.experiment["conditions"]
             if item["id"] == row["condition_id"]
@@ -52,7 +64,24 @@ class LiveTaskMatrixTests(unittest.TestCase):
             "scoring": {
                 "oracle_grade": {
                     "semantic_gradeable": gradeable,
-                    "semantic_success": status == "PASS",
+                    "semantic_success": status == "PASS" if gradeable else False,
+                    "semantic_status": (
+                        "CORRECT"
+                        if gradeable and status == "PASS"
+                        else "INCORRECT"
+                        if gradeable and status == "FAIL"
+                        else "UNSCORABLE"
+                        if not gradeable
+                        else None
+                    ),
+                }
+            },
+            "measurements": {
+                "agent": {
+                    "subject_tool_invoked": invoked,
+                    "subject_mcp_calls": subject_mcp_calls,
+                    "subject_tool_names": list(tool_names or ()),
+                    "subject_tool_observability": tool_observability,
                 }
             },
         }
@@ -95,6 +124,28 @@ class LiveTaskMatrixTests(unittest.TestCase):
                     suite,
                     row,
                     statuses[(row["condition_id"], row["trial"])],
+                    invoked=(
+                        row["trial"] != 2
+                        if row["condition_id"] == "hashmarks-opencode-native"
+                        else None
+                    ),
+                    subject_mcp_calls=(
+                        row["trial"] + 1
+                        if row["condition_id"] == "hashmarks-opencode-native"
+                        and row["trial"] != 2
+                        else 0
+                    ),
+                    tool_names=(
+                        ["task_evidence", "find"]
+                        if row["condition_id"] == "hashmarks-opencode-native"
+                        and row["trial"] != 2
+                        else []
+                    ),
+                    tool_observability=(
+                        "complete"
+                        if row["condition_id"] == "hashmarks-opencode-native"
+                        else None
+                    ),
                 ),
             )
             if value is not None:
@@ -131,6 +182,52 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn(
             "Enola     | 1    | 0         | 1          | 0          | 1",
             rendered,
+        )
+        self.assertIn("Subject tool use", rendered)
+        self.assertIn(
+            "Hashmarks | 2       | 1           | 0       | 3              | find,task_evidence",
+            rendered,
+        )
+        self.assertIn(
+            "Enola     | 0       | 0           | 3       | 0              | -",
+            rendered,
+        )
+        self.assertIn("complete", rendered)
+        self.assertIn("unknown", rendered)
+        self.assertIn("Subject use by replicate", rendered)
+        self.assertIn("6201", rendered)
+        self.assertIn("used find,task_evidence calls=1 [complete]", rendered)
+        self.assertIn("not-used calls=0 [complete]", rendered)
+
+    def test_campaign_admission_renderer_exposes_model_free_step_progress(self) -> None:
+        line = render_campaign_admission(
+            {
+                "stage": "condition-authority",
+                "index": 7,
+                "total": 36,
+                "task_id": "locate-stale-index-removal",
+                "condition_id": "hashmarks-opencode-native",
+            },
+            elapsed=94.0,
+        )
+        self.assertEqual(
+            line,
+            "ADMISSION [7/36] locate-stale-index-removal / "
+            "hashmarks-opencode-native | checking authority | admission elapsed 1m34s",
+        )
+        self.assertIn(
+            "oracle review | checking",
+            render_campaign_admission(
+                {"stage": "oracle-review", "status": "checking"},
+                elapsed=2.0,
+            ),
+        )
+        self.assertIn(
+            "campaign authority | published",
+            render_campaign_admission(
+                {"stage": "campaign-authority", "status": "published"},
+                elapsed=120.0,
+            ),
         )
 
     def test_progress_reports_step_elapsed_remaining_and_eta(self) -> None:
@@ -182,8 +279,73 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn("avg 1m00s/execution", resumed)
         self.assertIn("execution ETA 7m00s", resumed)
 
+    def test_eta_uses_condition_specific_runtime_samples(self) -> None:
+        suite, rows = self._prefix_opencode_rows()
+        progress = LiveCampaignProgress(suite, rows, self._status(rows))
+
+        for row, seconds in ((rows[0], 60.0), (rows[1], 60.0), (rows[3], 180.0)):
+            progress.finish_line(
+                TrialRunResult(
+                    trial_id="a" * 64,
+                    definition_id=row["definition_id"],
+                    status="PASS",
+                    result_dir=Path("/tmp/result"),
+                    reused=False,
+                ),
+                elapsed=seconds,
+                trial_seconds=seconds,
+            )
+
+        start = progress.start_line(rows[4], elapsed=300.0)
+        self.assertIn("pending 6", start)
+        self.assertIn("execution ETA 12m00s", start)
+
+    def test_eta_includes_interrupted_trial_and_recovered_execution_sample(self) -> None:
+        suite, rows = self._prefix_opencode_rows()
+        status = self._status(rows)
+        status["rows"][1]["state"] = "INTERRUPTED"
+        status["pending_trials"] -= 1
+        status["interrupted_trials"] = 1
+        progress = LiveCampaignProgress(suite, rows, status)
+
+        self.assertIn(
+            "execution ETA estimating...",
+            progress.start_line(rows[0], elapsed=0.0),
+        )
+        progress.finish_line(
+            TrialRunResult(
+                trial_id="a" * 64,
+                definition_id=rows[0]["definition_id"],
+                status="PASS",
+                result_dir=Path("/tmp/result"),
+                reused=False,
+            ),
+            elapsed=60.0,
+            trial_seconds=60.0,
+        )
+        self.assertIn(
+            "execution ETA 8m00s",
+            progress.start_line(rows[1], elapsed=60.0),
+        )
+
+        recovered = progress.finish_line(
+            TrialRunResult(
+                trial_id="b" * 64,
+                definition_id=rows[1]["definition_id"],
+                status="FAIL",
+                result_dir=Path("/tmp/recovered"),
+                reused=False,
+                recovered=True,
+            ),
+            elapsed=180.0,
+            trial_seconds=120.0,
+        )
+        self.assertIn("interrupted 0", recovered)
+        self.assertIn("avg 1m30s/execution", recovered)
+        self.assertIn("execution ETA 10m30s", recovered)
+
     def test_failure_envelope_is_agent_readable_and_preserves_diagnostic(self) -> None:
-        _, rows = self._prefix_opencode_rows()
+        suite, rows = self._prefix_opencode_rows()
         result = TrialRunResult(
             trial_id="a" * 64,
             definition_id="b" * 64,
@@ -199,6 +361,7 @@ class LiveTaskMatrixTests(unittest.TestCase):
             row=rows[0],
             subject="none",
             result=result,
+            receipt=self._receipt(suite, rows[0], "INCOMPLETE"),
         )
         assert rendered is not None
         self.assertIn("FAILURE locate-prefix-path-enumerator", rendered)
@@ -208,10 +371,52 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn("Stage: agent-execution", rendered)
         self.assertIn("Reason code: agent-terminal-failed", rendered)
         self.assertIn("Evidence: /tmp/evidence", rendered)
+        self.assertIn("Semantic outcome: INCOMPLETE", rendered)
+        self.assertIn("Format compliant: unknown", rendered)
         self.assertIn("--- diagnostic ---", rendered)
         self.assertIn("ValueError: boom", rendered)
 
-    def test_recovered_failure_explicitly_says_model_was_not_retried(self) -> None:
+    def test_assisted_failure_shows_subject_tool_attribution(self) -> None:
+        suite, rows = self._prefix_opencode_rows()
+        row = next(
+            item
+            for item in rows
+            if item["condition_id"] == "hashmarks-opencode-native"
+        )
+        result = TrialRunResult(
+            trial_id="a" * 64,
+            definition_id=row["definition_id"],
+            status="FAIL",
+            result_dir=Path("/tmp/evidence"),
+            reused=False,
+            reason="repository location differs from frozen oracle",
+            stage="oracle-grading",
+            reason_code="oracle-mismatch",
+        )
+        receipt = self._receipt(
+            suite,
+            row,
+            "FAIL",
+            invoked=True,
+            subject_mcp_calls=2,
+            tool_names=["find", "task_evidence"],
+            tool_observability="complete",
+        )
+        rendered = render_trial_failure(
+            row=row,
+            subject="hashmarks",
+            result=result,
+            receipt=receipt,
+        )
+        assert rendered is not None
+        self.assertIn("Semantic outcome: FAIL", rendered)
+        self.assertIn("Format compliant: unknown", rendered)
+        self.assertIn("Subject tool invoked: yes", rendered)
+        self.assertIn("Subject MCP calls observed: 2", rendered)
+        self.assertIn("Subject tools observed: find,task_evidence", rendered)
+        self.assertIn("Subject tool observation: complete", rendered)
+
+    def test_recovered_failure_describes_numbered_retry(self) -> None:
         _, rows = self._prefix_opencode_rows()
         result = TrialRunResult(
             trial_id="a" * 64,
@@ -230,8 +435,8 @@ class LiveTaskMatrixTests(unittest.TestCase):
             result=result,
         )
         assert rendered is not None
-        self.assertIn("Recovery: prior interrupted launch sealed", rendered)
-        self.assertIn("model was not retried", rendered)
+        self.assertIn("Recovery: prior interrupted attempt preserved", rendered)
+        self.assertIn("execution retried as a numbered attempt", rendered)
 
     def test_does_not_render_until_selected_task_agent_group_is_complete(self) -> None:
         suite, rows = self._prefix_opencode_rows()
@@ -255,6 +460,7 @@ class LiveTaskMatrixTests(unittest.TestCase):
                 row, self._receipt(suite, row, status, gradeable=gradeable)
             ) or rendered
         assert rendered is not None
+        self.assertIn("6201         | UNGRADABLE", rendered)
         self.assertIn("Hashmarks | 2    | 0         | 0          | 0          | 1", rendered)
 
     def test_same_subject_conditions_have_distinct_columns(self) -> None:

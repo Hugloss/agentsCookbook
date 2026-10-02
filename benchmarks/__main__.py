@@ -49,6 +49,7 @@ from benchmarks.harness.live_console import (
     LiveCampaignProgress,
     LiveTaskMatrix,
     TrialHeartbeat,
+    render_campaign_admission,
     render_trial_failure,
 )
 from benchmarks.harness.selection import (
@@ -567,6 +568,18 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit("--run-id can only be used with run --resume")
         try:
             with exclusive_store(args.root) as lock_fd, retain_lock_in_subprocesses(lock_fd):
+                admission_started = time.monotonic()
+
+                def on_admission_progress(event):
+                    print(
+                        render_campaign_admission(
+                            event,
+                            elapsed=time.monotonic() - admission_started,
+                        ),
+                        file=sys.stderr,
+                        flush=True,
+                    )
+
                 if args.command == "prepare" or args.new:
                     saved, campaign = prepare_saved_run(
                         args.root,
@@ -580,6 +593,7 @@ def main(argv: list[str] | None = None) -> int:
                             local_source=args.source,
                             codex_auth=args.codex_auth,
                             source=runtime_source,
+                            on_progress=on_admission_progress,
                         ),
                     )
                 else:
@@ -594,6 +608,7 @@ def main(argv: list[str] | None = None) -> int:
                         local_source=args.source,
                         codex_auth=args.codex_auth,
                         source=runtime_source,
+                        on_progress=on_admission_progress,
                     )
                 if args.command == "prepare":
                     print(json.dumps({
@@ -817,6 +832,7 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source) -> int:
             row=row,
             subject=str(condition["subject"]),
             result=result,
+            receipt=receipt,
         )
         if failure is not None:
             print(failure, file=sys.stderr, flush=True)
