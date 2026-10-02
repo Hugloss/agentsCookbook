@@ -112,7 +112,7 @@ if (command === 'debug' && filtered[1] === 'config') {
     process.env.FAKE_FAIL_BASE_CONFIG === '1' &&
     !process.env.OPENCODE_CONFIG_CONTENT
   ) {
-    process.stderr.write('unexpected base config resolution\n');
+    process.stderr.write('unexpected base config resolution\\n');
     process.exit(17);
   }
   process.stdout.write(JSON.stringify(config()));
