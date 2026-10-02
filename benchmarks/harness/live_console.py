@@ -519,6 +519,7 @@ def render_trial_failure(
     row: dict[str, Any],
     subject: str,
     result: TrialRunResult,
+    receipt: dict[str, Any] | None = None,
 ) -> str | None:
     """Render stable failure fields before bounded raw diagnostic evidence."""
     if result.status == "PASS":
@@ -537,6 +538,25 @@ def render_trial_failure(
         f"Reason: {result.reason or 'none'}",
         f"Evidence: {result.result_dir}",
     ]
+    if subject != "none" and receipt is not None:
+        invoked, calls, names, observability = _subject_tool_use(receipt)
+        lines.extend(
+            [
+                (
+                    "Subject tool invoked: "
+                    + (
+                        "yes"
+                        if invoked is True
+                        else "no"
+                        if invoked is False
+                        else "unknown"
+                    )
+                ),
+                f"Subject MCP calls observed: {calls if calls is not None else 'unknown'}",
+                f"Subject tools observed: {','.join(names) if names else '-'}",
+                f"Subject tool observation: {observability}",
+            ]
+        )
     if result.recovered:
         lines.append("Recovery: prior interrupted launch sealed; model was not retried")
     if result.diagnostic:
