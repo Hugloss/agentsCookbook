@@ -60,6 +60,16 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
             },
         }
 
+    @staticmethod
+    def _remove_identity_review(root: Path) -> None:
+        review_path = root / "qualification/oracle-reviews.json"
+        evidence = json.loads(review_path.read_text(encoding="utf-8"))
+        evidence["tasks"]["locate-repository-content-identity"]["reviews"] = []
+        review_path.write_text(
+            json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
     def test_qualified_label_without_source_campaign_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -112,7 +122,7 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
                 validate_oracle_reviews(load_suite(copy), require_complete=False)[
                     "first_reviewed_tasks"
                 ],
-                11,
+                12,
             )
 
     def test_review_path_cannot_escape_suite_root(self) -> None:
@@ -126,35 +136,50 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
             with self.assertRaisesRegex(SuiteError, "escapes suite root"):
                 load_suite(copy)
 
-    def test_repaired_identity_task_requires_one_fresh_review(self) -> None:
+    def test_repaired_identity_task_is_committed_as_qualified(self) -> None:
         suite = load_suite(SOURCE)
         task = suite.tasks["locate-repository-content-identity"]
         self.assertEqual(task["version"], 3)
         self.assertIn("test-selection work-selection envelope", task["prompt"])
         self.assertIn("repository-binding validation", task["prompt"])
 
-        result = validate_oracle_reviews(suite, require_complete=False)
-        self.assertEqual(result["first_reviewed_tasks"], 11)
-        self.assertEqual(result["approved_tasks"], 11)
-        self.assertEqual(
-            result["pending_tasks"],
-            ["locate-repository-content-identity"],
-        )
-        self.assertEqual(
-            result["missing_review_tasks"],
-            ["locate-repository-content-identity"],
-        )
+        result = validate_oracle_reviews(suite, require_complete=True)
+        self.assertEqual(result["first_reviewed_tasks"], 12)
+        self.assertEqual(result["approved_tasks"], 12)
+        self.assertEqual(result["pending_tasks"], [])
+        self.assertEqual(result["missing_review_tasks"], [])
+        self.assertEqual(result["non_unique_tasks"], [])
         self.assertEqual(result["escalated_tasks"], [])
-        with self.assertRaisesRegex(
-            OracleReviewError,
-            "1 task.*still need independent review",
-        ):
-            validate_oracle_reviews(suite, require_complete=True)
+        self.assertTrue(result["complete"])
+
+    def test_missing_repaired_identity_review_is_still_blocking(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / "suite"
+            shutil.copytree(SOURCE, copy)
+            self._remove_identity_review(copy)
+            suite = load_suite(copy)
+            result = validate_oracle_reviews(suite, require_complete=False)
+            self.assertEqual(result["first_reviewed_tasks"], 11)
+            self.assertEqual(result["approved_tasks"], 11)
+            self.assertEqual(
+                result["pending_tasks"],
+                ["locate-repository-content-identity"],
+            )
+            self.assertEqual(
+                result["missing_review_tasks"],
+                ["locate-repository-content-identity"],
+            )
+            with self.assertRaisesRegex(
+                OracleReviewError,
+                "1 task.*still need independent review",
+            ):
+                validate_oracle_reviews(suite, require_complete=True)
 
     def test_one_review_completes_repaired_identity_task(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             copy = Path(tmp) / "suite"
             shutil.copytree(SOURCE, copy)
+            self._remove_identity_review(copy)
             review_path = copy / "qualification/oracle-reviews.json"
             evidence = json.loads(review_path.read_text(encoding="utf-8"))
             row = evidence["tasks"]["locate-repository-content-identity"]
