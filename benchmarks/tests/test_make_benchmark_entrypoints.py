@@ -11,7 +11,12 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from benchmarks.__main__ import _assert_saved_run_selection, _guard_automatic_start, main
+from benchmarks.__main__ import (
+    _assert_saved_run_agents,
+    _assert_saved_run_selection,
+    _guard_automatic_start,
+    main,
+)
 from benchmarks.harness.runner import TrialRunResult, TrialRunnerError
 from benchmarks.harness.run_store import RunStoreError, SavedRun
 from benchmarks.harness.selection import select_definitions
@@ -78,6 +83,22 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         self.assertNotIn("release-check:", makefile)
         self.assertIn("BENCHMARK_AGENT=\n", ENV_EXAMPLE.read_text(encoding="utf-8"))
 
+    def test_score_agent_selection_must_match_frozen_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = SavedRun("000001", Path(tmp) / "runs/000001")
+            with mock.patch(
+                "benchmarks.__main__.read_campaign",
+                return_value={
+                    "selected_definitions": [],
+                    "agents": {"opencode-native": {}},
+                },
+            ):
+                with self.assertRaisesRegex(
+                    RunStoreError,
+                    "agent selection does not match BENCHMARK_AGENT",
+                ):
+                    _assert_saved_run_agents(saved, ["codex-native"])
+
     def test_resume_selection_must_match_frozen_agents_before_admission(self) -> None:
         suite = load_suite(
             ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
@@ -98,7 +119,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(
                     RunStoreError,
-                    "frozen agents=.*codex-native.*selected agents=.*opencode-native",
+                    "agent selection does not match BENCHMARK_AGENT",
                 ):
                     _assert_saved_run_selection(
                         saved,
