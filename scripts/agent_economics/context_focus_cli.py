@@ -26,7 +26,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     task = parser.add_mutually_exclusive_group(required=True)
     task.add_argument("--task", help="Task/query text used only for evidence ranking.")
-    task.add_argument("--task-file", type=Path, help="UTF-8 file containing the task/query text.")
+    task.add_argument(
+        "--task-file", type=Path, help="UTF-8 file containing the task/query text."
+    )
     parser.add_argument("--repository-root", type=Path, default=Path("."))
     parser.add_argument(
         "--root",
@@ -42,7 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="File suffix to include, e.g. .py or ts. Repeatable. Defaults to common code/text suffixes.",
     )
     parser.add_argument(
-        "--artifact", "--artifact-path", dest="artifact",
+        "--artifact",
+        "--artifact-path",
+        dest="artifact",
         type=Path,
         default=Path(".agent-artifacts/context-focus.json"),
     )
@@ -62,7 +66,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional provider-neutral JSON ranking hints (version 1). Relative paths are repository-relative.",
     )
-    parser.add_argument("--repository-intelligence-max-bytes", type=int, default=5_000_000)
+    parser.add_argument(
+        "--repository-intelligence-max-bytes", type=int, default=5_000_000
+    )
     parser.add_argument(
         "--discovery-mode", choices=("auto", "git", "filesystem"), default="auto"
     )
@@ -73,10 +79,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--ignored-policy", choices=("exclude", "include"), default="exclude"
     )
     parser.add_argument(
-        "--symlink-policy", choices=("exclude", "reject", "within-repo"), default="exclude"
+        "--symlink-policy",
+        choices=("exclude", "reject", "within-repo"),
+        default="exclude",
     )
     parser.add_argument(
-        "--exclude-path", action="append", default=[], help="Repository-relative exclusion glob."
+        "--exclude-path",
+        action="append",
+        default=[],
+        help="Repository-relative exclusion glob.",
     )
     parser.add_argument("--no-default-excludes", action="store_true")
     parser.add_argument("--git-timeout-seconds", type=float, default=5.0)
@@ -92,7 +103,11 @@ def main(argv: list[str] | None = None) -> None:
             task = args.task
         repository_root = args.repository_root.resolve()
         roots = tuple(args.root) if args.root else (Path("."),)
-        suffixes = tuple(args.include_suffix) if args.include_suffix else DEFAULT_CONTEXT_SUFFIXES
+        suffixes = (
+            tuple(args.include_suffix)
+            if args.include_suffix
+            else DEFAULT_CONTEXT_SUFFIXES
+        )
         artifact_path = (
             args.artifact
             if args.artifact.is_absolute()
@@ -101,7 +116,9 @@ def main(argv: list[str] | None = None) -> None:
         intelligence_path = args.repository_intelligence_path
         if intelligence_path is not None and not intelligence_path.is_absolute():
             intelligence_path = repository_root / intelligence_path
-        exclusions = list(DEFAULT_EXCLUDE_PATTERNS if not args.no_default_excludes else ())
+        exclusions = list(
+            DEFAULT_EXCLUDE_PATTERNS if not args.no_default_excludes else ()
+        )
         exclusions.extend(args.exclude_path)
         discovery = DiscoveryConfig(
             mode=args.discovery_mode,

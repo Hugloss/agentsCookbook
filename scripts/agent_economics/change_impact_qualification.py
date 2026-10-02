@@ -30,7 +30,10 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     failures: list[str] = []
     observations: dict[str, object] = {}
 
-    with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+    with (
+        tempfile.TemporaryDirectory() as first,
+        tempfile.TemporaryDirectory() as second,
+    ):
         root_a = Path(first)
         root_b = Path(second)
         source_a = _make_repository(root_a)
@@ -92,7 +95,10 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             changed_paths=["src/pkg/a.py"],
             **{**common, "impact_max_sources": 2},
         )
-        if len(source_bounded["candidates"]) != 2 or not source_bounded["deferred_evidence"]:
+        if (
+            len(source_bounded["candidates"]) != 2
+            or not source_bounded["deferred_evidence"]
+        ):
             failures.append("impact_max_sources did not preserve bounded omissions")
 
         deleted = change_impact_audit(
@@ -101,8 +107,12 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             changed_paths=["src/pkg/deleted.py"],
             **common,
         )
-        if [candidate["target"] for candidate in deleted["candidates"]] != ["src/pkg/f.py"]:
-            failures.append("deleted-module lexical seed did not recover reverse importer")
+        if [candidate["target"] for candidate in deleted["candidates"]] != [
+            "src/pkg/f.py"
+        ]:
+            failures.append(
+                "deleted-module lexical seed did not recover reverse importer"
+            )
         if not any(
             item.get("code") == "changed_source_not_discovered"
             for item in deleted["uncertainty"]
@@ -120,8 +130,13 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             for item in non_python["uncertainty"]
         ):
             failures.append("non-Python change fabricated static impact")
-        if non_python["economics"].get("files_read") != 0 or non_python["economics"].get("ast_parses") != 0:
-            failures.append("unsupported-only change unnecessarily scanned Python source")
+        if (
+            non_python["economics"].get("files_read") != 0
+            or non_python["economics"].get("ast_parses") != 0
+        ):
+            failures.append(
+                "unsupported-only change unnecessarily scanned Python source"
+            )
 
         copied = change_impact_audit(
             repository_root=root_b,
@@ -139,7 +154,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             **common,
         )
         if copied["repository"]["identity"] == changed_copy["repository"]["identity"]:
-            failures.append("repository identity did not invalidate on source-byte change")
+            failures.append(
+                "repository identity did not invalidate on source-byte change"
+            )
 
         try:
             change_impact_audit(
@@ -158,7 +175,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             "depths": depths,
             "bounded_selected": len(source_bounded["candidates"]),
             "bounded_deferred": len(source_bounded["deferred_evidence"]),
-            "deleted_targets": [candidate["target"] for candidate in deleted["candidates"]],
+            "deleted_targets": [
+                candidate["target"] for candidate in deleted["candidates"]
+            ],
             "contract_errors": contract_errors,
         }
 

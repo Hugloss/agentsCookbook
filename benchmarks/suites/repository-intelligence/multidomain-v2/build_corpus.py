@@ -385,7 +385,8 @@ def main(*, force: bool = False) -> None:
     old_experiment = json.loads((OLDER / "experiment.json").read_text(encoding="utf-8"))
     for condition in old_experiment["conditions"]:
         condition["trials"] = 1
-        condition["seed"] = 8201
+        condition.pop("seed", None)
+        condition["replicate_ids"] = [8201]
     old_experiment.update(
         id="repository-intelligence-multidomain-v2", version=2, tasks=task_ids
     )

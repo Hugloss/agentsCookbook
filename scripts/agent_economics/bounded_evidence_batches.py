@@ -17,9 +17,12 @@ INCOMPLETE_BUDGET_EXCEEDED = "INCOMPLETE_BUDGET_EXCEEDED"
 
 
 def _identity(payload: Mapping[str, object]) -> str:
-    return "sha256:" + hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    return (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+    )
 
 
 def _nonempty(value: object) -> bool:
@@ -50,9 +53,15 @@ def build_manifest(
 ) -> dict[str, object]:
     """Freeze one ordered expensive-evidence campaign without executing it."""
     normalized = _targets(targets)
-    if any(not _nonempty(v) for v in (repository_identity, provider_identity, operation)):
+    if any(
+        not _nonempty(v) for v in (repository_identity, provider_identity, operation)
+    ):
         raise ValueError("repository/provider/operation identities must be non-empty")
-    if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size < 1:
+    if (
+        not isinstance(batch_size, int)
+        or isinstance(batch_size, bool)
+        or batch_size < 1
+    ):
         raise ValueError("batch_size must be a positive integer")
     if (controller_budget_ms is None) != (batch_timeout_ms is None):
         raise ValueError(
@@ -76,7 +85,9 @@ def build_manifest(
                 "batch timeout must leave declared headroom below controller budget"
             )
     if (parent_manifest_identity is None) != (selection_identity is None):
-        raise ValueError("follow-up manifests require both parent and selection identities")
+        raise ValueError(
+            "follow-up manifests require both parent and selection identities"
+        )
     if parent_manifest_identity is not None and (
         not _nonempty(parent_manifest_identity) or not _nonempty(selection_identity)
     ):
@@ -95,22 +106,32 @@ def build_manifest(
         semantic["controller_budget_ms"] = controller_budget_ms
         semantic["batch_timeout_ms"] = batch_timeout_ms
         semantic["minimum_headroom_ms"] = minimum_headroom_ms
-        semantic["controller_headroom_ms"] = controller_budget_ms - int(batch_timeout_ms)
+        semantic["controller_headroom_ms"] = controller_budget_ms - int(
+            batch_timeout_ms
+        )
     if parent_manifest_identity is not None:
         semantic["parent_manifest_identity"] = parent_manifest_identity
         semantic["selection_identity"] = selection_identity
     return {**semantic, "manifest_identity": _identity(semantic)}
 
 
-def batch_descriptor(manifest: Mapping[str, object], batch_index: int) -> dict[str, object]:
-    if manifest.get("schema") != MANIFEST_SCHEMA or not _nonempty(manifest.get("manifest_identity")):
+def batch_descriptor(
+    manifest: Mapping[str, object], batch_index: int
+) -> dict[str, object]:
+    if manifest.get("schema") != MANIFEST_SCHEMA or not _nonempty(
+        manifest.get("manifest_identity")
+    ):
         raise ValueError("manifest must be identified")
     targets = _targets(list(manifest.get("targets") or ()))
     size = manifest.get("batch_size")
     count = manifest.get("batch_count")
     if not isinstance(size, int) or not isinstance(count, int):
         raise ValueError("manifest batch bounds are invalid")
-    if not isinstance(batch_index, int) or isinstance(batch_index, bool) or not 0 <= batch_index < count:
+    if (
+        not isinstance(batch_index, int)
+        or isinstance(batch_index, bool)
+        or not 0 <= batch_index < count
+    ):
         raise ValueError("batch_index is outside manifest bounds")
     start = batch_index * size
     end = min(len(targets), start + size)
@@ -136,12 +157,20 @@ def batch_descriptor(manifest: Mapping[str, object], batch_index: int) -> dict[s
     return {**semantic, "batch_identity": _identity(semantic)}
 
 
-def subdivide_batch(batch: Mapping[str, object], *, subbatch_size: int) -> list[dict[str, object]]:
+def subdivide_batch(
+    batch: Mapping[str, object], *, subbatch_size: int
+) -> list[dict[str, object]]:
     """Split one expensive batch deterministically after a controller timeout."""
-    if batch.get("schema") != BATCH_SCHEMA or not _nonempty(batch.get("batch_identity")):
+    if batch.get("schema") != BATCH_SCHEMA or not _nonempty(
+        batch.get("batch_identity")
+    ):
         raise ValueError("batch must be identified")
     targets = _targets(list(batch.get("targets") or ()))
-    if not isinstance(subbatch_size, int) or isinstance(subbatch_size, bool) or not 0 < subbatch_size < len(targets):
+    if (
+        not isinstance(subbatch_size, int)
+        or isinstance(subbatch_size, bool)
+        or not 0 < subbatch_size < len(targets)
+    ):
         raise ValueError("subbatch_size must be positive and smaller than parent")
     children = []
     for child_index, offset in enumerate(range(0, len(targets), subbatch_size)):
@@ -183,9 +212,15 @@ def build_receipt(
     controller_status: str = "COMPLETED",
 ) -> dict[str, object]:
     """Bind one batch result without calling a timeout a product failure."""
-    if descriptor.get("schema") not in {BATCH_SCHEMA, SUBBATCH_SCHEMA} or not _nonempty(descriptor.get("batch_identity")):
+    if descriptor.get("schema") not in {BATCH_SCHEMA, SUBBATCH_SCHEMA} or not _nonempty(
+        descriptor.get("batch_identity")
+    ):
         raise ValueError("descriptor must be an identified batch/subbatch")
-    if not _nonempty(execution_class) or not isinstance(elapsed_ms, int) or elapsed_ms < 0:
+    if (
+        not _nonempty(execution_class)
+        or not isinstance(elapsed_ms, int)
+        or elapsed_ms < 0
+    ):
         raise ValueError("execution_class/elapsed_ms are invalid")
     observed = (
         observed_repository_identity,
@@ -193,14 +228,18 @@ def build_receipt(
         observed_operation,
     )
     if any(not _nonempty(value) for value in observed):
-        raise ValueError("observed repository/provider/operation identities must be non-empty")
+        raise ValueError(
+            "observed repository/provider/operation identities must be non-empty"
+        )
     expected_observed = (
         str(descriptor.get("repository_identity") or ""),
         str(descriptor.get("provider_identity") or ""),
         str(descriptor.get("operation") or ""),
     )
     if observed != expected_observed:
-        raise ValueError("observed execution identity does not match frozen batch descriptor")
+        raise ValueError(
+            "observed execution identity does not match frozen batch descriptor"
+        )
     if controller_status not in {"COMPLETED", "TIMEOUT"}:
         raise ValueError("controller_status must be COMPLETED or TIMEOUT")
     expected = _targets(list(descriptor.get("targets") or ()))
@@ -210,20 +249,26 @@ def build_receipt(
         status = str(row.get("status") or "")
         if target not in expected or status not in {"PASS", "FAIL"}:
             raise ValueError("results must use batch targets with PASS/FAIL status")
-        normalized.append({
-            "target": target,
-            "status": status,
-            "failure_identity": str(row.get("failure_identity") or ""),
-            "followup_required": bool(row.get("followup_required", False)),
-            "followup_reason": str(row.get("followup_reason") or ""),
-        })
+        normalized.append(
+            {
+                "target": target,
+                "status": status,
+                "failure_identity": str(row.get("failure_identity") or ""),
+                "followup_required": bool(row.get("followup_required", False)),
+                "followup_reason": str(row.get("followup_reason") or ""),
+            }
+        )
     if len({row["target"] for row in normalized}) != len(normalized):
         raise ValueError("results must not repeat targets")
     actual = [row["target"] for row in normalized]
     if controller_status == "COMPLETED":
         if actual != expected:
             raise ValueError("completed receipt must cover every target in order")
-        status = PRODUCT_FAILURE if any(row["status"] == "FAIL" for row in normalized) else COMPLETE_PASS
+        status = (
+            PRODUCT_FAILURE
+            if any(row["status"] == "FAIL" for row in normalized)
+            else COMPLETE_PASS
+        )
         batch_timeout_ms = descriptor.get("batch_timeout_ms")
         if (
             isinstance(batch_timeout_ms, int)
@@ -266,7 +311,9 @@ def _receipt_identity_matches(receipt: Mapping[str, object]) -> bool:
     identity = receipt.get("receipt_identity")
     if not _nonempty(identity):
         return False
-    semantic = {key: value for key, value in receipt.items() if key != "receipt_identity"}
+    semantic = {
+        key: value for key, value in receipt.items() if key != "receipt_identity"
+    }
     return identity == _identity(semantic)
 
 
@@ -324,9 +371,13 @@ def collapse_subbatch_receipts(
     )
 
 
-def aggregate_receipts(manifest: Mapping[str, object], receipts: Sequence[Mapping[str, object]]) -> dict[str, object]:
+def aggregate_receipts(
+    manifest: Mapping[str, object], receipts: Sequence[Mapping[str, object]]
+) -> dict[str, object]:
     """Aggregate only complete identity-matched parent receipts; missing stays incomplete."""
-    if manifest.get("schema") != MANIFEST_SCHEMA or not _nonempty(manifest.get("manifest_identity")):
+    if manifest.get("schema") != MANIFEST_SCHEMA or not _nonempty(
+        manifest.get("manifest_identity")
+    ):
         raise ValueError("manifest must be identified")
     count = int(manifest.get("batch_count") or 0)
     by_index: dict[int, Mapping[str, object]] = {}
@@ -337,7 +388,15 @@ def aggregate_receipts(manifest: Mapping[str, object], receipts: Sequence[Mappin
             or not _receipt_identity_matches(receipt)
         ):
             raise ValueError("aggregate accepts intact parent batch receipts only")
-        if any(receipt.get(key) != manifest.get(key) for key in ("manifest_identity", "repository_identity", "provider_identity", "operation")):
+        if any(
+            receipt.get(key) != manifest.get(key)
+            for key in (
+                "manifest_identity",
+                "repository_identity",
+                "provider_identity",
+                "operation",
+            )
+        ):
             raise ValueError("receipt identity does not belong to manifest")
         if any(
             receipt.get(observed_key) != manifest.get(expected_key)
@@ -347,11 +406,16 @@ def aggregate_receipts(manifest: Mapping[str, object], receipts: Sequence[Mappin
                 ("observed_operation", "operation"),
             )
         ):
-            raise ValueError("receipt observed execution identity does not belong to manifest")
+            raise ValueError(
+                "receipt observed execution identity does not belong to manifest"
+            )
         index = receipt.get("batch_index")
         if not isinstance(index, int) or not 0 <= index < count or index in by_index:
             raise ValueError("receipt batch index is invalid/duplicated")
-        if receipt.get("batch_identity") != batch_descriptor(manifest, index)["batch_identity"]:
+        if (
+            receipt.get("batch_identity")
+            != batch_descriptor(manifest, index)["batch_identity"]
+        ):
             raise ValueError("receipt batch identity does not match manifest")
         by_index[index] = receipt
     missing = [index for index in range(count) if index not in by_index]
@@ -366,7 +430,11 @@ def aggregate_receipts(manifest: Mapping[str, object], receipts: Sequence[Mappin
         for row in ordered
         if row.get("status") == INCOMPLETE_BUDGET_EXCEEDED
     ]
-    failed = [int(row["batch_index"]) for row in ordered if row.get("status") == PRODUCT_FAILURE]
+    failed = [
+        int(row["batch_index"])
+        for row in ordered
+        if row.get("status") == PRODUCT_FAILURE
+    ]
     status = (
         INCOMPLETE
         if missing or timeouts or budget_exceeded
@@ -389,8 +457,18 @@ def aggregate_receipts(manifest: Mapping[str, object], receipts: Sequence[Mappin
         "controller_timeout_batch_indexes": timeouts,
         "budget_exceeded_batch_indexes": budget_exceeded,
         "failed_batch_indexes": failed,
-        "passed_targets": sum(1 for row in ordered for result in row.get("results", ()) if isinstance(result, Mapping) and result.get("status") == "PASS"),
-        "failed_targets": sum(1 for row in ordered for result in row.get("results", ()) if isinstance(result, Mapping) and result.get("status") == "FAIL"),
+        "passed_targets": sum(
+            1
+            for row in ordered
+            for result in row.get("results", ())
+            if isinstance(result, Mapping) and result.get("status") == "PASS"
+        ),
+        "failed_targets": sum(
+            1
+            for row in ordered
+            for result in row.get("results", ())
+            if isinstance(result, Mapping) and result.get("status") == "FAIL"
+        ),
     }
     return {**semantic, "aggregate_identity": _identity(semantic)}
 
@@ -413,7 +491,10 @@ def derive_followup_manifest(
         for result in receipt.get("results", ()):
             if not isinstance(result, Mapping):
                 continue
-            if result.get("status") == "FAIL" or result.get("followup_required") is True:
+            if (
+                result.get("status") == "FAIL"
+                or result.get("followup_required") is True
+            ):
                 selected.append(
                     {
                         "target": str(result.get("target") or ""),
@@ -425,7 +506,9 @@ def derive_followup_manifest(
         return None
     parent_targets = _targets(list(parent_manifest.get("targets") or ()))
     selected_by_target = {str(row["target"]): row for row in selected}
-    ordered_targets = [target for target in parent_targets if target in selected_by_target]
+    ordered_targets = [
+        target for target in parent_targets if target in selected_by_target
+    ]
     selection_semantic: dict[str, object] = {
         "parent_manifest_identity": parent_manifest["manifest_identity"],
         "parent_aggregate_identity": aggregate["aggregate_identity"],
@@ -455,7 +538,9 @@ def derive_followup_manifest(
     )
 
 
-def next_resume_batch(manifest: Mapping[str, object], receipts: Sequence[Mapping[str, object]]) -> int | None:
+def next_resume_batch(
+    manifest: Mapping[str, object], receipts: Sequence[Mapping[str, object]]
+) -> int | None:
     """Return the first parent batch that is missing or did not completely pass."""
     by_index = {
         int(row["batch_index"]): row

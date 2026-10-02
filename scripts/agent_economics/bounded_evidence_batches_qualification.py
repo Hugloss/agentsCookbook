@@ -28,7 +28,9 @@ def _pass_results(targets: list[str]) -> list[dict[str, str]]:
     return [{"target": target, "status": "PASS"} for target in targets]
 
 
-def _observed_receipt(descriptor: dict[str, object], **kwargs: object) -> dict[str, object]:
+def _observed_receipt(
+    descriptor: dict[str, object], **kwargs: object
+) -> dict[str, object]:
     return build_receipt(
         descriptor,
         observed_repository_identity=str(descriptor["repository_identity"]),
@@ -84,7 +86,9 @@ def qualify() -> dict[str, object]:
         )
     aggregate = aggregate_receipts(manifest, receipts)
     if aggregate["status"] != COMPLETE_PASS or aggregate["passed_targets"] != 90:
-        failures.append("nine passing batches did not aggregate to complete 90-target proof")
+        failures.append(
+            "nine passing batches did not aggregate to complete 90-target proof"
+        )
     if next_resume_batch(manifest, receipts) is not None:
         failures.append("complete campaign incorrectly requested resume")
 
@@ -130,7 +134,9 @@ def qualify() -> dict[str, object]:
         or budget_aggregate["budget_exceeded_batch_indexes"] != [5]
         or budget_aggregate["product_failure"]
     ):
-        failures.append("budget-exceeded batch did not remain incomplete/non-product-failure")
+        failures.append(
+            "budget-exceeded batch did not remain incomplete/non-product-failure"
+        )
 
     children = subdivide_batch(timeout_batch, subbatch_size=5)
     if [child["targets"] for child in children] != [
@@ -153,8 +159,13 @@ def qualify() -> dict[str, object]:
         child_receipts,
         execution_class="hosted-diagnostic",
     )
-    if collapsed["status"] != COMPLETE_PASS or collapsed["results"] != receipts[4]["results"]:
-        failures.append("5+5 subdivision did not collapse to original 10-target semantics")
+    if (
+        collapsed["status"] != COMPLETE_PASS
+        or collapsed["results"] != receipts[4]["results"]
+    ):
+        failures.append(
+            "5+5 subdivision did not collapse to original 10-target semantics"
+        )
 
     staged_receipts = []
     followup_targets = {
@@ -190,12 +201,18 @@ def qualify() -> dict[str, object]:
         batch_size=2,
     )
     if followup is None:
-        failures.append("explicit heavy-followup targets produced no follow-up manifest")
+        failures.append(
+            "explicit heavy-followup targets produced no follow-up manifest"
+        )
     else:
         if followup["targets"] != [targets[3], targets[17], targets[44], targets[80]]:
-            failures.append("follow-up manifest did not preserve parent target ordering")
+            failures.append(
+                "follow-up manifest did not preserve parent target ordering"
+            )
         if followup["batch_count"] != 2:
-            failures.append("four heavy-followup targets did not become two bounded batches")
+            failures.append(
+                "four heavy-followup targets did not become two bounded batches"
+            )
         if followup.get("parent_manifest_identity") != manifest["manifest_identity"]:
             failures.append("follow-up manifest lost parent campaign identity")
         if not isinstance(followup.get("selection_identity"), str):
@@ -210,7 +227,9 @@ def qualify() -> dict[str, object]:
     except ValueError:
         pass
     else:
-        failures.append("incomplete cheap-stage evidence produced an expensive follow-up manifest")
+        failures.append(
+            "incomplete cheap-stage evidence produced an expensive follow-up manifest"
+        )
 
     tampered = dict(staged_receipts[0])
     tampered_results = [dict(row) for row in tampered["results"]]
@@ -221,7 +240,9 @@ def qualify() -> dict[str, object]:
     except ValueError:
         pass
     else:
-        failures.append("tampered per-target follow-up evidence retained receipt authority")
+        failures.append(
+            "tampered per-target follow-up evidence retained receipt authority"
+        )
 
     failed_batch = batch_descriptor(manifest, 7)
     failed_results = _pass_results(list(failed_batch["targets"]))
@@ -236,7 +257,10 @@ def qualify() -> dict[str, object]:
         execution_class="hosted-diagnostic",
         elapsed_ms=1200,
     )
-    if failure_receipt["status"] != PRODUCT_FAILURE or not failure_receipt["product_failure"]:
+    if (
+        failure_receipt["status"] != PRODUCT_FAILURE
+        or not failure_receipt["product_failure"]
+    ):
         failures.append("real target failure was not classified as product failure")
 
     stale_manifest = build_manifest(
@@ -261,13 +285,17 @@ def qualify() -> dict[str, object]:
             execution_class="hosted-diagnostic",
             elapsed_ms=100,
             observed_repository_identity="sha256:repo-generation-b",
-            observed_provider_identity=str(observed_mismatch_batch["provider_identity"]),
+            observed_provider_identity=str(
+                observed_mismatch_batch["provider_identity"]
+            ),
             observed_operation=str(observed_mismatch_batch["operation"]),
         )
     except ValueError:
         pass
     else:
-        failures.append("receipt accepted execution observed from another repository generation")
+        failures.append(
+            "receipt accepted execution observed from another repository generation"
+        )
 
     try:
         build_receipt(
@@ -275,14 +303,18 @@ def qualify() -> dict[str, object]:
             results=_pass_results(list(observed_mismatch_batch["targets"])),
             execution_class="hosted-diagnostic",
             elapsed_ms=100,
-            observed_repository_identity=str(observed_mismatch_batch["repository_identity"]),
+            observed_repository_identity=str(
+                observed_mismatch_batch["repository_identity"]
+            ),
             observed_provider_identity="sha256:hashmarks-wheel-b",
             observed_operation=str(observed_mismatch_batch["operation"]),
         )
     except ValueError:
         pass
     else:
-        failures.append("receipt accepted execution observed from another provider artifact")
+        failures.append(
+            "receipt accepted execution observed from another provider artifact"
+        )
 
     changed_provider = build_manifest(
         targets=targets,
@@ -315,27 +347,44 @@ def qualify() -> dict[str, object]:
 
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            batch_cli_main([
-                "plan",
-                "--targets-file", str(targets_path),
-                "--repository-identity", "sha256:repo-generation-a",
-                "--provider-identity", "sha256:hashmarks-wheel-a",
-                "--operation", "task_evidence",
-                "--batch-size", "10",
-                "--controller-budget-ms", "45000",
-                "--batch-timeout-ms", "30000",
-                "--minimum-headroom-ms", "5000",
-                "--artifact", str(manifest_path),
-            ])
+            batch_cli_main(
+                [
+                    "plan",
+                    "--targets-file",
+                    str(targets_path),
+                    "--repository-identity",
+                    "sha256:repo-generation-a",
+                    "--provider-identity",
+                    "sha256:hashmarks-wheel-a",
+                    "--operation",
+                    "task_evidence",
+                    "--batch-size",
+                    "10",
+                    "--controller-budget-ms",
+                    "45000",
+                    "--batch-timeout-ms",
+                    "30000",
+                    "--minimum-headroom-ms",
+                    "5000",
+                    "--artifact",
+                    str(manifest_path),
+                ]
+            )
         cli_manifest = json.loads(output.getvalue())
         assert json.loads(manifest_path.read_text(encoding="utf-8")) == cli_manifest
 
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            batch_cli_main([
-                "batch", str(manifest_path), "--index", "0",
-                "--artifact", str(batch_path),
-            ])
+            batch_cli_main(
+                [
+                    "batch",
+                    str(manifest_path),
+                    "--index",
+                    "0",
+                    "--artifact",
+                    str(batch_path),
+                ]
+            )
         cli_batch = json.loads(output.getvalue())
         results_path.write_text(
             json.dumps(_pass_results(list(cli_batch["targets"]))),
@@ -344,34 +393,52 @@ def qualify() -> dict[str, object]:
 
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            batch_cli_main([
-                "receipt", str(batch_path),
-                "--results-file", str(results_path),
-                "--execution-class", "hosted-diagnostic",
-                "--elapsed-ms", "123",
-                "--observed-repository-identity", "sha256:repo-generation-a",
-                "--observed-provider-identity", "sha256:hashmarks-wheel-a",
-                "--observed-operation", "task_evidence",
-                "--artifact", str(receipt_path),
-            ])
+            batch_cli_main(
+                [
+                    "receipt",
+                    str(batch_path),
+                    "--results-file",
+                    str(results_path),
+                    "--execution-class",
+                    "hosted-diagnostic",
+                    "--elapsed-ms",
+                    "123",
+                    "--observed-repository-identity",
+                    "sha256:repo-generation-a",
+                    "--observed-provider-identity",
+                    "sha256:hashmarks-wheel-a",
+                    "--observed-operation",
+                    "task_evidence",
+                    "--artifact",
+                    str(receipt_path),
+                ]
+            )
         cli_receipt = json.loads(output.getvalue())
         if cli_receipt["status"] != COMPLETE_PASS:
             failures.append("CLI receipt did not preserve complete PASS")
 
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            batch_cli_main([
-                "aggregate", str(manifest_path), str(receipt_path),
-            ])
+            batch_cli_main(
+                [
+                    "aggregate",
+                    str(manifest_path),
+                    str(receipt_path),
+                ]
+            )
         cli_aggregate = json.loads(output.getvalue())
         if cli_aggregate["status"] != COMPLETE_PASS:
             failures.append("CLI aggregate did not produce complete PASS")
 
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            batch_cli_main([
-                "resume", str(manifest_path), str(receipt_path),
-            ])
+            batch_cli_main(
+                [
+                    "resume",
+                    str(manifest_path),
+                    str(receipt_path),
+                ]
+            )
         cli_resume = json.loads(output.getvalue())
         if cli_resume["next_batch_index"] is not None:
             failures.append("CLI resume requested work after complete campaign")
@@ -390,7 +457,9 @@ def qualify() -> dict[str, object]:
             "controller_headroom_ms": manifest.get("controller_headroom_ms"),
             "subdivision_sizes": [len(child["targets"]) for child in children],
             "failure_status": failure_receipt["status"],
-            "followup_target_count": 0 if followup is None else followup["target_count"],
+            "followup_target_count": 0
+            if followup is None
+            else followup["target_count"],
             "cli_complete_status": cli_aggregate["status"],
             "observed_identity_binding": "PASS",
         },

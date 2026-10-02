@@ -3,6 +3,7 @@
 The benchmark schemas intentionally use a compact Draft 2020-12 subset so suite
 validation does not depend on a network install or an ambient jsonschema package.
 """
+
 from __future__ import annotations
 
 import json

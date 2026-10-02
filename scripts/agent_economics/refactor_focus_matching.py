@@ -191,9 +191,7 @@ def build_test_ownership_evidence(
     source_static_by_path: dict[Path, set[str]] = {}
     source_dynamic_by_path: dict[Path, dict[str, set[str]]] = {}
     source_files = [
-        path
-        for path in module_to_path.values()
-        if path.is_relative_to(source_root)
+        path for path in module_to_path.values() if path.is_relative_to(source_root)
     ]
     static_reexports, source_definitions = _static_reexport_index(
         source_files=source_files,
@@ -293,7 +291,9 @@ def build_test_ownership_evidence(
                     f"facade={facade_module}:symbol={symbol}:owner={owner_module}"
                 ),
             )
-        for source_module, kinds in sorted(source_dynamic_by_path.get(test_file, {}).items()):
+        for source_module, kinds in sorted(
+            source_dynamic_by_path.get(test_file, {}).items()
+        ):
             append(
                 source_module=source_module,
                 test_file=test_file,
@@ -329,7 +329,9 @@ def build_test_ownership_evidence(
                         f"depth={depth}:source={source_module}:kind=static_import"
                     ),
                 )
-            for source_module, kinds in sorted(source_dynamic_by_path.get(helper, {}).items()):
+            for source_module, kinds in sorted(
+                source_dynamic_by_path.get(helper, {}).items()
+            ):
                 append(
                     source_module=source_module,
                     test_file=test_file,

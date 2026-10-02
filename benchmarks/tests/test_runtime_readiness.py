@@ -147,9 +147,7 @@ class RuntimeReadinessTests(unittest.TestCase):
 
     def test_readiness_has_no_trial_admission_dependencies(self) -> None:
         source = (
-            Path(__file__).resolve().parents[1]
-            / "harness"
-            / "readiness.py"
+            Path(__file__).resolve().parents[1] / "harness" / "readiness.py"
         ).read_text(encoding="utf-8")
         for forbidden in (
             "preflight_trial",
@@ -188,7 +186,7 @@ class RuntimeReadinessTests(unittest.TestCase):
                 stdout_truncated=False,
                 stderr_truncated=False,
                 stderr=(
-                    b'Hashmarks MCP support requires the optional extra: '
+                    b"Hashmarks MCP support requires the optional extra: "
                     b'pip install "hashmarks[mcp]"\n'
                 ),
                 stdout=b"",
@@ -411,9 +409,7 @@ class RuntimeReadinessTests(unittest.TestCase):
         suite = fake_suite()
         suite.agents["unused"] = {"id": "unused", "adapter": "codex"}
         with self.assertRaisesRegex(ValueError, "unused"):
-            check_runtime_readiness(
-                suite, agents=("codex-native", "unused")
-            )
+            check_runtime_readiness(suite, agents=("codex-native", "unused"))
 
     def test_each_unique_runtime_pair_is_checked_once_without_retry(self) -> None:
         suite = fake_suite()

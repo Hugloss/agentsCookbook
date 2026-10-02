@@ -112,20 +112,26 @@ HARD_REGRESSION_DIMENSIONS = frozenset(
 
 
 def _identity(payload: Mapping[str, object]) -> str:
-    return "sha256:" + hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    return (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+    )
 
 
 def _hashmarks_identity(payload: Mapping[str, object]) -> str:
-    return "sha256:" + hashlib.sha256(
-        json.dumps(
-            payload,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode()
-    ).hexdigest()
+    return (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
+    )
 
 
 def _bounded_command_identity(argv: Sequence[str], cwd: str = ".") -> str:
@@ -209,7 +215,9 @@ def locality_snapshot(
         provider_evidence_identity,
     )
     if any(not _nonempty(value) for value in required):
-        raise ValueError("snapshot identities, provider, and target fields must be non-empty")
+        raise ValueError(
+            "snapshot identities, provider, and target fields must be non-empty"
+        )
     if state_kind not in {"observed", "proposed"}:
         raise ValueError("state_kind must be observed or proposed")
 
@@ -228,7 +236,9 @@ def locality_snapshot(
             "exact_non_verifier_caller_count", exact_caller_count
         )
         direct_verifier_count = row.get("direct_verifier_count", 0)
-        caller_reference_bound_complete = bool(row.get("caller_reference_bound_complete", False))
+        caller_reference_bound_complete = bool(
+            row.get("caller_reference_bound_complete", False)
+        )
         value_evidence_provider = str(row.get("value_evidence_provider") or "")
         value_repository_identity = str(row.get("value_repository_identity") or "")
         if (
@@ -255,7 +265,9 @@ def locality_snapshot(
             or isinstance(direct_verifier_count, bool)
             or direct_verifier_count < 0
         ):
-            raise ValueError("symbols must contain valid path/qualname/span/depth/kind evidence")
+            raise ValueError(
+                "symbols must contain valid path/qualname/span/depth/kind evidence"
+            )
         value_fields = (
             bool(value_kind),
             bool(value_evidence_identity),
@@ -270,7 +282,9 @@ def locality_snapshot(
         if value_kind and value_kind not in STRUCTURAL_VALUE_KINDS:
             raise ValueError(f"unsupported structural value kind: {value_kind}")
         if value_kind and value_repository_identity != repository_identity:
-            raise ValueError("structural value evidence must bind the measured repository identity")
+            raise ValueError(
+                "structural value evidence must bind the measured repository identity"
+            )
         normalized_symbols.append(
             {
                 "path": path,
@@ -304,7 +318,9 @@ def locality_snapshot(
         row["path"] == target_path and row["navigation_depth"] == 0
         for row in normalized_symbols
     ):
-        raise ValueError("snapshot must include the target authority at navigation depth 0")
+        raise ValueError(
+            "snapshot must include the target authority at navigation depth 0"
+        )
 
     verifier_files = _normalized_paths(list(verifier_paths))
     responsibility_rows = sorted(
@@ -434,7 +450,9 @@ def _hashmarks_packet_validation(
         nodes = []
     target_symbol_id = packet.get("target_symbol_id")
     if nodes and not any(
-        row.get("symbol_id") == target_symbol_id for row in nodes if isinstance(row, Mapping)
+        row.get("symbol_id") == target_symbol_id
+        for row in nodes
+        if isinstance(row, Mapping)
     ):
         errors.append("hashmarks-target-node")
     for row in nodes:
@@ -703,7 +721,9 @@ def locality_snapshot_from_hashmarks(
     """Build refactor-locality evidence from independently observed Hashmarks facts."""
     errors, incomplete = _hashmarks_packet_validation(packet)
     if errors:
-        raise ValueError("invalid Hashmarks structural-locality evidence: " + ", ".join(errors))
+        raise ValueError(
+            "invalid Hashmarks structural-locality evidence: " + ", ".join(errors)
+        )
     observed_execution = _provider_execution_observed and _observation_receipt_matches(
         observation_receipt, packet=packet
     )
@@ -782,9 +802,13 @@ def locality_snapshot_from_hashmarks(
             or any(not isinstance(caller, Mapping) for caller in exact_callers)
         ):
             raise ValueError(f"invalid caller facts for {symbol_id}")
-        caller_rows = [caller for caller in exact_callers if isinstance(caller, Mapping)]
+        caller_rows = [
+            caller for caller in exact_callers if isinstance(caller, Mapping)
+        ]
         if len(caller_rows) != caller_count:
-            raise ValueError(f"exact caller count does not match caller rows for {symbol_id}")
+            raise ValueError(
+                f"exact caller count does not match caller rows for {symbol_id}"
+            )
         if any(not _nonempty(caller.get("path")) for caller in caller_rows):
             raise ValueError(f"exact caller rows require paths for {symbol_id}")
         exact_non_verifier_caller_count = sum(
@@ -793,9 +817,7 @@ def locality_snapshot_from_hashmarks(
             if str(caller.get("path") or "") not in verifier_file_set
         )
         structure_kind = (
-            str(value.get("structure_kind") or "")
-            if value is not None
-            else ""
+            str(value.get("structure_kind") or "") if value is not None else ""
         ) or ("forwarding_helper" if forwarding is True else "implementation")
         symbols.append(
             {
@@ -912,7 +934,9 @@ def _locality_snapshot_from_observed_hashmarks(
     )
 
 
-def _symbol_map(snapshot: Mapping[str, object]) -> dict[tuple[str, str], Mapping[str, object]]:
+def _symbol_map(
+    snapshot: Mapping[str, object],
+) -> dict[tuple[str, str], Mapping[str, object]]:
     raw = snapshot.get("symbols")
     if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes, bytearray)):
         return {}
@@ -932,9 +956,7 @@ def _structural_value_is_credible(row: Mapping[str, object]) -> bool:
     structure_kind = str(row.get("structure_kind") or "implementation")
     forwarding_only = bool(row.get("forwarding_only", False))
     caller_count = row.get("exact_caller_count", 0)
-    non_verifier_caller_count = row.get(
-        "exact_non_verifier_caller_count", caller_count
-    )
+    non_verifier_caller_count = row.get("exact_non_verifier_caller_count", caller_count)
     verifier_count = row.get("direct_verifier_count", 0)
     value_provider = row.get("value_evidence_provider")
     value_repository_identity = row.get("value_repository_identity")
@@ -960,14 +982,18 @@ def _structural_value_is_credible(row: Mapping[str, object]) -> bool:
         or verifier_count < 1
     ):
         return False
-    if structure_kind in {
-        "shim",
-        "proxy",
-        "delegate",
-        "forwarding_helper",
-        "reexport",
-        "alias_module",
-    } and value_kind not in FORWARDING_BOUNDARY_VALUES:
+    if (
+        structure_kind
+        in {
+            "shim",
+            "proxy",
+            "delegate",
+            "forwarding_helper",
+            "reexport",
+            "alias_module",
+        }
+        and value_kind not in FORWARDING_BOUNDARY_VALUES
+    ):
         return False
     if structure_kind == "adapter" and value_kind not in {
         "protocol_adapter",
@@ -1036,7 +1062,9 @@ def _introduced_structure_evidence(
                     row.get("exact_caller_count", 0),
                 ),
                 "direct_verifier_count": row.get("direct_verifier_count", 0),
-                "caller_reference_bound_complete": row.get("caller_reference_bound_complete", False),
+                "caller_reference_bound_complete": row.get(
+                    "caller_reference_bound_complete", False
+                ),
                 "value_evidence_provider": row.get("value_evidence_provider"),
                 "value_repository_identity": row.get("value_repository_identity"),
                 "earned_structural_value": earned,
@@ -1066,9 +1094,8 @@ def compare_locality(
         unresolved.append("valid-locality-snapshots")
     if pre_snapshot.get("target") != post_snapshot.get("target"):
         unresolved.append("same-semantic-target")
-    if (
-        pre_snapshot.get("measurement_configuration_identity")
-        != post_snapshot.get("measurement_configuration_identity")
+    if pre_snapshot.get("measurement_configuration_identity") != post_snapshot.get(
+        "measurement_configuration_identity"
     ):
         unresolved.append("comparable-measurement-configuration")
     if pre_snapshot.get("provider") != post_snapshot.get("provider"):
@@ -1085,13 +1112,12 @@ def compare_locality(
     )
     if pre_independent != post_independent:
         unresolved.append("same-structural-evidence-authority")
-    same_repository = (
-        pre_snapshot.get("repository_identity")
-        == post_snapshot.get("repository_identity")
+    same_repository = pre_snapshot.get("repository_identity") == post_snapshot.get(
+        "repository_identity"
     )
     proposed_post = post_snapshot.get("state_kind") == "proposed"
-    distinct_source = (
-        pre_snapshot.get("source_identity") != post_snapshot.get("source_identity")
+    distinct_source = pre_snapshot.get("source_identity") != post_snapshot.get(
+        "source_identity"
     )
     if same_repository and not (proposed_post and distinct_source):
         unresolved.append("distinct-observed-state-or-proposal")
@@ -1219,9 +1245,7 @@ def decomposition_decision(
         if not _nonempty(row["kind"]) or not _nonempty(row["evidence_identity"])
     ]
     justifying = [
-        row
-        for row in normalized_evidence
-        if row["kind"] in JUSTIFYING_EVIDENCE_KINDS
+        row for row in normalized_evidence if row["kind"] in JUSTIFYING_EVIDENCE_KINDS
     ]
     tradeoff_bound = any(
         row["kind"] == TRADEOFF_EVIDENCE_KIND for row in normalized_evidence
@@ -1237,9 +1261,7 @@ def decomposition_decision(
         and comparison.get("post_snapshot_identity")
         == post_snapshot.get("evidence_identity")
     )
-    structural_value_complete = not bool(
-        comparison.get("unjustified_new_structures")
-    )
+    structural_value_complete = not bool(comparison.get("unjustified_new_structures"))
     pre_claims = pre_snapshot.get("claims")
     post_claims = post_snapshot.get("claims")
     independent_structural_evidence = (
@@ -1263,10 +1285,7 @@ def decomposition_decision(
         status = INSUFFICIENT_LOCALITY_EVIDENCE
     elif comparison_status == LOCALITY_PRESERVED_OR_IMPROVED:
         status = DECOMPOSITION_JUSTIFIED
-    elif (
-        comparison_status == LOCALITY_TRADEOFF_REVIEW_REQUIRED
-        and tradeoff_bound
-    ):
+    elif comparison_status == LOCALITY_TRADEOFF_REVIEW_REQUIRED and tradeoff_bound:
         status = DECOMPOSITION_JUSTIFIED
     else:
         status = INSUFFICIENT_LOCALITY_EVIDENCE
@@ -1314,9 +1333,7 @@ def decomposition_decision(
             [
                 {
                     "kind": "revise-decomposition-to-remove-unearned-structure",
-                    "symbols": comparison.get(
-                        "unjustified_new_structures", []
-                    ),
+                    "symbols": comparison.get("unjustified_new_structures", []),
                 }
             ]
             if status == DECOMPOSITION_LOCALITY_RISK
@@ -1428,11 +1445,7 @@ def main(argv: list[str] | None = None) -> None:
         raw = _load(args.input)
         bundled_packet = raw.get("packet")
         bundled_receipt = raw.get("observation_receipt")
-        packet = (
-            bundled_packet
-            if isinstance(bundled_packet, Mapping)
-            else raw
-        )
+        packet = bundled_packet if isinstance(bundled_packet, Mapping) else raw
         # Saved packet/receipt input is intentionally diagnostic. A caller-supplied
         # receipt cannot promote itself to independent observation authority.
         _ = bundled_receipt
@@ -1489,9 +1502,7 @@ def main(argv: list[str] | None = None) -> None:
         pre_snapshot=pre,
         post_snapshot=post,
         comparison=comparison,
-        decomposition_evidence=[
-            row for row in rows if isinstance(row, dict)
-        ],
+        decomposition_evidence=[row for row in rows if isinstance(row, dict)],
     )
     _write(args.artifact, {"comparison": comparison, "decision": decision})
 

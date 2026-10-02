@@ -8,11 +8,17 @@ from .hotspot_focus import DEFAULT_RANKING, hotspot_focus_audit
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Rank bounded repository hotspots for investigation.")
+    parser = argparse.ArgumentParser(
+        description="Rank bounded repository hotspots for investigation."
+    )
     parser.add_argument("--repository-root", type=Path, default=Path("."))
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--tests-root", type=Path)
-    parser.add_argument("--package-name", default=None, help="Import package name. Default: source-root basename.")
+    parser.add_argument(
+        "--package-name",
+        default=None,
+        help="Import package name. Default: source-root basename.",
+    )
     parser.add_argument("--tests-package-name", default="tests")
     parser.add_argument("--artifact", "--artifact-path", dest="artifact", type=Path)
     parser.add_argument("--format", choices=("human", "json"), default="human")
@@ -22,8 +28,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--history-max-commits", type=int, default=500)
     parser.add_argument("--history-max-bytes", type=int, default=8_000_000)
     parser.add_argument("--git-timeout-seconds", type=float, default=10.0)
-    parser.add_argument("--history-policy", choices=("auto", "required", "disabled"), default="auto")
-    parser.add_argument("--discovery-mode", choices=("auto", "git", "filesystem"), default="auto")
+    parser.add_argument(
+        "--history-policy", choices=("auto", "required", "disabled"), default="auto"
+    )
+    parser.add_argument(
+        "--discovery-mode", choices=("auto", "git", "filesystem"), default="auto"
+    )
     args = parser.parse_args(argv)
     payload = hotspot_focus_audit(
         repository_root=args.repository_root,
@@ -33,7 +43,9 @@ def main(argv: list[str] | None = None) -> None:
         tests_package_name=args.tests_package_name,
         artifact_path=args.artifact,
         top_n=args.top,
-        ranking_dimensions=tuple(item.strip() for item in args.rank_by.split(",") if item.strip()),
+        ranking_dimensions=tuple(
+            item.strip() for item in args.rank_by.split(",") if item.strip()
+        ),
         history_max_commits=args.history_max_commits,
         history_max_bytes=args.history_max_bytes,
         git_timeout_seconds=args.git_timeout_seconds,

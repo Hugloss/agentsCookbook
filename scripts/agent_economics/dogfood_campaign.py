@@ -93,9 +93,7 @@ def _scenario_requirements(
     raw_requirements: object,
 ) -> dict[str, int]:
     if not isinstance(raw_requirements, list) or not raw_requirements:
-        raise DogfoodCampaignError(
-            "scenario_requirements must be a non-empty list"
-        )
+        raise DogfoodCampaignError("scenario_requirements must be a non-empty list")
     requirements: dict[str, int] = {}
     for index, raw in enumerate(raw_requirements):
         if not isinstance(raw, Mapping):
@@ -121,9 +119,7 @@ def _scenario_requirements(
             field=f"scenario_requirements[{index}].required_pair_count",
         )
         if scenario_id in requirements:
-            raise DogfoodCampaignError(
-                f"duplicate scenario requirement: {scenario_id}"
-            )
+            raise DogfoodCampaignError(f"duplicate scenario requirement: {scenario_id}")
         requirements[scenario_id] = pair_count
     return requirements
 
@@ -136,9 +132,7 @@ def validate_campaign(
 
     unknown_root = set(campaign) - _ROOT_FIELDS
     if unknown_root:
-        raise DogfoodCampaignError(
-            f"unknown campaign fields: {sorted(unknown_root)}"
-        )
+        raise DogfoodCampaignError(f"unknown campaign fields: {sorted(unknown_root)}")
     schema = campaign.get("schema")
     if (
         not isinstance(schema, Mapping)
@@ -163,9 +157,7 @@ def validate_campaign(
         campaign.get("minimum_distinct_repositories"),
         field="minimum_distinct_repositories",
     )
-    required_scenarios = _scenario_requirements(
-        campaign.get("scenario_requirements")
-    )
+    required_scenarios = _scenario_requirements(campaign.get("scenario_requirements"))
 
     producer_authority = _required_text(
         campaign.get("producer_qualification_authority_id"),
@@ -273,9 +265,7 @@ def validate_campaign(
 
         key = (task_id, treatment_id)
         if key in rows:
-            raise DogfoodCampaignError(
-                f"duplicate campaign task pair: {key}"
-            )
+            raise DogfoodCampaignError(f"duplicate campaign task pair: {key}")
         rows[key] = raw
         scenario_ids.append(scenario_id)
         repositories.add(repository_id)
@@ -319,13 +309,9 @@ def validate_campaign(
             baseline.repository_id != repository_id
             or bridge.repository_id != repository_id
         ):
-            raise DogfoodCampaignError(
-                f"repository identity mismatch for pair {key}"
-            )
+            raise DogfoodCampaignError(f"repository identity mismatch for pair {key}")
         if baseline.corpus_id != corpus_id or bridge.corpus_id != corpus_id:
-            raise DogfoodCampaignError(
-                f"corpus identity mismatch for pair {key}"
-            )
+            raise DogfoodCampaignError(f"corpus identity mismatch for pair {key}")
         if bridge.bridge_implementation_id != implementation_id:
             raise DogfoodCampaignError(
                 f"bridge implementation identity mismatch for pair {key}"
@@ -343,9 +329,7 @@ def validate_campaign(
         actual_run_ids.extend((baseline.run_id, bridge.run_id))
         assert baseline.independent_qualification_authority_id is not None
         assert bridge.independent_qualification_authority_id is not None
-        qualification_authorities.add(
-            baseline.independent_qualification_authority_id
-        )
+        qualification_authorities.add(baseline.independent_qualification_authority_id)
 
     if len(actual_run_ids) != len(set(actual_run_ids)):
         raise DogfoodCampaignError(
@@ -358,15 +342,10 @@ def validate_campaign(
 
     cleanup = campaign.get("consumer_cleanup_evidence")
     if not isinstance(cleanup, list) or not cleanup:
-        raise DogfoodCampaignError(
-            "consumer_cleanup_evidence must be a non-empty list"
-        )
+        raise DogfoodCampaignError("consumer_cleanup_evidence must be a non-empty list")
     cleanup_by_repo: dict[str, str] = {}
     for index, row in enumerate(cleanup):
-        if (
-            not isinstance(row, Mapping)
-            or set(row) != {"repository_id", "evidence_id"}
-        ):
+        if not isinstance(row, Mapping) or set(row) != {"repository_id", "evidence_id"}:
             raise DogfoodCampaignError(
                 f"consumer_cleanup_evidence[{index}] must contain "
                 "repository_id and evidence_id"

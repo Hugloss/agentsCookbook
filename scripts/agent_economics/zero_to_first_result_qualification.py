@@ -40,17 +40,40 @@ def qualify() -> None:
             {"path": "tests", "status": "DETECTED", "basis": "test_directory_layout"}
         ]
         assert payload["suggestions"]["package_names"] == ["acme"]
-        assert payload["suggestions"]["quality_analysis_roots"] == ["src/acme", "scripts", "benchmarks"]
+        assert payload["suggestions"]["quality_analysis_roots"] == [
+            "src/acme",
+            "scripts",
+            "benchmarks",
+        ]
         assert payload["suggestions"]["quality_analysis_root_evidence"] == [
-            {"path": "src/acme", "status": "DETECTED", "basis": "python_package_layout"},
-            {"path": "scripts", "status": "PROPOSED", "basis": "conventional_directory_name"},
-            {"path": "benchmarks", "status": "PROPOSED", "basis": "conventional_directory_name"},
+            {
+                "path": "src/acme",
+                "status": "DETECTED",
+                "basis": "python_package_layout",
+            },
+            {
+                "path": "scripts",
+                "status": "PROPOSED",
+                "basis": "conventional_directory_name",
+            },
+            {
+                "path": "benchmarks",
+                "status": "PROPOSED",
+                "basis": "conventional_directory_name",
+            },
         ]
         assert payload["suggestions"]["ruff"]["limits"] == {
-            "C901": 8, "PLR0912": 9, "PLR0913": 6, "PLR0914": 15,
+            "C901": 8,
+            "PLR0912": 9,
+            "PLR0913": 6,
+            "PLR0914": 15,
         }
-        assert payload["suggestions"]["ruff"]["extend_exclude"] == ["benchmarks/retained"]
-        expected_quality_readiness = "READY" if payload["environment"]["ruff"]["available"] else "NEEDS_RUFF"
+        assert payload["suggestions"]["ruff"]["extend_exclude"] == [
+            "benchmarks/retained"
+        ]
+        expected_quality_readiness = (
+            "READY" if payload["environment"]["ruff"]["available"] else "NEEDS_RUFF"
+        )
         assert payload["readiness"]["quality_debt"] == expected_quality_readiness
         profile = profile_suggestion(payload)
         assert profile["status"] == "REVIEW_REQUIRED"
@@ -60,16 +83,31 @@ def qualify() -> None:
             "test_roots": ["tests"],
             "test_root_evidence": payload["suggestions"]["test_root_evidence"],
         }
-        assert profile["quality_debt"]["analysis_roots"] == ["src/acme", "scripts", "benchmarks"]
-        assert profile["quality_debt"]["analysis_root_evidence"] == payload["suggestions"]["quality_analysis_root_evidence"]
-        assert profile["interpretation"]["proposed_roots_require_review_before_persistent_use"] is True
+        assert profile["quality_debt"]["analysis_roots"] == [
+            "src/acme",
+            "scripts",
+            "benchmarks",
+        ]
+        assert (
+            profile["quality_debt"]["analysis_root_evidence"]
+            == payload["suggestions"]["quality_analysis_root_evidence"]
+        )
+        assert (
+            profile["interpretation"][
+                "proposed_roots_require_review_before_persistent_use"
+            ]
+            is True
+        )
         assert profile["quality_debt"]["limits"]["C901"] == 8
         assert profile["interpretation"]["writes_repository_configuration"] is False
         if payload["environment"]["ruff"]["available"]:
             assert "ruff_supply" not in profile["unresolved"]
         else:
             assert "ruff_supply" in profile["unresolved"]
-        assert payload["interpretation"]["suggestions_are_not_repository_authority"] is True
+        assert (
+            payload["interpretation"]["suggestions_are_not_repository_authority"]
+            is True
+        )
         assert payload["readiness"]["test_focus"] == "READY"
 
         (root / "src/second").mkdir()

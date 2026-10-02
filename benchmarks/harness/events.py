@@ -1,4 +1,5 @@
 """Append-only, sealable benchmark event evidence."""
+
 from __future__ import annotations
 
 import hashlib
@@ -28,7 +29,9 @@ def append_event(
     payload: dict[str, Any],
 ) -> None:
     if not trial_id or sequence < 0 or not kind:
-        raise ValueError("trial_id and kind must be non-empty and sequence must be >= 0")
+        raise ValueError(
+            "trial_id and kind must be non-empty and sequence must be >= 0"
+        )
     if _seal_path(path).exists():
         raise EventStreamError(f"event stream already sealed: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)

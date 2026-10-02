@@ -24,7 +24,9 @@ research suite and is not a release gate.
 
 Subjects and agents are replaceable participants. Hashmarks, Enola, Codex, local models, test selectors, and future tools are adapters, not schema concepts.
 
-Definition identity binds the frozen experiment/task/condition/trial/seed. Execution identity additionally binds observed subject, agent, oracle, harness, environment, and mutation authority. Re-running the same frozen task against a different product/model version therefore creates a different execution identity instead of overwriting or reusing an older result.
+Definition identity binds the frozen experiment, task, condition, trial, and paired replicate ID. Execution identity additionally binds observed subject, agent, oracle, harness, environment, and mutation authority. Re-running the same frozen task against a different product/model version therefore creates a different execution identity instead of overwriting or reusing an older result.
+
+New suites use explicit `replicate_ids` for paired stochastic observations. The legacy `seed` field remains readable for historical receipts; it was never transported as a provider sampling seed. A real `provider_seed`, if supported later, must be independently observed and bound to execution authority. Reports treat disagreement across replicates as evidence, with no scored retries.
 
 Each trial uses isolated HOME, TMP, and XDG roots where the agent contract requires them, bounded process execution, sealed raw event evidence, an independently healthy oracle, and a create-once verified result receipt. A trial is resumably complete only when its result, checksum, completion record, and bound artifacts agree.
 
@@ -38,7 +40,11 @@ Trial admission is single-owned by `benchmarks.harness.admission`:
 
 Both `preflight` and `run` use that same path. Preflight is diagnostic and never invokes the coding agent or publishes a trial result.
 
-Runtime readiness is deliberately separate from trial admission. `benchmark-check`/the `check` command never selects or materializes a task, applies a mutation, runs an oracle, derives a trial/execution identity, inspects receipts, or invokes a model. It creates one disposable smoke workspace, verifies shared subject prerequisites once, and checks each distinct agent/subject pair, including bare conditions, once. The held-out suite therefore produces six pair outcomes rather than expanding its 216 task/condition/seed definitions. The disposable workspace is deleted when the command exits; rerunning the check is always an explicit user action.
+`campaign-audit` uses the same campaign authority observer as `run` across every selected task/condition. It checks global runtime and subject identity, task-scoped native configuration, and paired input equality without invoking a model or publishing campaign authority. It reports pending oracle reviews separately and exits 2 until they are complete. Run it before an expensive campaign; an audit result is diagnostic and never authorizes inference.
+
+Runtime readiness is deliberately separate from trial admission. `benchmark-check`/the `check` command never selects or materializes a task, applies a mutation, runs an oracle, derives a trial/execution identity, inspects receipts, or invokes a model. It creates one disposable smoke workspace, verifies shared subject prerequisites once, and checks each distinct agent/subject pair, including bare conditions, once. The held-out suite therefore produces six pair outcomes rather than expanding its 216 task/condition/replicate definitions. The disposable workspace is deleted when the command exits; rerunning the check is always an explicit user action.
+
+`run` admits every selected task/condition without inference before its first model call and writes a canonical campaign authority receipt. Every later trial compares observed authority and exact task inputs against that receipt before invoking the model. A durable launch claim makes interrupted trials visible and prevents replacing a started execution. A changed runtime, model, configuration, subject source, workspace input, or selected population requires a new campaign root. The held-out suite also requires two independent, task-bound oracle reviews before admission.
 
 Native tool discovery and benchmark-subject selection are separate authorities.
 
@@ -107,6 +113,7 @@ Then use:
 
 ```sh
 make benchmark-check       # six agent/subject readiness probes for held-out v1
+make benchmark-oracle-review-check # independent oracle qualification gate
 make benchmark-check-all   # preflight 108 definitions per selected agent
 make benchmark
 make benchmark-report      # generic framework report

@@ -74,16 +74,19 @@ function sleep(ms) {
 }
 
 function readJsonText(raw, label) {
-  const jsonStart = raw.indexOf('{');
-  if (jsonStart === -1) {
-    throw new Error(`${label}: missing JSON object`);
+  const parsed = JSON.parse(raw.trim());
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${label}: expected one JSON object`);
   }
-  return JSON.parse(raw.slice(jsonStart));
+  return parsed;
 }
 
 function extractFinalAnswer(exportOutput) {
   const data = readJsonText(exportOutput, 'opencode export');
-  const messages = Array.isArray(data.messages) ? data.messages : [];
+  if (!Array.isArray(data.messages)) {
+    throw new Error('opencode export: messages must be an array');
+  }
+  const messages = data.messages;
   const assistantMessages = messages.filter(
     (message) =>
       message &&
@@ -96,16 +99,15 @@ function extractFinalAnswer(exportOutput) {
 
   const finalMessage = assistantMessages[assistantMessages.length - 1];
   const parts = Array.isArray(finalMessage.parts) ? finalMessage.parts : [];
-  const text = parts
-    .filter(
-      (part) =>
-        part &&
-        part.type === 'text' &&
-        typeof part.text === 'string',
-    )
+  const lastTool = parts.findLastIndex((part) => part && part.type === 'tool');
+  const text = parts.slice(lastTool + 1)
+    .filter((part) => part && part.type === 'text' && typeof part.text === 'string')
     .map((part) => part.text)
     .join('\n')
     .trim();
+  if (!text) {
+    throw new Error('opencode export: terminal assistant message has no final text');
+  }
 
   return { data, text };
 }
@@ -880,18 +882,6 @@ async function findSessionId({
             return exactMatch.id;
           }
 
-          const timeMatch = sessions
-            .filter(
-              (session) =>
-                session &&
-                session.directory === repoDir &&
-                typeof session.updated === 'number' &&
-                session.updated >= startedAt,
-            )
-            .sort((left, right) => right.updated - left.updated)[0];
-          if (timeMatch && timeMatch.id) {
-            return timeMatch.id;
-          }
         }
       } catch {
         // Retry until OpenCode persists a readable session list.

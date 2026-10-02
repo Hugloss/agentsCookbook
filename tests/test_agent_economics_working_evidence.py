@@ -31,7 +31,9 @@ def test_working_evidence_rejects_repository_intelligence_copies() -> None:
 
     errors = validate_working_evidence(payload)
 
-    assert any("must not duplicate repository intelligence" in error for error in errors)
+    assert any(
+        "must not duplicate repository intelligence" in error for error in errors
+    )
 
 
 def test_repository_generation_invalidation_requires_provider_reference() -> None:
@@ -41,15 +43,20 @@ def test_repository_generation_invalidation_requires_provider_reference() -> Non
         "repository-generation invalidation requires provider_reference; "
         "working evidence must not own repository generation"
     ]
-    assert validate_invalidation(
-        {
-            "kind": "repository-generation",
-            "provider_reference": "hashmarks:repository-generation",
-        }
-    ) == []
+    assert (
+        validate_invalidation(
+            {
+                "kind": "repository-generation",
+                "provider_reference": "hashmarks:repository-generation",
+            }
+        )
+        == []
+    )
 
 
-def test_environment_lifetime_is_task_local_and_does_not_need_repository_owner() -> None:
+def test_environment_lifetime_is_task_local_and_does_not_need_repository_owner() -> (
+    None
+):
     assert validate_invalidation({"kind": "environment-change"}) == []
 
 
@@ -193,7 +200,9 @@ def test_unknown_provider_freshness_fails_closed() -> None:
     }
 
 
-def _proof(boundary: str, *, fresh: bool = True, direct: bool = True) -> dict[str, object]:
+def _proof(
+    boundary: str, *, fresh: bool = True, direct: bool = True
+) -> dict[str, object]:
     return {
         "boundary": boundary,
         "provider_reference": {
@@ -311,6 +320,4 @@ def test_malformed_scope_expansion_fails_closed() -> None:
 
     assert result["sufficient"] is False
     assert result["scope_expanded"] is True
-    assert result["invalid_scope_expansion_evidence"] == [
-        "<invalid-scope-expansion>"
-    ]
+    assert result["invalid_scope_expansion_evidence"] == ["<invalid-scope-expansion>"]

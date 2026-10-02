@@ -1,4 +1,5 @@
 """Crash-safe, recoverable trial receipt finalization."""
+
 from __future__ import annotations
 
 import hashlib
@@ -76,7 +77,9 @@ def write_receipt(directory: Path, receipt: dict[str, Any]) -> tuple[Path, str]:
     completion_payload = canonical_json({"result_sha256": receipt_sha})
 
     if completion.exists():
-        raise ReceiptExistsError(f"invalid completion state already exists: {directory}")
+        raise ReceiptExistsError(
+            f"invalid completion state already exists: {directory}"
+        )
 
     if result.exists():
         if result.read_bytes() != payload:

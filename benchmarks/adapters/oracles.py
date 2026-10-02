@@ -130,9 +130,7 @@ def observe_repository_location(
         observed["format_compliant"] = False
         lines = stripped.splitlines()
         if len(lines) < 3 or lines[0] != "```json" or lines[-1] != "```":
-            observed["reason"] = (
-                "answer is not one bare JSON object or one json fence"
-            )
+            observed["reason"] = "answer is not one bare JSON object or one json fence"
             observed["actual_text"] = final_message
             return observed
         payload = "\n".join(lines[1:-1]).strip()
@@ -173,9 +171,7 @@ def observe_repository_location(
         and isinstance(actual.get("symbol"), str)
         and bool(actual["symbol"].strip())
     )
-    observed["format_compliant"] = (
-        observed["format_compliant"] and structure_compliant
-    )
+    observed["format_compliant"] = observed["format_compliant"] and structure_compliant
     normalized, normalizations, reason = _normalize_repository_location(
         actual,
         workspace=workspace,
@@ -271,7 +267,9 @@ class RepositoryLocationOracle:
             "",
         )
 
-    def observe(self, context: TrialContext, observation: Observation) -> dict[str, Any]:
+    def observe(
+        self, context: TrialContext, observation: Observation
+    ) -> dict[str, Any]:
         return observe_repository_location(
             observation.payload.get("final_message"),
             workspace=context.workspace,
@@ -361,8 +359,11 @@ class CommandOracle:
             self.participant_id,
             "oracle",
             self.version,
-            {"health_argv": self.health_argv, "grade_argv": self.grade_argv,
-             "result_format": self.result_format},
+            {
+                "health_argv": self.health_argv,
+                "grade_argv": self.grade_argv,
+                "result_format": self.result_format,
+            },
         )
 
     def _run(

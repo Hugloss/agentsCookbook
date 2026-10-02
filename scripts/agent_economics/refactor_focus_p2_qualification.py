@@ -46,9 +46,12 @@ def _run_probe(
         return original_ast_parse(*args, **kwargs)
 
     started = time.perf_counter()
-    with patch.object(Path, "read_bytes", counted_read_bytes), patch(
-        "ast.parse",
-        counted_ast_parse,
+    with (
+        patch.object(Path, "read_bytes", counted_read_bytes),
+        patch(
+            "ast.parse",
+            counted_ast_parse,
+        ),
     ):
         refactor_focus_audit(
             emit=emit,
@@ -132,7 +135,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     if not p1.get("passed"):
         failures.append("P1 evidence-authority qualification regressed")
 
-    with tempfile.TemporaryDirectory(prefix="agent-economics-refactor-focus-p2-") as tmp:
+    with tempfile.TemporaryDirectory(
+        prefix="agent-economics-refactor-focus-p2-"
+    ) as tmp:
         root = Path(tmp)
         materialize_corpus(root)
 
@@ -180,7 +185,11 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
 
         candidates = bounded.get("candidates", [])
         assert isinstance(candidates, list)
-        rows = [contract_candidate_as_legacy_row(item) for item in candidates if isinstance(item, dict)]
+        rows = [
+            contract_candidate_as_legacy_row(item)
+            for item in candidates
+            if isinstance(item, dict)
+        ]
         evidence_paths: set[str] = set()
         for row in rows:
             if not isinstance(row, dict):

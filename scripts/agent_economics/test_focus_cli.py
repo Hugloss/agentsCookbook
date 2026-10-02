@@ -16,7 +16,9 @@ def _gate(value: str) -> GateSpec:
     return GateSpec(name=name.strip(), command=command.strip())
 
 
-def _changed_paths(values: list[Path], path_file: Path | None, repository_root: Path) -> list[Path]:
+def _changed_paths(
+    values: list[Path], path_file: Path | None, repository_root: Path
+) -> list[Path]:
     result = list(values)
     if path_file is not None:
         source = path_file if path_file.is_absolute() else repository_root / path_file
@@ -45,7 +47,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--changed-paths-file", type=Path, default=None)
     parser.add_argument("--package-name", default=None)
     parser.add_argument("--tests-package-name", default=None)
-    parser.add_argument("--artifact", "--artifact-path", dest="artifact", type=Path, default=Path(".agent-artifacts/test-focus.json"))
+    parser.add_argument(
+        "--artifact",
+        "--artifact-path",
+        dest="artifact",
+        type=Path,
+        default=Path(".agent-artifacts/test-focus.json"),
+    )
     parser.add_argument("--format", choices=("human", "json"), default="human")
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--ownership-hints-path", type=Path, default=None)
@@ -63,10 +71,20 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="NAME=COMMAND",
         help="Repository-supplied broader verification command. Repeat as needed.",
     )
-    parser.add_argument("--discovery-mode", choices=("auto", "git", "filesystem"), default="auto")
-    parser.add_argument("--untracked-policy", choices=("include", "exclude"), default="include")
-    parser.add_argument("--ignored-policy", choices=("exclude", "include"), default="exclude")
-    parser.add_argument("--symlink-policy", choices=("exclude", "reject", "within-repo"), default="exclude")
+    parser.add_argument(
+        "--discovery-mode", choices=("auto", "git", "filesystem"), default="auto"
+    )
+    parser.add_argument(
+        "--untracked-policy", choices=("include", "exclude"), default="include"
+    )
+    parser.add_argument(
+        "--ignored-policy", choices=("exclude", "include"), default="exclude"
+    )
+    parser.add_argument(
+        "--symlink-policy",
+        choices=("exclude", "reject", "within-repo"),
+        default="exclude",
+    )
     parser.add_argument("--exclude-path", action="append", default=[])
     parser.add_argument("--no-default-excludes", action="store_true")
     parser.add_argument("--git-timeout-seconds", type=float, default=5.0)
@@ -77,7 +95,9 @@ def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     repository_root = args.repository_root.resolve()
     try:
-        changed = _changed_paths(args.changed_path, args.changed_paths_file, repository_root)
+        changed = _changed_paths(
+            args.changed_path, args.changed_paths_file, repository_root
+        )
         payload = test_focus_audit(
             repository_root=repository_root,
             source_root=args.source_root,
@@ -109,9 +129,11 @@ def main(argv: list[str] | None = None) -> None:
     if args.format == "json":
         print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     else:
-        print(f"artifact={args.artifact.as_posix()} candidates={len(payload['candidates'])} "
-              f"verification={len(payload['verification_suggestions'])} "
-              f"uncertainty={len(payload['uncertainty'])}")
+        print(
+            f"artifact={args.artifact.as_posix()} candidates={len(payload['candidates'])} "
+            f"verification={len(payload['verification_suggestions'])} "
+            f"uncertainty={len(payload['uncertainty'])}"
+        )
 
 
 if __name__ == "__main__":

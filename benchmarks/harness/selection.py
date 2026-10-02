@@ -1,4 +1,5 @@
 """Select frozen benchmark definitions consistently across CLI surfaces."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -46,8 +47,10 @@ def select_definitions(
     conditions = {row["id"]: row for row in suite.experiment["conditions"]}
     if condition and condition not in conditions:
         raise SelectionError(f"unknown condition ID: {condition}")
-    if condition and agents and (
-        len(agents) != 1 or agents[0] != conditions[condition]["agent"]
+    if (
+        condition
+        and agents
+        and (len(agents) != 1 or agents[0] != conditions[condition]["agent"])
     ):
         raise SelectionError(
             f"--condition {condition} requires its matching single --agent "
@@ -69,9 +72,7 @@ def select_definitions(
         rows.append(row)
     if not rows:
         raise SelectionError("no trials matched the requested filters")
-    represented_agents = {
-        str(conditions[row["condition_id"]]["agent"]) for row in rows
-    }
+    represented_agents = {str(conditions[row["condition_id"]]["agent"]) for row in rows}
     missing_agents = sorted(set(agents) - represented_agents)
     if missing_agents:
         raise SelectionError(

@@ -165,12 +165,28 @@ def seed_codex_auth(
 
 
 def _final_message(events: list[dict[str, Any]]) -> str | None:
-    messages = [
-        item.get("text")
-        for item in _completed_items(events)
-        if item.get("type") == "agent_message" and isinstance(item.get("text"), str)
+    terminals = [
+        index
+        for index, event in enumerate(events)
+        if event.get("type") in {"turn.completed", "turn.failed", "error"}
     ]
-    return messages[-1] if messages else None
+    if not terminals or events[terminals[-1]].get("type") != "turn.completed":
+        return None
+    if any(
+        event.get("type") == "item.completed" for event in events[terminals[-1] + 1 :]
+    ):
+        return None
+    for event in reversed(events[: terminals[-1]]):
+        if event.get("type") != "item.completed":
+            continue
+        item = event.get("item")
+        if not isinstance(item, dict):
+            return None
+        if item.get("type") != "agent_message":
+            return None
+        value = item.get("text")
+        return value if isinstance(value, str) and value.strip() else None
+    return None
 
 
 def _exposure_payload(exposure: McpExposure | None) -> dict[str, Any] | None:
@@ -206,13 +222,9 @@ def _validate_native_exposure(
         return
     executable = Path(exposure.command).expanduser().resolve()
     if not executable.is_file():
-        raise ValueError(
-            f"benchmark MCP executable does not exist: {executable}"
-        )
+        raise ValueError(f"benchmark MCP executable does not exist: {executable}")
     if exposure.cwd.resolve() != context.workspace.resolve():
-        raise ValueError(
-            f"benchmark MCP {exposure.name} runs outside trial workspace"
-        )
+        raise ValueError(f"benchmark MCP {exposure.name} runs outside trial workspace")
 
 
 @dataclass(frozen=True)
@@ -252,9 +264,7 @@ class CodexAgent:
     def _executable(self, context: TrialContext) -> str:
         resolved = resolve_native_executable(context, "codex")
         if resolved is None:
-            raise ValueError(
-                "codex is not available on the native PATH"
-            )
+            raise ValueError("codex is not available on the native PATH")
         return resolved
 
     def _config_path(self, context: TrialContext) -> Path:
@@ -472,9 +482,7 @@ class CodexAgent:
                     },
                     "",
                 )
-            if _exposure_sha256(exposure) != prepared.get(
-                "subject_exposure_sha256"
-            ):
+            if _exposure_sha256(exposure) != prepared.get("subject_exposure_sha256"):
                 return Observation(
                     {
                         "terminal_event": None,

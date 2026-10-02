@@ -78,7 +78,9 @@ def process_tree_capability() -> dict[str, object]:
     }
 
 
-def _environment_evidence(environment: Mapping[str, str]) -> tuple[str, tuple[str, ...]]:
+def _environment_evidence(
+    environment: Mapping[str, str],
+) -> tuple[str, tuple[str, ...]]:
     semantic = {
         key: "sha256:" + hashlib.sha256(value.encode()).hexdigest()
         for key, value in sorted(environment.items())
@@ -107,11 +109,15 @@ def _identity(
 def safe_cwd(repository_root: Path, cwd: Path | str = ".") -> tuple[Path, str]:
     root = repository_root.resolve()
     candidate = Path(cwd)
-    resolved = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
+    resolved = (
+        candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
+    )
     try:
         relative = resolved.relative_to(root)
     except ValueError as exc:
-        raise BoundedProcessError(f"command cwd escapes repository root: {cwd}") from exc
+        raise BoundedProcessError(
+            f"command cwd escapes repository root: {cwd}"
+        ) from exc
     if not resolved.is_dir():
         raise BoundedProcessError(f"command cwd does not exist: {relative.as_posix()}")
     return resolved, relative.as_posix() if relative != Path(".") else "."
@@ -171,8 +177,12 @@ def run_bounded(
         or "\x00" in value
         for key, value in runtime_environment.items()
     ):
-        raise BoundedProcessError("environment overrides must be valid non-NUL string pairs")
-    environment_identity, environment_variables = _environment_evidence(runtime_environment)
+        raise BoundedProcessError(
+            "environment overrides must be valid non-NUL string pairs"
+        )
+    environment_identity, environment_variables = _environment_evidence(
+        runtime_environment
+    )
     command_identity = _identity(argv, cwd_relative, environment_identity)
     started = time.perf_counter()
     child_environment = os.environ.copy() if inherit_environment else {}
@@ -194,16 +204,26 @@ def run_bounded(
         process = subprocess.Popen(list(argv), **popen_kwargs)
     except FileNotFoundError:
         return ProcessResult(
-            argv=tuple(argv), cwd=cwd_relative, command_identity=command_identity,
+            argv=tuple(argv),
+            cwd=cwd_relative,
+            command_identity=command_identity,
             environment_identity=environment_identity,
             environment_variables=environment_variables,
-            return_code=None, signal=None, timed_out=False, executable_missing=True,
-            stdout=b"", stderr=b"", stdout_truncated=False, stderr_truncated=False,
+            return_code=None,
+            signal=None,
+            timed_out=False,
+            executable_missing=True,
+            stdout=b"",
+            stderr=b"",
+            stdout_truncated=False,
+            stderr_truncated=False,
             elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
             process_tree_termination="not-needed",
         )
     except OSError as exc:
-        raise BoundedProcessError(f"command failed to start: {type(exc).__name__}") from exc
+        raise BoundedProcessError(
+            f"command failed to start: {type(exc).__name__}"
+        ) from exc
 
     stdout, stderr = bytearray(), bytearray()
     stdout_truncated, stderr_truncated = threading.Event(), threading.Event()
@@ -215,7 +235,9 @@ def run_bounded(
             if process.poll() is None:
                 termination["value"] = _terminate_tree(process)
 
-    def drain(stream: object, sink: bytearray, maximum: int, truncated: threading.Event) -> None:
+    def drain(
+        stream: object, sink: bytearray, maximum: int, truncated: threading.Event
+    ) -> None:
         while True:
             chunk = stream.read(65536)  # type: ignore[attr-defined]
             if not chunk:
@@ -230,8 +252,16 @@ def run_bounded(
 
     assert process.stdout is not None and process.stderr is not None
     threads = [
-        threading.Thread(target=drain, args=(process.stdout, stdout, limits.max_stdout_bytes, stdout_truncated), daemon=True),
-        threading.Thread(target=drain, args=(process.stderr, stderr, limits.max_stderr_bytes, stderr_truncated), daemon=True),
+        threading.Thread(
+            target=drain,
+            args=(process.stdout, stdout, limits.max_stdout_bytes, stdout_truncated),
+            daemon=True,
+        ),
+        threading.Thread(
+            target=drain,
+            args=(process.stderr, stderr, limits.max_stderr_bytes, stderr_truncated),
+            daemon=True,
+        ),
     ]
     for thread in threads:
         thread.start()
@@ -257,12 +287,19 @@ def run_bounded(
                 pass
     sig = -return_code if return_code < 0 else None
     return ProcessResult(
-        argv=tuple(argv), cwd=cwd_relative, command_identity=command_identity,
+        argv=tuple(argv),
+        cwd=cwd_relative,
+        command_identity=command_identity,
         environment_identity=environment_identity,
         environment_variables=environment_variables,
-        return_code=return_code, signal=sig, timed_out=timed_out.is_set(),
-        executable_missing=False, stdout=bytes(stdout), stderr=bytes(stderr),
-        stdout_truncated=stdout_truncated.is_set(), stderr_truncated=stderr_truncated.is_set(),
+        return_code=return_code,
+        signal=sig,
+        timed_out=timed_out.is_set(),
+        executable_missing=False,
+        stdout=bytes(stdout),
+        stderr=bytes(stderr),
+        stdout_truncated=stdout_truncated.is_set(),
+        stderr_truncated=stderr_truncated.is_set(),
         elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
         process_tree_termination=termination["value"],
     )

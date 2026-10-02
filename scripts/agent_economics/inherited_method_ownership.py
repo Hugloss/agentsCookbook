@@ -27,7 +27,11 @@ class _ClassInfo:
 
 
 def _lazy_getattr_export_name(node: ast.AST, argument: str) -> str | None:
-    if not isinstance(node, ast.Compare) or len(node.ops) != 1 or len(node.comparators) != 1:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or len(node.comparators) != 1
+    ):
         return None
     if not isinstance(node.ops[0], ast.Eq):
         return None
@@ -244,7 +248,9 @@ def _class_index(
         if tree is None:
             continue
         local_classes = {
-            node.name for node in getattr(tree, "body", []) if isinstance(node, ast.ClassDef)
+            node.name
+            for node in getattr(tree, "body", [])
+            if isinstance(node, ast.ClassDef)
         }
         aliases = aliases_by_module[module]
         for node in getattr(tree, "body", []):
@@ -288,9 +294,14 @@ def _class_index(
     return classes, aliases_by_module, module_paths
 
 
-def _method_node(info: _ClassInfo, method: str) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+def _method_node(
+    info: _ClassInfo, method: str
+) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
     for node in info.node.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == method:
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == method
+        ):
             return node
     return None
 
@@ -339,8 +350,7 @@ def _context_manager_returns_self(
         return False
     returns = [node for node in ast.walk(method) if isinstance(node, ast.Return)]
     return bool(returns) and all(
-        isinstance(node.value, ast.Name) and node.value.id == "self"
-        for node in returns
+        isinstance(node.value, ast.Name) and node.value.id == "self" for node in returns
     )
 
 
@@ -535,7 +545,9 @@ def build_inherited_method_ownership_evidence(
                 module_paths=module_paths,
             )
             for call in ast.walk(scope):
-                if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Attribute):
+                if not isinstance(call, ast.Call) or not isinstance(
+                    call.func, ast.Attribute
+                ):
                     continue
                 receiver = _receiver_class(
                     call.func.value,

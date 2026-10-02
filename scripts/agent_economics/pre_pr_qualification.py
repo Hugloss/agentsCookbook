@@ -16,7 +16,11 @@ from .command_runner import classify_result, run_named_command
 from .hotspot_focus import hotspot_focus_audit
 from .local_qualify import qualify_local
 from .loop_state import LoopBudget, LoopSession
-from .refactor_focus_discovery import DiscoveryConfig, DiscoveryError, discover_python_roots
+from .refactor_focus_discovery import (
+    DiscoveryConfig,
+    DiscoveryError,
+    discover_python_roots,
+)
 
 
 def _write(path: Path, text: str | bytes) -> None:
@@ -28,7 +32,9 @@ def _write(path: Path, text: str | bytes) -> None:
 
 
 def _git(root: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(root), *args], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(
+        ["git", "-C", str(root), *args], check=True, stdout=subprocess.DEVNULL
+    )
 
 
 def _expect(exc_type, fn) -> None:
@@ -42,7 +48,9 @@ def _expect(exc_type, fn) -> None:
 def _manifest(root: Path) -> Path:
     py = sys.executable.replace("\\", "\\\\")
     path = root / "agent-economics.toml"
-    _write(path, f'''version = 1
+    _write(
+        path,
+        f'''version = 1
 [commands.pass]
 argv = ["{py}", "-c", "print('ok')"]
 stage = "focused"
@@ -89,7 +97,8 @@ allowed_mutation_paths = ["tracked.txt"]
 [commands.broadfail]
 argv = ["{py}", "-c", "import sys; print('failure'); sys.exit(1)"]
 stage = "repository"
-''')
+''',
+    )
     return path
 
 
@@ -108,10 +117,15 @@ def _loop_budget_cases(root: Path) -> None:
         path = root / f".agent-artifacts/{name}.json"
         with LoopSession(path, budget=budget, repository_root=root) as session:
             state = session.record(
-                source_identity="s", command_identity="c", failure_identity=name,
-                evidence_identity="e", stdout_bytes=extra.get("stdout_bytes", 0),
-                stderr_bytes=extra.get("stderr_bytes", 0), elapsed_ms=extra.get("elapsed_ms", 0),
-                evidence_files=extra.get("evidence_files", 0), evidence_lines=extra.get("evidence_lines", 0),
+                source_identity="s",
+                command_identity="c",
+                failure_identity=name,
+                evidence_identity="e",
+                stdout_bytes=extra.get("stdout_bytes", 0),
+                stderr_bytes=extra.get("stderr_bytes", 0),
+                elapsed_ms=extra.get("elapsed_ms", 0),
+                evidence_files=extra.get("evidence_files", 0),
+                evidence_lines=extra.get("evidence_lines", 0),
                 context_tokens=extra.get("context_tokens", 0),
             )
             assert str(state["stop_reason"]).endswith("BUDGET_EXHAUSTED")
@@ -128,7 +142,8 @@ def _process_tree_case(root: Path) -> None:
         "time.sleep(30)"
     )
     result = run_bounded(
-        repository_root=root, argv=(sys.executable, "-c", code),
+        repository_root=root,
+        argv=(sys.executable, "-c", code),
         limits=ProcessLimits(0.3, 4096, 4096),
     )
     assert result.timed_out
@@ -158,21 +173,33 @@ def _hotspot_identity_case(root: Path) -> None:
     _git(root, "add", ".")
     _git(root, "commit", "-qm", "fixture")
     first = hotspot_focus_audit(
-        repository_root=root, source_root=src, tests_root=tests,
-        package_name="pkg", history_policy="required", discovery_mode="git",
+        repository_root=root,
+        source_root=src,
+        tests_root=tests,
+        package_name="pkg",
+        history_policy="required",
+        discovery_mode="git",
     )
     first_id = first["repository"]["identity"]
     _write(tests / "test_a.py", "from pkg.a import f\ndef test_f(): assert f(0)==0\n")
     second = hotspot_focus_audit(
-        repository_root=root, source_root=src, tests_root=tests,
-        package_name="pkg", history_policy="required", discovery_mode="git",
+        repository_root=root,
+        source_root=src,
+        tests_root=tests,
+        package_name="pkg",
+        history_policy="required",
+        discovery_mode="git",
     )
     assert second["repository"]["identity"] != first_id
     _git(root, "add", ".")
     _git(root, "commit", "-qm", "test change")
     third = hotspot_focus_audit(
-        repository_root=root, source_root=src, tests_root=tests,
-        package_name="pkg", history_policy="required", discovery_mode="git",
+        repository_root=root,
+        source_root=src,
+        tests_root=tests,
+        package_name="pkg",
+        history_policy="required",
+        discovery_mode="git",
     )
     assert third["repository"]["identity"] != second["repository"]["identity"]
 
@@ -192,46 +219,84 @@ def main() -> None:
         bad = root / "bad.toml"
         _write(bad, 'version=1\nunknown=true\n[commands.x]\nargv=["x"]\n')
         _expect(CommandManifestError, lambda: load_command_manifest(bad))
-        _write(bad, 'version=1\n[commands.x]\nargv=["x"]\nappend_selected_tests="yes"\n')
+        _write(
+            bad, 'version=1\n[commands.x]\nargv=["x"]\nappend_selected_tests="yes"\n'
+        )
         _expect(CommandManifestError, lambda: load_command_manifest(bad))
 
         # Semantic identities exclude timestamps and checkout paths.
-        pass_one = run_named_command(repository_root=root, manifest_path=manifest, name="pass")
+        pass_one = run_named_command(
+            repository_root=root, manifest_path=manifest, name="pass"
+        )
         time.sleep(0.01)
-        pass_two = run_named_command(repository_root=root, manifest_path=manifest, name="pass")
+        pass_two = run_named_command(
+            repository_root=root, manifest_path=manifest, name="pass"
+        )
         assert pass_one["failure_identity"] == pass_two["failure_identity"]
         assert pass_one["command"]["identity"] == pass_two["command"]["identity"]
 
         # Failure-class corpus.
         expected = {
-            "importfail": "collection_import_failure", "syntaxfail": "syntax_compile_failure",
-            "lintfail": "lint_static_failure", "typefail": "type_check_failure",
+            "importfail": "collection_import_failure",
+            "syntaxfail": "syntax_compile_failure",
+            "lintfail": "lint_static_failure",
+            "typefail": "type_check_failure",
             "depfail": "dependency_environment_missing",
         }
         for name, classification in expected.items():
-            assert run_named_command(repository_root=root, manifest_path=manifest, name=name)["classification"] == classification
-        assert classify_result(return_code=1, timed_out=False, executable_missing=False, stdout="", stderr="", policy_violation=False) == "unknown_failure"
+            assert (
+                run_named_command(
+                    repository_root=root, manifest_path=manifest, name=name
+                )["classification"]
+                == classification
+            )
+        assert (
+            classify_result(
+                return_code=1,
+                timed_out=False,
+                executable_missing=False,
+                stdout="",
+                stderr="",
+                policy_violation=False,
+            )
+            == "unknown_failure"
+        )
 
-        stderr = run_named_command(repository_root=root, manifest_path=manifest, name="stderr", max_stderr_bytes=32)
+        stderr = run_named_command(
+            repository_root=root,
+            manifest_path=manifest,
+            name="stderr",
+            max_stderr_bytes=32,
+        )
         assert stderr["classification"] == "output_limit_exceeded"
-        nonutf8 = run_named_command(repository_root=root, manifest_path=manifest, name="nonutf8")
+        nonutf8 = run_named_command(
+            repository_root=root, manifest_path=manifest, name="nonutf8"
+        )
         assert "\ufffd" in nonutf8["stdout"]
 
-        mutated = run_named_command(repository_root=root, manifest_path=manifest, name="mutate")
+        mutated = run_named_command(
+            repository_root=root, manifest_path=manifest, name="mutate"
+        )
         assert mutated["classification"] == "policy_mutation_violation"
         _write(root / "tracked.txt", "before\n")
-        allowed = run_named_command(repository_root=root, manifest_path=manifest, name="allowed")
+        allowed = run_named_command(
+            repository_root=root, manifest_path=manifest, name="allowed"
+        )
         assert allowed["classification"] == "pass"
         _write(root / "tracked.txt", "before\n")
 
         # Focused pass cannot claim repository qualification; broad failure remains visible.
         local = qualify_local(
-            repository_root=root, manifest_path=manifest,
+            repository_root=root,
+            manifest_path=manifest,
             command_names=["pass", "broadfail"],
             state_path=Path(".agent-artifacts/staged.json"),
         )
         assert local["status"] == "LOCAL_FAILED"
-        assert local["stages"][0]["status"] == "PASS" and local["stages"][1]["status"] == "FAIL"
+        assert (
+            local["stages"][0]["status"] == "PASS"
+            and local["stages"][1]["status"] == "FAIL"
+        )
         assert local["ci_status"] == "NOT_RUN"
         assert local["economics"]["commands"] == 2
         assert local["economics"]["by_stage"]["focused"]["commands"] == 1
@@ -243,7 +308,9 @@ def main() -> None:
         assert {"code": "repository_bytes_unavailable"} in caps["warnings"]
         caps = capabilities(repository_root=root, manifest_path=manifest)
         assert caps["capabilities"]["git"]["worktree"] is True
-        with mock.patch("scripts.agent_economics.capabilities.shutil.which", return_value=None):
+        with mock.patch(
+            "scripts.agent_economics.capabilities.shutil.which", return_value=None
+        ):
             no_git = capabilities(repository_root=root)
         assert no_git["capabilities"]["git"]["available"] is False
         assert caps["capabilities"]["network_isolation"]["available"] is False
@@ -255,7 +322,8 @@ def main() -> None:
         _expect(
             DiscoveryError,
             lambda: discover_python_roots(
-                roots={"source": root / "src"}, repository_root=root,
+                roots={"source": root / "src"},
+                repository_root=root,
                 config=DiscoveryConfig(mode="git", git_max_stdout_bytes=32),
             ),
         )
@@ -265,9 +333,30 @@ def main() -> None:
         # Bounded A -> B -> A oscillation is distinct from immediate repetition.
         osc_path = root / ".agent-artifacts/oscillation.json"
         with LoopSession(osc_path, repository_root=root) as session:
-            session.record(source_identity="A", command_identity="c", failure_identity="fa", evidence_identity="ea", stdout_bytes=0, stderr_bytes=0)
-            session.record(source_identity="B", command_identity="c", failure_identity="fb", evidence_identity="eb", stdout_bytes=0, stderr_bytes=0)
-            oscillated = session.record(source_identity="A", command_identity="c", failure_identity="fa", evidence_identity="ec", stdout_bytes=0, stderr_bytes=0)
+            session.record(
+                source_identity="A",
+                command_identity="c",
+                failure_identity="fa",
+                evidence_identity="ea",
+                stdout_bytes=0,
+                stderr_bytes=0,
+            )
+            session.record(
+                source_identity="B",
+                command_identity="c",
+                failure_identity="fb",
+                evidence_identity="eb",
+                stdout_bytes=0,
+                stderr_bytes=0,
+            )
+            oscillated = session.record(
+                source_identity="A",
+                command_identity="c",
+                failure_identity="fa",
+                evidence_identity="ec",
+                stdout_bytes=0,
+                stderr_bytes=0,
+            )
             assert oscillated["stop_reason"] == "OSCILLATION"
 
         _process_tree_case(root)
@@ -280,11 +369,16 @@ def main() -> None:
         _git(root, "config", "user.name", "Qualification")
         _hotspot_identity_case(root)
 
-    print(json.dumps({
-        "status": "PASS",
-        "cases": 29,
-        "authority": "pre-pr-adversarial-regression-only",
-    }, sort_keys=True))
+    print(
+        json.dumps(
+            {
+                "status": "PASS",
+                "cases": 29,
+                "authority": "pre-pr-adversarial-regression-only",
+            },
+            sort_keys=True,
+        )
+    )
 
 
 if __name__ == "__main__":

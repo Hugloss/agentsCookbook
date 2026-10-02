@@ -63,7 +63,9 @@ class DiscoveryConfig:
         if self.symlink_policy not in {"exclude", "reject", "within-repo"}:
             raise DiscoveryError(f"invalid symlink policy: {self.symlink_policy}")
         if self.ignored_policy == "include" and self.untracked_policy != "include":
-            raise DiscoveryError("ignored_policy=include requires untracked_policy=include")
+            raise DiscoveryError(
+                "ignored_policy=include requires untracked_policy=include"
+            )
         if self.git_timeout_seconds <= 0:
             raise DiscoveryError("git timeout must be greater than zero")
         if self.git_max_stdout_bytes < 1:
@@ -120,22 +122,30 @@ class DiscoveryResult:
         }
 
 
-def normalize_exclude_patterns(patterns: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+def normalize_exclude_patterns(
+    patterns: tuple[str, ...] | list[str],
+) -> tuple[str, ...]:
     normalized: set[str] = set()
     for raw in patterns:
         pattern = str(raw).replace("\\", "/").strip()
         while pattern.startswith("./"):
             pattern = pattern[2:]
         if pattern.startswith("/"):
-            raise DiscoveryError(f"exclusion pattern must be repository-relative: {raw!r}")
+            raise DiscoveryError(
+                f"exclusion pattern must be repository-relative: {raw!r}"
+            )
         parts = pattern.split("/")
         if not pattern or any(part in {"", ".", ".."} for part in parts):
-            raise DiscoveryError(f"invalid repository-relative exclusion pattern: {raw!r}")
+            raise DiscoveryError(
+                f"invalid repository-relative exclusion pattern: {raw!r}"
+            )
         normalized.add(pattern)
     return tuple(sorted(normalized))
 
 
-def _glob_parts_match(path_parts: tuple[str, ...], pattern_parts: tuple[str, ...]) -> bool:
+def _glob_parts_match(
+    path_parts: tuple[str, ...], pattern_parts: tuple[str, ...]
+) -> bool:
     if not pattern_parts:
         return not path_parts
     head = pattern_parts[0]
@@ -164,14 +174,20 @@ def _relative_to_repository(path: Path, repository_root: Path, *, label: str) ->
     try:
         return resolved.relative_to(root)
     except ValueError as exc:
-        raise DiscoveryError(f"{label} must be inside repository_root: {resolved}") from exc
+        raise DiscoveryError(
+            f"{label} must be inside repository_root: {resolved}"
+        ) from exc
 
 
 def _safe_repo_relative(raw: str) -> Path:
     normalized = raw.replace("\\", "/")
     candidate = Path(normalized)
-    if candidate.is_absolute() or any(part in {"", ".", ".."} for part in candidate.parts):
-        raise DiscoveryError(f"unsafe repository-relative path from discovery backend: {raw!r}")
+    if candidate.is_absolute() or any(
+        part in {"", ".", ".."} for part in candidate.parts
+    ):
+        raise DiscoveryError(
+            f"unsafe repository-relative path from discovery backend: {raw!r}"
+        )
     return candidate
 
 
@@ -194,15 +210,21 @@ def _git_command(
     if result.executable_missing:
         raise DiscoveryError("git discovery executable is unavailable")
     if result.timed_out:
-        raise DiscoveryError(f"git discovery command timed out after {timeout_seconds} seconds")
+        raise DiscoveryError(
+            f"git discovery command timed out after {timeout_seconds} seconds"
+        )
     if result.stdout_truncated:
-        raise DiscoveryError(f"git discovery output exceeded configured byte bound: {max_stdout_bytes}")
+        raise DiscoveryError(
+            f"git discovery output exceeded configured byte bound: {max_stdout_bytes}"
+        )
     if result.return_code != 0:
         raise DiscoveryError(f"git discovery command failed: {' '.join(args)}")
     return result.stdout
 
 
-def _git_toplevel(repository_root: Path, *, timeout_seconds: float, max_stdout_bytes: int = 8_000_000) -> tuple[Path | None, int, int]:
+def _git_toplevel(
+    repository_root: Path, *, timeout_seconds: float, max_stdout_bytes: int = 8_000_000
+) -> tuple[Path | None, int, int]:
     if shutil.which("git") is None:
         return None, 0, 0
     try:
@@ -219,11 +241,7 @@ def _git_toplevel(repository_root: Path, *, timeout_seconds: float, max_stdout_b
 
 
 def _decode_nul_paths(raw: bytes) -> list[str]:
-    return [
-        item.decode("utf-8", errors="replace")
-        for item in raw.split(b"\0")
-        if item
-    ]
+    return [item.decode("utf-8", errors="replace") for item in raw.split(b"\0") if item]
 
 
 def _belongs_to_root(relative: Path, root_relative: Path) -> bool:
@@ -252,14 +270,18 @@ def _admit_path(
     path = repository_root / relative
     if path.is_symlink():
         if config.symlink_policy == "reject":
-            raise DiscoveryError(f"symlink Python path rejected by policy: {relative_posix}")
+            raise DiscoveryError(
+                f"symlink Python path rejected by policy: {relative_posix}"
+            )
         if config.symlink_policy == "exclude":
             return None, "symlink"
         resolved = path.resolve()
         try:
             resolved.relative_to(repository_root.resolve())
         except ValueError as exc:
-            raise DiscoveryError(f"symlink escapes repository_root: {relative_posix}") from exc
+            raise DiscoveryError(
+                f"symlink escapes repository_root: {relative_posix}"
+            ) from exc
         if not resolved.is_file():
             return None, "missing"
         return path.absolute(), None
@@ -322,11 +344,11 @@ def _git_discover(
 ) -> DiscoveryResult:
     outputs = {label: set() for label in roots_relative}
     tracked_raw = _git_command(
-            repository_root,
-            ["ls-files", "-z", "--cached"],
-            timeout_seconds=config.git_timeout_seconds,
-            max_stdout_bytes=config.git_max_stdout_bytes,
-        )
+        repository_root,
+        ["ls-files", "-z", "--cached"],
+        timeout_seconds=config.git_timeout_seconds,
+        max_stdout_bytes=config.git_max_stdout_bytes,
+    )
     tracked = _decode_nul_paths(tracked_raw)
     git_stdout_bytes = len(tracked_raw)
     git_commands = probe_commands + 1
@@ -334,44 +356,54 @@ def _git_discover(
     ignored: list[str] = []
     if config.untracked_policy == "include":
         untracked_raw = _git_command(
-            repository_root, ["ls-files", "-z", "--others", "--exclude-standard"],
-            timeout_seconds=config.git_timeout_seconds, max_stdout_bytes=config.git_max_stdout_bytes,
+            repository_root,
+            ["ls-files", "-z", "--others", "--exclude-standard"],
+            timeout_seconds=config.git_timeout_seconds,
+            max_stdout_bytes=config.git_max_stdout_bytes,
         )
         git_stdout_bytes += len(untracked_raw)
         untracked = _decode_nul_paths(untracked_raw)
         git_commands += 1
         if config.ignored_policy == "include":
             ignored_raw = _git_command(
-                repository_root, ["ls-files", "-z", "--others", "--ignored", "--exclude-standard"],
-                timeout_seconds=config.git_timeout_seconds, max_stdout_bytes=config.git_max_stdout_bytes,
+                repository_root,
+                ["ls-files", "-z", "--others", "--ignored", "--exclude-standard"],
+                timeout_seconds=config.git_timeout_seconds,
+                max_stdout_bytes=config.git_max_stdout_bytes,
             )
             git_stdout_bytes += len(ignored_raw)
             ignored = _decode_nul_paths(ignored_raw)
             git_commands += 1
 
-    tracked_count, tracked_excluded, tracked_symlinks, tracked_missing = _partition_candidates(
-        repository_root=repository_root,
-        roots_relative=roots_relative,
-        paths=tracked,
-        config=config,
-        outputs=outputs,
-        suffixes=suffixes,
+    tracked_count, tracked_excluded, tracked_symlinks, tracked_missing = (
+        _partition_candidates(
+            repository_root=repository_root,
+            roots_relative=roots_relative,
+            paths=tracked,
+            config=config,
+            outputs=outputs,
+            suffixes=suffixes,
+        )
     )
-    untracked_count, untracked_excluded, untracked_symlinks, untracked_missing = _partition_candidates(
-        repository_root=repository_root,
-        roots_relative=roots_relative,
-        paths=untracked,
-        config=config,
-        outputs=outputs,
-        suffixes=suffixes,
+    untracked_count, untracked_excluded, untracked_symlinks, untracked_missing = (
+        _partition_candidates(
+            repository_root=repository_root,
+            roots_relative=roots_relative,
+            paths=untracked,
+            config=config,
+            outputs=outputs,
+            suffixes=suffixes,
+        )
     )
-    ignored_count, ignored_excluded, ignored_symlinks, ignored_missing = _partition_candidates(
-        repository_root=repository_root,
-        roots_relative=roots_relative,
-        paths=ignored,
-        config=config,
-        outputs=outputs,
-        suffixes=suffixes,
+    ignored_count, ignored_excluded, ignored_symlinks, ignored_missing = (
+        _partition_candidates(
+            repository_root=repository_root,
+            roots_relative=roots_relative,
+            paths=ignored,
+            config=config,
+            outputs=outputs,
+            suffixes=suffixes,
+        )
     )
 
     return DiscoveryResult(
@@ -449,7 +481,9 @@ def _filesystem_discover(
 
     warnings = ["filesystem discovery does not evaluate Git ignore/tracked state"]
     if fallback_warning:
-        warnings.insert(0, "Git discovery unavailable; used deterministic filesystem fallback")
+        warnings.insert(
+            0, "Git discovery unavailable; used deterministic filesystem fallback"
+        )
     return DiscoveryResult(
         files_by_root={label: tuple(sorted(paths)) for label, paths in outputs.items()},
         backend="filesystem",
@@ -473,7 +507,9 @@ def normalize_suffixes(suffixes: tuple[str, ...] | list[str]) -> tuple[str, ...]
         if not suffix:
             raise DiscoveryError("file suffix must not be empty")
         if "/" in suffix or "\\" in suffix:
-            raise DiscoveryError(f"file suffix must not contain path separators: {raw!r}")
+            raise DiscoveryError(
+                f"file suffix must not contain path separators: {raw!r}"
+            )
         if not suffix.startswith("."):
             suffix = f".{suffix}"
         if suffix == ".":

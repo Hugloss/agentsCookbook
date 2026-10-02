@@ -18,13 +18,11 @@ def grade_answer(case_id: str, actual: object, workspace: Path) -> dict[str, Any
     if not isinstance(actual, dict):
         actual = {}
     correct = sorted(
-        key for key, value in expected.items()
-        if key in actual and actual[key] == value
+        key for key, value in expected.items() if key in actual and actual[key] == value
     )
     missing = sorted(key for key in expected if key not in actual)
     incorrect = sorted(
-        key for key, value in expected.items()
-        if key in actual and actual[key] != value
+        key for key, value in expected.items() if key in actual and actual[key] != value
     )
     extra = sorted(set(actual) - set(expected))
     false_authority = sorted(set(incorrect) & set(case["authority_fields"]))
@@ -38,30 +36,35 @@ def grade_answer(case_id: str, actual: object, workspace: Path) -> dict[str, Any
         except (OSError, ValueError):
             failed_files.append(check["path"])
     authority = (
-        "FALSE_AUTHORITY" if false_authority
-        else "UNSUPPORTED" if extra
-        else "BOUNDED"
+        "FALSE_AUTHORITY" if false_authority else "UNSUPPORTED" if extra else "BOUNDED"
     )
     resolution = (
         "COMPLETE"
         if len(correct) == len(expected) and not extra and not failed_files
-        else "PARTIAL" if correct
+        else "PARTIAL"
+        if correct
         else "WRONG"
     )
     provenance = case["provenance_fields"]
     evidence = (
-        "NOT_APPLICABLE" if not provenance
-        else "PRESERVED" if all(key in correct for key in provenance)
+        "NOT_APPLICABLE"
+        if not provenance
+        else "PRESERVED"
+        if all(key in correct for key in provenance)
         else "THIN"
     )
     passed = authority == "BOUNDED" and resolution == "COMPLETE"
     reason = (
         "all frozen claims and edited bytes verified"
         if passed
-        else "missing=" + ",".join(missing)
-        + " incorrect=" + ",".join(incorrect)
-        + " extra=" + ",".join(extra)
-        + " failed_files=" + ",".join(failed_files)
+        else "missing="
+        + ",".join(missing)
+        + " incorrect="
+        + ",".join(incorrect)
+        + " extra="
+        + ",".join(extra)
+        + " failed_files="
+        + ",".join(failed_files)
     )
     return {
         "schema": "agents-cookbook-lexigram-oracle.v1",

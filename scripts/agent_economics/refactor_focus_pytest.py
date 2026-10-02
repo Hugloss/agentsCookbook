@@ -59,12 +59,9 @@ def parse_pytest_plugins(path: Path, *, analysis_cache: AnalysisCache) -> set[st
     plugins: set[str] = set()
     for node in getattr(tree, "body", []):
         value: ast.AST | None = None
-        if (
-            isinstance(node, ast.Assign)
-            and any(
-                isinstance(target, ast.Name) and target.id == "pytest_plugins"
-                for target in node.targets
-            )
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "pytest_plugins"
+            for target in node.targets
         ):
             value = node.value
         elif (
@@ -99,7 +96,9 @@ def _fixture_decorator_info(
                     and isinstance(keyword.value.value, str)
                 ):
                     fixture_name = keyword.value.value
-                elif keyword.arg == "autouse" and isinstance(keyword.value, ast.Constant):
+                elif keyword.arg == "autouse" and isinstance(
+                    keyword.value, ast.Constant
+                ):
                     autouse = keyword.value.value is True
         return fixture_name, autouse
     return None
@@ -276,15 +275,17 @@ def used_fixture_names(path: Path, *, analysis_cache: AnalysisCache) -> set[str]
         return set()
     names: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith(
-            "test"
-        ):
+        if isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef)
+        ) and node.name.startswith("test"):
             for arg in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs):
                 if arg.arg not in {"self", "cls"}:
                     names.add(arg.arg)
         if isinstance(node, ast.Call):
             call_name = _call_name(node.func)
-            if call_name.endswith("usefixtures") or call_name.endswith("getfixturevalue"):
+            if call_name.endswith("usefixtures") or call_name.endswith(
+                "getfixturevalue"
+            ):
                 for arg in node.args:
                     names.update(_literal_strings(arg))
     return names
@@ -413,7 +414,9 @@ def _loaded_pytest_plugins_for_test(
 
     declarations: list[tuple[str, Path]] = []
     for origin in [test_file, *ancestors]:
-        for plugin in sorted(parse_pytest_plugins(origin, analysis_cache=analysis_cache)):
+        for plugin in sorted(
+            parse_pytest_plugins(origin, analysis_cache=analysis_cache)
+        ):
             declarations.append((plugin, origin))
 
     loaded: list[tuple[str, Path, Path, int]] = []
@@ -432,7 +435,9 @@ def _loaded_pytest_plugins_for_test(
         loaded.append((module, plugin_path, declared_by, depth))
         if depth >= max_depth:
             continue
-        for child in sorted(parse_pytest_plugins(plugin_path, analysis_cache=analysis_cache)):
+        for child in sorted(
+            parse_pytest_plugins(plugin_path, analysis_cache=analysis_cache)
+        ):
             queue.append((child, plugin_path, depth + 1))
     return loaded
 
@@ -450,7 +455,9 @@ def build_pytest_ownership_evidence(
     repository_root: Path,
     pytest_max_depth: int = 2,
 ) -> list[PytestOwnershipEvidence]:
-    conftest_files = [path for path in all_test_python_files if path.name == "conftest.py"]
+    conftest_files = [
+        path for path in all_test_python_files if path.name == "conftest.py"
+    ]
     test_module_to_path = {
         module_path_for_file(
             path=path,
@@ -523,7 +530,9 @@ def build_pytest_ownership_evidence(
         plugin_fixture_candidates: dict[str, list[tuple[FixtureInfo, Path]]] = {}
         for _module, plugin_path, _declared_by, _depth in loaded_plugins:
             for name, info in fixture_infos.get(plugin_path, {}).items():
-                plugin_fixture_candidates.setdefault(name, []).append((info, plugin_path))
+                plugin_fixture_candidates.setdefault(name, []).append(
+                    (info, plugin_path)
+                )
         visible_fixtures: dict[str, tuple[FixtureInfo, Path]] = {
             name: definitions[0]
             for name, definitions in plugin_fixture_candidates.items()

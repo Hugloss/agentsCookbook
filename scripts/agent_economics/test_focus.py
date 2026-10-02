@@ -85,7 +85,9 @@ def _source_module_for_changed(
     if path.suffix != ".py" or not _inside(path, source_root):
         return None
     try:
-        return module_path_for_file(path=path, root=source_root, package_name=package_name)
+        return module_path_for_file(
+            path=path, root=source_root, package_name=package_name
+        )
     except ValueError:
         return None
 
@@ -99,7 +101,9 @@ def _test_module_for_changed(
     if path.suffix != ".py" or not _inside(path, tests_root):
         return None
     try:
-        return module_path_for_file(path=path, root=tests_root, package_name=tests_package_name)
+        return module_path_for_file(
+            path=path, root=tests_root, package_name=tests_package_name
+        )
     except ValueError:
         return None
 
@@ -122,7 +126,9 @@ def _dependent_sources(
         module, depth = queue.popleft()
         if depth >= max_depth:
             continue
-        for importer in sorted(source_import_index.get(module, set()), key=lambda p: p.as_posix()):
+        for importer in sorted(
+            source_import_index.get(module, set()), key=lambda p: p.as_posix()
+        ):
             next_module = source_module_by_path.get(importer)
             if next_module is None or next_module in seen_modules:
                 continue
@@ -156,11 +162,17 @@ def _dedupe_ownership(records: Iterable[OwnershipRecord]) -> list[OwnershipRecor
     for record in records:
         key = (record.source_path, record.test_path)
         existing = best.get(key)
-        if existing is None or priority.get(record.match_type, 100) < priority.get(existing.match_type, 100):
+        if existing is None or priority.get(record.match_type, 100) < priority.get(
+            existing.match_type, 100
+        ):
             best[key] = record
     return sorted(
         best.values(),
-        key=lambda item: (item.source_path.as_posix(), item.test_path.as_posix(), item.match_type),
+        key=lambda item: (
+            item.source_path.as_posix(),
+            item.test_path.as_posix(),
+            item.match_type,
+        ),
     )
 
 
@@ -189,7 +201,9 @@ def _append_test_suggestion(
     if impact_depth is not None:
         candidate["impact_depth"] = impact_depth
     existing = suggestions.get(key)
-    if existing is None or int(candidate["stage_number"]) < int(existing["stage_number"]):
+    if existing is None or int(candidate["stage_number"]) < int(
+        existing["stage_number"]
+    ):
         suggestions[key] = candidate
 
 
@@ -203,11 +217,21 @@ def _read_changed_identity(
     if not path.exists():
         return {"path": label, "sha256": "missing"}, 0, 0, "changed path does not exist"
     if not path.is_file():
-        return {"path": label, "sha256": "not-a-file"}, 0, 0, "changed path is not a regular file"
+        return (
+            {"path": label, "sha256": "not-a-file"},
+            0,
+            0,
+            "changed path is not a regular file",
+        )
     try:
         size = path.stat().st_size
     except OSError as exc:
-        return {"path": label, "sha256": f"stat-error:{type(exc).__name__}"}, 0, 0, "changed path could not be stat'ed"
+        return (
+            {"path": label, "sha256": f"stat-error:{type(exc).__name__}"},
+            0,
+            0,
+            "changed path could not be stat'ed",
+        )
     if size > max_bytes:
         return (
             {"path": label, "sha256": f"unhashed-oversized:{size}"},
@@ -218,7 +242,12 @@ def _read_changed_identity(
     try:
         raw = path.read_bytes()
     except OSError as exc:
-        return {"path": label, "sha256": f"read-error:{type(exc).__name__}"}, 0, 0, "changed path could not be read"
+        return (
+            {"path": label, "sha256": f"read-error:{type(exc).__name__}"},
+            0,
+            0,
+            "changed path could not be read",
+        )
     return {"path": label, "sha256": hashlib.sha256(raw).hexdigest()}, 1, len(raw), None
 
 
@@ -249,13 +278,21 @@ def test_focus_audit(
 ) -> dict[str, object]:
     started = time.perf_counter()
     repository_root = repository_root.resolve()
-    source_root = (source_root if source_root.is_absolute() else repository_root / source_root).resolve()
-    tests_root = (tests_root if tests_root.is_absolute() else repository_root / tests_root).resolve()
+    source_root = (
+        source_root if source_root.is_absolute() else repository_root / source_root
+    ).resolve()
+    tests_root = (
+        tests_root if tests_root.is_absolute() else repository_root / tests_root
+    ).resolve()
     if not changed_paths:
         raise TestFocusError("at least one changed path is required")
     if helper_max_depth < 0 or pytest_max_depth < 0 or impact_max_depth < 0:
         raise TestFocusError("depth bounds must be non-negative")
-    if impact_max_sources < 1 or max_tests_per_stage < 1 or max_changed_identity_bytes < 1:
+    if (
+        impact_max_sources < 1
+        or max_tests_per_stage < 1
+        or max_changed_identity_bytes < 1
+    ):
         raise TestFocusError("source/test/identity bounds must be positive")
     for label, root in (("source_root", source_root), ("tests_root", tests_root)):
         if not _inside(root, repository_root):
@@ -297,11 +334,15 @@ def test_focus_audit(
     analysis_cache.prewarm(analyzed_python_files)
 
     source_module_by_path = {
-        path: module_path_for_file(path=path, root=source_root, package_name=effective_package_name)
+        path: module_path_for_file(
+            path=path, root=source_root, package_name=effective_package_name
+        )
         for path in source_files
     }
     test_module_by_path = {
-        path: module_path_for_file(path=path, root=tests_root, package_name=effective_tests_package_name)
+        path: module_path_for_file(
+            path=path, root=tests_root, package_name=effective_tests_package_name
+        )
         for path in all_test_python_files
     }
     module_to_path = {
@@ -329,7 +370,11 @@ def test_focus_audit(
         repository_root=repository_root,
         helper_max_depth=helper_max_depth,
     ):
-        ownership.append(OwnershipRecord(item.source_path, item.test_path, item.match_type, item.provenance))
+        ownership.append(
+            OwnershipRecord(
+                item.source_path, item.test_path, item.match_type, item.provenance
+            )
+        )
     for item in build_inherited_method_ownership_evidence(
         source_files=source_files,
         test_files=test_files,
@@ -341,7 +386,9 @@ def test_focus_audit(
         repository_root=repository_root,
     ):
         ownership.append(
-            OwnershipRecord(item.source_path, item.test_path, item.match_type, item.provenance)
+            OwnershipRecord(
+                item.source_path, item.test_path, item.match_type, item.provenance
+            )
         )
     for item in build_pytest_ownership_evidence(
         test_files=test_files,
@@ -355,13 +402,21 @@ def test_focus_audit(
         repository_root=repository_root,
         pytest_max_depth=pytest_max_depth,
     ):
-        ownership.append(OwnershipRecord(item.source_path, item.test_path, item.match_type, item.provenance))
+        ownership.append(
+            OwnershipRecord(
+                item.source_path, item.test_path, item.match_type, item.provenance
+            )
+        )
 
     ownership_hints_sha256: str | None = None
     auxiliary_files_read = 0
     auxiliary_bytes_read = 0
     if ownership_hints_path is not None:
-        hint_path = ownership_hints_path if ownership_hints_path.is_absolute() else repository_root / ownership_hints_path
+        hint_path = (
+            ownership_hints_path
+            if ownership_hints_path.is_absolute()
+            else repository_root / ownership_hints_path
+        )
         try:
             hints = load_declared_ownership_hints(
                 hints_path=hint_path,
@@ -375,7 +430,11 @@ def test_focus_audit(
         auxiliary_files_read += 1
         auxiliary_bytes_read += hints.bytes_read
         for item in hints.relationships:
-            ownership.append(OwnershipRecord(item.source_path, item.test_path, "declared_owner", item.provenance))
+            ownership.append(
+                OwnershipRecord(
+                    item.source_path, item.test_path, "declared_owner", item.provenance
+                )
+            )
     ownership = _dedupe_ownership(ownership)
     ownership_by_source: dict[Path, list[OwnershipRecord]] = {}
     for item in ownership:
@@ -393,7 +452,8 @@ def test_focus_audit(
         repository_entries.append(
             {
                 "path": report_path(path=path, anchor=repository_root),
-                "sha256": record.content_sha256 or f"unavailable:{record.parse_error or 'unknown'}",
+                "sha256": record.content_sha256
+                or f"unavailable:{record.parse_error or 'unknown'}",
             }
         )
     changed_identity_reads = 0
@@ -412,7 +472,11 @@ def test_focus_audit(
         changed_identity_bytes += bytes_read
         if warning:
             identity_warnings.append(
-                {"code": "changed_identity_incomplete", "path": entry["path"], "message": warning}
+                {
+                    "code": "changed_identity_incomplete",
+                    "path": entry["path"],
+                    "message": warning,
+                }
             )
 
     direct_suggestions: dict[str, dict[str, object]] = {}
@@ -430,8 +494,12 @@ def test_focus_audit(
         candidate_uncertainty: list[dict[str, object]] = []
         candidate_verification: list[dict[str, object]] = []
         kind = "other"
-        source_module = _source_module_for_changed(path, source_root=source_root, package_name=effective_package_name)
-        test_module = _test_module_for_changed(path, tests_root=tests_root, tests_package_name=effective_tests_package_name)
+        source_module = _source_module_for_changed(
+            path, source_root=source_root, package_name=effective_package_name
+        )
+        test_module = _test_module_for_changed(
+            path, tests_root=tests_root, tests_package_name=effective_tests_package_name
+        )
 
         if path in test_file_set:
             kind = "test"
@@ -447,7 +515,11 @@ def test_focus_audit(
                 test_lines=lines,
             )
             candidate_evidence["confirmed"].append(
-                {"kind": "changed_test", "test_path": target, "provenance": "user-supplied changed path"}
+                {
+                    "kind": "changed_test",
+                    "test_path": target,
+                    "provenance": "user-supplied changed path",
+                }
             )
         elif path in source_file_set:
             kind = "source"
@@ -471,8 +543,12 @@ def test_focus_audit(
                     changed_target=target,
                     test_lines=analysis_cache.get(record.test_path).line_count,
                 )
-            supporting_paths = set(direct_name_test_candidates(source_file=path, test_files=test_files))
-            for mirrored in mirrored_test_candidates(source_file=path, source_root=source_root, tests_root=tests_root):
+            supporting_paths = set(
+                direct_name_test_candidates(source_file=path, test_files=test_files)
+            )
+            for mirrored in mirrored_test_candidates(
+                source_file=path, source_root=source_root, tests_root=tests_root
+            ):
                 if mirrored in test_file_set:
                     supporting_paths.add(mirrored)
             confirmed_test_paths = {record.test_path for record in direct_records}
@@ -489,7 +565,10 @@ def test_focus_audit(
                     {
                         "kind": "verify_test_correspondence",
                         "reason": "changed source has no confirmed owning test",
-                        "candidate_test_paths": [item["test_path"] for item in candidate_evidence["supporting"]],
+                        "candidate_test_paths": [
+                            item["test_path"]
+                            for item in candidate_evidence["supporting"]
+                        ],
                     }
                 )
                 candidate_uncertainty.append(
@@ -510,12 +589,16 @@ def test_focus_audit(
                 impact_truncated_any = impact_truncated_any or truncated
                 for dependent in dependents:
                     for record in ownership_by_source.get(dependent.source_path, []):
-                        test_label = report_path(path=record.test_path, anchor=repository_root)
+                        test_label = report_path(
+                            path=record.test_path, anchor=repository_root
+                        )
                         candidate_evidence["supporting"].append(
                             {
                                 "test_path": test_label,
                                 "match_type": "affected_dependent_owner",
-                                "dependent_source": report_path(path=dependent.source_path, anchor=repository_root),
+                                "dependent_source": report_path(
+                                    path=dependent.source_path, anchor=repository_root
+                                ),
                                 "impact_depth": dependent.depth,
                                 "ownership_match_type": record.match_type,
                                 "provenance": record.provenance,
@@ -550,7 +633,10 @@ def test_focus_audit(
             elif not path.exists():
                 kind = "missing"
                 candidate_uncertainty.append(
-                    {"code": "changed_path_missing", "message": "Changed path does not exist in this checkout."}
+                    {
+                        "code": "changed_path_missing",
+                        "message": "Changed path does not exist in this checkout.",
+                    }
                 )
                 candidate_required.append(
                     {"kind": "recover_deleted_or_renamed_impact", "path": target}
@@ -580,11 +666,14 @@ def test_focus_audit(
                 "evidence": candidate_evidence,
                 "derived": {
                     "confirmed_direct_test_count": len(candidate_evidence["confirmed"]),
-                    "supporting_relationship_count": len(candidate_evidence["supporting"]),
+                    "supporting_relationship_count": len(
+                        candidate_evidence["supporting"]
+                    ),
                 },
                 "interpretation": {
                     "focused_verification_available": bool(
-                        path in test_file_set or (path in source_file_set and ownership_by_source.get(path))
+                        path in test_file_set
+                        or (path in source_file_set and ownership_by_source.get(path))
                     )
                 },
                 "recommendations": {
@@ -623,7 +712,10 @@ def test_focus_audit(
 
     direct_selected = bounded_stage(direct_suggestions, "direct")
     affected_selected = bounded_stage(affected_suggestions, "affected")
-    verification_suggestions: list[dict[str, object]] = [*direct_selected, *affected_selected]
+    verification_suggestions: list[dict[str, object]] = [
+        *direct_selected,
+        *affected_selected,
+    ]
     gate_suggestions = [
         {
             "kind": "command",
@@ -663,7 +755,9 @@ def test_focus_audit(
         if target:
             by_target.setdefault(target, []).append(dict(item))
     for candidate in candidates:
-        candidate["verification_suggestions"] = by_target.get(str(candidate["target"]), [])
+        candidate["verification_suggestions"] = by_target.get(
+            str(candidate["target"]), []
+        )
 
     repository = {
         "root": ".",
@@ -673,7 +767,11 @@ def test_focus_audit(
     }
     hint_label: str | None = None
     if ownership_hints_path is not None:
-        hint_abs = ownership_hints_path if ownership_hints_path.is_absolute() else repository_root / ownership_hints_path
+        hint_abs = (
+            ownership_hints_path
+            if ownership_hints_path.is_absolute()
+            else repository_root / ownership_hints_path
+        )
         try:
             hint_label = hint_abs.resolve().relative_to(repository_root).as_posix()
         except ValueError:
@@ -683,7 +781,9 @@ def test_focus_audit(
         "tests_root": report_path(path=tests_root, anchor=repository_root),
         "package_name": effective_package_name,
         "tests_package_name": effective_tests_package_name,
-        "changed_paths": [report_path(path=path, anchor=repository_root) for path in changed],
+        "changed_paths": [
+            report_path(path=path, anchor=repository_root) for path in changed
+        ],
         "helper_max_depth": helper_max_depth,
         "pytest_max_depth": pytest_max_depth,
         "impact_max_depth": impact_max_depth,
@@ -704,18 +804,29 @@ def test_focus_audit(
     for message in discovery.warnings:
         warnings.append({"code": "discovery_warning", "message": message})
     if analysis_cache.read_failures:
-        warnings.append({"code": "python_read_failures", "count": analysis_cache.read_failures})
+        warnings.append(
+            {"code": "python_read_failures", "count": analysis_cache.read_failures}
+        )
     if analysis_cache.parse_failures:
-        warnings.append({"code": "python_parse_failures", "count": analysis_cache.parse_failures})
+        warnings.append(
+            {"code": "python_parse_failures", "count": analysis_cache.parse_failures}
+        )
 
-    test_lines_selected = sum(int(item.get("test_lines", 0)) for item in [*direct_selected, *affected_selected])
+    test_lines_selected = sum(
+        int(item.get("test_lines", 0))
+        for item in [*direct_selected, *affected_selected]
+    )
     elapsed_ms = round((time.perf_counter() - started) * 1000, 3)
     economics = {
         **analysis_cache.metrics(),
         "auxiliary_files_read": auxiliary_files_read + changed_identity_reads,
         "auxiliary_bytes_read": auxiliary_bytes_read + changed_identity_bytes,
-        "total_files_read": analysis_cache.files_read + auxiliary_files_read + changed_identity_reads,
-        "total_bytes_read": analysis_cache.bytes_read + auxiliary_bytes_read + changed_identity_bytes,
+        "total_files_read": analysis_cache.files_read
+        + auxiliary_files_read
+        + changed_identity_reads,
+        "total_bytes_read": analysis_cache.bytes_read
+        + auxiliary_bytes_read
+        + changed_identity_bytes,
         "changed_path_count": len(changed),
         "direct_tests_selected": len(direct_selected),
         "affected_tests_selected": len(affected_selected),
@@ -736,7 +847,9 @@ def test_focus_audit(
             "ownership_authority": "confirmed import/loader/pytest/declaration relationships only",
             "confirmed_ownership_relationships": [
                 {
-                    "source": report_path(path=item.source_path, anchor=repository_root),
+                    "source": report_path(
+                        path=item.source_path, anchor=repository_root
+                    ),
                     "test": report_path(path=item.test_path, anchor=repository_root),
                     "match_type": item.match_type,
                     "provenance": item.provenance,
@@ -753,9 +866,21 @@ def test_focus_audit(
         },
         interpretation={
             "verification_ladder": [
-                {"stage": 1, "name": "direct", "meaning": "changed tests and confirmed owning tests"},
-                {"stage": 2, "name": "affected", "meaning": "confirmed owners of bounded reverse source dependents"},
-                {"stage": 3, "name": "broader_gate", "meaning": "repository-supplied broader verification"},
+                {
+                    "stage": 1,
+                    "name": "direct",
+                    "meaning": "changed tests and confirmed owning tests",
+                },
+                {
+                    "stage": 2,
+                    "name": "affected",
+                    "meaning": "confirmed owners of bounded reverse source dependents",
+                },
+                {
+                    "stage": 3,
+                    "name": "broader_gate",
+                    "meaning": "repository-supplied broader verification",
+                },
             ],
             "sufficiency_rule": "focused suggestions never prove broader verification unnecessary",
         },
@@ -768,9 +893,15 @@ def test_focus_audit(
         economics=economics,
     )
     if artifact_path is not None:
-        output = artifact_path if artifact_path.is_absolute() else repository_root / artifact_path
+        output = (
+            artifact_path
+            if artifact_path.is_absolute()
+            else repository_root / artifact_path
+        )
         output.parent.mkdir(parents=True, exist_ok=True)
         import json
 
-        output.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        output.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
     return payload

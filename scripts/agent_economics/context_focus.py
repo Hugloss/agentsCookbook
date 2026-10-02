@@ -28,37 +28,65 @@ TOOL_NAME = "context-focus"
 TOOL_VERSION = "0.1.0"
 
 DEFAULT_CONTEXT_SUFFIXES: tuple[str, ...] = (
-    ".py", ".pyi", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
-    ".go", ".rs", ".java", ".kt", ".kts", ".cs", ".c", ".h",
-    ".cpp", ".hpp", ".cc", ".cxx", ".sh", ".bash", ".sql",
-    ".graphql", ".proto", ".md", ".rst", ".toml", ".yaml", ".yml",
-    ".json", ".ini", ".cfg",
+    ".py",
+    ".pyi",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".mjs",
+    ".cjs",
+    ".go",
+    ".rs",
+    ".java",
+    ".kt",
+    ".kts",
+    ".cs",
+    ".c",
+    ".h",
+    ".cpp",
+    ".hpp",
+    ".cc",
+    ".cxx",
+    ".sh",
+    ".bash",
+    ".sql",
+    ".graphql",
+    ".proto",
+    ".md",
+    ".rst",
+    ".toml",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".ini",
+    ".cfg",
 )
 
 _IDENTIFIER = re.compile(r"[A-Za-z0-9]+")
 _CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _SYMBOL_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
-    ".py": (
-        re.compile(r"^\s*(?:async\s+)?(?:def|class)\s+([A-Za-z_]\w*)"),
-    ),
-    ".pyi": (
-        re.compile(r"^\s*(?:async\s+)?(?:def|class)\s+([A-Za-z_]\w*)"),
-    ),
+    ".py": (re.compile(r"^\s*(?:async\s+)?(?:def|class)\s+([A-Za-z_]\w*)"),),
+    ".pyi": (re.compile(r"^\s*(?:async\s+)?(?:def|class)\s+([A-Za-z_]\w*)"),),
     ".js": (
-        re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|class)\s+([A-Za-z_$][\w$]*)"),
+        re.compile(
+            r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|class)\s+([A-Za-z_$][\w$]*)"
+        ),
         re.compile(r"^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*="),
     ),
     ".jsx": (),
     ".ts": (
-        re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)"),
+        re.compile(
+            r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)"
+        ),
         re.compile(r"^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*="),
     ),
     ".tsx": (),
-    ".go": (
-        re.compile(r"^\s*(?:func|type)\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)"),
-    ),
+    ".go": (re.compile(r"^\s*(?:func|type)\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)"),),
     ".rs": (
-        re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:fn|struct|enum|trait|type)\s+([A-Za-z_]\w*)"),
+        re.compile(
+            r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:fn|struct|enum|trait|type)\s+([A-Za-z_]\w*)"
+        ),
     ),
 }
 _SYMBOL_PATTERNS[".jsx"] = _SYMBOL_PATTERNS[".js"]
@@ -142,7 +170,9 @@ class ScannedFile:
 
     @property
     def covered_tokens(self) -> tuple[str, ...]:
-        values = set(self.path_tokens) | set(self.basename_tokens) | set(self.content_tokens)
+        values = (
+            set(self.path_tokens) | set(self.basename_tokens) | set(self.content_tokens)
+        )
         return tuple(sorted(values))
 
 
@@ -169,17 +199,25 @@ def _safe_relative(raw: str) -> str:
         or candidate.is_absolute()
         or any(part in {"", ".", ".."} for part in candidate.parts)
     ):
-        raise ContextFocusError(f"invalid repository-relative intelligence path: {raw!r}")
+        raise ContextFocusError(
+            f"invalid repository-relative intelligence path: {raw!r}"
+        )
     return candidate.as_posix()
 
 
-def load_external_intelligence(path: Path, *, max_bytes: int = 5_000_000) -> ExternalIntelligence:
+def load_external_intelligence(
+    path: Path, *, max_bytes: int = 5_000_000
+) -> ExternalIntelligence:
     if max_bytes < 1:
-        raise ContextFocusError("repository intelligence max_bytes must be greater than zero")
+        raise ContextFocusError(
+            "repository intelligence max_bytes must be greater than zero"
+        )
     try:
         size = path.stat().st_size
     except OSError as exc:
-        raise ContextFocusError(f"cannot stat repository intelligence: {type(exc).__name__}") from exc
+        raise ContextFocusError(
+            f"cannot stat repository intelligence: {type(exc).__name__}"
+        ) from exc
     if size > max_bytes:
         raise ContextFocusError(
             f"repository intelligence exceeds max_bytes: {size} > {max_bytes}"
@@ -187,7 +225,9 @@ def load_external_intelligence(path: Path, *, max_bytes: int = 5_000_000) -> Ext
     try:
         raw = path.read_bytes()
     except OSError as exc:
-        raise ContextFocusError(f"cannot read repository intelligence: {type(exc).__name__}") from exc
+        raise ContextFocusError(
+            f"cannot read repository intelligence: {type(exc).__name__}"
+        ) from exc
     try:
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -196,29 +236,51 @@ def load_external_intelligence(path: Path, *, max_bytes: int = 5_000_000) -> Ext
         raise ContextFocusError("repository intelligence version must be 1")
     provider = payload.get("provider", "external")
     if not isinstance(provider, str) or not provider.strip():
-        raise ContextFocusError("repository intelligence provider must be a non-empty string")
+        raise ContextFocusError(
+            "repository intelligence provider must be a non-empty string"
+        )
     files = payload.get("files")
     if not isinstance(files, list):
         raise ContextFocusError("repository intelligence files must be a list")
     hints: dict[str, ExternalHint] = {}
     for index, item in enumerate(files):
         if not isinstance(item, dict):
-            raise ContextFocusError(f"repository intelligence file {index} must be an object")
+            raise ContextFocusError(
+                f"repository intelligence file {index} must be an object"
+            )
         relative = _safe_relative(str(item.get("path", "")))
         score = item.get("score", 0)
-        if not isinstance(score, (int, float)) or isinstance(score, bool) or not math.isfinite(float(score)):
-            raise ContextFocusError(f"repository intelligence score for {relative} must be finite")
+        if (
+            not isinstance(score, (int, float))
+            or isinstance(score, bool)
+            or not math.isfinite(float(score))
+        ):
+            raise ContextFocusError(
+                f"repository intelligence score for {relative} must be finite"
+            )
         score_value = float(score)
         if not 0 <= score_value <= 100:
-            raise ContextFocusError(f"repository intelligence score for {relative} must be within 0..100")
+            raise ContextFocusError(
+                f"repository intelligence score for {relative} must be within 0..100"
+            )
         reasons_raw = item.get("reasons", [])
         symbols_raw = item.get("symbols", [])
-        if not isinstance(reasons_raw, list) or not all(isinstance(v, str) for v in reasons_raw):
-            raise ContextFocusError(f"repository intelligence reasons for {relative} must be strings")
-        if not isinstance(symbols_raw, list) or not all(isinstance(v, str) for v in symbols_raw):
-            raise ContextFocusError(f"repository intelligence symbols for {relative} must be strings")
+        if not isinstance(reasons_raw, list) or not all(
+            isinstance(v, str) for v in reasons_raw
+        ):
+            raise ContextFocusError(
+                f"repository intelligence reasons for {relative} must be strings"
+            )
+        if not isinstance(symbols_raw, list) or not all(
+            isinstance(v, str) for v in symbols_raw
+        ):
+            raise ContextFocusError(
+                f"repository intelligence symbols for {relative} must be strings"
+            )
         if relative in hints:
-            raise ContextFocusError(f"duplicate repository intelligence path: {relative}")
+            raise ContextFocusError(
+                f"duplicate repository intelligence path: {relative}"
+            )
         hints[relative] = ExternalHint(
             path=relative,
             score=score_value,
@@ -253,7 +315,9 @@ def _symbol_hints(
             matched = sorted(query_tokens & set(_tokens(name)))
             if not matched:
                 continue
-            output.append({"name": name, "line": line_no, "matched_query_tokens": matched})
+            output.append(
+                {"name": name, "line": line_no, "matched_query_tokens": matched}
+            )
             if len(output) >= max_items:
                 return tuple(output)
             break
@@ -338,7 +402,10 @@ def _candidate_record(item: ScannedFile, rank: int) -> dict[str, object]:
             "reasons": list(external.reasons),
             "symbols": list(external.symbols),
         }
-    recommendation: dict[str, object] = {"action": "inspect_file", "path": item.relative_path}
+    recommendation: dict[str, object] = {
+        "action": "inspect_file",
+        "path": item.relative_path,
+    }
     recommended_symbols = [str(symbol["name"]) for symbol in item.symbol_hints]
     if external is not None:
         recommended_symbols.extend(external.symbols)
@@ -346,7 +413,9 @@ def _candidate_record(item: ScannedFile, rank: int) -> dict[str, object]:
     if recommended_symbols:
         recommendation["inspect_symbols_first"] = recommended_symbols
     elif item.anchors:
-        recommendation["inspect_lines_first"] = [anchor["line"] for anchor in item.anchors]
+        recommendation["inspect_lines_first"] = [
+            anchor["line"] for anchor in item.anchors
+        ]
     return {
         "target": item.relative_path,
         "facts": {
@@ -429,7 +498,9 @@ def context_focus_audit(
         path for path in raw_discovered_paths if path.resolve() not in auxiliary_paths
     ]
     auxiliary_inputs_excluded = len(raw_discovered_paths) - len(discovered_paths)
-    discovered_relatives = {_portable_relative(path, repository_root) for path in discovered_paths}
+    discovered_relatives = {
+        _portable_relative(path, repository_root) for path in discovered_paths
+    }
 
     external: ExternalIntelligence | None = None
     external_stale: list[str] = []
@@ -450,9 +521,15 @@ def context_focus_audit(
             continue
         path_overlap = len(set(_tokens(relative)) & query_tokens)
         basename_overlap = len(set(_tokens(path.stem)) & query_tokens)
-        external_score = external.hints[relative].score if external and relative in external.hints else 0.0
+        external_score = (
+            external.hints[relative].score
+            if external and relative in external.hints
+            else 0.0
+        )
         pre_score = 12.0 * path_overlap + 8.0 * basename_overlap + external_score
-        stat_info.append((path, relative, size, path_overlap + basename_overlap, pre_score))
+        stat_info.append(
+            (path, relative, size, path_overlap + basename_overlap, pre_score)
+        )
     stat_info.sort(key=lambda item: (-item[4], item[2], item[1]))
 
     scanned: list[ScannedFile] = []
@@ -462,14 +539,20 @@ def context_focus_audit(
     scan_budget_deferred: list[dict[str, object]] = []
     for path, relative, size, _path_hits, _pre_score in stat_info:
         if len(scanned) >= scan_budget.max_files:
-            scan_budget_deferred.append({"target": relative, "reason": "scan max_files budget exhausted"})
+            scan_budget_deferred.append(
+                {"target": relative, "reason": "scan max_files budget exhausted"}
+            )
             continue
         if size > scan_budget.max_file_bytes:
             skipped_large += 1
-            scan_budget_deferred.append({"target": relative, "reason": "file exceeds scan max_file_bytes"})
+            scan_budget_deferred.append(
+                {"target": relative, "reason": "file exceeds scan max_file_bytes"}
+            )
             continue
         if scan_bytes + size > scan_budget.max_bytes:
-            scan_budget_deferred.append({"target": relative, "reason": "scan max_bytes budget exhausted"})
+            scan_budget_deferred.append(
+                {"target": relative, "reason": "scan max_bytes budget exhausted"}
+            )
             continue
         try:
             item = _scan_file(
@@ -486,7 +569,9 @@ def context_focus_audit(
         scan_bytes += item.byte_count
 
     relevant = [item for item in scanned if item.score > 0]
-    relevant.sort(key=lambda item: (-item.score, item.estimated_tokens, item.relative_path))
+    relevant.sort(
+        key=lambda item: (-item.score, item.estimated_tokens, item.relative_path)
+    )
 
     selected: list[ScannedFile] = []
     selected_lines = 0
@@ -495,16 +580,36 @@ def context_focus_audit(
     deferred: list[dict[str, object]] = list(scan_budget_deferred)
     for item in relevant:
         if len(selected) >= context_budget.max_files:
-            deferred.append({"target": item.relative_path, "reason": "context max_files budget exhausted"})
+            deferred.append(
+                {
+                    "target": item.relative_path,
+                    "reason": "context max_files budget exhausted",
+                }
+            )
             continue
         if selected_lines + item.line_count > context_budget.max_lines:
-            deferred.append({"target": item.relative_path, "reason": "context max_lines budget exhausted"})
+            deferred.append(
+                {
+                    "target": item.relative_path,
+                    "reason": "context max_lines budget exhausted",
+                }
+            )
             continue
         if selected_bytes + item.byte_count > context_budget.max_bytes:
-            deferred.append({"target": item.relative_path, "reason": "context max_bytes budget exhausted"})
+            deferred.append(
+                {
+                    "target": item.relative_path,
+                    "reason": "context max_bytes budget exhausted",
+                }
+            )
             continue
         if selected_tokens + item.estimated_tokens > context_budget.max_tokens:
-            deferred.append({"target": item.relative_path, "reason": "context max_tokens budget exhausted"})
+            deferred.append(
+                {
+                    "target": item.relative_path,
+                    "reason": "context max_tokens budget exhausted",
+                }
+            )
             continue
         selected.append(item)
         selected_lines += item.line_count
@@ -512,27 +617,36 @@ def context_focus_audit(
         selected_tokens += item.estimated_tokens
 
     analyzed_entries = [
-        {"path": item.relative_path, "sha256": item.content_sha256}
-        for item in scanned
+        {"path": item.relative_path, "sha256": item.content_sha256} for item in scanned
     ]
     path_set_identity = sha256_identity(sorted(discovered_relatives))
     analysis_identity = analyzed_input_identity(analyzed_entries)
     external_identity = external.content_sha256 if external is not None else None
-    root_values = [_portable_relative(path, repository_root) if path != repository_root else "." for path in requested_roots]
+    root_values = [
+        _portable_relative(path, repository_root) if path != repository_root else "."
+        for path in requested_roots
+    ]
 
     warnings: list[dict[str, object]] = [
-        {"code": "discovery_warning", "message": message} for message in discovery.warnings
+        {"code": "discovery_warning", "message": message}
+        for message in discovery.warnings
     ]
     if stat_failures:
         warnings.append({"code": "stat_failures", "count": stat_failures})
     if read_failures:
         warnings.append({"code": "read_failures", "count": read_failures})
     if skipped_large:
-        warnings.append({"code": "files_exceed_scan_max_file_bytes", "count": skipped_large})
+        warnings.append(
+            {"code": "files_exceed_scan_max_file_bytes", "count": skipped_large}
+        )
     if external_stale:
-        warnings.append({"code": "stale_external_intelligence_paths", "paths": external_stale})
+        warnings.append(
+            {"code": "stale_external_intelligence_paths", "paths": external_stale}
+        )
     if scan_budget_deferred:
-        warnings.append({"code": "scan_budget_truncated", "count": len(scan_budget_deferred)})
+        warnings.append(
+            {"code": "scan_budget_truncated", "count": len(scan_budget_deferred)}
+        )
 
     uncertainty: list[dict[str, object]] = []
     if scan_budget_deferred:
@@ -557,9 +671,15 @@ def context_focus_audit(
             }
         )
 
-    candidates = [_candidate_record(item, rank) for rank, item in enumerate(selected, start=1)]
+    candidates = [
+        _candidate_record(item, rank) for rank, item in enumerate(selected, start=1)
+    ]
     required_next_evidence = [
-        {"target": item.relative_path, "kind": "inspect_file", "reason": "selected by context-focus"}
+        {
+            "target": item.relative_path,
+            "kind": "inspect_file",
+            "reason": "selected by context-focus",
+        }
         for item in selected
     ]
     discovered_count = len(discovered_paths)
@@ -621,8 +741,14 @@ def context_focus_audit(
             "repository_intelligence_path": (
                 _portable_relative(repository_intelligence_path, repository_root)
                 if repository_intelligence_path is not None
-                and repository_intelligence_path.absolute().is_relative_to(repository_root)
-                else (f"<external>/{repository_intelligence_path.name}" if repository_intelligence_path else None)
+                and repository_intelligence_path.absolute().is_relative_to(
+                    repository_root
+                )
+                else (
+                    f"<external>/{repository_intelligence_path.name}"
+                    if repository_intelligence_path
+                    else None
+                )
             ),
             "repository_intelligence_sha256": external_identity,
             "repository_intelligence_max_bytes": repository_intelligence_max_bytes,
@@ -654,10 +780,16 @@ def context_focus_audit(
             "scanned_files": len(scanned),
             "relevant_files": len(relevant),
             "selected_count": len(selected),
-            "query_tokens_covered": sorted({token for item in selected for token in item.covered_tokens}),
+            "query_tokens_covered": sorted(
+                {token for item in selected for token in item.covered_tokens}
+            ),
         },
         interpretation={
-            "ranking_policy": ["context_value_score_desc", "estimated_tokens_asc", "path"],
+            "ranking_policy": [
+                "context_value_score_desc",
+                "estimated_tokens_asc",
+                "path",
+            ],
             "selected_targets": [item.relative_path for item in selected],
             "external_intelligence_is_ranking_support_not_repository_authority": True,
         },
@@ -671,10 +803,17 @@ def context_focus_audit(
     )
     if artifact_path is not None:
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        artifact_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        artifact_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
     return payload
 
 
 def _iso_utc_now() -> str:
     from datetime import datetime, timezone
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+    return (
+        datetime.now(timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )

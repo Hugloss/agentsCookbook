@@ -1,0 +1,290 @@
+{
+  "schema": "agents-cookbook-oracle-reviews.v1",
+  "tasks": {
+    "locate-directory-pruning": {
+      "alternatives": [
+        "_path_admitted_for_analysis filters files after traversal, not directory descent."
+      ],
+      "evidence": "The pinned discovery walker calls _prune_discovery_dirs before os.walk descends; it mutates dirs in place.",
+      "owner": {
+        "path": "hashmarks/codemap/repository_file_discovery.py",
+        "symbol": "_prune_discovery_dirs"
+      },
+      "repository": {
+        "commit": "85453be578e8ff46b8d79b363f140a915d6804f6",
+        "tree": "667b7066be9ef6cab6e1ce3a28a603481f07387e",
+        "url": "https://github.com/Hugloss/Hashmarks.git"
+      },
+      "reviews": [
+        {
+          "decision": "unique",
+          "reason": "The pinned discovery walker calls _prune_discovery_dirs before os.walk descends; it mutates dirs in place.",
+          "reviewer": "codex-independent-audit-2026-10-02",
+          "task_digest": "757fffa7ddca15e6867d8cb4dd0137c9bc3b914cb13c36c383497c7b26d568f9"
+        }
+      ],
+      "task_digest": "757fffa7ddca15e6867d8cb4dd0137c9bc3b914cb13c36c383497c7b26d568f9"
+    },
+    "locate-mcp-task-evidence": {
+      "alternatives": [
+        "CodeMap.task_evidence computes evidence behind the surface but is not the MCP method asked for."
+      ],
+      "evidence": "McpSurface.task_evidence is the consumer-facing MCP method; it validates bounds and returns CodeMap task evidence through _read.",
+      "owner": {
+        "path": "hashmarks/mcp_surface.py",
+        "symbol": "task_evidence"
+      },
+      "repository": {
+        "commit": "85453be578e8ff46b8d79b363f140a915d6804f6",
+        "tree": "667b7066be9ef6cab6e1ce3a28a603481f07387e",
+        "url": "https://github.com/Hugloss/Hashmarks.git"
+      },
+      "reviews": [
+        {
+          "decision": "unique",
+          "reason": "McpSurface.task_evidence is the consumer-facing MCP method; it validates bounds and returns CodeMap task evidence through _read.",
+          "reviewer": "codex-independent-audit-2026-10-02",
+          "task_digest": "88722dfe356c1b119145d0d296de47c43327a396b9abe0df407d77142e68d41f"
+        }
+      ],
+      "task_digest": "88722dfe356c1b119145d0d296de47c43327a396b9abe0df407d77142e68d41f"
+    },
+    "locate-prefix-path-enumerator": {
+      "alternatives": [
+        "_sorted_paths_under works on an in-memory discovery list, not persisted indexed paths."
+      ],
+      "evidence": "RepositoryIndexStore.paths_under queries file_map for an exact path or descendants below a prefix.",
+      "owner": {
+        "path": "hashmarks/codemap/repository_index_store.py",
+        "symbol": "paths_under"
+      },
+      "repository": {
+        "commit": "85453be578e8ff46b8d79b363f140a915d6804f6",
+        "tree": "667b7066be9ef6cab6e1ce3a28a603481f07387e",
+        "url": "https://github.com/Hugloss/Hashmarks.git"
+      },
+      "reviews": [
+        {
+          "decision": "unique",
+          "reason": "RepositoryIndexStore.paths_under queries file_map for an exact path or descendants below a prefix.",
+          "reviewer": "codex-independent-audit-2026-10-02",
+          "task_digest": "bb522aaf7a3988b5c1e51986cbc4d9aa9eae7b78ee63840f3a2f52f66b6dc705"
+        }
+      ],
+      "task_digest": "bb522aaf7a3988b5c1e51986cbc4d9aa9eae7b78ee63840f3a2f52f66b6dc705"
+    },
+    "locate-read-scope-invalidation": {
+      "alternatives": [
+        "resourcesInvalidatedByMutation returns resources, not read scopes."
+      ],
+      "evidence": "readScopesInvalidatedByMutation composes mutation resources with readScopesForResources and returns read scopes.",
+      "owner": {
+        "path": "ux/src/domain/reads/readInvalidation.ts",
+        "symbol": "readScopesInvalidatedByMutation"
+      },
+      "repository": {
+        "commit": "fbfad7ad14d96d2cb51a6da931b0fb1a60f66e9d",
+        "tree": "3ded8be71da0ac93700dcf3a3af76eb172e75ff8",
+        "url": "https://github.com/Hugloss/uv-fleet-updater.git"
+      },
+      "reviews": [
+        {
+          "decision": "unique",
+          "reason": "readScopesInvalidatedByMutation composes mutation resources with readScopesForResources and returns read scopes.",
+          "reviewer": "codex-independent-audit-2026-10-02",
+          "task_digest": "572c291ed5e70b8fee7dbfc723e58bdfaf2f11c869d697610d591ac9fd1bf51b"
+        }
+      ],
+      "task_digest": "572c291ed5e70b8fee7dbfc723e58bdfaf2f11c869d697610d591ac9fd1bf51b"
+    },
+    "locate-refresh-outcome": {
+      "alternatives": [
+        "Write command handlers call this helper but do not own this result conversion."
+      ],
+      "evidence": "withRefreshOutcome converts a saved write with a failed refresh to saved-refresh-required while preserving value and revision.",
+      "owner": {
+        "path": "ux/src/domain/mutations/WriteCommandResult.ts",
+        "symbol": "withRefreshOutcome"
+      },
+      "repository": {
+        "commit": "fbfad7ad14d96d2cb51a6da931b0fb1a60f66e9d",
+        "tree": "3ded8be71da0ac93700dcf3a3af76eb172e75ff8",
+        "url": "https://github.com/Hugloss/uv-fleet-updater.git"
+      },
+      "reviews": [
+        {
+          "decision": "unique",
+          "reason": "withRefreshOutcome converts a saved write with a failed refresh to saved-refresh-required while preserving value and revision.",
+          "reviewer": "codex-independent-audit-2026-10-02",
+          "task_digest": "a822024365583862ab1b160254adbf1f5e5855877136b87a7e745667b2ead0b7"
+        }
+      ],
+      "task_digest": "a822024365583862ab1b160254adbf1f5e5855877136b87a7e745667b2ead0b7"
+    },
+    "locate-repository-content-identity": {
+      "alternatives": [
+        "IdentityEngine owns a general repository identity; qualified_identity calls this test-shard function and does not compute it."
+      ],
+      "evidence": "test_shards.repository_content_identity hashes canonical source paths and bytes and supplies test-selection repository.content_identity.",
+      "owner": {
+        "path": "hashmarks/test_shards.py",
+        "symbol": "repository_content_identity"
+      },
+      "repository": {
+        "commit": "85453be578e8ff46b8d79b363f140a915d6804f6",
+        "tree": "667b7066be9ef6cab6e1ce3a28a603481f07387e",
+        "url": "https://github.com/Hugloss/Hashmarks.git"
+      },
+      "reviews": [
+        {
+          "decision": "unique",
+          "reason": "test_shards.repository_content_identity hashes canonical source paths and bytes and supplies test-selection repository.content_identity.",
+          "reviewer": "codex-independent-audit-2026-10-02",
+          "task_digest": "d2441998d9ca6e10464f549893c170a445ee45880a3597e9243316cba3dc52c4"
+        }
+      ],
+      "task_digest": "d2441998d9ca6e10464f549893c170a445ee45880a3597e9243316cba3dc52c4"
+    },
+    "locate-resource-invalidation": {
+      "alternatives": [
+        "readScopesInvalidatedByMutation consumes these resources and returns read scopes."
+      ],
+      "evidence": "resourcesInvalidatedByMutation returns the MUTATION_RESOURCES mapping for a mutation scope.",
+      "owner": {
+        "path": "ux/src/domain/reads/readResources.ts",
+        "symbol": "resourcesInvalidatedByMutation"
+      },
+      "repository": {
+        "commit": "fbfad7ad14d96d2cb51a6da931b0fb1a60f66e9d",
+        "tree": "3ded8be71da0ac93700dcf3a3af76eb172e75ff8",
+        "url": "https://github.com/Hugloss/uv-fleet-updater.git"
+      },
+      "reviews": [
+        {
+          "decision": "unique",
+          "reason": "resourcesInvalidatedByMutation returns the MUTATION_RESOURCES mapping for a mutation scope.",
+          "reviewer": "codex-independent-audit-2026-10-02",
+          "task_digest": "0b45beec1fe0da4a5d21f788d2ab7e13547f977bc34486fc90bfe616918add1c"
+        }
+      ],
+      "task_digest": "0b45beec1fe0da4a5d21f788d2ab7e13547f977bc34486fc90bfe616918add1c"
+    },
+    "locate-run-poll-delay": {
+      "alternatives": [
+        "isFleetRunTerminal is a separate terminal-state predicate in the same module."
+      ],
+      "evidence": "runPollDelay computes the bounded exponential delay from failure count in runLifecycle.",
+      "owner": {
+        "path": "ux/src/domain/fleet/runLifecycle.ts",
+        "symbol": "runPollDelay"
+      },
+      "repository": {
+        "commit": "fbfad7ad14d96d2cb51a6da931b0fb1a60f66e9d",
+        "tree": "3ded8be71da0ac93700dcf3a3af76eb172e75ff8",
+        "url": "https://github.com/Hugloss/uv-fleet-updater.git"
+      },
+      "reviews": [
+        {
+          "decision": "unique",
+          "reason": "runPollDelay computes the bounded exponential delay from failure count in runLifecycle.",
+          "reviewer": "codex-independent-audit-2026-10-02",
+          "task_digest": "0852969f9fb699a02c520d71f831255f2d23fad2ee6e0cf6593f567a75ec41de"
+        }
+      ],
+      "task_digest": "0852969f9fb699a02c520d71f831255f2d23fad2ee6e0cf6593f567a75ec41de"
+    },
+    "locate-stale-index-removal": {
+      "alternatives": [
+        "RepositoryIndexStore.delete_paths is the storage primitive and does not decide stale membership during sync."
+      ],
+      "evidence": "_sync_remove_stale_paths selects stale index rows during full CodeMap sync and deletes them through the store.",
+      "owner": {
+        "path": "hashmarks/codemap/indexing_lifecycle.py",
+        "symbol": "_sync_remove_stale_paths"
+      },
+      "repository": {
+        "commit": "85453be578e8ff46b8d79b363f140a915d6804f6",
+        "tree": "667b7066be9ef6cab6e1ce3a28a603481f07387e",
+        "url": "https://github.com/Hugloss/Hashmarks.git"
+      },
+      "reviews": [
+        {
+          "decision": "unique",
+          "reason": "_sync_remove_stale_paths selects stale index rows during full CodeMap sync and deletes them through the store.",
+          "reviewer": "codex-independent-audit-2026-10-02",
+          "task_digest": "1698acbf6627500616b369697422a07b4bef57f4cc29e30949053cf11b00f1d7"
+        }
+      ],
+      "task_digest": "1698acbf6627500616b369697422a07b4bef57f4cc29e30949053cf11b00f1d7"
+    },
+    "locate-terminal-run-check": {
+      "alternatives": [
+        "runPollDelay in the same module calculates delay and does not decide terminality."
+      ],
+      "evidence": "isFleetRunTerminal checks COMPLETED, CANCELLED, and FAILED FleetRun states.",
+      "owner": {
+        "path": "ux/src/domain/fleet/runLifecycle.ts",
+        "symbol": "isFleetRunTerminal"
+      },
+      "repository": {
+        "commit": "fbfad7ad14d96d2cb51a6da931b0fb1a60f66e9d",
+        "tree": "3ded8be71da0ac93700dcf3a3af76eb172e75ff8",
+        "url": "https://github.com/Hugloss/uv-fleet-updater.git"
+      },
+      "reviews": [
+        {
+          "decision": "unique",
+          "reason": "isFleetRunTerminal checks COMPLETED, CANCELLED, and FAILED FleetRun states.",
+          "reviewer": "codex-independent-audit-2026-10-02",
+          "task_digest": "194612d56283ac0a9299cfc93f913aa8e05d52b63f1b05c27b55427f62de247c"
+        }
+      ],
+      "task_digest": "194612d56283ac0a9299cfc93f913aa8e05d52b63f1b05c27b55427f62de247c"
+    },
+    "locate-typed-http-read": {
+      "alternatives": [
+        "request is the general HTTP transport and does not specifically start the typed read API."
+      ],
+      "evidence": "readRequest is the typed frontend read entrypoint and delegates to generic request with the caller signal.",
+      "owner": {
+        "path": "ux/src/app/api/httpTransport.ts",
+        "symbol": "readRequest"
+      },
+      "repository": {
+        "commit": "fbfad7ad14d96d2cb51a6da931b0fb1a60f66e9d",
+        "tree": "3ded8be71da0ac93700dcf3a3af76eb172e75ff8",
+        "url": "https://github.com/Hugloss/uv-fleet-updater.git"
+      },
+      "reviews": [
+        {
+          "decision": "unique",
+          "reason": "readRequest is the typed frontend read entrypoint and delegates to generic request with the caller signal.",
+          "reviewer": "codex-independent-audit-2026-10-02",
+          "task_digest": "c3ccb44820c96d8d6541b885d94562ecd8abc5c7676b188c327cacd72701aa1c"
+        }
+      ],
+      "task_digest": "c3ccb44820c96d8d6541b885d94562ecd8abc5c7676b188c327cacd72701aa1c"
+    },
+    "repair-partial-receipt-regression": {
+      "alternatives": [
+        "write_receipt publishes evidence; it does not decide whether an existing partial directory is complete."
+      ],
+      "evidence": "The pinned receipt.is_complete_receipt requires result.json, result.sha256, and completion.json with matching hashes; the mutation changes this owner and the focused test rejects a partial result.",
+      "owner": null,
+      "repository": {
+        "commit": "0841a8822f417b8fd03af61c03779df8f1cdc941",
+        "tree": "65a32888329e308615647dda194f0e36c2afe2ac",
+        "url": "https://github.com/Hugloss/agentsCookbook.git"
+      },
+      "reviews": [
+        {
+          "decision": "unique",
+          "reason": "The pinned receipt.is_complete_receipt requires result.json, result.sha256, and completion.json with matching hashes; the mutation changes this owner and the focused test rejects a partial result.",
+          "reviewer": "codex-independent-audit-2026-10-02",
+          "task_digest": "c85102601549670085952104f4975025fe24b29324393ced4beba40144383fe1"
+        }
+      ],
+      "task_digest": "c85102601549670085952104f4975025fe24b29324393ced4beba40144383fe1"
+    }
+  }
+}

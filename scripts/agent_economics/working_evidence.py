@@ -46,7 +46,9 @@ def validate_working_evidence(payload: object) -> list[str]:
 
     for key in ("known", "decisions", "remaining"):
         value = payload.get(key)
-        if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        if not isinstance(value, Sequence) or isinstance(
+            value, (str, bytes, bytearray)
+        ):
             errors.append(f"{key} must be a list")
 
     forbidden = {
@@ -192,7 +194,9 @@ def repeated_action_without_new_evidence(
     )
 
 
-def dirty_gate_delta_facts(observation_delta: Mapping[str, object]) -> dict[str, object]:
+def dirty_gate_delta_facts(
+    observation_delta: Mapping[str, object],
+) -> dict[str, object]:
     """Extract objective dirty-gate facts without parsing provider diagnostics."""
     diagnostics = observation_delta.get("diagnostics")
     if not isinstance(diagnostics, Mapping):
@@ -202,7 +206,9 @@ def dirty_gate_delta_facts(observation_delta: Mapping[str, object]) -> dict[str,
     scoped = diagnostics.get("added_in_changed_scope")
     if not isinstance(added, Sequence) or isinstance(added, (str, bytes, bytearray)):
         return {"usable": False, "reason": "invalid-added-diagnostics"}
-    if not isinstance(removed, Sequence) or isinstance(removed, (str, bytes, bytearray)):
+    if not isinstance(removed, Sequence) or isinstance(
+        removed, (str, bytes, bytearray)
+    ):
         return {"usable": False, "reason": "invalid-removed-diagnostics"}
     if not isinstance(scoped, Sequence) or isinstance(scoped, (str, bytes, bytearray)):
         return {"usable": False, "reason": "invalid-scoped-diagnostics"}
@@ -276,7 +282,8 @@ def evidence_stop_facts(
             uncovered.append(identity)
             continue
         fresh = [
-            row for row in candidates
+            row
+            for row in candidates
             if isinstance(row.get("freshness"), Mapping)
             and row["freshness"].get("state") == "fresh"
         ]
@@ -284,7 +291,8 @@ def evidence_stop_facts(
             stale_only.append(identity)
             continue
         direct = [
-            row for row in fresh
+            row
+            for row in fresh
             if isinstance(row.get("relationship"), Mapping)
             and row["relationship"].get("classification") == "direct"
         ]

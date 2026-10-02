@@ -29,19 +29,28 @@ def _candidate(payload: dict[str, Any], target: str | None) -> dict[str, Any]:
         raise EvidenceNextError("artifact has no candidates")
     if target is None:
         if len(candidates) != 1:
-            raise EvidenceNextError("artifact has multiple candidates; --target is required")
+            raise EvidenceNextError(
+                "artifact has multiple candidates; --target is required"
+            )
         candidate = candidates[0]
         if not isinstance(candidate, dict):
             raise EvidenceNextError("candidate must be an object")
         return candidate
-    matches = [row for row in candidates if isinstance(row, dict) and row.get("target") == target]
+    matches = [
+        row
+        for row in candidates
+        if isinstance(row, dict) and row.get("target") == target
+    ]
     if len(matches) != 1:
         raise EvidenceNextError(f"target must identify exactly one candidate: {target}")
     return matches[0]
 
 
 def next_evidence(
-    payload: dict[str, Any], *, target: str | None = None, profile: dict[str, Any] | None = None,
+    payload: dict[str, Any],
+    *,
+    target: str | None = None,
+    profile: dict[str, Any] | None = None,
     python_argv: list[str] | None = None,
     sufficiency: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -87,7 +96,9 @@ def next_evidence(
     if not isinstance(required, list) or not required:
         raise EvidenceNextError("candidate has no required next evidence")
     if len(required) != 1:
-        raise EvidenceNextError("candidate has multiple required next evidence items; explicit selection is required")
+        raise EvidenceNextError(
+            "candidate has multiple required next evidence items; explicit selection is required"
+        )
     item = required[0]
     if not isinstance(item, dict):
         raise EvidenceNextError("required next evidence must be an object")
@@ -99,7 +110,10 @@ def next_evidence(
     command: list[str] | None = None
     unresolved: list[str] = []
     runtime_argv = list(python_argv) if python_argv is not None else None
-    if runtime_argv is not None and (not runtime_argv or not all(isinstance(item, str) and item for item in runtime_argv)):
+    if runtime_argv is not None and (
+        not runtime_argv
+        or not all(isinstance(item, str) and item for item in runtime_argv)
+    ):
         raise EvidenceNextError("python runtime argv must contain non-empty strings")
     if kind == "test_focus":
         if profile is None:
@@ -119,9 +133,14 @@ def next_evidence(
                 ("test_root_evidence", tests, "test_root_not_detected"),
             ):
                 evidence = repository.get(field)
-                if isinstance(evidence, list) and isinstance(selected, list) and len(selected) == 1:
+                if (
+                    isinstance(evidence, list)
+                    and isinstance(selected, list)
+                    and len(selected) == 1
+                ):
                     matches = [
-                        row for row in evidence
+                        row
+                        for row in evidence
                         if isinstance(row, dict) and row.get("path") == selected[0]
                     ]
                     if len(matches) != 1 or matches[0].get("status") != "DETECTED":
@@ -130,12 +149,20 @@ def next_evidence(
                 unresolved.append("python_runtime_argv")
             if not unresolved:
                 command = [
-                    *runtime_argv, "-m", "agent_economics", "test-focus",
-                    "--repository-root", ".",
-                    "--source-root", str(packages[0]),
-                    "--tests-root", str(tests[0]),
-                    "--changed-path", candidate_target,
-                    "--artifact-path", ".agent-artifacts/test-focus.json",
+                    *runtime_argv,
+                    "-m",
+                    "agent_economics",
+                    "test-focus",
+                    "--repository-root",
+                    ".",
+                    "--source-root",
+                    str(packages[0]),
+                    "--tests-root",
+                    str(tests[0]),
+                    "--changed-path",
+                    candidate_target,
+                    "--artifact-path",
+                    ".agent-artifacts/test-focus.json",
                 ]
     else:
         unresolved.append(f"unsupported_next_evidence:{kind}")
@@ -143,7 +170,9 @@ def next_evidence(
     return {
         "schema": {"name": "agent-economics-next-evidence", "version": 1},
         "target": candidate_target,
-        "current_probe": payload.get("tool", {}).get("name") if isinstance(payload.get("tool"), dict) else None,
+        "current_probe": payload.get("tool", {}).get("name")
+        if isinstance(payload.get("tool"), dict)
+        else None,
         "next_evidence": {"kind": kind, "reason": item.get("reason")},
         "command": command,
         "command_display": shlex.join(command) if command is not None else None,
@@ -160,16 +189,34 @@ def next_evidence(
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Translate an artifact's existing next-evidence requirement into a bounded command.")
+    parser = argparse.ArgumentParser(
+        description="Translate an artifact's existing next-evidence requirement into a bounded command."
+    )
     parser.add_argument("artifact", type=Path)
     parser.add_argument("--target", default=None)
     parser.add_argument("--profile", type=Path, default=None)
-    parser.add_argument("--python-command", action="append", default=None, help="Explicit Python launcher argv token; repeat for multi-token launchers, for example: --python-command uv --python-command run --python-command python")
+    parser.add_argument(
+        "--python-command",
+        action="append",
+        default=None,
+        help="Explicit Python launcher argv token; repeat for multi-token launchers, for example: --python-command uv --python-command run --python-command python",
+    )
     args = parser.parse_args(argv)
     try:
         payload = _load(args.artifact)
         profile = _load(args.profile) if args.profile is not None else None
-        print(json.dumps(next_evidence(payload, target=args.target, profile=profile, python_argv=args.python_command), indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                next_evidence(
+                    payload,
+                    target=args.target,
+                    profile=profile,
+                    python_argv=args.python_command,
+                ),
+                indent=2,
+                sort_keys=True,
+            )
+        )
     except EvidenceNextError as exc:
         raise SystemExit(f"next: {exc}") from exc
 

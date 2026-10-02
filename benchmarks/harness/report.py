@@ -14,7 +14,13 @@ from benchmarks.adapters.oracles import (
     score_repository_location,
 )
 from benchmarks.harness.bundle import verify_bundle
+from benchmarks.harness.campaign_authority import (
+    CampaignAuthorityError,
+    read_launch_claims,
+    read_campaign,
+)
 from benchmarks.harness.suite import SuiteDefinition
+from benchmarks.harness.identity import digest, execution_task_contract
 
 
 class ReportError(ValueError):
@@ -81,6 +87,33 @@ def _agent_metric(receipt: dict[str, Any], name: str) -> int | float | None:
 def _oracle_bool(receipt: dict[str, Any], name: str) -> bool | None:
     value = receipt.get("scoring", {}).get("oracle_grade", {}).get(name)
     return value if isinstance(value, bool) else None
+
+
+def _semantic_success(receipt: dict[str, Any]) -> bool | None:
+    value = _oracle_bool(receipt, "semantic_success")
+    if value is not None:
+        return value
+    if receipt.get("status") in _VALID_OUTCOMES:
+        return receipt.get("status") == "PASS"
+    return None
+
+
+def _semantic_gradeable(receipt: dict[str, Any]) -> bool:
+    value = _oracle_bool(receipt, "semantic_gradeable")
+    if value is not None:
+        return value
+    return receipt.get("status") in _VALID_OUTCOMES
+
+
+def _replicate_id(receipt: dict[str, Any]) -> int:
+    """Return the frozen paired replicate identifier.
+
+    The historical receipt field is named seed. Native agent adapters do not
+    transport it as a provider/model sampling seed, so reports must not imply
+    deterministic inference from this value.
+    """
+    execution = receipt["execution"]
+    return int(execution.get("replicate_id", execution.get("seed")))
 
 
 def _metric_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
@@ -233,6 +266,17 @@ def validate_comparability(receipts: list[dict[str, Any]]) -> None:
     _check_localization_grades(receipts)
 
 
+def _task_agent_authority(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    identities = {
+        (_task_id(receipt), _agent_id(receipt)): _comparison_identity(receipt)
+        for receipt in receipts
+    }
+    return [
+        {"task_id": task_id, "agent_id": agent_id, **identity}
+        for (task_id, agent_id), identity in sorted(identities.items())
+    ]
+
+
 def _check_localization_grades(receipts: list[dict[str, Any]]) -> None:
     for receipt in receipts:
         if receipt.get("status") not in _VALID_OUTCOMES:
@@ -253,19 +297,26 @@ def _check_localization_grades(receipts: list[dict[str, Any]]) -> None:
             grade.get("semantic_status") not in {"CORRECT", "INCORRECT", "UNSCORABLE"}
             or grade.get("normalization_policy") != policy.get("normalization_policy")
             or grade.get("scoring_policy") != policy.get("scoring_policy")
-            or policy.get("normalization_policy") != REPOSITORY_LOCATION_NORMALIZATION_POLICY
+            or policy.get("normalization_policy")
+            != REPOSITORY_LOCATION_NORMALIZATION_POLICY
             or policy.get("scoring_policy") != REPOSITORY_LOCATION_SCORING_POLICY
             or grade.get("expected") != task["oracle"]["configuration"]["expected"]
-            or grade.get("semantic_success") != (grade.get("semantic_status") == "CORRECT")
-            or grade.get("semantic_gradeable") != (grade.get("semantic_status") != "UNSCORABLE")
+            or grade.get("semantic_success")
+            != (grade.get("semantic_status") == "CORRECT")
+            or grade.get("semantic_gradeable")
+            != (grade.get("semantic_status") != "UNSCORABLE")
             or not isinstance(observed, dict)
-            or observed.get("normalization_policy") != REPOSITORY_LOCATION_NORMALIZATION_POLICY
-            or grade != score_repository_location(
+            or observed.get("normalization_policy")
+            != REPOSITORY_LOCATION_NORMALIZATION_POLICY
+            or grade
+            != score_repository_location(
                 observed, expected=task["oracle"]["configuration"]["expected"]
             )
             or receipt["status"] != ("PASS" if grade.get("passed") else "FAIL")
         ):
-            raise ReportError("valid localization receipt has inconsistent oracle grade")
+            raise ReportError(
+                "valid localization receipt has inconsistent oracle grade"
+            )
 
 
 def _check_comparable_localization_scoring(
@@ -290,7 +341,8 @@ def _check_comparable_localization_scoring(
 
 
 def _check_comparable_agents(receipts: list[dict[str, Any]]) -> None:
-    identities: dict[str, dict[str, Any]] = {}
+    global_identities: dict[str, dict[str, Any]] = {}
+    task_identities: dict[tuple[str, str], dict[str, Any]] = {}
     for receipt in receipts:
         agent = _agent_id(receipt)
         identity = _comparison_identity(receipt)
@@ -299,37 +351,93 @@ def _check_comparable_agents(receipts: list[dict[str, Any]]) -> None:
             for key in ("version", "executable_sha256", "model", "native_config_sha256")
         ):
             continue
-        prior = identities.setdefault(agent, identity)
-        if prior != identity:
+        global_identity = {
+            key: value
+            for key, value in identity.items()
+            if key != "native_config_sha256"
+        }
+        prior_global = global_identities.setdefault(agent, global_identity)
+        if prior_global != global_identity:
             raise ReportError(
                 f"mixed observed runtime authority for agent {agent}; "
                 "use separate result campaigns"
+            )
+        task_key = (_task_id(receipt), agent)
+        prior_task = task_identities.setdefault(task_key, identity)
+        if prior_task != identity:
+            raise ReportError(
+                f"mixed native config authority for task {task_key[0]} / {agent}; "
+                "paired conditions are not comparable"
             )
 
 
 def _check_comparable_evidence(receipts: list[dict[str, Any]]) -> None:
     if not receipts:
         return
-    for field in ("harness", "environment"):
+    for field in ("harness",):
         baseline = receipts[0].get("authority", {}).get(field)
         if any(
             receipt.get("authority", {}).get(field) != baseline
             for receipt in receipts[1:]
         ):
             raise ReportError(f"mixed {field} authority; use separate result campaigns")
-    subjects: dict[str, Any] = {}
+    environments: dict[str, Any] = {}
+    subjects: dict[tuple[str, str, str], Any] = {}
+    subject_executables: dict[str, str] = {}
     for receipt in receipts:
+        agent = _agent_id(receipt)
+        environment = receipt.get("authority", {}).get("environment")
+        if agent in environments and environments[agent] != environment:
+            raise ReportError(
+                f"mixed environment authority for agent {agent}; "
+                "use separate result campaigns"
+            )
+        environments[agent] = environment
         authority = receipt.get("authority", {}).get("subject", {})
         if authority.get("available") is not True:
             continue
-        subject = _subject_id(receipt)
+        subject = (_task_id(receipt), agent, _subject_id(receipt))
         observed = authority.get("observed")
-        if subject in subjects and subjects[subject] != observed:
+        native = (
+            observed.get("native_subject_identity")
+            if isinstance(observed, dict)
+            else None
+        )
+        executable_hash = (
+            native.get("executable_sha256") if isinstance(native, dict) else None
+        )
+        if isinstance(executable_hash, str):
+            subject_id = subject[2]
+            if (
+                subject_id in subject_executables
+                and subject_executables[subject_id] != executable_hash
+            ):
+                raise ReportError(
+                    f"mixed observed subject authority for {subject_id}; "
+                    "use separate result campaigns"
+                )
+            subject_executables[subject_id] = executable_hash
+        comparable_observed = observed
+        if isinstance(observed, dict) and "native_subject_identity" in observed:
+            exposure = observed.get("mcp_exposure") or {}
+            comparable_observed = {
+                "source": observed.get("source"),
+                "subject": observed.get("subject"),
+                "native_subject_identity": observed.get("native_subject_identity"),
+                "native_config_sha256": observed.get("native_config_sha256"),
+                "workspace_binding": observed.get("workspace_binding"),
+                "mcp_semantic_identity": (
+                    exposure.get("semantic_identity")
+                    if isinstance(exposure, dict)
+                    else None
+                ),
+            }
+        if subject in subjects and subjects[subject] != comparable_observed:
             raise ReportError(
                 f"mixed observed subject authority for {subject}; "
                 "use separate result campaigns"
             )
-        subjects[subject] = observed
+        subjects[subject] = comparable_observed
 
 
 def _pair_key(receipt: dict[str, Any]) -> tuple[str, str, int, int]:
@@ -339,7 +447,41 @@ def _pair_key(receipt: dict[str, Any]) -> tuple[str, str, int, int]:
         _task_id(receipt),
         agent_id,
         int(execution["trial_index"]),
-        int(execution["seed"]),
+        _replicate_id(receipt),
+    )
+
+
+def _assistance_transition(
+    baseline: dict[str, Any],
+    assisted: dict[str, Any],
+) -> str | None:
+    if not _semantic_gradeable(baseline) or not _semantic_gradeable(assisted):
+        return None
+    left = _semantic_success(baseline)
+    right = _semantic_success(assisted)
+    if left is None or right is None:
+        return None
+    if not left and right:
+        return "gain"
+    if left and right:
+        return "preserved"
+    if not left and not right:
+        return "unresolved"
+    return "regression"
+
+
+def _pair_input_id(receipt: dict[str, Any]) -> str:
+    authority = receipt.get("authority", {})
+    return digest(
+        {
+            "task": execution_task_contract(receipt["task"]),
+            "agent": _comparison_identity(receipt),
+            "harness": authority.get("harness"),
+            "environment": authority.get("environment"),
+            "mutation": authority.get("mutation"),
+            "admitted_state": receipt.get("execution", {}).get("admitted_state_sha256"),
+            "replicate_id": _replicate_id(receipt),
+        }
     )
 
 
@@ -366,18 +508,24 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         baseline = bare.get(key)
         if baseline is None:
             continue
+        pair_input = _pair_input_id(baseline)
+        if pair_input != _pair_input_id(receipt):
+            raise ReportError(f"paired non-subject authority differs for {key}")
         row: dict[str, Any] = {
             "task_id": key[0],
             "agent_id": key[1],
             "trial_index": key[2],
-            "seed": key[3],
+            "replicate_id": key[3],
+            **({"seed": key[3]} if "seed" in receipt["execution"] else {}),
             "condition_id": _condition_id(receipt),
             "subject_id": receipt["condition"]["subject_definition"]["id"],
+            "pair_input_id": pair_input,
             "bare_status": baseline["status"],
             "assisted_status": receipt["status"],
             "task_success_delta": (
                 int(receipt["status"] == "PASS") - int(baseline["status"] == "PASS")
             ),
+            "assistance_transition": _assistance_transition(baseline, receipt),
         }
         for metric in (
             "duration_ms",
@@ -403,6 +551,187 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
 
 
+def _paired_assistance_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
+    for row in rows:
+        transition = row.get("assistance_transition")
+        if isinstance(transition, str):
+            grouped[(str(row["agent_id"]), str(row["subject_id"]))][transition] += 1
+    return [
+        {
+            "agent_id": key[0],
+            "subject_id": key[1],
+            "total_pairs": sum(counts.values()),
+            "transitions": {
+                name: counts.get(name, 0)
+                for name in ("gain", "preserved", "unresolved", "regression")
+            },
+        }
+        for key, counts in sorted(grouped.items())
+    ]
+
+
+def _stability(
+    receipts: list[dict[str, Any]],
+    *,
+    expected: dict[str, dict[str, Any]],
+    suite: SuiteDefinition,
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    expected_ids: dict[tuple[str, str, str], list[int]] = defaultdict(list)
+    conditions = {row["id"]: row for row in suite.experiment["conditions"]}
+    for row in expected.values():
+        condition = conditions[row["condition_id"]]
+        key = (str(row["task_id"]), str(condition["agent"]), str(condition["subject"]))
+        expected_ids[key].append(int(row.get("replicate_id", row.get("seed"))))
+    for receipt in receipts:
+        grouped[(_task_id(receipt), _agent_id(receipt), _subject_id(receipt))].append(
+            receipt
+        )
+
+    rows: list[dict[str, Any]] = []
+    for key, identifiers in sorted(expected_ids.items()):
+        group = grouped.get(key, [])
+        valid = [row for row in group if row.get("status") in _VALID_OUTCOMES]
+        gradeable = [row for row in valid if _semantic_gradeable(row)]
+        correct = sum(_semantic_success(row) is True for row in gradeable)
+        answer_counts = Counter(
+            json.dumps(
+                row.get("scoring", {}).get("oracle_grade", {}).get("normalized_actual"),
+                sort_keys=True,
+            )
+            for row in gradeable
+        )
+        if len(valid) != len(identifiers):
+            state = "execution-unstable"
+        elif len(gradeable) != len(valid):
+            state = "not-gradeable" if not gradeable else "unstable"
+        elif correct == len(gradeable):
+            state = "stable-correct"
+        elif correct == 0 and len(answer_counts) == 1:
+            state = "stable-incorrect"
+        else:
+            state = "unstable"
+        rows.append(
+            {
+                "task_id": key[0],
+                "agent_id": key[1],
+                "subject_id": key[2],
+                "replicates": len(identifiers),
+                "observed_replicates": len(group),
+                "replicate_ids": sorted(identifiers),
+                "observed_replicate_ids": sorted(_replicate_id(row) for row in group),
+                "valid_outcomes": len(valid),
+                "gradeable_outcomes": len(gradeable),
+                "semantic_correct": correct,
+                "semantic_incorrect": len(gradeable) - correct,
+                "format_compliant": sum(
+                    _oracle_bool(row, "format_compliant") is True for row in valid
+                ),
+                "answer_distribution": dict(sorted(answer_counts.items())),
+                "state": state,
+            }
+        )
+    return rows
+
+
+def _diagnostic(receipt: dict[str, Any]) -> dict[str, Any]:
+    status = receipt.get("status")
+    grade = receipt.get("scoring", {}).get("oracle_grade", {})
+    process = receipt.get("execution", {}).get("agent_terminal") or {}
+    agent_process = receipt.get("measurements", {}).get("agent", {})
+    flags = {
+        "contamination": status == "CONTAMINATED",
+        "output_contract": grade.get("format_compliant") is False,
+        "semantic_ungradeable": grade.get("semantic_gradeable") is False,
+        "semantic_incorrect": grade.get("semantic_status") == "INCORRECT",
+    }
+    reason = str(receipt.get("reason") or "").lower()
+    if flags["contamination"]:
+        primary = "contamination"
+    elif status == "INVALID" and "oracle" in reason:
+        primary = "oracle-invalid-or-ambiguous"
+    elif status == "INCOMPLETE" and "timed out" in reason:
+        primary = "timeout"
+    elif status == "INCOMPLETE" and process.get("type") == "turn.failed":
+        primary = "agent-terminal"
+    elif status in {"INCOMPLETE", "INVALID"}:
+        primary = "runtime"
+    elif flags["semantic_incorrect"]:
+        primary = "semantic-incorrect"
+    elif flags["output_contract"] and not grade.get("semantic_gradeable"):
+        primary = "output-contract"
+    elif flags["semantic_ungradeable"]:
+        primary = "semantic-ungradeable"
+    elif status == "PASS":
+        primary = "semantic-correct"
+    else:
+        primary = "semantic-incorrect" if status == "FAIL" else "runtime"
+    return {"primary": primary, "flags": flags}
+
+
+def _pair_exclusions(
+    *,
+    expected: dict[str, dict[str, Any]],
+    by_definition: dict[str, list[dict[str, Any]]],
+    suite: SuiteDefinition,
+    interrupted: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    interrupted = interrupted or set()
+    conditions = {row["id"]: row for row in suite.experiment["conditions"]}
+    groups: dict[tuple[str, str, int], dict[str, dict[str, Any]]] = defaultdict(dict)
+    for definition, row in expected.items():
+        condition = conditions[row["condition_id"]]
+        key = (
+            str(row["task_id"]),
+            str(condition["agent"]),
+            int(row.get("replicate_id", row.get("seed"))),
+        )
+        groups[key][str(condition["subject"])] = {
+            "definition_id": definition,
+            "receipt": by_definition.get(definition, [None])[0],
+        }
+    exclusions = []
+    for key, arms in sorted(groups.items()):
+        bare = arms.get("none")
+        for subject, arm in sorted(arms.items()):
+            if subject == "none":
+                continue
+            left = bare["receipt"] if bare else None
+            right = arm["receipt"]
+            if (
+                left
+                and right
+                and all(row.get("status") in _VALID_OUTCOMES for row in (left, right))
+            ):
+                continue
+            exclusions.append(
+                {
+                    "task_id": key[0],
+                    "agent_id": key[1],
+                    "replicate_id": key[2],
+                    "subject_id": subject,
+                    "bare_definition_id": bare["definition_id"] if bare else None,
+                    "assisted_definition_id": arm["definition_id"],
+                    "bare_status": left.get("status")
+                    if left
+                    else (
+                        "INTERRUPTED"
+                        if bare and bare["definition_id"] in interrupted
+                        else "MISSING"
+                    ),
+                    "assisted_status": right.get("status")
+                    if right
+                    else (
+                        "INTERRUPTED"
+                        if arm["definition_id"] in interrupted
+                        else "MISSING"
+                    ),
+                }
+            )
+    return exclusions
+
+
 def _cross_agent_observations(
     receipts: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -418,7 +747,7 @@ def _cross_agent_observations(
             _task_id(receipt),
             _subject_id(receipt),
             int(execution["trial_index"]),
-            int(execution["seed"]),
+            _replicate_id(receipt),
         )
         agent = _agent_id(receipt)
         if agent in grouped[key]:
@@ -448,7 +777,7 @@ def _cross_agent_observations(
             "task_id": key[0],
             "subject_id": key[1],
             "trial_index": key[2],
-            "seed": key[3],
+            "replicate_id": key[3],
             "agents": dict(sorted(agents.items())),
         }
         for key, agents in sorted(grouped.items())
@@ -465,7 +794,9 @@ def build_report(
     selection: dict[str, Any] | None = None,
     projected_receipts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    receipts = _receipts(results_root) if projected_receipts is None else projected_receipts
+    receipts = (
+        _receipts(results_root) if projected_receipts is None else projected_receipts
+    )
     all_expected = {str(row["definition_id"]): row for row in suite.trial_definitions()}
     expected = (
         all_expected
@@ -476,6 +807,10 @@ def build_report(
     )
     if selected_definitions is not None and set(expected) != selected_definitions:
         raise ReportError("report selection contains definitions outside frozen suite")
+    new_contract = any("replicate_id" in row for row in expected.values())
+    interrupted: set[str] = set()
+    launch_claims: dict[str, str] = {}
+    campaign_id = None
     by_definition: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for receipt in receipts:
         definition = receipt.get("definition_id")
@@ -501,6 +836,33 @@ def build_report(
             + ", ".join(sorted(duplicates))
         )
 
+    if new_contract:
+        try:
+            manifest = read_campaign(results_root)
+            campaign_id = manifest["campaign_id"]
+            if projected_receipts is None and not set(expected).issubset(
+                set(manifest["selected_definitions"])
+            ):
+                raise CampaignAuthorityError("report selection exceeds frozen campaign")
+            launch_claims = read_launch_claims(results_root, campaign_id)
+            if not set(launch_claims).issubset(set(manifest["selected_definitions"])):
+                raise CampaignAuthorityError(
+                    "launch claim exceeds frozen campaign selection"
+                )
+            interrupted = set(launch_claims)
+        except CampaignAuthorityError as exc:
+            raise ReportError(str(exc)) from exc
+        for receipt in receipts:
+            if (
+                receipt.get("definition_id") in expected
+                and receipt.get("execution", {}).get("campaign_id") != campaign_id
+            ):
+                raise ReportError("receipt belongs to a different campaign authority")
+            if projected_receipts is None and launch_claims.get(
+                receipt["definition_id"]
+            ) != receipt.get("trial_id"):
+                raise ReportError("receipt has no matching launch claim")
+
     missing = sorted(set(expected) - set(by_definition))
     if require_complete and missing:
         raise ReportError(
@@ -517,15 +879,22 @@ def build_report(
 
     statuses = Counter(str(row.get("status")) for row in receipts)
     invalid_outcomes = sum(
-        statuses.get(status, 0)
-        for status in ("INCOMPLETE", "INVALID", "CONTAMINATED")
+        statuses.get(status, 0) for status in ("INCOMPLETE", "INVALID", "CONTAMINATED")
     )
     campaign_complete = not missing
     campaign_qualified = campaign_complete and invalid_outcomes == 0
+    paired_assistance = _paired_assistance(receipts)
+    stability = _stability(receipts, expected=expected, suite=suite)
+    pair_exclusions = _pair_exclusions(
+        expected=expected,
+        by_definition=by_definition,
+        suite=suite,
+        interrupted=interrupted,
+    )
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 4,
+            "version": 7,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
@@ -543,12 +912,29 @@ def build_report(
         "expected_trials": len(expected),
         "observed_trials": len(receipts),
         "missing_definitions": missing,
+        "interrupted_definitions": sorted(interrupted & set(missing)),
         "status_counts": dict(sorted(statuses.items())),
         "conditions": {
             condition: _aggregate_condition(rows)
             for condition, rows in sorted(by_condition.items())
         },
-        "paired_assistance": _paired_assistance(receipts),
+        "paired_assistance": paired_assistance,
+        "paired_assistance_summary": _paired_assistance_summary(paired_assistance),
+        "paired_assistance_exclusions": pair_exclusions,
+        "expected_assistance_pairs": len(paired_assistance) + len(pair_exclusions),
+        "stability": stability,
+        "task_agent_authority": _task_agent_authority(receipts),
+        "diagnostics": [
+            {
+                "definition_id": row["definition_id"],
+                "trial_id": row["trial_id"],
+                "task_id": _task_id(row),
+                "agent_id": _agent_id(row),
+                "subject_id": _subject_id(row),
+                **_diagnostic(row),
+            }
+            for row in sorted(receipts, key=lambda item: item["definition_id"])
+        ],
         "agent_profiles": {
             agent: _aggregate_condition(rows)
             for agent, rows in sorted(by_agent.items())
@@ -568,6 +954,12 @@ def build_report(
             "invalid_outcomes_excluded_from_success_rates": True,
             "economics_include_invalid_and_incomplete_trials": True,
             "paired_assistance_scope": "valid-outcomes-only",
+            "replicate_identity_field": (
+                "execution.replicate_id"
+                if any("replicate_id" in row["execution"] for row in receipts)
+                else "execution.seed"
+            ),
+            "replicate_identity_is_provider_sampling_seed": False,
             "cross_agent_rows_are_descriptive": True,
         },
     }

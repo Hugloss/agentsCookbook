@@ -32,8 +32,13 @@ class CommandManifest:
 
 _ROOT_FIELDS = {"version", "commands"}
 _COMMAND_FIELDS = {
-    "argv", "cwd", "stage", "append_selected_tests",
-    "must_not_modify_tracked_files", "allowed_mutation_paths", "environment",
+    "argv",
+    "cwd",
+    "stage",
+    "append_selected_tests",
+    "must_not_modify_tracked_files",
+    "allowed_mutation_paths",
+    "environment",
 }
 
 
@@ -98,30 +103,60 @@ def load_command_manifest(path: Path) -> CommandManifest:
             raise CommandManifestError("invalid command entry")
         unknown = set(value) - _COMMAND_FIELDS
         if unknown:
-            raise CommandManifestError(f"command {name!r} has unknown fields: {sorted(unknown)}")
+            raise CommandManifestError(
+                f"command {name!r} has unknown fields: {sorted(unknown)}"
+            )
         argv = value.get("argv")
-        if not isinstance(argv, list) or not argv or not all(isinstance(x, str) and x for x in argv):
-            raise CommandManifestError(f"command {name!r} requires non-empty argv string array")
+        if (
+            not isinstance(argv, list)
+            or not argv
+            or not all(isinstance(x, str) and x for x in argv)
+        ):
+            raise CommandManifestError(
+                f"command {name!r} requires non-empty argv string array"
+            )
         cwd_raw = value.get("cwd", ".")
         if not isinstance(cwd_raw, str):
             raise CommandManifestError(f"command {name!r} cwd must be a string")
         stage_raw = value.get("stage", "component")
-        if not isinstance(stage_raw, str) or stage_raw not in {"focused", "affected", "component", "repository"}:
+        if not isinstance(stage_raw, str) or stage_raw not in {
+            "focused",
+            "affected",
+            "component",
+            "repository",
+        }:
             raise CommandManifestError(f"command {name!r} has invalid stage")
         allowed = value.get("allowed_mutation_paths", [])
-        if not isinstance(allowed, list) or not all(isinstance(x, str) for x in allowed):
-            raise CommandManifestError(f"command {name!r} allowed_mutation_paths must be strings")
+        if not isinstance(allowed, list) or not all(
+            isinstance(x, str) for x in allowed
+        ):
+            raise CommandManifestError(
+                f"command {name!r} allowed_mutation_paths must be strings"
+            )
         commands[name] = CommandSpec(
             name=name,
             argv=tuple(argv),
             cwd=_safe_relative(cwd_raw),
             stage=stage_raw,
-            append_selected_tests=_bool(value.get("append_selected_tests"), field=f"{name}.append_selected_tests", default=False),
-            must_not_modify_tracked_files=_bool(value.get("must_not_modify_tracked_files"), field=f"{name}.must_not_modify_tracked_files", default=True),
+            append_selected_tests=_bool(
+                value.get("append_selected_tests"),
+                field=f"{name}.append_selected_tests",
+                default=False,
+            ),
+            must_not_modify_tracked_files=_bool(
+                value.get("must_not_modify_tracked_files"),
+                field=f"{name}.must_not_modify_tracked_files",
+                default=True,
+            ),
             allowed_mutation_paths=tuple(_safe_relative(x) for x in allowed),
-            environment=_environment(value.get("environment"), field=f"{name}.environment"),
+            environment=_environment(
+                value.get("environment"), field=f"{name}.environment"
+            ),
         )
-    identity = "sha256:" + hashlib.sha256(
-        json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    identity = (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+    )
     return CommandManifest(version=1, commands=commands, identity=identity)

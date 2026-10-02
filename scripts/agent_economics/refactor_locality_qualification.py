@@ -24,14 +24,17 @@ from .refactor_locality import (
 
 
 def _hashmarks_identity(payload: dict[str, object]) -> str:
-    return "sha256:" + hashlib.sha256(
-        json.dumps(
-            payload,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode()
-    ).hexdigest()
+    return (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
+    )
 
 
 def _symbol(
@@ -130,11 +133,7 @@ def _hm_node(
         "qualname": qualname,
         "name": name,
         "kind": kind,
-        "signature": (
-            f"class {name}:"
-            if kind == "class"
-            else f"def {name}(...):"
-        ),
+        "signature": (f"class {name}:" if kind == "class" else f"def {name}(...):"),
         "lines": [start, end],
         "navigation_depth": depth,
         "file_digest": source_semantic["file_digest"],
@@ -257,13 +256,16 @@ def _hm_packet(
 
 
 def _command_identity(argv: list[str]) -> str:
-    return "sha256:" + hashlib.sha256(
-        json.dumps(
-            {"argv": argv, "cwd": "."},
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-    ).hexdigest()
+    return (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(
+                {"argv": argv, "cwd": "."},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+    )
 
 
 def _receipt(packet: dict[str, object]) -> dict[str, object]:
@@ -371,7 +373,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         ],
     )
     if size_only_decision["status"] != KEEP_COHESIVE_AUTHORITY:
-        failures.append("size-only reduction was treated as decomposition justification")
+        failures.append(
+            "size-only reduction was treated as decomposition justification"
+        )
 
     manual_semantic = _snapshot(
         "sha256:repo-c",
@@ -417,8 +421,13 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         [_hm_node("src/pkg/core.py", "authority", 1, 225)],
     )
     hm_pre_diagnostic = locality_snapshot_from_hashmarks(packet=hm_pre_packet)
-    if hm_pre_diagnostic.get("claims", {}).get("independent_structural_provider") is not False:
-        failures.append("packet-only Hashmarks input claimed independent execution authority")
+    if (
+        hm_pre_diagnostic.get("claims", {}).get("independent_structural_provider")
+        is not False
+    ):
+        failures.append(
+            "packet-only Hashmarks input claimed independent execution authority"
+        )
     hm_pre = _locality_snapshot_from_observed_hashmarks(
         packet=hm_pre_packet,
         observation_receipt=_receipt(hm_pre_packet),
@@ -464,7 +473,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         ],
     )
     if hm_comparison["status"] != LOCALITY_TRADEOFF_REVIEW_REQUIRED:
-        failures.append("Hashmarks-backed same-file extraction hid its locality tradeoff")
+        failures.append(
+            "Hashmarks-backed same-file extraction hid its locality tradeoff"
+        )
     if hm_comparison.get("limited_observed_reuse_structures") != [
         "src/pkg/core.py::persist",
         "src/pkg/core.py::validate",
@@ -472,12 +483,15 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         failures.append(
             "one-caller introduced helpers were not surfaced as limited observed reuse"
         )
-    if hm_comparison.get("claims", {}).get(
-        "limited_observed_reuse_proves_single_use"
-    ) is not False:
+    if (
+        hm_comparison.get("claims", {}).get("limited_observed_reuse_proves_single_use")
+        is not False
+    ):
         failures.append("limited observed reuse was promoted into a single-use claim")
     if hm_without_tradeoff["status"] != INSUFFICIENT_LOCALITY_EVIDENCE:
-        failures.append("Hashmarks-backed tradeoff was accepted without explicit evidence")
+        failures.append(
+            "Hashmarks-backed tradeoff was accepted without explicit evidence"
+        )
     _, hm_decision = _decision(
         hm_pre,
         hm_post,
@@ -495,7 +509,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         ],
     )
     if hm_decision["status"] != DECOMPOSITION_JUSTIFIED:
-        failures.append("independent Hashmarks facts could not justify earned decomposition")
+        failures.append(
+            "independent Hashmarks facts could not justify earned decomposition"
+        )
 
     with TemporaryDirectory() as temporary_directory:
         temporary = Path(temporary_directory)
@@ -599,9 +615,13 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         ],
     )
     if fragmented_comparison["status"] != LOCALITY_REGRESSED:
-        failures.append("Hashmarks-backed wrapper fragmentation did not regress locality")
+        failures.append(
+            "Hashmarks-backed wrapper fragmentation did not regress locality"
+        )
     if fragmented_decision["status"] != DECOMPOSITION_LOCALITY_RISK:
-        failures.append("Hashmarks-backed wrapper fragmentation escaped risk classification")
+        failures.append(
+            "Hashmarks-backed wrapper fragmentation escaped risk classification"
+        )
 
     reuse_packet = _hm_packet(
         "sha256:hm-reuse",
@@ -624,7 +644,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     )
     reuse_comparison = compare_locality(hm_pre, reuse_snapshot)
     if reuse_comparison["status"] != LOCALITY_REGRESSED:
-        failures.append("provider-observed single caller laundered itself as shared reuse")
+        failures.append(
+            "provider-observed single caller laundered itself as shared reuse"
+        )
     if reuse_comparison.get("limited_observed_reuse_structures") != [
         "src/pkg/core.py::_shared"
     ]:
@@ -784,9 +806,10 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         packet=callable_forwarding_packet,
         observation_receipt=_receipt(callable_forwarding_packet),
     )
-    if "forwarding-shape:src/pkg/core.py::authority" not in callable_forwarding[
-        "unresolved_evidence"
-    ]:
+    if (
+        "forwarding-shape:src/pkg/core.py::authority"
+        not in callable_forwarding["unresolved_evidence"]
+    ):
         failures.append(
             "unknown callable forwarding shape did not remain incomplete locality evidence"
         )
@@ -811,9 +834,16 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         observation_receipt=_receipt(unresolved_packet),
     )
     if not unresolved_snapshot["unresolved_evidence"]:
-        failures.append("Hashmarks unresolved call did not make locality evidence incomplete")
-    if compare_locality(hm_pre, unresolved_snapshot)["status"] != INSUFFICIENT_LOCALITY_EVIDENCE:
-        failures.append("ambiguous Hashmarks call remained sufficient for locality decision")
+        failures.append(
+            "Hashmarks unresolved call did not make locality evidence incomplete"
+        )
+    if (
+        compare_locality(hm_pre, unresolved_snapshot)["status"]
+        != INSUFFICIENT_LOCALITY_EVIDENCE
+    ):
+        failures.append(
+            "ambiguous Hashmarks call remained sufficient for locality decision"
+        )
 
     stale_packet = _hm_packet(
         "sha256:hm-stale",
@@ -824,7 +854,10 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         packet=stale_packet,
         observation_receipt=_receipt(stale_packet),
     )
-    if compare_locality(hm_pre, stale_snapshot)["status"] != INSUFFICIENT_LOCALITY_EVIDENCE:
+    if (
+        compare_locality(hm_pre, stale_snapshot)["status"]
+        != INSUFFICIENT_LOCALITY_EVIDENCE
+    ):
         failures.append("non-current Hashmarks evidence remained sufficient")
 
     tampered = dict(hm_post_packet)
@@ -889,7 +922,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         mutated_snapshot.get("claims", {}).get("independent_structural_provider")
         is not False
     ):
-        failures.append("tracked-mutating Hashmarks execution promoted structural authority")
+        failures.append(
+            "tracked-mutating Hashmarks execution promoted structural authority"
+        )
 
     wrong_repo_value = _value(
         "sha256:wrong-repository",
@@ -906,14 +941,22 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     except ValueError:
         pass
     else:
-        failures.append("semantic value evidence from another repository state was accepted")
+        failures.append(
+            "semantic value evidence from another repository state was accepted"
+        )
 
     if hm_pre.get("claims", {}).get("independent_structural_provider") is not True:
-        failures.append("observed Hashmarks snapshot did not retain independent provider authority")
+        failures.append(
+            "observed Hashmarks snapshot did not retain independent provider authority"
+        )
     if manual_pre.get("claims", {}).get("independent_structural_provider") is not False:
-        failures.append("manual snapshot incorrectly claimed independent structural authority")
+        failures.append(
+            "manual snapshot incorrectly claimed independent structural authority"
+        )
     if any("score" in key for key in hm_pre.get("dimensions", {})):
-        failures.append("Hashmarks-backed locality dimensions introduced an opaque score")
+        failures.append(
+            "Hashmarks-backed locality dimensions introduced an opaque score"
+        )
 
     result = {
         "status": "PASS" if not failures else "FAIL",
@@ -922,14 +965,12 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
             "size_only": size_only_decision["status"],
             "manual_semantic": manual_semantic_decision["status"],
             "hashmarks_semantic": hm_decision["status"],
-            "live_observe_values": (
-                "BOUND"
-                if observed_values
-                else "MISSING"
-            ),
+            "live_observe_values": ("BOUND" if observed_values else "MISSING"),
             "fragmented_wrappers": fragmented_decision["status"],
             "provider_single_caller_reuse": reuse_comparison["status"],
-            "unresolved_hashmarks": compare_locality(hm_pre, unresolved_snapshot)["status"],
+            "unresolved_hashmarks": compare_locality(hm_pre, unresolved_snapshot)[
+                "status"
+            ],
             "stale_hashmarks": compare_locality(hm_pre, stale_snapshot)["status"],
         },
     }

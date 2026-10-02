@@ -9,11 +9,21 @@ import json
 from pathlib import Path
 from typing import Any
 
-from benchmarks.adapters.oracles import RepositoryLocationOracle, score_repository_location
+from benchmarks.adapters.oracles import (
+    RepositoryLocationOracle,
+    score_repository_location,
+)
 from benchmarks.adapters.registry import build_oracle
 from benchmarks.harness.bundle import verify_bundle
+from benchmarks.harness.campaign_authority import (
+    CampaignAuthorityError,
+    read_launch_claims,
+    read_campaign,
+)
 from benchmarks.harness.identity import (
     EXECUTION_EVIDENCE_CONTRACT,
+    REPLICATE_EVIDENCE_CONTRACT,
+    REPLICATE_SCORE_CONTRACT,
     canonical_json,
     definition_id,
     execution_task_contract,
@@ -39,7 +49,8 @@ def _location_projection(
 ) -> dict[str, Any]:
     execution = receipt.get("execution", {})
     observed = execution.get("location_observation")
-    if execution.get("evidence_contract") != EXECUTION_EVIDENCE_CONTRACT:
+    contract = execution.get("evidence_contract")
+    if contract not in {EXECUTION_EVIDENCE_CONTRACT, REPLICATE_EVIDENCE_CONTRACT}:
         raise RegradeError("source receipt lacks current execution evidence")
     if not isinstance(observed, dict):
         raise RegradeError("source receipt lacks frozen location observation")
@@ -68,6 +79,11 @@ def _location_projection(
         "projection_identity": score_projection_id(
             execution_evidence=evidence_identity,
             oracle_identity=declared,
+            **(
+                {"contract": REPLICATE_SCORE_CONTRACT}
+                if contract == REPLICATE_EVIDENCE_CONTRACT
+                else {}
+            ),
         ),
         "oracle": declared,
         "oracle_grade": score_repository_location(observed, expected=oracle.expected),
@@ -97,11 +113,21 @@ def project_campaign_receipts(
     }
     all_definitions = suite.trial_definitions()
     known = {
-        (str(row["task_id"]), str(row["condition_id"]), row["trial"], row["seed"])
+        (
+            str(row["task_id"]),
+            str(row["condition_id"]),
+            row["trial"],
+            row.get("replicate_id", row.get("seed")),
+        )
         for row in all_definitions
     }
     expected = {
-        (str(row["task_id"]), str(row["condition_id"]), row["trial"], row["seed"]): row
+        (
+            str(row["task_id"]),
+            str(row["condition_id"]),
+            row["trial"],
+            row.get("replicate_id", row.get("seed")),
+        ): row
         for row in all_definitions
         if row["definition_id"] in selected_definitions
     }
@@ -110,10 +136,41 @@ def project_campaign_receipts(
     projected: list[dict[str, Any]] = []
     lineage: list[dict[str, str]] = []
     found: set[tuple[str, str, int, int]] = set()
+    source_campaign = None
+    source_claims: dict[str, str] = {}
     for bundle in sorted(source_results.iterdir()):
         if not bundle.is_dir() or bundle.name.startswith("."):
             continue
         source, source_sha = _verified_receipt(bundle)
+        if (
+            source.get("execution", {}).get("evidence_contract")
+            == REPLICATE_EVIDENCE_CONTRACT
+        ):
+            if source_campaign is None:
+                try:
+                    source_campaign = read_campaign(source_results)
+                    source_claims = read_launch_claims(
+                        source_results, source_campaign["campaign_id"]
+                    )
+                    if not set(source_claims).issubset(
+                        set(source_campaign["selected_definitions"])
+                    ):
+                        raise RegradeError(
+                            "source launch claim exceeds campaign selection"
+                        )
+                except CampaignAuthorityError as exc:
+                    raise RegradeError(str(exc)) from exc
+            if (
+                source.get("execution", {}).get("campaign_id")
+                != source_campaign["campaign_id"]
+                or source.get("definition_id")
+                not in source_campaign["selected_definitions"]
+            ):
+                raise RegradeError(
+                    "source receipt is outside frozen campaign authority"
+                )
+            if source_claims.get(source.get("definition_id")) != source.get("trial_id"):
+                raise RegradeError("source receipt has no matching launch claim")
         task = source.get("task", {})
         condition = source.get("condition", {})
         execution = source.get("execution", {})
@@ -128,14 +185,14 @@ def project_campaign_receipts(
             task["id"],
             condition["id"],
             execution.get("trial_index"),
-            execution.get("seed"),
+            execution.get("replicate_id", execution.get("seed")),
         )
         if source.get("definition_id") != definition_id(
             experiment=experiment,
             task=task,
             condition=condition,
             trial=key[2],
-            seed=key[3],
+            **({"seed": key[3]} if "seed" in execution else {"replicate_id": key[3]}),
         ):
             raise RegradeError(f"source definition identity mismatch: {bundle}")
         if key not in known:
@@ -153,7 +210,10 @@ def project_campaign_receipts(
             raise RegradeError(f"source execution inputs changed for {key}")
         if source.get("status") not in {"PASS", "FAIL", "NO_QUALIFYING_DEFECT"}:
             raise RegradeError(f"source execution is not qualified for {key}")
-        if execution.get("evidence_contract") != EXECUTION_EVIDENCE_CONTRACT:
+        if execution.get("evidence_contract") not in {
+            EXECUTION_EVIDENCE_CONTRACT,
+            REPLICATE_EVIDENCE_CONTRACT,
+        }:
             raise RegradeError(f"source execution lacks current evidence for {key}")
 
         oracle = build_oracle(
@@ -182,9 +242,9 @@ def project_campaign_receipts(
                 "PASS" if projection["oracle_grade"]["passed"] else "FAIL"
             )
             current["reason"] = projection["oracle_grade"]["reason"]
-        elif canonical_json(source["authority"]["oracle"]["declared"]) != canonical_json(
-            dataclasses.asdict(oracle.identity())
-        ):
+        elif canonical_json(
+            source["authority"]["oracle"]["declared"]
+        ) != canonical_json(dataclasses.asdict(oracle.identity())):
             raise RegradeError(f"non-localization oracle changed for {key}")
 
         projected.append(current)
@@ -198,5 +258,7 @@ def project_campaign_receipts(
         )
     missing = set(expected) - found
     if missing:
-        raise RegradeError(f"source campaign is incomplete: {len(missing)} trial(s) missing")
+        raise RegradeError(
+            f"source campaign is incomplete: {len(missing)} trial(s) missing"
+        )
     return projected, sorted(lineage, key=lambda row: row["current_definition_id"])

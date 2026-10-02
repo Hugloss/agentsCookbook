@@ -1,4 +1,5 @@
 """Generic bounded command-backed subjects plus the bare control."""
+
 from __future__ import annotations
 
 import shlex

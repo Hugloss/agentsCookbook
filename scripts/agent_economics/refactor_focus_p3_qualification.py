@@ -218,17 +218,24 @@ def materialize_p3_corpus(root: Path) -> Path:
             ]
         ),
     )
-    _write(root / "tests/test_fixture_use.py", "def test_owned(owned_fixture):\n    assert owned_fixture\n")
+    _write(
+        root / "tests/test_fixture_use.py",
+        "def test_owned(owned_fixture):\n    assert owned_fixture\n",
+    )
     _write(
         root / "tests/test_getfixturevalue.py",
         'def test_lookup(request):\n    assert request.getfixturevalue("lookup_fixture")\n',
     )
-    _write(root / "tests/test_autouse_behavior.py", "def test_auto():\n    assert True\n")
+    _write(
+        root / "tests/test_autouse_behavior.py", "def test_auto():\n    assert True\n"
+    )
     _write(
         root / "tests/test_fixture_dependency.py",
         "def test_dependency(dependency_root):\n    assert dependency_root\n",
     )
-    _write(root / "tests/test_unused_fixture.py", "def test_unused():\n    assert True\n")
+    _write(
+        root / "tests/test_unused_fixture.py", "def test_unused():\n    assert True\n"
+    )
 
     _write(
         root / "tests/plugins/owner.py",
@@ -255,8 +262,12 @@ def materialize_p3_corpus(root: Path) -> Path:
         root / "tests/plugins/nested.py",
         'import samplepkg.plugin_nested_target\npytest_plugins = ["checks.plugins.too_deep"]\n',
     )
-    _write(root / "tests/plugins/too_deep.py", "import samplepkg.plugin_too_deep_target\n")
-    _write(root / "tests/test_plugin_behavior.py", "def test_plugin():\n    assert True\n")
+    _write(
+        root / "tests/plugins/too_deep.py", "import samplepkg.plugin_too_deep_target\n"
+    )
+    _write(
+        root / "tests/test_plugin_behavior.py", "def test_plugin():\n    assert True\n"
+    )
     _write(
         root / "tests/test_plugin_fixture_use.py",
         "def test_plugin_fixture(plugin_owned):\n    assert plugin_owned\n",
@@ -272,7 +283,9 @@ def materialize_p3_corpus(root: Path) -> Path:
 
     _write(root / "tests/helpers/deep_a.py", "import checks.helpers.deep_b\n")
     _write(root / "tests/helpers/deep_b.py", "import checks.helpers.deep_c\n")
-    _write(root / "tests/helpers/deep_c.py", "import samplepkg.helper_too_deep_target\n")
+    _write(
+        root / "tests/helpers/deep_c.py", "import samplepkg.helper_too_deep_target\n"
+    )
     _write(root / "tests/test_helper_too_deep.py", "import checks.helpers.deep_a\n")
 
     _write(
@@ -287,7 +300,10 @@ def materialize_p3_corpus(root: Path) -> Path:
         root / "tests/test_dynamic_computed.py",
         'import importlib\n\ndef test_dynamic():\n    name = "samplepkg." + "dynamic_computed_target"\n    assert importlib.import_module(name)\n',
     )
-    _write(root / "tests/test_declared_behavior.py", "def test_declared():\n    assert True\n")
+    _write(
+        root / "tests/test_declared_behavior.py",
+        "def test_declared():\n    assert True\n",
+    )
 
     hints = root / "ownership.json"
     hints.write_text(
@@ -345,7 +361,9 @@ def _run_probe(root: Path, hints: Path) -> dict[str, object]:
 def _invalid_hint_cases_fail_closed(root: Path) -> dict[str, bool]:
     cases = {
         "stale_source": "src/samplepkg/does_not_exist.py",
-        "absolute_source": (root / "src/samplepkg/declared_target.py").resolve().as_posix(),
+        "absolute_source": (root / "src/samplepkg/declared_target.py")
+        .resolve()
+        .as_posix(),
         "escaping_source": "../outside.py",
     }
     results: dict[str, bool] = {}
@@ -399,13 +417,19 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
     if not p2.get("passed"):
         failures.append("P2 parse-once/evidence-authority qualification regressed")
 
-    with tempfile.TemporaryDirectory(prefix="agent-economics-refactor-focus-p3-") as tmp:
+    with tempfile.TemporaryDirectory(
+        prefix="agent-economics-refactor-focus-p3-"
+    ) as tmp:
         root = Path(tmp)
         hints = materialize_p3_corpus(root)
         payload = _run_probe(root, hints)
         candidates = payload.get("candidates", [])
         assert isinstance(candidates, list)
-        rows = [contract_candidate_as_legacy_row(item) for item in candidates if isinstance(item, dict)]
+        rows = [
+            contract_candidate_as_legacy_row(item)
+            for item in candidates
+            if isinstance(item, dict)
+        ]
         rows_by_source = {
             row.get("source_path"): row
             for row in rows
@@ -427,11 +451,14 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
                 (
                     item
                     for item in matches
-                    if isinstance(item, dict) and item.get("test_path") == case.test_path
+                    if isinstance(item, dict)
+                    and item.get("test_path") == case.test_path
                 ),
                 None,
             )
-            authority = match.get("evidence_authority") if isinstance(match, dict) else None
+            authority = (
+                match.get("evidence_authority") if isinstance(match, dict) else None
+            )
             if case.expectation == "confirmed":
                 confirmed_expected += 1
                 if authority == "confirmed":
@@ -440,7 +467,11 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
                     failures.append(
                         f"{case.name}: expected confirmed evidence, got {authority!r}"
                     )
-                if isinstance(match, dict) and case.match_type and match.get("match_type") != case.match_type:
+                if (
+                    isinstance(match, dict)
+                    and case.match_type
+                    and match.get("match_type") != case.match_type
+                ):
                     failures.append(
                         f"{case.name}: expected match type {case.match_type}, "
                         f"got {match.get('match_type')}"
@@ -449,14 +480,19 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
                     provenance = match.get("provenance")
                     if not isinstance(provenance, str) or not provenance:
                         failures.append(f"{case.name}: provenance missing")
-                    elif case.provenance_contains and case.provenance_contains not in provenance:
+                    elif (
+                        case.provenance_contains
+                        and case.provenance_contains not in provenance
+                    ):
                         failures.append(
                             f"{case.name}: provenance missing {case.provenance_contains!r}"
                         )
             else:
                 if authority == "confirmed":
                     false_authority += 1
-                    failures.append(f"{case.name}: bounded/unused relationship became confirmed")
+                    failures.append(
+                        f"{case.name}: bounded/unused relationship became confirmed"
+                    )
             results.append(
                 {
                     "name": case.name,
@@ -470,7 +506,9 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         invalid_hints_fail_closed = all(invalid_hint_cases.values())
         for name, passed in invalid_hint_cases.items():
             if not passed:
-                failures.append(f"invalid ownership hint case did not fail closed: {name}")
+                failures.append(
+                    f"invalid ownership hint case did not fail closed: {name}"
+                )
 
         economics = payload.get("economics", {})
         if not isinstance(economics, dict):
@@ -488,8 +526,13 @@ def qualify(artifact_path: Path | None = None) -> dict[str, object]:
         if economics.get("auxiliary_bytes_read") != expected_hint_bytes:
             failures.append("ownership hint auxiliary byte accounting incorrect")
         if economics.get("total_files_read") != int(economics.get("files_read", 0)) + 1:
-            failures.append("total file-read accounting does not include ownership hints")
-        if economics.get("total_bytes_read") != int(economics.get("bytes_read", 0)) + expected_hint_bytes:
+            failures.append(
+                "total file-read accounting does not include ownership hints"
+            )
+        if (
+            economics.get("total_bytes_read")
+            != int(economics.get("bytes_read", 0)) + expected_hint_bytes
+        ):
             failures.append("total byte accounting does not include ownership hints")
 
         result: dict[str, object] = {
