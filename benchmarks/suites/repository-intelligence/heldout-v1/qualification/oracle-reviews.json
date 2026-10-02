@@ -47,7 +47,7 @@
       "reviews": [
         {
           "decision": "unique",
-          "reason": "HashmarksMcpSurface.task_evidence owns the bounded consumer-facing semantics; the same-named mcp_server.py function is only the server.tool transport wrapper and delegates directly to surface.task_evidence.",
+          "reason": "McpSurface.task_evidence is the consumer-facing MCP method; it validates bounds and returns CodeMap task evidence through _read.",
           "reviewer": "codex-independent-audit-2026-10-02",
           "task_digest": "4eea2bbefe8f6632e0a1f44c6d96ed70e04287e6c4234a7e08775c612940c0dc"
         }
