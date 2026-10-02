@@ -217,7 +217,11 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
                 self.assertIn("locate-repository-content-identity", prompt)
                 self.assertIn("hashmarks/test_shards.py", prompt)
                 self.assertIn(
-                    "terminal response must be exactly one JSON object",
+                    "terminal response must be exactly one JSON",
+                    prompt,
+                )
+                self.assertIn(
+                    "object and nothing else",
                     prompt,
                 )
                 self.assertNotIn(
