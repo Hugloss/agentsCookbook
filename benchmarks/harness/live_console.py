@@ -51,6 +51,34 @@ def _render_table(headers: list[str], rows: list[list[str]]) -> list[str]:
     ]
 
 
+def _display_outcome(receipt: dict[str, Any]) -> str:
+    status = str(receipt.get("status") or "UNKNOWN")
+    grade = receipt.get("scoring", {}).get("oracle_grade", {})
+    if not isinstance(grade, dict):
+        return status
+    if grade.get("semantic_gradeable") is False:
+        return "UNGRADABLE"
+    semantic_status = grade.get("semantic_status")
+    if semantic_status == "CORRECT":
+        return "PASS"
+    if semantic_status == "INCORRECT":
+        return "FAIL"
+    return status
+
+
+def _subject_tool_use(receipt: dict[str, Any]) -> tuple[bool | None, int | None]:
+    agent = receipt.get("measurements", {}).get("agent", {})
+    if not isinstance(agent, dict):
+        return None, None
+    invoked = agent.get("subject_tool_invoked")
+    if not isinstance(invoked, bool):
+        invoked = None
+    calls = agent.get("subject_mcp_calls")
+    if isinstance(calls, bool) or not isinstance(calls, int):
+        calls = None
+    return invoked, calls
+
+
 class LiveTaskMatrix:
     """Project completed task/agent groups into compact terminal matrices."""
 
@@ -115,7 +143,7 @@ class LiveTaskMatrix:
                 row.get("replicate_id", row.get("seed", row["trial"]))
             )
         by_trial_condition = {
-            (int(row["trial"]), condition_id): str(receipt["status"])
+            (int(row["trial"]), condition_id): _display_outcome(receipt)
             for row, condition_id, receipt in outcomes
         }
 
@@ -199,6 +227,42 @@ class LiveTaskMatrix:
                     )
                 )
 
+                lines.extend(["", "Subject tool use"])
+                usage_rows: list[list[str]] = []
+                for condition_id in assisted_conditions:
+                    usage = [
+                        _subject_tool_use(receipt)
+                        for _row, observed_condition, receipt in outcomes
+                        if observed_condition == condition_id
+                    ]
+                    invoked = sum(value is True for value, _calls in usage)
+                    not_invoked = sum(value is False for value, _calls in usage)
+                    unknown = sum(value is None for value, _calls in usage)
+                    total_calls = sum(
+                        calls for _value, calls in usage if calls is not None
+                    )
+                    usage_rows.append(
+                        [
+                            label(condition_id),
+                            str(invoked),
+                            str(not_invoked),
+                            str(unknown),
+                            str(total_calls),
+                        ]
+                    )
+                lines.extend(
+                    _render_table(
+                        [
+                            "Subject",
+                            "Invoked",
+                            "Not invoked",
+                            "Unknown",
+                            "MCP calls",
+                        ],
+                        usage_rows,
+                    )
+                )
+
         return "\n".join(lines)
 
 
@@ -231,6 +295,11 @@ class LiveCampaignProgress:
         self._total = len(selected_rows)
         self._processed = 0
         self._durations: list[float] = []
+        self._durations_by_condition: dict[str, list[float]] = {}
+        self._definition_condition = {
+            str(row["definition_id"]): str(row["condition_id"])
+            for row in selected_rows
+        }
         self._states = {
             str(row["definition_id"]): str(row["state"])
             for row in initial_status["rows"]
@@ -278,6 +347,10 @@ class LiveCampaignProgress:
             self._states[result.definition_id] = "COMPLETE"
         if not result.reused and not result.recovered and trial_seconds > 0:
             self._durations.append(trial_seconds)
+            condition_id = self._definition_condition[result.definition_id]
+            self._durations_by_condition.setdefault(condition_id, []).append(
+                trial_seconds
+            )
         eta = self._eta()
         mode = (
             "reused"
@@ -329,7 +402,18 @@ class LiveCampaignProgress:
             return 0.0
         if not self._durations:
             return None
-        return mean(self._durations) * self._pending
+        fallback = mean(self._durations)
+        remaining = [
+            definition_id
+            for definition_id, state in self._states.items()
+            if state == "PENDING"
+        ]
+        estimate = 0.0
+        for definition_id in remaining:
+            condition_id = self._definition_condition.get(definition_id)
+            samples = self._durations_by_condition.get(str(condition_id), [])
+            estimate += mean(samples) if samples else fallback
+        return estimate
 
 
 class TrialHeartbeat:
