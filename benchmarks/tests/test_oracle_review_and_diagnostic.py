@@ -167,14 +167,14 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
             copy = Path(tmp) / "suite"
             shutil.copytree(SOURCE, copy)
             suite = load_suite(copy)
-            task = suite.tasks["locate-repository-content-identity"]
-            task_digest = validate_oracle_reviews(
-                suite, require_complete=False
-            ) and json.loads(
+            evidence = json.loads(
                 (copy / "qualification/oracle-reviews.json").read_text(
                     encoding="utf-8"
                 )
-            )["tasks"]["locate-repository-content-identity"]["task_digest"]
+            )
+            task_digest = evidence["tasks"][
+                "locate-repository-content-identity"
+            ]["task_digest"]
 
             def materialize(**kwargs):
                 kwargs["destination"].mkdir(parents=True)
