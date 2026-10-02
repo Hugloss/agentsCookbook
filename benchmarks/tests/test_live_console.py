@@ -301,7 +301,7 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn("execution ETA 12m00s", start)
 
     def test_failure_envelope_is_agent_readable_and_preserves_diagnostic(self) -> None:
-        _, rows = self._prefix_opencode_rows()
+        suite, rows = self._prefix_opencode_rows()
         result = TrialRunResult(
             trial_id="a" * 64,
             definition_id="b" * 64,
