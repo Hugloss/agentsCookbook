@@ -9,9 +9,24 @@ import signal
 import subprocess
 import threading
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
+
+
+_retained_lock_fd: ContextVar[int | None] = ContextVar("retained_benchmark_lock_fd", default=None)
+
+
+@contextmanager
+def retain_lock_in_subprocesses(fd: int):
+    """Keep an execution lock held if the parent dies before its child exits."""
+    token = _retained_lock_fd.set(fd)
+    try:
+        yield
+    finally:
+        _retained_lock_fd.reset(token)
 
 
 class BoundedProcessError(ValueError):
@@ -200,6 +215,9 @@ def run_bounded(
         popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         popen_kwargs["start_new_session"] = True
+        lock_fd = _retained_lock_fd.get()
+        if lock_fd is not None:
+            popen_kwargs["pass_fds"] = (lock_fd,)
     try:
         process = subprocess.Popen(list(argv), **popen_kwargs)
     except FileNotFoundError:

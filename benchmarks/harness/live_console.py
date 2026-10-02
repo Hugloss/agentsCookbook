@@ -365,13 +365,13 @@ def render_campaign_admission(event: dict[str, Any], *, elapsed: float) -> str:
         condition_id = event.get("condition_id")
         return (
             f"ADMISSION [{index}/{total}] {task_id} / {condition_id} | "
-            f"checking authority | run elapsed {_duration(elapsed)}"
+            f"checking authority | admission elapsed {_duration(elapsed)}"
         )
     if stage == "oracle-review":
         return (
             "ADMISSION oracle review | "
             f"{event.get('status') or 'checking'} | "
-            f"run elapsed {_duration(elapsed)}"
+            f"admission elapsed {_duration(elapsed)}"
         )
     if stage == "campaign-authority":
         total = event.get("total")
@@ -379,11 +379,11 @@ def render_campaign_admission(event: dict[str, Any], *, elapsed: float) -> str:
         return (
             "ADMISSION campaign authority | "
             f"{event.get('status') or 'checking'}{suffix} | "
-            f"run elapsed {_duration(elapsed)}"
+            f"admission elapsed {_duration(elapsed)}"
         )
     return (
         f"ADMISSION {stage} | {event.get('status') or 'checking'} | "
-        f"run elapsed {_duration(elapsed)}"
+        f"admission elapsed {_duration(elapsed)}"
     )
 
 
@@ -453,7 +453,7 @@ class LiveCampaignProgress:
             elif previous == "INTERRUPTED":
                 self._interrupted -= 1
             self._states[result.definition_id] = "COMPLETE"
-        if not result.reused and not result.recovered and trial_seconds > 0:
+        if not result.reused and trial_seconds > 0:
             self._durations.append(trial_seconds)
             condition_id = self._definition_condition[result.definition_id]
             self._durations_by_condition.setdefault(condition_id, []).append(
@@ -506,7 +506,7 @@ class LiveCampaignProgress:
         )
 
     def _eta(self) -> float | None:
-        if self._pending <= 0:
+        if self._pending + self._interrupted <= 0:
             return 0.0
         if not self._durations:
             return None
@@ -514,7 +514,7 @@ class LiveCampaignProgress:
         remaining = [
             definition_id
             for definition_id, state in self._states.items()
-            if state == "PENDING"
+            if state in {"PENDING", "INTERRUPTED"}
         ]
         estimate = 0.0
         for definition_id in remaining:
@@ -655,7 +655,10 @@ def render_trial_failure(
             ]
         )
     if result.recovered:
-        lines.append("Recovery: prior interrupted launch sealed; model was not retried")
+        lines.append(
+            "Recovery: prior interrupted attempt preserved; "
+            "execution retried as a numbered attempt"
+        )
     if result.diagnostic:
         lines.extend(["", "--- diagnostic ---", result.diagnostic])
     return "\n".join(lines)

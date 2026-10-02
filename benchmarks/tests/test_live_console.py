@@ -213,7 +213,7 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertEqual(
             line,
             "ADMISSION [7/36] locate-stale-index-removal / "
-            "hashmarks-opencode-native | checking authority | run elapsed 1m34s",
+            "hashmarks-opencode-native | checking authority | admission elapsed 1m34s",
         )
         self.assertIn(
             "oracle review | checking",
@@ -300,6 +300,50 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn("pending 6", start)
         self.assertIn("execution ETA 12m00s", start)
 
+    def test_eta_includes_interrupted_trial_and_recovered_execution_sample(self) -> None:
+        suite, rows = self._prefix_opencode_rows()
+        status = self._status(rows)
+        status["rows"][1]["state"] = "INTERRUPTED"
+        status["pending_trials"] -= 1
+        status["interrupted_trials"] = 1
+        progress = LiveCampaignProgress(suite, rows, status)
+
+        self.assertIn(
+            "execution ETA estimating...",
+            progress.start_line(rows[0], elapsed=0.0),
+        )
+        progress.finish_line(
+            TrialRunResult(
+                trial_id="a" * 64,
+                definition_id=rows[0]["definition_id"],
+                status="PASS",
+                result_dir=Path("/tmp/result"),
+                reused=False,
+            ),
+            elapsed=60.0,
+            trial_seconds=60.0,
+        )
+        self.assertIn(
+            "execution ETA 8m00s",
+            progress.start_line(rows[1], elapsed=60.0),
+        )
+
+        recovered = progress.finish_line(
+            TrialRunResult(
+                trial_id="b" * 64,
+                definition_id=rows[1]["definition_id"],
+                status="FAIL",
+                result_dir=Path("/tmp/recovered"),
+                reused=False,
+                recovered=True,
+            ),
+            elapsed=180.0,
+            trial_seconds=120.0,
+        )
+        self.assertIn("interrupted 0", recovered)
+        self.assertIn("avg 1m30s/execution", recovered)
+        self.assertIn("execution ETA 10m30s", recovered)
+
     def test_failure_envelope_is_agent_readable_and_preserves_diagnostic(self) -> None:
         suite, rows = self._prefix_opencode_rows()
         result = TrialRunResult(
@@ -372,7 +416,7 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn("Subject tools observed: find,task_evidence", rendered)
         self.assertIn("Subject tool observation: complete", rendered)
 
-    def test_recovered_failure_explicitly_says_model_was_not_retried(self) -> None:
+    def test_recovered_failure_describes_numbered_retry(self) -> None:
         _, rows = self._prefix_opencode_rows()
         result = TrialRunResult(
             trial_id="a" * 64,
@@ -391,8 +435,8 @@ class LiveTaskMatrixTests(unittest.TestCase):
             result=result,
         )
         assert rendered is not None
-        self.assertIn("Recovery: prior interrupted launch sealed", rendered)
-        self.assertIn("model was not retried", rendered)
+        self.assertIn("Recovery: prior interrupted attempt preserved", rendered)
+        self.assertIn("execution retried as a numbered attempt", rendered)
 
     def test_does_not_render_until_selected_task_agent_group_is_complete(self) -> None:
         suite, rows = self._prefix_opencode_rows()
