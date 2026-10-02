@@ -24,7 +24,7 @@ _SCORE_REPORT_FIELDS = (
     "campaign_qualification", "conditions", "paired_assistance",
     "paired_assistance_summary", "paired_assistance_exclusions",
     "expected_assistance_pairs", "stability", "diagnostics",
-    "agent_profiles", "cross_agent_observations",
+    "agent_profiles", "cross_agent_observations", "task_agent_authority",
 )
 
 
@@ -70,7 +70,7 @@ def prepare_diagnostic_suite(
     qualification = score.get("campaign_qualification") if isinstance(score, dict) else None
     if (
         not isinstance(score, dict)
-        or score.get("schema") != "agents-cookbook-heldout-observer-outcomes.v6"
+        or score.get("schema") != "agents-cookbook-heldout-observer-outcomes.v7"
         or score.get("projection_mode") != "live"
         or not isinstance(qualification, dict)
         or qualification.get("status") != "QUALIFIED"

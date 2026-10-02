@@ -146,7 +146,7 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         ):
             report = build_report(suite=suite, results_root=Path("/unused"))
 
-        self.assertEqual(report["schema"]["version"], 6)
+        self.assertEqual(report["schema"]["version"], 7)
         stability = {
             row["subject_id"]: row
             for row in report["stability"]

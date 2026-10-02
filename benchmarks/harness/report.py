@@ -264,6 +264,17 @@ def validate_comparability(receipts: list[dict[str, Any]]) -> None:
     _check_localization_grades(receipts)
 
 
+def _task_agent_authority(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    identities = {
+        (_task_id(receipt), _agent_id(receipt)): _comparison_identity(receipt)
+        for receipt in receipts
+    }
+    return [
+        {"task_id": task_id, "agent_id": agent_id, **identity}
+        for (task_id, agent_id), identity in sorted(identities.items())
+    ]
+
+
 def _check_localization_grades(receipts: list[dict[str, Any]]) -> None:
     for receipt in receipts:
         if receipt.get("status") not in _VALID_OUTCOMES:
@@ -321,7 +332,8 @@ def _check_comparable_localization_scoring(
 
 
 def _check_comparable_agents(receipts: list[dict[str, Any]]) -> None:
-    identities: dict[str, dict[str, Any]] = {}
+    global_identities: dict[str, dict[str, Any]] = {}
+    task_identities: dict[tuple[str, str], dict[str, Any]] = {}
     for receipt in receipts:
         agent = _agent_id(receipt)
         identity = _comparison_identity(receipt)
@@ -330,37 +342,90 @@ def _check_comparable_agents(receipts: list[dict[str, Any]]) -> None:
             for key in ("version", "executable_sha256", "model", "native_config_sha256")
         ):
             continue
-        prior = identities.setdefault(agent, identity)
-        if prior != identity:
+        global_identity = {
+            key: value for key, value in identity.items()
+            if key != "native_config_sha256"
+        }
+        prior_global = global_identities.setdefault(agent, global_identity)
+        if prior_global != global_identity:
             raise ReportError(
                 f"mixed observed runtime authority for agent {agent}; "
                 "use separate result campaigns"
+            )
+        task_key = (_task_id(receipt), agent)
+        prior_task = task_identities.setdefault(task_key, identity)
+        if prior_task != identity:
+            raise ReportError(
+                f"mixed native config authority for task {task_key[0]} / {agent}; "
+                "paired conditions are not comparable"
             )
 
 
 def _check_comparable_evidence(receipts: list[dict[str, Any]]) -> None:
     if not receipts:
         return
-    for field in ("harness", "environment"):
+    for field in ("harness",):
         baseline = receipts[0].get("authority", {}).get(field)
         if any(
             receipt.get("authority", {}).get(field) != baseline
             for receipt in receipts[1:]
         ):
             raise ReportError(f"mixed {field} authority; use separate result campaigns")
-    subjects: dict[str, Any] = {}
+    environments: dict[str, Any] = {}
+    subjects: dict[tuple[str, str, str], Any] = {}
+    subject_executables: dict[str, str] = {}
     for receipt in receipts:
+        agent = _agent_id(receipt)
+        environment = receipt.get("authority", {}).get("environment")
+        if agent in environments and environments[agent] != environment:
+            raise ReportError(
+                f"mixed environment authority for agent {agent}; "
+                "use separate result campaigns"
+            )
+        environments[agent] = environment
         authority = receipt.get("authority", {}).get("subject", {})
         if authority.get("available") is not True:
             continue
-        subject = _subject_id(receipt)
+        subject = (_task_id(receipt), agent, _subject_id(receipt))
         observed = authority.get("observed")
-        if subject in subjects and subjects[subject] != observed:
+        native = (
+            observed.get("native_subject_identity")
+            if isinstance(observed, dict) else None
+        )
+        executable_hash = (
+            native.get("executable_sha256") if isinstance(native, dict) else None
+        )
+        if isinstance(executable_hash, str):
+            subject_id = subject[2]
+            if (
+                subject_id in subject_executables
+                and subject_executables[subject_id] != executable_hash
+            ):
+                raise ReportError(
+                    f"mixed observed subject authority for {subject_id}; "
+                    "use separate result campaigns"
+                )
+            subject_executables[subject_id] = executable_hash
+        comparable_observed = observed
+        if isinstance(observed, dict) and "native_subject_identity" in observed:
+            exposure = observed.get("mcp_exposure") or {}
+            comparable_observed = {
+                "source": observed.get("source"),
+                "subject": observed.get("subject"),
+                "native_subject_identity": observed.get("native_subject_identity"),
+                "native_config_sha256": observed.get("native_config_sha256"),
+                "workspace_binding": observed.get("workspace_binding"),
+                "mcp_semantic_identity": (
+                    exposure.get("semantic_identity")
+                    if isinstance(exposure, dict) else None
+                ),
+            }
+        if subject in subjects and subjects[subject] != comparable_observed:
             raise ReportError(
                 f"mixed observed subject authority for {subject}; "
                 "use separate result campaigns"
             )
-        subjects[subject] = observed
+        subjects[subject] = comparable_observed
 
 
 def _pair_key(receipt: dict[str, Any]) -> tuple[str, str, int, int]:
@@ -783,7 +848,7 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 6,
+            "version": 7,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
@@ -812,6 +877,7 @@ def build_report(
         "paired_assistance_exclusions": pair_exclusions,
         "expected_assistance_pairs": len(paired_assistance) + len(pair_exclusions),
         "stability": stability,
+        "task_agent_authority": _task_agent_authority(receipts),
         "diagnostics": [
             {
                 "definition_id": row["definition_id"],

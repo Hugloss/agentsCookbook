@@ -41,6 +41,8 @@ The committed `qualification/oracle-reviews.json` binds each expected owner to i
 
 The campaign authority receipt freezes runtime and task inputs before inference. One launch claim is written before each model call; an interrupted claim is evidence and cannot be rerun in place. Reports expose execution, gradeability, semantic stability, output compliance, diagnostic boundaries, paired transitions, and excluded pairs separately. A diagnostic suite prepared with `diagnostic-prepare` has ten replicates per selected unstable task and its own root; its results never enter the official held-out score.
 
+Native OpenCode project configuration can differ between pinned repositories. Campaign admission records it per task and condition, while requiring the executable, model, and provider to remain stable for each agent. Reports expose the task and agent config fingerprints, and paired conditions for one task must still match exactly.
+
 After a qualified official score, prepare the diagnostic suite with:
 
 ```sh
@@ -137,7 +139,8 @@ If `BENCHMARK_AGENT` is absent or empty, selected-agent targets stop before any 
 
 ```sh
 make benchmark-check
-# Optional explicit exhaustive admission:
+make benchmark-campaign-audit
+# Optional individual trial preflight:
 make benchmark-check-all
 make benchmark
 make benchmark-report
@@ -145,6 +148,7 @@ make benchmark-score
 ```
 
 - `benchmark-check` tests all six distinct agent/subject pairs once: each agent with bare tools, Hashmarks, and Enola. It uses one disposable smoke workspace, invokes no model, creates no trial, and exits.
+- `benchmark-campaign-audit` observes every selected task/condition and checks cross-task runtime identity and paired input equivalence before inference. It publishes no campaign authority or launch claim. It reports `ready_for_campaign: false` and exits 2 while independent oracle reviews are pending; it cannot waive the run gate. Run it after changing the suite, runtime, or model selection and before a costly campaign.
 - `benchmark-check-all` preflights 108 frozen definitions for one selected agent or 216 for both. It can be slow and is never run implicitly.
 - `benchmark` executes/resumes the frozen campaign and does not secretly run either check first.
 - `benchmark-report` is the generic framework report.
@@ -187,9 +191,16 @@ uv run --no-project python -m benchmarks check \
 
 It does not need a campaign root, harness root, or agent selection. It verifies Hashmarks/Enola runtime availability, Codex/OpenCode native configuration, Codex exact subject exposure, and live OpenCode MCP connections. It does not make an LLM request. Add `--agent "$agents"` for a focused readiness check.
 
-For exhaustive trial admission, pass campaign and harness authority explicitly:
+For exhaustive campaign admission, pass campaign and harness authority explicitly:
 
 ```sh
+uv run --no-project python -m benchmarks campaign-audit \
+  --env-file .env \
+  --suite "$suite" \
+  --root "$root" \
+  --harness-root . \
+  --agent "$agents"
+
 uv run --no-project python -m benchmarks preflight \
   --env-file .env \
   --suite "$suite" \

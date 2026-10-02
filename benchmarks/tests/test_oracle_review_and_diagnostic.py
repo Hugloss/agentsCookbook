@@ -23,7 +23,7 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
             root = Path(tmp)
             score = root / "score.json"
             score.write_text(json.dumps({
-                "schema": "agents-cookbook-heldout-observer-outcomes.v6",
+                "schema": "agents-cookbook-heldout-observer-outcomes.v7",
                 "projection_mode": "live",
                 "campaign_qualification": {"status": "QUALIFIED"},
             }), encoding="utf-8")
@@ -74,7 +74,7 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
                                         "status_counts", "campaign_qualification"}},
                 }
             payload = {
-                "schema": "agents-cookbook-heldout-observer-outcomes.v6",
+                "schema": "agents-cookbook-heldout-observer-outcomes.v7",
                 "projection_mode": "live",
                 "selection": {"agents": ["opencode-native"]},
                 "expected_trials": 108,

@@ -70,6 +70,30 @@ def condition_authority(admission: TrialAdmission) -> dict[str, Any]:
     }
 
 
+def _global_agent_authority(value: dict[str, Any]) -> dict[str, Any]:
+    agent = value["agent"]
+    return {
+        "declared": agent["declared"],
+        **{key: agent.get(key) for key in (
+            "version", "executable_sha256", "auth_mode", "model", "provider",
+            "reasoning_effort",
+        )},
+    }
+
+
+def _global_subject_authority(value: dict[str, Any]) -> dict[str, Any]:
+    subject = value["subject"]
+    observed = subject.get("observed") or {}
+    native = observed.get("native_subject_identity") if isinstance(observed, dict) else None
+    return {
+        "declared": subject["declared"],
+        "source_identity": subject.get("source_identity"),
+        "native_executable_sha256": (
+            native.get("executable_sha256") if isinstance(native, dict) else None
+        ),
+    }
+
+
 @contextmanager
 def _locked(directory: Path) -> Iterator[None]:
     directory.mkdir(parents=True, exist_ok=True)
@@ -153,6 +177,110 @@ def _write_manifest(directory: Path, value: dict[str, Any]) -> None:
         Path(temporary).unlink(missing_ok=True)
 
 
+def audit_campaign(
+    *, suite: SuiteDefinition, rows: list[dict[str, Any]],
+    harness_root: Path, cache_root: Path, work_root: Path,
+    local_source: Path | None = None, codex_auth: Path | None = None,
+    source: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Observe every selected condition without inference or publishing authority.
+
+    This is diagnostic only. It does not qualify oracle reviews or authorize run.
+    """
+    if not rows:
+        raise CampaignAuthorityError("campaign selection is empty")
+    selected = sorted(str(row["definition_id"]) for row in rows)
+    representatives: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in rows:
+        representatives.setdefault((str(row["task_id"]), str(row["condition_id"])), row)
+    if len(selected) != len(set(selected)):
+        raise CampaignAuthorityError("campaign selection contains duplicate definitions")
+    observed: dict[str, dict[str, Any]] = {}
+    agents: dict[str, dict[str, Any]] = {}
+    subjects: dict[str, dict[str, Any]] = {}
+    task_inputs: dict[str, str] = {}
+    for (task_id, condition), row in sorted(representatives.items()):
+        with admit_trial(
+            suite=suite, task_id=str(row["task_id"]),
+            condition_id=condition, trial_index=int(row["trial"]),
+            harness_root=harness_root, cache_root=cache_root,
+            work_root=work_root, local_source=local_source,
+            codex_auth=codex_auth, source=source,
+        ) as admission:
+            status, reason = admission.initial_outcome()
+            if status is not None:
+                raise CampaignAuthorityError(
+                    f"{condition} cannot enter campaign: {reason}"
+                )
+            authority = condition_authority(admission)
+            task_authorities = observed.setdefault(task_id, {})
+            if condition in task_authorities and task_authorities[condition] != authority:
+                raise CampaignAuthorityError(
+                    f"{task_id}/{condition} authority changed during admission"
+                )
+            task_authorities[condition] = authority
+            agent_id = str(admission.condition["agent"])
+            global_agent = _global_agent_authority(authority)
+            if agent_id in agents and agents[agent_id] != global_agent:
+                raise CampaignAuthorityError(
+                    f"{agent_id} runtime or model differs across selected tasks"
+                )
+            agents[agent_id] = global_agent
+            subject_id = str(admission.condition["subject"])
+            global_subject = _global_subject_authority(authority)
+            if subject_id in subjects:
+                prior_subject = subjects[subject_id]
+                if any(
+                    prior_subject[key] != global_subject[key]
+                    for key in ("declared", "source_identity")
+                ) or (
+                    prior_subject["native_executable_sha256"] is not None
+                    and global_subject["native_executable_sha256"] is not None
+                    and prior_subject["native_executable_sha256"]
+                    != global_subject["native_executable_sha256"]
+                ):
+                    raise CampaignAuthorityError(
+                        f"{subject_id} executable or source differs across selected tasks"
+                    )
+                if prior_subject["native_executable_sha256"] is None:
+                    prior_subject["native_executable_sha256"] = global_subject[
+                        "native_executable_sha256"
+                    ]
+            else:
+                subjects[subject_id] = global_subject
+            inputs = digest({
+                "workspace": admission.admitted_state,
+                "mutation": admission.mutation_authority,
+                "prompt": admission.task["prompt"],
+                "budgets": admission.task["budgets"],
+            })
+            if task_id in task_inputs and task_inputs[task_id] != inputs:
+                raise CampaignAuthorityError(
+                    f"{task_id} has unequal non-subject inputs"
+                )
+            task_inputs[task_id] = inputs
+            admission.cleanup_subject()
+    payload = {
+        "contract": "benchmark-campaign-authority.v2",
+        "selected_definitions": selected,
+        "task_conditions": observed,
+        "agents": agents,
+        "subjects": subjects,
+        "task_inputs": task_inputs,
+        "suite_identity": digest({
+            "experiment": suite.experiment,
+            "tasks": {key: suite.tasks[key] for key in suite.experiment["tasks"]},
+            "agents": suite.agents, "subjects": suite.subjects,
+        }),
+        "oracle_review_sha256": (
+            hashlib.sha256((suite.root / suite.experiment["oracle_reviews"]).read_bytes()).hexdigest()
+            if "oracle_reviews" in suite.experiment else None
+        ),
+    }
+    payload["campaign_id"] = digest(payload)
+    return payload
+
+
 def admit_campaign(
     *, suite: SuiteDefinition, rows: list[dict[str, Any]], results_root: Path,
     harness_root: Path, cache_root: Path, work_root: Path,
@@ -160,15 +288,9 @@ def admit_campaign(
     source: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Check every selected condition without inference, then freeze its authority."""
-    if not rows:
-        raise CampaignAuthorityError("campaign selection is empty")
     if "oracle_reviews" in suite.experiment or (suite.root / "qualification" / "oracle-reviews.json").is_file():
         validate_oracle_reviews(suite, require_complete=True)
     directory = results_root / ".campaign"
-    selected = sorted(str(row["definition_id"]) for row in rows)
-    representatives: dict[tuple[str, str], dict[str, Any]] = {}
-    for row in rows:
-        representatives.setdefault((str(row["task_id"]), str(row["condition_id"])), row)
     with _locked(directory):
         existing = (directory / "authority.json").exists()
         if not existing and results_root.exists() and any(
@@ -176,55 +298,11 @@ def admit_campaign(
             for path in results_root.iterdir()
         ):
             raise CampaignAuthorityError("existing results have no campaign authority")
-        observed: dict[str, Any] = {}
-        task_inputs: dict[str, str] = {}
-        for (task_id, condition), row in sorted(representatives.items()):
-            with admit_trial(
-                suite=suite, task_id=str(row["task_id"]),
-                condition_id=condition, trial_index=int(row["trial"]),
-                harness_root=harness_root, cache_root=cache_root,
-                work_root=work_root, local_source=local_source,
-                codex_auth=codex_auth, source=source,
-            ) as admission:
-                status, reason = admission.initial_outcome()
-                if status is not None:
-                    raise CampaignAuthorityError(
-                        f"{condition} cannot enter campaign: {reason}"
-                    )
-                authority = condition_authority(admission)
-                if condition in observed and observed[condition] != authority:
-                    raise CampaignAuthorityError(
-                        f"{condition} authority differs across selected tasks"
-                    )
-                observed[condition] = authority
-                inputs = digest({
-                    "workspace": admission.admitted_state,
-                    "mutation": admission.mutation_authority,
-                    "prompt": admission.task["prompt"],
-                    "budgets": admission.task["budgets"],
-                })
-                if task_id in task_inputs and task_inputs[task_id] != inputs:
-                    raise CampaignAuthorityError(
-                        f"{task_id} has unequal non-subject inputs"
-                    )
-                task_inputs[task_id] = inputs
-                admission.cleanup_subject()
-        payload = {
-            "contract": "benchmark-campaign-authority.v1",
-            "selected_definitions": selected,
-            "conditions": observed,
-            "task_inputs": task_inputs,
-            "suite_identity": digest({
-                "experiment": suite.experiment,
-                "tasks": {key: suite.tasks[key] for key in suite.experiment["tasks"]},
-                "agents": suite.agents, "subjects": suite.subjects,
-            }),
-            "oracle_review_sha256": (
-                hashlib.sha256((suite.root / suite.experiment["oracle_reviews"]).read_bytes()).hexdigest()
-                if "oracle_reviews" in suite.experiment else None
-            ),
-        }
-        payload["campaign_id"] = digest(payload)
+        payload = audit_campaign(
+            suite=suite, rows=rows, harness_root=harness_root,
+            cache_root=cache_root, work_root=work_root,
+            local_source=local_source, codex_auth=codex_auth, source=source,
+        )
         if existing:
             if _read_manifest(directory) != payload:
                 raise CampaignAuthorityError(
@@ -251,7 +329,9 @@ def verify_trial_authority(
             raise CampaignAuthorityError("oracle review authority changed before inference")
     if admission.definition_id not in observed["selected_definitions"]:
         raise CampaignAuthorityError("trial is outside frozen campaign selection")
-    expected = observed["conditions"].get(str(admission.condition["id"]))
+    expected = observed["task_conditions"].get(str(admission.task["id"]), {}).get(
+        str(admission.condition["id"])
+    )
     if expected != condition_authority(admission):
         raise CampaignAuthorityError("observed trial authority drifted before inference")
     inputs = digest({

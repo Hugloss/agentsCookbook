@@ -96,12 +96,13 @@ def main() -> int:
             "paired_assistance_exclusions": report["paired_assistance_exclusions"],
             "expected_assistance_pairs": report["expected_assistance_pairs"],
             "stability": report["stability"],
+            "task_agent_authority": report["task_agent_authority"],
             "diagnostics": report["diagnostics"],
             "agent_profiles": report["agent_profiles"],
             "cross_agent_observations": report["cross_agent_observations"],
         }
     payload = {
-        "schema": "agents-cookbook-heldout-observer-outcomes.v6",
+        "schema": "agents-cookbook-heldout-observer-outcomes.v7",
         "projection_mode": (
             "offline-regrade"
             if args.regrade_source_results is not None

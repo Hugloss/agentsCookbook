@@ -32,6 +32,12 @@ COMMAND_REQUIRED_KEYS = {
         "BENCHMARK_HARNESS_REPO_ROOT",
         "BENCHMARK_AGENT",
     ),
+    "campaign-audit": (
+        "BENCHMARK_SUITE_PATH",
+        "BENCHMARK_CAMPAIGN_ROOT",
+        "BENCHMARK_HARNESS_REPO_ROOT",
+        "BENCHMARK_AGENT",
+    ),
     "run": (
         "BENCHMARK_SUITE_PATH",
         "BENCHMARK_CAMPAIGN_ROOT",
