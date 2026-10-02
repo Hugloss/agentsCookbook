@@ -82,7 +82,7 @@ Keep deliberate benchmark choices separate from native host discovery:
 | `BENCHMARK_CAMPAIGN_ROOT` | Ignored store of numbered campaigns under `runs/`; the newest run is selected by default | Generated campaign evidence |
 | `BENCHMARK_HARNESS_REPO_ROOT` | agentsCookbook checkout containing the runner | Harness source authority |
 | `BENCHMARK_SCORE_SCRIPT_PATH` | Optional suite-specific scorer | Specialized reporting authority |
-| `BENCHMARK_SCORE_OUTPUT_PATH` | Score filename inside each saved run | Derived report |
+| `BENCHMARK_SCORE_OUTPUT_PATH` | Score filename inside each saved run's `reports/` directory | Derived report |
 
 Not configured in `.env`:
 
@@ -101,6 +101,21 @@ cp -n .env.example .env
 ```
 
 The example stores every run under ignored `.benchmark-runs/heldout-v1/runs/<run_id>/`. Each completed trial publishes its own receipt immediately; aggregate JSON and scores are derived later. The per-trial receipts are the durability boundary.
+
+Human-facing derived outputs are kept separately from raw evidence:
+
+```text
+.benchmark-runs/heldout-v1/runs/<run_id>/
+├── results/          # authoritative receipts, events, and agent traces
+├── cache/
+├── work/
+└── reports/          # small shareable output
+    ├── status.json
+    ├── report.json
+    └── score.json
+```
+
+`make benchmark-status`, `make benchmark-report`, and `make benchmark-score` refresh those files while preserving their normal command behavior. `make benchmark-reports` refreshes all three. Share or archive only `reports/` for ordinary benchmark review; keep `results/` when raw execution evidence is needed for audit or debugging.
 
 In the selected Hashmarks source checkout, install its locked MCP extra with `uv sync --frozen --extra mcp --group test` before running readiness. A correct `HASHMARKS_BENCH_SOURCE` path alone does not install the MCP server dependency.
 
@@ -133,8 +148,9 @@ make benchmark-check       # fast runtime readiness
 make benchmark-oracle-review-check # oracle qualification check
 make benchmark-check-all   # exhaustive model-free preflight
 make benchmark-runs        # list saved run IDs
-make benchmark-report      # generic framework report
-make benchmark-score       # suite-specific scorer
+make benchmark-report      # print + save reports/report.json
+make benchmark-score       # save reports/<score filename>
+make benchmark-reports     # refresh status/report/score together
 ```
 
 The Makefile passes only `.env` and fixed smoke task selectors to the CLI. The configuration loader owns benchmark choices and validates them before runtime work. Codex, OpenCode, and Enola use their installed host conventions; the benchmark observes what resolves. Missing selected-agent choices fail before preflight, execution, reporting, or scoring.

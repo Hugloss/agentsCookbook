@@ -36,7 +36,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             env_example,
         )
         self.assertIn(
-            "BENCHMARK_SCORE_OUTPUT_PATH=heldout-report.json",
+            "BENCHMARK_SCORE_OUTPUT_PATH=score.json",
             env_example,
         )
         self.assertIn(".benchmark-runs/", gitignore)
@@ -64,6 +64,13 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                     f"{target}:\n\t@uv run --no-project python -m benchmarks {command} --env-file .env",
                     makefile,
                 )
+        self.assertIn(
+            "benchmark-reports:\n"
+            "\t@$(MAKE) --no-print-directory benchmark-status\n"
+            "\t@$(MAKE) --no-print-directory benchmark-report\n"
+            "\t@$(MAKE) --no-print-directory benchmark-score",
+            makefile,
+        )
         self.assertIn("benchmark-oracle-review:", makefile)
         self.assertIn(
             "python -m benchmarks oracle-review \\\n"
@@ -222,6 +229,78 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             ):
                 main(["run", "--resume", "--env-file", str(file)])
             self.assertEqual(list(Path(tmp).iterdir()), [])
+
+    def test_status_and_report_are_persisted_in_shareable_reports_dir(self) -> None:
+        suite_path = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_root = root / "runs/000001"
+            results = run_root / "results"
+            results.mkdir(parents=True)
+            (results / "receipt").write_text("present", encoding="utf-8")
+            saved = SavedRun("000001", run_root)
+
+            status_payload = {
+                "rows": [],
+                "complete_trials": 108,
+                "pending_trials": 0,
+                "interrupted_trials": 0,
+                "conflicting_trials": [],
+                "corrupt_bundles": [],
+                "foreign_bundles": [],
+                "qualified": True,
+            }
+            with (
+                mock.patch("benchmarks.__main__.select_saved_run", return_value=saved),
+                mock.patch(
+                    "benchmarks.__main__.campaign_status",
+                    return_value=dict(status_payload),
+                ),
+                redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(
+                    main(["status", "--suite", str(suite_path), "--root", str(root)]),
+                    0,
+                )
+
+            status_file = run_root / "reports/status.json"
+            self.assertTrue(status_file.is_file())
+            stored_status = json.loads(status_file.read_text(encoding="utf-8"))
+            self.assertEqual(stored_status["run_id"], "000001")
+            self.assertEqual(
+                stored_status["paths"]["reports"],
+                str(run_root / "reports"),
+            )
+
+            with (
+                mock.patch("benchmarks.__main__.select_saved_run", return_value=saved),
+                mock.patch(
+                    "benchmarks.__main__.build_report",
+                    return_value={"schema": {"version": 7}, "expected_trials": 108},
+                ),
+                redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(
+                    main([
+                        "report",
+                        "--suite",
+                        str(suite_path),
+                        "--root",
+                        str(root),
+                        "--agent",
+                        "opencode-native",
+                    ]),
+                    0,
+                )
+
+            report_file = run_root / "reports/report.json"
+            self.assertTrue(report_file.is_file())
+            stored_report = json.loads(report_file.read_text(encoding="utf-8"))
+            self.assertEqual(stored_report["run_id"], "000001")
+            self.assertEqual(
+                stored_report["reports_dir"],
+                str(run_root / "reports"),
+            )
 
     def test_status_can_require_qualified_campaign(self) -> None:
         suite = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"

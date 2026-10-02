@@ -1,6 +1,6 @@
 export PYTHONPATH := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))):$(PYTHONPATH)
 
-.PHONY: benchmark-check benchmark-check-all benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-evidence-validate
+.PHONY: benchmark-check benchmark-check-all benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate
 
 benchmark-oracle-review:
 	@uv run --no-project python -m benchmarks oracle-review \
@@ -23,6 +23,11 @@ benchmark-campaign-audit:
 
 benchmark-status:
 	@uv run --no-project python -m benchmarks status --env-file .env
+
+benchmark-reports:
+	@$(MAKE) --no-print-directory benchmark-status
+	@$(MAKE) --no-print-directory benchmark-report
+	@$(MAKE) --no-print-directory benchmark-score
 
 benchmark:
 	@uv run --no-project python -m benchmarks run --auto --env-file .env
