@@ -26,6 +26,21 @@ Reports expose `semantic_success_rate`, `semantic_gradeable_rate`, semantic-stat
 
 A complete campaign with legitimate candidate FAIL outcomes can still be qualified evidence. Campaign qualification is lost by missing, incomplete, invalid, or contaminated execution evidence, not by the candidate simply answering incorrectly.
 
+### Replicates and stability
+
+The frozen condition field named `seed` is a historical **paired replicate identifier**.
+Native Codex/OpenCode adapters do not currently transport it as a provider/model RNG
+seed, so it must not be interpreted as deterministic inference. Reports surface the
+same value as `replicate_id` while preserving the frozen receipt field for execution
+identity.
+
+Repeated outcomes are evidence, not retries. Reports therefore expose stability per
+task/agent/subject as `stable-correct`, `stable-incorrect`, `unstable`, or
+`execution-unstable`. An incomplete or invalid execution is never converted into a
+semantic failure. Paired bare-to-assisted rows also classify each valid replicate as
+`gain`, `preserved`, `unresolved`, or `regression`, so aggregate success rates
+cannot hide an assisted regression.
+
 From the agentsCookbook root, configure the benchmark authority once:
 
 ```sh
@@ -121,7 +136,7 @@ make benchmark-score
 - `benchmark` executes/resumes the frozen campaign and does not secretly run either check first.
 - `benchmark-report` is the generic framework report.
 - `benchmark-score` runs this suite's explicit language-separated held-out scorer.
-- Before a new full campaign after benchmark-authority changes, run `make benchmark-qualify-localization`. It exercises the four localization cases that exposed the v1 oracle defect across bare, Hashmarks, and Enola, prints a fresh campaign root, and checks that its execution evidence is qualified. It is qualification evidence, not the full score.
+- Before a new full campaign after benchmark-authority changes, run `make benchmark-qualify-localization`. It exercises the four localization cases that exposed the v1 oracle defect plus the repository-content-identity case and one TypeScript localization case across bare, Hashmarks, and Enola, prints a fresh campaign root, and checks that its execution evidence is qualified. It is qualification evidence, not the full score.
 
 For a scoring-only change to a complete campaign recorded under the current normalization and execution-evidence contracts, run offline scoring without editing the source bundles:
 
