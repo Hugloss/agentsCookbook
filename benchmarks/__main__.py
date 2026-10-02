@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from collections import Counter
 from dataclasses import replace
@@ -305,6 +306,36 @@ def _paths(args, *, need_execution: bool, results_optional: bool = False):
         raise SystemExit(str(exc)) from exc
 
 
+def _reports_dir(run_root: Path) -> Path:
+    return run_root / "reports"
+
+
+def _write_derived_json(run_root: Path, filename: str, payload: object) -> Path:
+    """Atomically refresh one small, shareable derived report."""
+    directory = _reports_dir(run_root)
+    directory.mkdir(parents=True, exist_ok=True)
+    destination = directory / filename
+    encoded = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    fd, temporary = tempfile.mkstemp(
+        prefix=f".{destination.name}.",
+        dir=directory,
+    )
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+        directory_fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+    return destination
+
+
 def _selection_metadata(args, suite, rows) -> dict[str, object]:
     conditions = {
         str(condition["id"]): condition for condition in suite.experiment["conditions"]
@@ -517,8 +548,12 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(str(exc)) from exc
         if not explicit_score_output:
             if args.output.is_absolute() or len(args.output.parts) != 1:
-                raise SystemExit("BENCHMARK_SCORE_OUTPUT_PATH must be a filename within each saved run")
-            args.output = saved.root / args.output
+                raise SystemExit(
+                    "BENCHMARK_SCORE_OUTPUT_PATH must be a filename within "
+                    "the selected run's reports directory"
+                )
+            args.output = _reports_dir(saved.root) / args.output
+            args.output.parent.mkdir(parents=True, exist_ok=True)
         invocation = [
             sys.executable,
             str(script),
@@ -619,6 +654,9 @@ def main(argv: list[str] | None = None) -> int:
         status["paths"] = paths.as_dict()
         status["run_id"] = paths.run_id
         status["selection"] = _selection_metadata(args, suite, rows)
+        if paths.root is not None:
+            status["paths"]["reports"] = str(_reports_dir(paths.root))
+            _write_derived_json(paths.root, "status.json", status)
         print(json.dumps(status, indent=2, sort_keys=True))
         return (
             2
@@ -651,6 +689,9 @@ def main(argv: list[str] | None = None) -> int:
                 f"benchmark report unavailable: {exc}; use --allow-incomplete to inspect a partial campaign"
             ) from exc
         report_data["run_id"] = paths.run_id
+        if paths.root is not None:
+            report_data["reports_dir"] = str(_reports_dir(paths.root))
+            _write_derived_json(paths.root, "report.json", report_data)
         print(json.dumps(report_data, indent=2, sort_keys=True))
         return 0
 
