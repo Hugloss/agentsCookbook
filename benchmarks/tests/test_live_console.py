@@ -8,6 +8,7 @@ from benchmarks.harness.live_console import (
     LiveCampaignProgress,
     LiveTaskMatrix,
     TrialHeartbeat,
+    render_campaign_admission,
     render_trial_failure,
 )
 from benchmarks.harness.runner import TrialRunResult
@@ -193,6 +194,37 @@ class LiveTaskMatrixTests(unittest.TestCase):
         )
         self.assertIn("complete", rendered)
         self.assertIn("unknown", rendered)
+
+    def test_campaign_admission_renderer_exposes_model_free_step_progress(self) -> None:
+        line = render_campaign_admission(
+            {
+                "stage": "condition-authority",
+                "index": 7,
+                "total": 36,
+                "task_id": "locate-stale-index-removal",
+                "condition_id": "hashmarks-opencode-native",
+            },
+            elapsed=94.0,
+        )
+        self.assertEqual(
+            line,
+            "ADMISSION [7/36] locate-stale-index-removal / "
+            "hashmarks-opencode-native | checking authority | run elapsed 1m34s",
+        )
+        self.assertIn(
+            "oracle review | checking",
+            render_campaign_admission(
+                {"stage": "oracle-review", "status": "checking"},
+                elapsed=2.0,
+            ),
+        )
+        self.assertIn(
+            "campaign authority | published",
+            render_campaign_admission(
+                {"stage": "campaign-authority", "status": "published"},
+                elapsed=120.0,
+            ),
+        )
 
     def test_progress_reports_step_elapsed_remaining_and_eta(self) -> None:
         suite, rows = self._prefix_opencode_rows()
