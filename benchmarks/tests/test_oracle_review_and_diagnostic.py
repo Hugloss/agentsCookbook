@@ -272,7 +272,7 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
             reviews = evidence["tasks"]["locate-repository-content-identity"][
                 "reviews"
             ]
-            self.assertEqual(len(reviews), 2)
+            self.assertEqual(len(reviews), 1)
             self.assertEqual(reviews[-1]["reviewer"], REVIEWER_ID)
             self.assertEqual(reviews[-1]["decision"], "unique")
 
