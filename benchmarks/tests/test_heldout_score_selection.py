@@ -141,6 +141,7 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
                     "expected_assistance_pairs": 0,
                     "stability": [],
                     "task_agent_authority": [],
+                    "subject_adoption": [],
                     "diagnostics": [],
                     "agent_profiles": {},
                     "cross_agent_observations": [],
