@@ -8,7 +8,10 @@ unchanged.
 from __future__ import annotations
 
 from collections import Counter
+from statistics import mean
 from typing import Any
+
+from benchmarks.harness.runner import TrialRunResult
 
 from benchmarks.harness.suite import SuiteDefinition
 
@@ -178,3 +181,114 @@ class LiveTaskMatrix:
                 )
 
         return "\n".join(lines)
+
+
+def _duration(value: float | None) -> str:
+    if value is None:
+        return "estimating..."
+    seconds = max(0, int(round(value)))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}m"
+    if minutes:
+        return f"{minutes}m{seconds:02d}s"
+    return f"{seconds}s"
+
+
+class LiveCampaignProgress:
+    """Render bounded human/agent-readable campaign progress and ETA."""
+
+    def __init__(
+        self,
+        suite: SuiteDefinition,
+        selected_rows: list[dict[str, Any]],
+    ) -> None:
+        self._conditions = {
+            str(condition["id"]): condition
+            for condition in suite.experiment["conditions"]
+        }
+        self._total = len(selected_rows)
+        self._completed = 0
+        self._durations: list[float] = []
+        self._task_order: list[str] = []
+        for row in selected_rows:
+            task_id = str(row["task_id"])
+            if task_id not in self._task_order:
+                self._task_order.append(task_id)
+
+    def start_line(self, row: dict[str, Any], *, elapsed: float) -> str:
+        condition = self._conditions[str(row["condition_id"])]
+        task_id = str(row["task_id"])
+        task_index = self._task_order.index(task_id) + 1
+        trial = int(row["trial"])
+        trials = int(condition["trials"])
+        remaining = self._total - self._completed
+        eta = self._eta(remaining=remaining)
+        return (
+            f"[{self._completed + 1}/{self._total}] "
+            f"task {task_index}/{len(self._task_order)} {task_id} | "
+            f"{row['condition_id']} | replicate {trial + 1}/{trials} | "
+            f"elapsed {_duration(elapsed)} | remaining {remaining} | "
+            f"ETA {_duration(eta)}"
+        )
+
+    def finish_line(
+        self,
+        result: TrialRunResult,
+        *,
+        elapsed: float,
+        trial_seconds: float,
+    ) -> str:
+        self._completed += 1
+        if not result.reused and not result.recovered and trial_seconds > 0:
+            self._durations.append(trial_seconds)
+        remaining = self._total - self._completed
+        eta = self._eta(remaining=remaining)
+        mode = (
+            "reused"
+            if result.reused
+            else "recovered"
+            if result.recovered
+            else "executed"
+        )
+        average = mean(self._durations) if self._durations else None
+        return (
+            f"PROGRESS {self._completed}/{self._total} "
+            f"({(100 * self._completed / self._total):.1f}%) | "
+            f"{mode} | elapsed {_duration(elapsed)} | remaining {remaining} | "
+            f"avg {_duration(average)}/trial | ETA {_duration(eta)}"
+        )
+
+    def _eta(self, *, remaining: int) -> float | None:
+        if not self._durations or remaining <= 0:
+            return 0.0 if remaining <= 0 else None
+        return mean(self._durations) * remaining
+
+
+def render_trial_failure(
+    *,
+    row: dict[str, Any],
+    subject: str,
+    result: TrialRunResult,
+) -> str | None:
+    """Render stable failure fields before bounded raw diagnostic evidence."""
+    if result.status == "PASS":
+        return None
+    lines = [
+        "",
+        f"FAILURE {row['task_id']}",
+        f"Replicate: {row['trial']}",
+        f"Condition: {row['condition_id']}",
+        f"Subject: {_subject_label(subject)}",
+        f"Status: {result.status}",
+        f"Stage: {result.stage or 'unknown'}",
+        f"Reason code: {result.reason_code or 'unknown'}",
+        f"Reason: {result.reason or 'none'}",
+        f"Evidence: {result.result_dir}",
+    ]
+    if result.recovered:
+        lines.append("Recovery: prior interrupted launch sealed; model was not retried")
+    if result.diagnostic:
+        lines.extend(["", "--- diagnostic ---", result.diagnostic])
+    return "\n".join(lines)
