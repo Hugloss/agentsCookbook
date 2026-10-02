@@ -107,14 +107,78 @@ def validate_oracle_reviews(
             review["decision"] != "unique" for review in reviews
         ):
             pending.append(task_id)
+    approved = len(suite.experiment["tasks"]) - len(pending)
     if require_complete and pending:
         raise OracleReviewError(
-            "independent oracle review incomplete for: " + ", ".join(pending)
+            "independent oracle review incomplete: "
+            f"{approved}/{len(suite.experiment['tasks'])} tasks approved; "
+            f"{len(pending)} still need a second independent review.\n"
+            "Next: make benchmark-oracle-review\n"
+            "Then: make benchmark-oracle-review-check"
         )
     return {
         "present": True,
         "first_reviewed_tasks": first_reviewed,
-        "approved_tasks": len(suite.experiment["tasks"]) - len(pending),
+        "approved_tasks": approved,
         "pending_tasks": pending,
         "complete": not pending,
     }
+
+
+def oracle_review_guide(suite: SuiteDefinition) -> str:
+    """Return the next-action packet without granting review authority."""
+    result = validate_oracle_reviews(suite, require_complete=False)
+    total = len(suite.experiment["tasks"])
+    approved = int(result["approved_tasks"])
+    pending = list(result["pending_tasks"])
+    path = oracle_review_path(suite)
+    if not pending:
+        return (
+            f"Oracle review READY: {approved}/{total} tasks approved.\n"
+            "Next: make benchmark-oracle-review-check\n"
+            "Then: make benchmark"
+        )
+
+    evidence = json.loads(path.read_text(encoding="utf-8"))
+    rows = evidence["tasks"]
+    lines = [
+        f"Oracle review BLOCKED: {approved}/{total} tasks approved; "
+        f"{len(pending)} need another independent review.",
+        "",
+        "This command does not self-approve benchmark truth.",
+        "Give the packet below to a distinct independent reviewer.",
+        f"Record accepted decisions in: {path.relative_to(suite.root)}",
+        "",
+    ]
+    for task_id in pending:
+        task = suite.tasks[task_id]
+        row = rows[task_id]
+        owner = row.get("owner")
+        owner_text = (
+            f"{owner['path']}::{owner['symbol']}"
+            if isinstance(owner, dict)
+            else "repair oracle / no repository-location owner"
+        )
+        lines.extend(
+            [
+                f"- {task_id}",
+                f"  repository: {task['repository']['url']}",
+                f"  commit: {task['repository']['commit']}",
+                f"  expected owner: {owner_text}",
+                f"  existing independent reviews: {len(row.get('reviews', []))}",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "Reviewer requirement: inspect the pinned source independently; "
+            "do not copy the existing rationale.",
+            "If any task has more than one defensible owner, mark it ambiguous "
+            "and repair or retire the task instead of weakening grading.",
+            "",
+            "After recording the second independent reviews:",
+            "  make benchmark-oracle-review-check",
+            "  make benchmark",
+        ]
+    )
+    return "\n".join(lines)
