@@ -215,6 +215,40 @@ class LiveTaskMatrixTests(unittest.TestCase):
             "ADMISSION [7/36] locate-stale-index-removal / "
             "hashmarks-opencode-native | checking authority | admission elapsed 1m34s",
         )
+        completed = render_campaign_admission(
+            {
+                "stage": "condition-authority-complete",
+                "index": 7,
+                "total": 36,
+                "task_id": "locate-stale-index-removal",
+                "condition_id": "hashmarks-opencode-native",
+                "timings_ms": {
+                    "materialize": 410,
+                    "snapshot": 80,
+                    "participant_prepare": 2310,
+                    "oracle_health": 2,
+                    "condition_authority": 120,
+                    "total": 2950,
+                },
+            },
+            elapsed=97.0,
+        )
+        self.assertIn("authority OK", completed)
+        self.assertIn("materialize 410ms", completed)
+        self.assertIn("prepare 2310ms", completed)
+        self.assertIn("authority 120ms", completed)
+        self.assertIn("total 2950ms", completed)
+        self.assertIn(
+            "harness authority | verified | 38ms",
+            render_campaign_admission(
+                {
+                    "stage": "campaign-harness-authority",
+                    "status": "verified",
+                    "duration_ms": 38,
+                },
+                elapsed=0.04,
+            ),
+        )
         self.assertIn(
             "oracle review | checking",
             render_campaign_admission(
