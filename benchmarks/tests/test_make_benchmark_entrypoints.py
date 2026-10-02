@@ -22,6 +22,23 @@ ENV_EXAMPLE = ROOT / ".env.example"
 
 
 class BenchmarkMakeEntrypointTests(unittest.TestCase):
+    def test_local_campaign_example_is_durable_and_ignored(self) -> None:
+        env_example = ENV_EXAMPLE.read_text(encoding="utf-8")
+        gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8-sig")
+        self.assertIn(
+            "BENCHMARK_CAMPAIGN_ROOT=.benchmark-runs/heldout-v1",
+            env_example,
+        )
+        self.assertIn(
+            "BENCHMARK_SCORE_OUTPUT_PATH=.benchmark-runs/heldout-v1/heldout-report.json",
+            env_example,
+        )
+        self.assertIn(".benchmark-runs/", gitignore)
+        self.assertNotIn(
+            "BENCHMARK_CAMPAIGN_ROOT=/tmp/agentscookbook-heldout-v1",
+            env_example,
+        )
+
     def test_make_delegates_configuration_to_cli(self) -> None:
         makefile = MAKEFILE.read_text(encoding="utf-8")
         self.assertNotIn("-include .env", makefile)
