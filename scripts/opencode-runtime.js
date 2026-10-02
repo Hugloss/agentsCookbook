@@ -384,6 +384,7 @@ function benchmarkOverlay(config, subjectExposure, agentName) {
       ? sha256Text(canonicalJson(subjectExposure))
       : null,
     config: {
+      compaction: { auto: false },
       mcp: nested ? { servers } : servers,
       ...(nested ? {} : {
         tools,
@@ -402,6 +403,14 @@ function verifyBenchmarkConfig(
 ) {
   const original = inspectConfig(base, agentName);
   const resolved = inspectConfig(effective, agentName);
+  if (
+    !effective.compaction ||
+    effective.compaction.auto !== false
+  ) {
+    throw new Error(
+      'benchmark OpenCode auto-compaction must be disabled for single-turn trials',
+    );
+  }
   if (original.model !== resolved.model || original.provider !== resolved.provider) {
     throw new Error('benchmark overlay changed native OpenCode model/provider');
   }
@@ -1095,6 +1104,7 @@ function prepareBenchmarkConfig({
       native_subject_identity: subjectExecutable,
       overlay_identity: {
         shape: overlay.shape,
+        compaction_auto: false,
         selected_subject: selectedSubject,
         subject_definition_source:
           selectedSubject ? 'benchmark-subject-exposure' : null,
