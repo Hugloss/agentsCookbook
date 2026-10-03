@@ -93,6 +93,9 @@ def main() -> int:
             "conditions": report["conditions"],
             "paired_assistance": report["paired_assistance"],
             "paired_assistance_summary": report["paired_assistance_summary"],
+            "paired_assistance_usage_summary": report[
+                "paired_assistance_usage_summary"
+            ],
             "paired_assistance_exclusions": report["paired_assistance_exclusions"],
             "expected_assistance_pairs": report["expected_assistance_pairs"],
             "stability": report["stability"],
