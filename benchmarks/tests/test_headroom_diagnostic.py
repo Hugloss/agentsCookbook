@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from unittest import mock
 
 from benchmarks.harness.suite import load_suite
 from benchmarks.harness.selection import select_definitions
@@ -61,7 +62,7 @@ def test_headroom_suite_is_small_repeated_and_subject_neutral() -> None:
             assert forbidden not in prompt
 
     assert suite.agents["opencode-native"]["identity"]["version"] == "native-config-v2"
-    assert suite.experiment["scoring"]["version"] == 2
+    assert suite.experiment["scoring"]["version"] == 3
 
 
 def test_headroom_reuses_behavioral_case_truth_without_rewriting_oracles() -> None:
@@ -82,6 +83,57 @@ def test_headroom_reuses_behavioral_case_truth_without_rewriting_oracles() -> No
         assert headroom_cases[task_id] == behavioral_cases[task_id]
         for key in ("prompt", "repository", "mutation", "oracle", "contamination"):
             assert headroom_task[key] == behavioral_task[key]
+
+
+def test_headroom_score_honors_exact_assisted_only_selection() -> None:
+    suite = load_suite(SUITE_ROOT)
+    rows = [
+        row
+        for row in suite.trial_definitions()
+        if row["task_id"] == "freshness-00"
+        and row["condition_id"] == "hashmarks-opencode-native"
+    ]
+    selected = {str(row["definition_id"]) for row in rows}
+    assert len(selected) == 3
+    score = _load_score_module()
+
+    def report(*, selected_definitions, require_complete, **_kwargs):
+        assert require_complete
+        assert set(selected_definitions) == selected
+        return {
+            "expected_trials": 3,
+            "observed_trials": 3,
+            "status_counts": {"PASS": 3},
+            "campaign_qualification": {"status": "QUALIFIED"},
+            "stability": [],
+            "subject_adoption": [],
+            "paired_assistance_summary": [],
+            "paired_assistance_usage_summary": [],
+            "paired_assistance_exclusions": [],
+            "task_assistance_evidence": [],
+            "conditions": {
+                "hashmarks-opencode-native": {
+                    "trials": 3,
+                    "valid_outcomes": 3,
+                    "statuses": {"PASS": 3},
+                }
+            },
+            "agent_profiles": {},
+            "diagnostics": [],
+        }
+
+    with mock.patch.object(score, "build_report", side_effect=report):
+        payload = score.score(
+            suite_root=SUITE_ROOT,
+            results=Path("/unused"),
+            agents=("opencode-native",),
+            definition_ids=tuple(sorted(selected)),
+        )
+
+    assert payload["schema"] == "agents-cookbook-repository-intelligence-headroom.v3"
+    assert payload["selection"]["definition_count"] == 3
+    assert set(payload["selection"]["definition_ids"]) == selected
+    assert payload["bare_control_headroom"]["state"] == "unavailable"
 
 
 def test_headroom_score_reports_bare_control_headroom_without_assuming_it() -> None:
