@@ -269,13 +269,17 @@ class SavedRunRecoveryTests(unittest.TestCase):
             with self.assertRaisesRegex(RunStoreError, "invalid saved run"):
                 select_saved_run(root)
 
-    def test_second_runner_cannot_retire_a_live_claim(self) -> None:
+    def test_second_runner_reports_active_run_and_definition(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             with exclusive_store(root):
-                with self.assertRaisesRegex(RunStoreError, "another benchmark command"):
-                    with exclusive_store(root):
-                        self.fail("lock should exclude a second runner")
+                with active_trial(root, "000004", "definition-abc"):
+                    with self.assertRaisesRegex(
+                        RunStoreError,
+                        "active run 000004, definition definition-abc",
+                    ):
+                        with exclusive_store(root):
+                            self.fail("lock should exclude a second runner")
 
     def test_bounded_child_inherits_the_store_lock(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

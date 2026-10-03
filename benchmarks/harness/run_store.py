@@ -33,6 +33,33 @@ def _sync_directory(path: Path) -> None:
         os.close(fd)
 
 
+def _lock_holder_context(root: Path) -> str:
+    path = root / ".active.json"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        value = None
+    if not isinstance(value, dict):
+        return (
+            "active marker unavailable; a surviving benchmark/model child "
+            "may still hold the inherited lock"
+        )
+    run_id = value.get("run_id")
+    definition_id = value.get("definition_id")
+    if isinstance(run_id, str) and run_id:
+        detail = f"active run {run_id}"
+        if isinstance(definition_id, str) and definition_id:
+            detail += f", definition {definition_id}"
+        return (
+            detail
+            + "; a surviving benchmark/model child may still hold the inherited lock"
+        )
+    return (
+        "no active trial marker; another live benchmark process or surviving "
+        "benchmark/model child still holds the lock"
+    )
+
+
 @contextmanager
 def exclusive_store(root: Path) -> Iterator[int]:
     """Exclude another runner; subprocesses may retain the returned lock fd."""
@@ -43,7 +70,10 @@ def exclusive_store(root: Path) -> Iterator[int]:
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise RunStoreError(f"another benchmark command is using {root}") from exc
+            raise RunStoreError(
+                f"another benchmark command is using {root}; "
+                f"{_lock_holder_context(root)}"
+            ) from exc
         _write_active(root, None, None)
         yield fd
     finally:
