@@ -18,6 +18,7 @@ from benchmarks.__main__ import (
     _canonical_campaign_persistence_gap,
     _execute_run,
     _persist_completed_run_reports,
+    _selection_metadata,
     _validate_reporting_contract,
     main,
 )
@@ -741,6 +742,49 @@ class SavedRunRecoveryTests(unittest.TestCase):
             for name, value in previous.items():
                 self.assertEqual((reports / name).read_text(encoding="utf-8"), value)
 
+    def test_selection_metadata_is_resolved_from_exact_rows(self) -> None:
+        suite = SimpleNamespace(
+            experiment={
+                "conditions": [
+                    {
+                        "id": "bare",
+                        "agent": "opencode-native",
+                        "subject": "none",
+                    },
+                    {
+                        "id": "assisted",
+                        "agent": "opencode-native",
+                        "subject": "hashmarks",
+                    },
+                ]
+            }
+        )
+        rows = [
+            {"task_id": "task-b", "condition_id": "assisted"},
+            {"task_id": "task-a", "condition_id": "bare"},
+            {"task_id": "task-a", "condition_id": "assisted"},
+        ]
+        self.assertEqual(
+            _selection_metadata(suite, rows),
+            {
+                "tasks": ["task-a", "task-b"],
+                "agents": ["opencode-native"],
+                "subjects": ["hashmarks", "none"],
+                "condition": None,
+                "bare_control_included": True,
+            },
+        )
+        self.assertEqual(
+            _selection_metadata(suite, [rows[0]]),
+            {
+                "tasks": ["task-b"],
+                "agents": ["opencode-native"],
+                "subjects": ["hashmarks"],
+                "condition": "assisted",
+                "bare_control_included": False,
+            },
+        )
+
     def test_reports_command_regenerates_complete_set_through_one_owner(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             store = Path(temporary) / "campaigns"
@@ -821,10 +865,6 @@ class SavedRunRecoveryTests(unittest.TestCase):
                 definition_ids=(definition,),
             )
             persist.assert_called_once()
-            persisted_args = persist.call_args.kwargs["args"]
-            self.assertEqual(persisted_args.task, ["task-a"])
-            self.assertEqual(persisted_args.subject, ["none"])
-            self.assertEqual(persisted_args.condition, "bare")
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["run_id"], "000001")
             self.assertEqual(payload["reports"]["score"], str(written["score"]))
