@@ -126,7 +126,7 @@ def main() -> int:
         raise SystemExit("heldout score selection contains no language tasks")
 
     payload = {
-        "schema": "agents-cookbook-heldout-observer-outcomes.v12",
+        "schema": "agents-cookbook-heldout-observer-outcomes.v13",
         "projection_mode": (
             "offline-regrade" if args.regrade_source_results is not None else "live"
         ),
