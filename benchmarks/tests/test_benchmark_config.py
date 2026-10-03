@@ -119,6 +119,8 @@ class BenchmarkConfigTests(unittest.TestCase):
                 return_value=SimpleNamespace(run_id="000001", root=root),
             ), patch(
                 "benchmarks.__main__._assert_saved_run_agents"
+            ), patch(
+                "benchmarks.__main__.verify_campaign_suite_authority"
             ):
                 self.assertEqual(
                     main(["score", "--env-file", str(file), "--root", str(root)]), 0
