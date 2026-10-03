@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const RUNTIME_SCHEMA = 'agents-cookbook-opencode-runtime/v1';
+const RUNTIME_SCHEMA = 'agents-cookbook-opencode-runtime/v2';
 const SECRET_KEYS = new Set([
   'api_key',
   'apikey',
@@ -1218,9 +1218,11 @@ async function runSessionAndExport({
   let deleted = null;
   let finalText = null;
   let exportParseError = null;
+  let exportAttemptsUsed = 0;
   if (sessionId) {
     const attempts = run.status === 0 ? Math.max(1, exportAttempts) : 1;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
+      exportAttemptsUsed = attempt + 1;
       exported = exportSession({
         opencodeBin,
         repoDir,
@@ -1258,6 +1260,7 @@ async function runSessionAndExport({
     run,
     session_id: sessionId || null,
     export: exported,
+    export_attempts: exportAttemptsUsed,
     final_text: finalText,
     export_parse_error: exportParseError,
     delete: deleted,
