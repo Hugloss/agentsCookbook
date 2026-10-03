@@ -10,6 +10,7 @@ from unittest import mock
 from benchmarks.harness.campaign_authority import (
     CampaignAuthorityError,
     admit_campaign,
+    campaign_trial_id,
     audit_campaign,
     claim_launch,
     launch_state,
@@ -256,6 +257,109 @@ class CampaignAuthorityTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(CampaignAuthorityError, "runtime or model"):
                     admit_campaign(**options)
+
+    def test_campaign_trial_id_ignores_ephemeral_subject_exposure_hash(self) -> None:
+        frozen = {
+            "agent": {
+                "declared": {"id": "agent"},
+                "version": "opencode 1",
+                "executable_sha256": "a" * 64,
+                "model": "liteLLM/gemma4",
+                "provider": "liteLLM",
+                "native_config_sha256": "b" * 64,
+            },
+            "subject": {
+                "declared": {"id": "tool"},
+                "observed": {
+                    "subject": "tool",
+                    "native_subject_identity": {
+                        "verified": True,
+                        "subject": "tool",
+                        "executable_sha256": "c" * 64,
+                    },
+                    "mcp_semantic_identity": {
+                        "name": "tool",
+                        "workspace": "trial-workspace",
+                    },
+                },
+                "source_identity": {"sha256": "d" * 64},
+                "mcp_exposure": {
+                    "name": "tool",
+                    "command": "/opt/tool",
+                    "semantic_identity": {
+                        "name": "tool",
+                        "workspace": "trial-workspace",
+                    },
+                },
+            },
+            "harness": {"commit": "e" * 40},
+            "environment": {"environment_sha256": "f" * 64},
+        }
+        campaign = {
+            "task_conditions": {"task-a": {"assisted": frozen}},
+        }
+
+        def admission(exposure_sha: str):
+            return SimpleNamespace(
+                definition_id="1" * 64,
+                task={"id": "task-a"},
+                condition={"id": "assisted"},
+                oracle_authority={
+                    "declared": {"participant_id": "oracle", "version": "1"},
+                    "healthy": True,
+                },
+                mutation_authority={"sha256": "2" * 64},
+                subject_authority={
+                    "declared": {"id": "tool"},
+                    "available": True,
+                    "observed": {
+                        "mcp_exposure": {
+                            "subject_exposure_sha256": exposure_sha,
+                        }
+                    },
+                },
+                agent_authority={
+                    "declared": {"id": "agent"},
+                    "available": True,
+                    "observed": {
+                        "mcp_exposure": {
+                            "subject_exposure_sha256": exposure_sha,
+                        }
+                    },
+                },
+            )
+
+        first = campaign_trial_id(
+            campaign=campaign,
+            admission=admission("3" * 64),
+        )
+        second = campaign_trial_id(
+            campaign=campaign,
+            admission=admission("4" * 64),
+        )
+        self.assertEqual(first, second)
+
+        changed = {
+            **campaign,
+            "task_conditions": {
+                "task-a": {
+                    "assisted": {
+                        **frozen,
+                        "agent": {
+                            **frozen["agent"],
+                            "native_config_sha256": "9" * 64,
+                        },
+                    }
+                }
+            },
+        }
+        self.assertNotEqual(
+            first,
+            campaign_trial_id(
+                campaign=changed,
+                admission=admission("3" * 64),
+            ),
+        )
 
     def test_replicate_definition_identity_does_not_reinterpret_legacy_seed(
         self,

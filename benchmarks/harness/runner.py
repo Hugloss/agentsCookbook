@@ -17,6 +17,7 @@ from benchmarks.harness.admission import TrialAdmissionError, admit_trial
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.campaign_authority import (
     CampaignAuthorityError,
+    campaign_trial_id,
     claim_launch,
     launch_state,
     record_interrupted_attempt,
@@ -310,8 +311,6 @@ def run_trial(
             environment_authority = admission.environment_authority
             mutation_authority = admission.mutation_authority
             auth_mode = admission.auth_mode
-            trial_id = admission.trial_id
-            final_dir = results_root / trial_id
             recovered_interruption_attempt: int | None = None
             if not admission.legacy_seed:
                 if campaign is None:
@@ -323,6 +322,11 @@ def run_trial(
                     campaign=campaign,
                     admission=admission,
                 )
+                trial_id = campaign_trial_id(
+                    campaign=campaign,
+                    admission=admission,
+                )
+                final_dir = results_root / trial_id
                 state = launch_state(
                     results_root=results_root,
                     campaign=campaign,
@@ -343,6 +347,9 @@ def run_trial(
                     raise TrialRunnerError(
                         "result exists without a matching launch claim"
                     )
+            else:
+                trial_id = admission.trial_id
+                final_dir = results_root / trial_id
             if final_dir.exists():
                 emit_stage("reuse")
                 valid, invalid_reason = verify_bundle(final_dir)

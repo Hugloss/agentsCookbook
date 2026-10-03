@@ -14,7 +14,7 @@ from typing import Any, Callable, Iterator, Mapping
 
 from .admission import TrialAdmission, admit_trial, harness_identity
 from .bundle import verify_bundle
-from .identity import canonical_json, digest
+from .identity import canonical_json, digest, execution_id
 from .oracle_reviews import (
     oracle_review_path,
     oracle_reviews_declared,
@@ -661,6 +661,32 @@ def admit_campaign(
                 }
             )
         return payload
+
+
+def campaign_trial_id(
+    *,
+    campaign: dict[str, Any],
+    admission: TrialAdmission,
+) -> str:
+    """Derive durable trial identity only from frozen campaign authority."""
+    expected = (
+        campaign.get("task_conditions", {})
+        .get(str(admission.task["id"]), {})
+        .get(str(admission.condition["id"]))
+    )
+    if not isinstance(expected, dict):
+        raise CampaignAuthorityError(
+            "trial is outside frozen campaign condition authority"
+        )
+    return execution_id(
+        definition=admission.definition_id,
+        subject_identity=expected["subject"],
+        agent_identity=expected["agent"],
+        oracle_identity=admission.oracle_authority,
+        harness_identity=expected["harness"],
+        environment_identity=expected["environment"],
+        mutation_identity=admission.mutation_authority,
+    )
 
 
 def verify_trial_authority(
