@@ -3003,6 +3003,10 @@ class PilotExecutionTests(unittest.TestCase):
                 ),
                 mock.patch("benchmarks.harness.runner.verify_trial_authority"),
                 mock.patch(
+                    "benchmarks.harness.runner.campaign_trial_id",
+                    return_value=admission.trial_id,
+                ),
+                mock.patch(
                     "benchmarks.harness.runner.launch_state",
                     return_value="INTERRUPTED",
                 ),
