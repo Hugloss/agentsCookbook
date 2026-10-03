@@ -25,6 +25,7 @@ from benchmarks.harness.campaign_authority import (
     admit_campaign,
     audit_campaign,
     read_campaign,
+    verify_campaign_suite_authority,
     verify_saved_campaign,
 )
 from benchmarks.harness.preflight import preflight_trial
@@ -419,26 +420,49 @@ def _validate_reporting_contract(config: BenchmarkConfig, suite, runtime_source)
     return script, output
 
 
-def _is_frozen_campaign_selection(results_root: Path, rows) -> bool:
+def _canonical_campaign_persistence_gap(
+    *,
+    suite,
+    results_root: Path,
+    rows,
+) -> str | None:
     manifest = read_campaign(results_root)
     selected = {str(row["definition_id"]) for row in rows}
-    return selected == {str(value) for value in manifest["selected_definitions"]}
+    frozen = {str(value) for value in manifest["selected_definitions"]}
+    if selected != frozen:
+        return "selected definitions differ from frozen campaign"
+    try:
+        verify_campaign_suite_authority(suite=suite, campaign=manifest)
+    except CampaignAuthorityError as exc:
+        return str(exc)
+    return None
 
 
-def _selection_metadata(args, suite, rows) -> dict[str, object]:
+def _selection_metadata(suite, rows) -> dict[str, object]:
+    """Project selection metadata from the exact resolved definition rows."""
     conditions = {
         str(condition["id"]): condition for condition in suite.experiment["conditions"]
     }
-    bare_control_included = any(
-        conditions.get(str(row["condition_id"]), {}).get("subject") == "none"
-        for row in rows
-    )
+    condition_ids = sorted({str(row["condition_id"]) for row in rows})
     return {
-        "tasks": sorted(set(getattr(args, "task", []))),
-        "agents": sorted(set(args.agent)),
-        "subjects": sorted(set(getattr(args, "subject", []))),
-        "condition": getattr(args, "condition", None),
-        "bare_control_included": bare_control_included,
+        "tasks": sorted({str(row["task_id"]) for row in rows}),
+        "agents": sorted(
+            {
+                str(conditions[str(row["condition_id"])]["agent"])
+                for row in rows
+            }
+        ),
+        "subjects": sorted(
+            {
+                str(conditions[str(row["condition_id"])]["subject"])
+                for row in rows
+            }
+        ),
+        "condition": condition_ids[0] if len(condition_ids) == 1 else None,
+        "bare_control_included": any(
+            conditions[str(row["condition_id"])]["subject"] == "none"
+            for row in rows
+        ),
     }
 
 
@@ -637,6 +661,10 @@ def main(argv: list[str] | None = None) -> int:
         try:
             saved = select_saved_run(args.root, args.run_id)
             manifest = _assert_saved_run_agents(saved, args.agent)
+            verify_campaign_suite_authority(
+                suite=load_suite(args.suite),
+                campaign=manifest,
+            )
         except (RunStoreError, CampaignAuthorityError) as exc:
             raise SystemExit(str(exc)) from exc
         if not explicit_score_output:
@@ -752,6 +780,7 @@ def main(argv: list[str] | None = None) -> int:
             with exclusive_store(args.root):
                 saved = select_saved_run(args.root, args.run_id)
                 manifest = _assert_saved_run_agents(saved, args.agent)
+                verify_campaign_suite_authority(suite=suite, campaign=manifest)
                 frozen_ids = tuple(
                     str(value) for value in manifest["selected_definitions"]
                 )
@@ -824,15 +853,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         status["paths"] = paths.as_dict()
         status["run_id"] = paths.run_id
-        status["selection"] = _selection_metadata(args, suite, rows)
+        status["selection"] = _selection_metadata(suite, rows)
         if paths.root is not None:
             status["paths"]["reports"] = str(_reports_dir(paths.root))
-            if _is_frozen_campaign_selection(paths.results, rows):
+            persistence_gap = _canonical_campaign_persistence_gap(
+                suite=suite,
+                results_root=paths.results,
+                rows=rows,
+            )
+            if persistence_gap is None:
                 _write_derived_json(paths.root, "status.json", status)
             else:
                 print(
-                    "STATUS inspection only | selected definitions differ from "
-                    "frozen campaign; canonical reports/status.json unchanged",
+                    f"STATUS inspection only | {persistence_gap}; canonical "
+                    "reports/status.json unchanged",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -861,7 +895,7 @@ def main(argv: list[str] | None = None) -> int:
                 results_root=paths.results,
                 require_complete=not args.allow_incomplete,
                 selected_definitions={str(row["definition_id"]) for row in rows},
-                selection=_selection_metadata(args, suite, rows),
+                selection=_selection_metadata(suite, rows),
             )
         except ReportError as exc:
             raise SystemExit(
@@ -870,21 +904,24 @@ def main(argv: list[str] | None = None) -> int:
         report_data["run_id"] = paths.run_id
         if paths.root is not None:
             report_data["reports_dir"] = str(_reports_dir(paths.root))
-            canonical_selection = _is_frozen_campaign_selection(paths.results, rows)
-            if canonical_selection and not args.allow_incomplete:
+            persistence_gap = (
+                "--allow-incomplete is inspection-only"
+                if args.allow_incomplete
+                else _canonical_campaign_persistence_gap(
+                    suite=suite,
+                    results_root=paths.results,
+                    rows=rows,
+                )
+            )
+            if persistence_gap is None:
                 _write_derived_json(paths.root, "report.json", report_data)
                 decision = build_decision_evidence(report_data)
                 decision["run_id"] = paths.run_id
                 _write_derived_json(paths.root, "decision-evidence.json", decision)
             else:
-                reason = (
-                    "--allow-incomplete is inspection-only"
-                    if args.allow_incomplete
-                    else "selected definitions differ from frozen campaign"
-                )
                 print(
-                    f"REPORT inspection only | {reason}; canonical report.json "
-                    "and decision-evidence.json unchanged",
+                    f"REPORT inspection only | {persistence_gap}; canonical "
+                    "report.json and decision-evidence.json unchanged",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -1046,7 +1083,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         payload = {
             "paths": paths.as_dict(),
-            "selection": _selection_metadata(args, suite, rows),
+            "selection": _selection_metadata(suite, rows),
             "summary": dict(sorted(counts.items())),
             "ready": all(row["status"] in {"READY", "COMPLETE"} for row in results),
             "trials": results,
@@ -1071,7 +1108,11 @@ def _persist_completed_run_reports(
     assert paths.root is not None
     assert paths.results is not None
 
-    selection = _selection_metadata(args, suite, rows)
+    verify_campaign_suite_authority(
+        suite=suite,
+        campaign=read_campaign(paths.results),
+    )
+    selection = _selection_metadata(suite, rows)
     reports_dir = _reports_dir(paths.root)
     score_script, score_output = _score_contract(config, suite)
 

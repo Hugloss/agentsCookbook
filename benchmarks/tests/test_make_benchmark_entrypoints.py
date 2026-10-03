@@ -121,6 +121,9 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                     "benchmarks.__main__._assert_saved_run_agents",
                     return_value=manifest,
                 ),
+                mock.patch(
+                    "benchmarks.__main__.verify_campaign_suite_authority"
+                ) as verify_suite,
                 mock.patch("benchmarks.__main__.subprocess.run") as run,
             ):
                 run.return_value.returncode = 0
@@ -149,6 +152,8 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                     0,
                 )
 
+            verify_suite.assert_called_once()
+            self.assertIs(verify_suite.call_args.kwargs["campaign"], manifest)
             invocation = run.call_args.args[0]
             observed = [
                 invocation[index + 1]
@@ -308,8 +313,8 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                     return_value=dict(status_payload),
                 ),
                 mock.patch(
-                    "benchmarks.__main__._is_frozen_campaign_selection",
-                    return_value=True,
+                    "benchmarks.__main__._canonical_campaign_persistence_gap",
+                    return_value=None,
                 ),
                 redirect_stdout(io.StringIO()),
             ):
@@ -334,8 +339,8 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                     return_value={"schema": {"version": 7}, "expected_trials": 108},
                 ),
                 mock.patch(
-                    "benchmarks.__main__._is_frozen_campaign_selection",
-                    return_value=True,
+                    "benchmarks.__main__._canonical_campaign_persistence_gap",
+                    return_value=None,
                 ),
                 redirect_stdout(io.StringIO()),
             ):

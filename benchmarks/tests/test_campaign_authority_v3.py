@@ -10,6 +10,7 @@ from unittest import mock
 from benchmarks.harness.campaign_authority import (
     CampaignAuthorityError,
     admit_campaign,
+    campaign_suite_identity,
     campaign_trial_id,
     audit_campaign,
     claim_launch,
@@ -17,6 +18,7 @@ from benchmarks.harness.campaign_authority import (
     read_campaign,
     read_interrupted_attempts,
     record_interrupted_attempt,
+    verify_campaign_suite_authority,
 )
 from benchmarks.harness.identity import definition_id, execution_evidence_id
 from benchmarks.harness.suite import SuiteDefinition
@@ -71,6 +73,29 @@ def _fake_condition_authority(admission):
 
 
 class CampaignAuthorityTests(unittest.TestCase):
+    def test_frozen_suite_authority_has_one_owner(self) -> None:
+        suite = _suite()
+        campaign = {"suite_identity": campaign_suite_identity(suite)}
+        verify_campaign_suite_authority(suite=suite, campaign=campaign)
+
+        changed_tasks = dict(suite.tasks)
+        changed_tasks["task-a"] = {
+            **suite.tasks["task-a"],
+            "prompt": "changed after campaign admission",
+        }
+        changed = SuiteDefinition(
+            suite.root,
+            suite.experiment,
+            changed_tasks,
+            suite.subjects,
+            suite.agents,
+        )
+        with self.assertRaisesRegex(
+            CampaignAuthorityError,
+            "saved campaign suite authority differs from current suite",
+        ):
+            verify_campaign_suite_authority(suite=changed, campaign=campaign)
+
     def test_campaign_checks_every_task_and_subject_before_freezing(self) -> None:
         suite = _suite()
         rows = suite.trial_definitions()

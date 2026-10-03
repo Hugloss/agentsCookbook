@@ -15,8 +15,10 @@ from types import SimpleNamespace
 from unittest import mock
 
 from benchmarks.__main__ import (
+    _canonical_campaign_persistence_gap,
     _execute_run,
     _persist_completed_run_reports,
+    _selection_metadata,
     _validate_reporting_contract,
     main,
 )
@@ -261,6 +263,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
             root = Path(temporary)
             results = root / "results"
             results.mkdir()
+            _campaign(results, ["a" * 64])
             suite_root = root / "suite"
             suite_root.mkdir()
             score_script = suite_root / "score.py"
@@ -344,6 +347,9 @@ class SavedRunRecoveryTests(unittest.TestCase):
                 mock.patch(
                     "benchmarks.__main__.subprocess.run",
                     side_effect=score_run,
+                ),
+                mock.patch(
+                    "benchmarks.__main__.verify_campaign_suite_authority"
                 ),
             ):
                 written = _persist_completed_run_reports(
@@ -448,6 +454,43 @@ class SavedRunRecoveryTests(unittest.TestCase):
                     SimpleNamespace(root=root),
                     {},
                 )
+
+    def test_exact_definition_match_cannot_hide_suite_authority_drift(self) -> None:
+        suite_path = (
+            Path(__file__).resolve().parents[1]
+            / "suites/repository-intelligence/heldout-v1"
+        )
+        from benchmarks.harness.suite import load_suite
+
+        suite = load_suite(suite_path)
+        row = next(
+            row
+            for row in suite.trial_definitions()
+            if row["task_id"] == "locate-prefix-path-enumerator"
+            and row["condition_id"] == "none-opencode-native"
+        )
+        definition = str(row["definition_id"])
+        with tempfile.TemporaryDirectory() as temporary:
+            results = Path(temporary) / "results"
+            payload = {
+                "contract": "benchmark-campaign-authority.v3",
+                "selected_definitions": [definition],
+                "agents": {"opencode-native": {}},
+                "suite_identity": "0" * 64,
+            }
+            payload["campaign_id"] = digest(payload)
+            directory = results / ".campaign"
+            directory.mkdir(parents=True)
+            (directory / "authority.json").write_bytes(canonical_json(payload))
+
+            self.assertEqual(
+                _canonical_campaign_persistence_gap(
+                    suite=suite,
+                    results_root=results,
+                    rows=[row],
+                ),
+                "saved campaign suite authority differs from current suite",
+            )
 
     def test_subset_status_and_report_do_not_replace_canonical_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -608,6 +651,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
             root = Path(temporary)
             results = root / "results"
             results.mkdir()
+            _campaign(results, ["a" * 64])
             suite_root = root / "suite"
             suite_root.mkdir()
             score_script = suite_root / "score.py"
@@ -682,6 +726,9 @@ class SavedRunRecoveryTests(unittest.TestCase):
                         stderr="score failed",
                     ),
                 ),
+                mock.patch(
+                    "benchmarks.__main__.verify_campaign_suite_authority"
+                ),
                 self.assertRaisesRegex(ReportError, "score generation failed"),
             ):
                 _persist_completed_run_reports(
@@ -696,6 +743,49 @@ class SavedRunRecoveryTests(unittest.TestCase):
 
             for name, value in previous.items():
                 self.assertEqual((reports / name).read_text(encoding="utf-8"), value)
+
+    def test_selection_metadata_is_resolved_from_exact_rows(self) -> None:
+        suite = SimpleNamespace(
+            experiment={
+                "conditions": [
+                    {
+                        "id": "bare",
+                        "agent": "opencode-native",
+                        "subject": "none",
+                    },
+                    {
+                        "id": "assisted",
+                        "agent": "opencode-native",
+                        "subject": "hashmarks",
+                    },
+                ]
+            }
+        )
+        rows = [
+            {"task_id": "task-b", "condition_id": "assisted"},
+            {"task_id": "task-a", "condition_id": "bare"},
+            {"task_id": "task-a", "condition_id": "assisted"},
+        ]
+        self.assertEqual(
+            _selection_metadata(suite, rows),
+            {
+                "tasks": ["task-a", "task-b"],
+                "agents": ["opencode-native"],
+                "subjects": ["hashmarks", "none"],
+                "condition": None,
+                "bare_control_included": True,
+            },
+        )
+        self.assertEqual(
+            _selection_metadata(suite, [rows[0]]),
+            {
+                "tasks": ["task-b"],
+                "agents": ["opencode-native"],
+                "subjects": ["hashmarks"],
+                "condition": "assisted",
+                "bare_control_included": False,
+            },
+        )
 
     def test_reports_command_regenerates_complete_set_through_one_owner(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -742,6 +832,9 @@ class SavedRunRecoveryTests(unittest.TestCase):
                     return_value=(Path("score.py"), Path("score.json")),
                 ),
                 mock.patch(
+                    "benchmarks.__main__.verify_campaign_suite_authority"
+                ) as verify_suite,
+                mock.patch(
                     "benchmarks.__main__.campaign_status",
                     return_value=final_status,
                 ),
@@ -767,6 +860,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
                     ),
                     0,
                 )
+            verify_suite.assert_called_once()
             select_frozen.assert_called_once_with(
                 suite,
                 agents=("opencode-native",),

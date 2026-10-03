@@ -27,6 +27,33 @@ class CampaignAuthorityError(RuntimeError):
     pass
 
 
+def campaign_suite_identity(suite: SuiteDefinition) -> str:
+    """Return the suite authority sealed into campaign admission."""
+    return digest(
+        {
+            "experiment": suite.experiment,
+            "tasks": {
+                key: suite.tasks[key]
+                for key in suite.experiment["tasks"]
+            },
+            "agents": suite.agents,
+            "subjects": suite.subjects,
+        }
+    )
+
+
+def verify_campaign_suite_authority(
+    *,
+    suite: SuiteDefinition,
+    campaign: Mapping[str, Any],
+) -> None:
+    """Reject canonical interpretation under suite bytes not frozen at admission."""
+    if campaign.get("suite_identity") != campaign_suite_identity(suite):
+        raise CampaignAuthorityError(
+            "saved campaign suite authority differs from current suite"
+        )
+
+
 def _agent_common(admission: TrialAdmission) -> dict[str, Any]:
     observed = admission.agent_authority["observed"]
     return {
@@ -570,14 +597,7 @@ def audit_campaign(
         "agents": agents,
         "subjects": subjects,
         "task_inputs": task_inputs,
-        "suite_identity": digest(
-            {
-                "experiment": suite.experiment,
-                "tasks": {key: suite.tasks[key] for key in suite.experiment["tasks"]},
-                "agents": suite.agents,
-                "subjects": suite.subjects,
-            }
-        ),
+        "suite_identity": campaign_suite_identity(suite),
         "oracle_review_sha256": (
             hashlib.sha256(review_path.read_bytes()).hexdigest()
             if (review_path := oracle_review_path(suite)).is_file()
@@ -678,21 +698,7 @@ def verify_saved_campaign(
             "saved campaign selection differs from current benchmark selection"
         )
 
-    expected_suite_identity = digest(
-        {
-            "experiment": suite.experiment,
-            "tasks": {
-                key: suite.tasks[key]
-                for key in suite.experiment["tasks"]
-            },
-            "agents": suite.agents,
-            "subjects": suite.subjects,
-        }
-    )
-    if observed.get("suite_identity") != expected_suite_identity:
-        raise CampaignAuthorityError(
-            "saved campaign suite authority differs from current suite"
-        )
+    verify_campaign_suite_authority(suite=suite, campaign=observed)
 
     if oracle_reviews_declared(suite):
         validate_oracle_reviews(suite, require_complete=True)
