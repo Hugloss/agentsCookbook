@@ -309,6 +309,10 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                     "benchmarks.__main__.campaign_status",
                     return_value=dict(status_payload),
                 ),
+                mock.patch(
+                    "benchmarks.__main__._is_frozen_campaign_selection",
+                    return_value=True,
+                ),
                 redirect_stdout(io.StringIO()),
             ):
                 self.assertEqual(
@@ -330,6 +334,10 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 mock.patch(
                     "benchmarks.__main__.build_report",
                     return_value={"schema": {"version": 7}, "expected_trials": 108},
+                ),
+                mock.patch(
+                    "benchmarks.__main__._is_frozen_campaign_selection",
+                    return_value=True,
                 ),
                 redirect_stdout(io.StringIO()),
             ):
@@ -426,6 +434,10 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             stderr = io.StringIO()
             with (
                 mock.patch("benchmarks.__main__._resolve_config", return_value=config),
+                mock.patch(
+                    "benchmarks.__main__._validate_reporting_contract",
+                    return_value=(suite_path / "score.py", Path("score.json")),
+                ),
                 mock.patch("benchmarks.__main__.select_saved_run", return_value=SavedRun("000001", root)),
                 mock.patch("benchmarks.__main__._assert_saved_run_selection"),
                 mock.patch("benchmarks.__main__.verify_saved_campaign", return_value={"campaign_id": "c" * 64}),
@@ -481,6 +493,10 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             stderr = io.StringIO()
             with (
                 mock.patch("benchmarks.__main__._resolve_config", return_value=config),
+                mock.patch(
+                    "benchmarks.__main__._validate_reporting_contract",
+                    return_value=(suite_path / "score.py", Path("score.json")),
+                ),
                 mock.patch("benchmarks.__main__.select_saved_run", return_value=SavedRun("000001", root)),
                 mock.patch("benchmarks.__main__._assert_saved_run_selection"),
                 mock.patch("benchmarks.__main__.verify_saved_campaign", return_value={"campaign_id": "c" * 64}),
