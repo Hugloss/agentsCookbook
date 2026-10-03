@@ -293,7 +293,15 @@ def run_bounded(
     timer.daemon = True
     timer.start()
     try:
-        return_code = process.wait()
+        try:
+            return_code = process.wait()
+        except BaseException:
+            terminate()
+            try:
+                process.wait(timeout=5.0)
+            except (OSError, subprocess.SubprocessError):
+                pass
+            raise
     finally:
         timer.cancel()
         for thread in threads:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import io
 import os
 import shutil
 import subprocess
@@ -9,6 +10,7 @@ import tempfile
 import unittest
 import warnings
 from pathlib import Path
+from unittest import mock
 
 from benchmarks.adapters.oracles import CommandOracle
 from benchmarks.harness.campaign import TrialSpec, pending
@@ -129,6 +131,38 @@ class ExecutionFoundationTests(unittest.TestCase):
             )
             self.assertEqual(result.return_code, 0)
             self.assertEqual(result.stdout.decode().strip(), "closed")
+
+    def test_bounded_process_interrupt_terminates_process_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            process = mock.Mock(pid=4321)
+            process.stdout = io.BytesIO()
+            process.stderr = io.BytesIO()
+            process.poll.return_value = None
+            process.wait.side_effect = [KeyboardInterrupt(), 0]
+
+            with (
+                mock.patch(
+                    "scripts.agent_economics.bounded_process.subprocess.Popen",
+                    return_value=process,
+                ),
+                mock.patch(
+                    "scripts.agent_economics.bounded_process._terminate_tree",
+                    return_value="posix-process-group",
+                ) as terminate_tree,
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    run_bounded(
+                        repository_root=root,
+                        argv=("opencode", "run"),
+                        limits=ProcessLimits(timeout_seconds=10),
+                    )
+
+            terminate_tree.assert_called_once_with(process)
+            self.assertEqual(
+                process.wait.call_args_list,
+                [mock.call(), mock.call(timeout=5.0)],
+            )
 
     def test_oracle_requires_positive_health(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
