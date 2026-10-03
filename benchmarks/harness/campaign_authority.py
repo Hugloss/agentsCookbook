@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
 
-from .admission import TrialAdmission, admit_trial, harness_identity
+from .admission import TrialAdmission, TrialAdmissionError, admit_trial, harness_identity
 from .bundle import verify_bundle
 from .identity import canonical_json, digest, execution_id
 from .oracle_reviews import (
@@ -661,6 +661,82 @@ def admit_campaign(
                 }
             )
         return payload
+
+
+def verify_saved_campaign(
+    *,
+    suite: SuiteDefinition,
+    rows: list[dict[str, Any]],
+    results_root: Path,
+    harness_root: Path,
+) -> dict[str, Any]:
+    """Verify frozen campaign authority without replaying participant admission."""
+    observed = read_campaign(results_root)
+    selected = sorted(str(row["definition_id"]) for row in rows)
+    if observed.get("selected_definitions") != selected:
+        raise CampaignAuthorityError(
+            "saved campaign selection differs from current benchmark selection"
+        )
+
+    expected_suite_identity = digest(
+        {
+            "experiment": suite.experiment,
+            "tasks": {
+                key: suite.tasks[key]
+                for key in suite.experiment["tasks"]
+            },
+            "agents": suite.agents,
+            "subjects": suite.subjects,
+        }
+    )
+    if observed.get("suite_identity") != expected_suite_identity:
+        raise CampaignAuthorityError(
+            "saved campaign suite authority differs from current suite"
+        )
+
+    if oracle_reviews_declared(suite):
+        validate_oracle_reviews(suite, require_complete=True)
+    review_path = oracle_review_path(suite)
+    try:
+        current_review = (
+            hashlib.sha256(review_path.read_bytes()).hexdigest()
+            if review_path.is_file()
+            else None
+        )
+    except OSError as exc:
+        raise CampaignAuthorityError(
+            "oracle review evidence disappeared"
+        ) from exc
+    if observed.get("oracle_review_sha256") != current_review:
+        raise CampaignAuthorityError(
+            "saved campaign oracle review authority changed"
+        )
+
+    try:
+        current_harness = harness_identity(harness_root)
+    except TrialAdmissionError as exc:
+        raise CampaignAuthorityError(str(exc)) from exc
+
+    for task_id, condition_id in sorted(
+        {
+            (str(row["task_id"]), str(row["condition_id"]))
+            for row in rows
+        }
+    ):
+        authority = (
+            observed.get("task_conditions", {})
+            .get(task_id, {})
+            .get(condition_id)
+        )
+        if not isinstance(authority, dict):
+            raise CampaignAuthorityError(
+                f"saved campaign lacks authority for {task_id}/{condition_id}"
+            )
+        if authority.get("harness") != current_harness:
+            raise CampaignAuthorityError(
+                "saved campaign harness authority changed; use a new run"
+            )
+    return observed
 
 
 def campaign_trial_id(

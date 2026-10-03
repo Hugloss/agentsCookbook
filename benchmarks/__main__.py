@@ -25,6 +25,7 @@ from benchmarks.harness.campaign_authority import (
     admit_campaign,
     audit_campaign,
     read_campaign,
+    verify_saved_campaign,
 )
 from benchmarks.harness.preflight import preflight_trial
 from benchmarks.harness.oracle_reviews import (
@@ -37,7 +38,11 @@ from benchmarks.harness.oracle_review_runner import run_pending_oracle_reviews
 from benchmarks.harness.readiness import check_runtime_readiness
 from benchmarks.harness.runtime_authority import required_runtime_authority
 from benchmarks.harness.report import ReportError, build_report
-from benchmarks.harness.runner import TrialRunnerError, run_trial
+from benchmarks.harness.runner import (
+    TrialRunnerError,
+    reuse_completed_trial,
+    run_trial,
+)
 from benchmarks.harness.run_store import (
     RunStoreError,
     active_definition,
@@ -738,17 +743,18 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     saved = select_saved_run(args.root, args.run_id)
                     _assert_saved_run_selection(saved, suite=suite, rows=rows)
-                    campaign = admit_campaign(
+                    resume_started = time.monotonic()
+                    campaign = verify_saved_campaign(
                         suite=suite,
                         rows=rows,
                         results_root=saved.root / "results",
                         harness_root=args.harness_root,
-                        cache_root=saved.root / "cache",
-                        work_root=saved.root / "work",
-                        local_source=args.source,
-                        codex_auth=args.codex_auth,
-                        source=runtime_source,
-                        on_progress=on_admission_progress,
+                    )
+                    print(
+                        "RESUME campaign authority | verified | "
+                        f"{int(round((time.monotonic() - resume_started) * 1000))}ms",
+                        file=sys.stderr,
+                        flush=True,
                     )
                 if args.command == "prepare":
                     print(json.dumps({
@@ -868,6 +874,10 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source) -> int:
         selected_definitions=selected_definitions,
     )
     live_progress = LiveCampaignProgress(suite, rows, initial_status)
+    initial_rows = {
+        str(item["definition_id"]): item
+        for item in initial_status["rows"]
+    }
     print(
         f"RUN {paths.run_id} ({paths.root}) | CAMPAIGN {len(rows)} trials | "
         f"verified {initial_status['complete_trials']} | "
@@ -895,23 +905,49 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source) -> int:
             emit=lambda line: print(line, file=sys.stderr, flush=True),
         )
         try:
-            with heartbeat, active_trial(args.root, paths.run_id, str(row["definition_id"])):
-                result = run_trial(
-                    suite=suite,
-                    task_id=str(row["task_id"]),
-                    condition_id=str(row["condition_id"]),
-                    trial_index=int(row["trial"]),
-                    harness_root=args.harness_root,
-                    cache_root=paths.cache,
+            frozen_status = initial_rows.get(str(row["definition_id"]))
+            if (
+                isinstance(frozen_status, dict)
+                and frozen_status.get("state") == "COMPLETE"
+            ):
+                trial_ids = frozen_status.get("trial_ids")
+                if (
+                    not isinstance(trial_ids, list)
+                    or len(trial_ids) != 1
+                    or not isinstance(trial_ids[0], str)
+                ):
+                    raise TrialRunnerError(
+                        "completed campaign row has invalid trial identity"
+                    )
+                result = reuse_completed_trial(
                     results_root=paths.results,
-                    work_root=paths.work,
-                    local_source=args.source,
-                    codex_auth=args.codex_auth,
-                    source=runtime_source,
-                    campaign=campaign,
-                    on_progress=heartbeat.update_stage,
+                    definition_id=str(row["definition_id"]),
+                    trial_id=trial_ids[0],
                 )
-            receipt = json.loads((result.result_dir / "result.json").read_text(encoding="utf-8"))
+            else:
+                with heartbeat, active_trial(
+                    args.root,
+                    paths.run_id,
+                    str(row["definition_id"]),
+                ):
+                    result = run_trial(
+                        suite=suite,
+                        task_id=str(row["task_id"]),
+                        condition_id=str(row["condition_id"]),
+                        trial_index=int(row["trial"]),
+                        harness_root=args.harness_root,
+                        cache_root=paths.cache,
+                        results_root=paths.results,
+                        work_root=paths.work,
+                        local_source=args.source,
+                        codex_auth=args.codex_auth,
+                        source=runtime_source,
+                        campaign=campaign,
+                        on_progress=heartbeat.update_stage,
+                    )
+            receipt = json.loads(
+                (result.result_dir / "result.json").read_text(encoding="utf-8")
+            )
             summary = live_matrix.record(row, receipt)
         except Exception as exc:
             print(
