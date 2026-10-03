@@ -54,7 +54,12 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
                         "stability": [],
                         "task_agent_authority": [],
                         "subject_adoption": [],
-                        "diagnostics": [],
+                        "diagnostics": [
+                            {
+                                "reason_code": "agent-terminal-failed",
+                                "reason": "agent terminal event was turn.failed: fixture",
+                            }
+                        ],
                         "agent_profiles": {},
                         "cross_agent_observations": [],
                     }
@@ -100,6 +105,11 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
                     expected_ids,
                 )
                 self.assertEqual(payload["projection_mode"], "live")
+                for language in payload["languages"].values():
+                    self.assertEqual(
+                        language["diagnostics"][0]["reason"],
+                        "agent terminal event was turn.failed: fixture",
+                    )
                 self.assertEqual(
                     payload["campaign_qualification"]["status"],
                     "QUALIFIED",
