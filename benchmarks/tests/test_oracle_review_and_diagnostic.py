@@ -168,7 +168,16 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
                 row["review_requirement"]["minimum_independent_reviews"],
                 2,
             )
-            self.assertTrue(row["review_requirement"]["escalation_reason"])
+            escalation_reason = row["review_requirement"]["escalation_reason"]
+            self.assertIn("Heldout run 000007", escalation_reason)
+            self.assertIn(
+                "report sha256:9d1a40bc6f0e5bc1831fe272b36fed3575e5559218198fbc68315dff1f746fd1",
+                escalation_reason,
+            )
+            self.assertIn(
+                "decision-evidence sha256:24d979dde9b71d945e78d3380fbd7fd3509104c1e703176a0af3493b614080c9",
+                escalation_reason,
+            )
             self.assertEqual(len(row["reviews"]), 2)
             self.assertEqual(
                 {review["decision"] for review in row["reviews"]},
