@@ -107,7 +107,7 @@ def main() -> int:
             "cross_agent_observations": report["cross_agent_observations"],
         }
     payload = {
-        "schema": "agents-cookbook-heldout-observer-outcomes.v8",
+        "schema": "agents-cookbook-heldout-observer-outcomes.v9",
         "projection_mode": (
             "offline-regrade" if args.regrade_source_results is not None else "live"
         ),
