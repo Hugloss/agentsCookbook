@@ -236,6 +236,7 @@ def _native_environment(context: TrialContext) -> dict[str, str]:
         "TMP": context.environment["TMP"],
         "TEMP": context.environment["TEMP"],
         "XDG_CACHE_HOME": context.environment["XDG_CACHE_HOME"],
+        "XDG_DATA_HOME": context.environment["XDG_DATA_HOME"],
         "XDG_STATE_HOME": context.environment["XDG_STATE_HOME"],
     }
     for name in PROCESS_SUBSTRATE_ENV_KEYS:
@@ -644,6 +645,9 @@ class OpenCodeNativeAgent:
                     "available": False,
                     "reason": reason,
                     "failure_stage": envelope.get("failure_stage")
+                    if envelope
+                    else None,
+                    "native_config_probe": envelope.get("native_config_probe")
                     if envelope
                     else None,
                     "runtime_process": result.metrics(),

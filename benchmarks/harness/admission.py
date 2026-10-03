@@ -214,7 +214,7 @@ def runtime_environment_identity(
         digest.update(value.encode())
         digest.update(b"\0")
     return {
-        "isolation_contract": ("explicit-benchmark-environment-v3"),
+        "isolation_contract": ("explicit-benchmark-environment-v4"),
         "system": platform.system(),
         "machine": platform.machine(),
         "python": platform.python_version(),

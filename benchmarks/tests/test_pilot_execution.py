@@ -824,6 +824,10 @@ class PilotExecutionTests(unittest.TestCase):
                 str((root / "opencode-config").resolve()),
             )
             self.assertEqual(
+                environment["XDG_DATA_HOME"],
+                context.environment["XDG_DATA_HOME"],
+            )
+            self.assertEqual(
                 environment["XDG_STATE_HOME"],
                 context.environment["XDG_STATE_HOME"],
             )
