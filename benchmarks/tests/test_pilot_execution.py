@@ -1507,7 +1507,7 @@ class PilotExecutionTests(unittest.TestCase):
                 "subject_exposure_sha256": None,
                 "model": "test-provider/test-model",
                 "provider": "test-provider",
-                "runtime_contract": "agents-cookbook-opencode-runtime/v2",
+                "runtime_contract": "agents-cookbook-opencode-runtime/v3",
             }
             (control / "opencode-native-evidence.json").write_text(
                 json.dumps(evidence),
@@ -1585,7 +1585,7 @@ class PilotExecutionTests(unittest.TestCase):
                 "subject_exposure_sha256": None,
                 "model": "test-provider/test-model",
                 "provider": "test-provider",
-                "runtime_contract": "agents-cookbook-opencode-runtime/v2",
+                "runtime_contract": "agents-cookbook-opencode-runtime/v3",
             }
             (control / "opencode-native-evidence.json").write_text(
                 json.dumps(evidence),
@@ -1666,7 +1666,7 @@ class PilotExecutionTests(unittest.TestCase):
                 "subject_exposure_sha256": None,
                 "model": "test-provider/test-model",
                 "provider": "test-provider",
-                "runtime_contract": "agents-cookbook-opencode-runtime/v2",
+                "runtime_contract": "agents-cookbook-opencode-runtime/v3",
             }
             (control / "opencode-native-evidence.json").write_text(
                 json.dumps(evidence),
