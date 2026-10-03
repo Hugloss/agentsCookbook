@@ -88,12 +88,45 @@ class DecisionEvidenceTests(unittest.TestCase):
                 {
                     "agent_id": "opencode-native",
                     "subject_id": "hashmarks",
-                    "state": "configured-never-invoked",
+                    "state": "invoked-some-observed",
+                    "trials": 3,
+                    "available_trials": 3,
+                    "configured_trials": 3,
+                    "invocation_observed_trials": 3,
+                    "invoked_trials": 1,
+                    "not_invoked_trials": 2,
                     "invocation_unknown_trials": 0,
                 }
             ],
             "paired_assistance_summary": [],
-            "paired_assistance_usage_summary": [],
+            "paired_assistance_usage_summary": [
+                {
+                    "agent_id": "opencode-native",
+                    "subject_id": "hashmarks",
+                    "invocation_state": "invoked",
+                    "total_pairs": 1,
+                    "subject_mcp_calls": 1,
+                    "transitions": {
+                        "gain": 1,
+                        "preserved": 0,
+                        "unresolved": 0,
+                        "regression": 0,
+                    },
+                },
+                {
+                    "agent_id": "opencode-native",
+                    "subject_id": "hashmarks",
+                    "invocation_state": "not-invoked",
+                    "total_pairs": 2,
+                    "subject_mcp_calls": 0,
+                    "transitions": {
+                        "gain": 0,
+                        "preserved": 1,
+                        "unresolved": 0,
+                        "regression": 1,
+                    },
+                },
+            ],
             "task_assistance_evidence": [
                 {
                     "task_id": "semantic-task",
@@ -109,7 +142,7 @@ class DecisionEvidenceTests(unittest.TestCase):
 
         self.assertEqual(
             evidence["schema"],
-            "agents-cookbook-benchmark-decision-evidence.v1",
+            "agents-cookbook-benchmark-decision-evidence.v2",
         )
         self.assertTrue(evidence["authority"]["derived_only"])
         self.assertFalse(evidence["authority"]["ranking_performed"])
@@ -133,6 +166,26 @@ class DecisionEvidenceTests(unittest.TestCase):
                 "bare-headroom-observed": 1,
                 "subject-not-invoked": 1,
             },
+        )
+        funnel = evidence["surfaces"]["assistance"]["funnel"][0]
+        self.assertEqual(funnel["availability"]["rate"], 1.0)
+        self.assertEqual(funnel["adoption"]["rate"], 1 / 3)
+        self.assertEqual(
+            funnel["usefulness_when_invoked"]["transitions"],
+            {
+                "gain": 1,
+                "preserved": 0,
+                "unresolved": 0,
+                "regression": 0,
+            },
+        )
+        self.assertEqual(
+            funnel["condition_outcomes_when_not_invoked"]["transitions"]["regression"],
+            1,
+        )
+        self.assertIn(
+            "cannot be attributed",
+            funnel["interpretation"]["not_invoked"],
         )
         self.assertEqual(
             evidence["evidence_gaps"]["source_read_observability"],
