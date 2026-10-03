@@ -760,6 +760,21 @@ def main(argv: list[str] | None = None) -> int:
                     agents=tuple(args.agent),
                     definition_ids=frozen_ids,
                 )
+                conditions = {
+                    str(condition["id"]): condition
+                    for condition in suite.experiment["conditions"]
+                }
+                args.task = sorted({str(row["task_id"]) for row in rows})
+                args.subject = sorted(
+                    {
+                        str(conditions[str(row["condition_id"])]["subject"])
+                        for row in rows
+                    }
+                )
+                condition_ids = sorted(
+                    {str(row["condition_id"]) for row in rows}
+                )
+                args.condition = condition_ids[0] if len(condition_ids) == 1 else None
                 paths = resolve_campaign_paths(
                     root=saved.root,
                     cache=None,
