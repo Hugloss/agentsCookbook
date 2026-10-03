@@ -4,32 +4,44 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from benchmarks.evidence import load_cases
 from benchmarks.harness.report import ReportError, build_report
-from benchmarks.harness.selection import parse_agent_arguments
+from benchmarks.harness.selection import (
+    SelectionError,
+    parse_agent_arguments,
+    select_scoring_definitions,
+)
 from benchmarks.harness.suite import load_suite
 
 
 FAMILIES = ("logs", "splunk", "dependencies", "semantics", "identities", "code_owners")
 
 
-def score(*, suite_root: Path, results: Path, agents: tuple[str, ...]) -> dict:
+def score(
+    *,
+    suite_root: Path,
+    results: Path,
+    agents: tuple[str, ...],
+    definition_ids: tuple[str, ...] = (),
+) -> dict:
     suite = load_suite(suite_root)
     evidence_cases = load_cases(suite_root / "evidence.json")
     reviewed = sum(case["review"]["state"] == "approved" for case in evidence_cases)
     if not agents or set(agents) - set(suite.agents):
         raise ValueError("select one or both frozen native agents explicitly")
-    conditions = {row["id"]: row for row in suite.experiment["conditions"]}
-    definitions = suite.trial_definitions()
-    all_selected = {
-        row["definition_id"]
-        for row in definitions
-        if conditions[row["condition_id"]]["agent"] in agents
-    }
-    if len(all_selected) != 108 * len(agents):
-        raise ValueError("selected agents do not cover the frozen six-arm suite")
+    try:
+        selected_rows = select_scoring_definitions(
+            suite,
+            agents=agents,
+            definition_ids=definition_ids,
+        )
+    except SelectionError as exc:
+        raise ValueError(str(exc)) from exc
+    all_selected = {str(row["definition_id"]) for row in selected_rows}
     whole = build_report(
         suite=suite,
         results_root=results,
@@ -38,19 +50,14 @@ def score(*, suite_root: Path, results: Path, agents: tuple[str, ...]) -> dict:
     )
     families = {}
     for family in FAMILIES:
-        tasks = {
-            task_id
-            for task_id, task in suite.tasks.items()
-            if task.get("family") == family
-        }
-        selected = {
-            row["definition_id"]
-            for row in definitions
-            if row["task_id"] in tasks
-            and conditions[row["condition_id"]]["agent"] in agents
-        }
-        if len(tasks) != 6 or len(selected) != 18 * len(agents):
-            raise ValueError(f"{family}: expected six tasks and 18 trials per agent")
+        family_rows = [
+            row
+            for row in selected_rows
+            if suite.tasks[str(row["task_id"])].get("family") == family
+        ]
+        if not family_rows:
+            continue
+        selected = {str(row["definition_id"]) for row in family_rows}
         report = build_report(
             suite=suite,
             results_root=results,
@@ -58,7 +65,7 @@ def score(*, suite_root: Path, results: Path, agents: tuple[str, ...]) -> dict:
             require_complete=True,
         )
         families[family] = {
-            "task_ids": sorted(tasks),
+            "task_ids": sorted({str(row["task_id"]) for row in family_rows}),
             "expected_trials": report["expected_trials"],
             "observed_trials": report["observed_trials"],
             "status_counts": report["status_counts"],
@@ -71,8 +78,12 @@ def score(*, suite_root: Path, results: Path, agents: tuple[str, ...]) -> dict:
     )
     return {
         "schema": "agents-cookbook-multidomain-observer-outcomes.v1",
-        "selection": {"agents": sorted(agents)},
-        "expected_trials": 108 * len(agents),
+        "selection": {
+            "agents": sorted(agents),
+            "definition_count": len(all_selected),
+            "definition_ids": sorted(all_selected),
+        },
+        "expected_trials": whole["expected_trials"],
         "observed_trials": whole["observed_trials"],
         "families": families,
         "authority": {
@@ -92,6 +103,7 @@ def main() -> int:
     parser.add_argument("--results", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--agent", action="append", required=True)
+    parser.add_argument("--definition-id", action="append", default=[])
     args = parser.parse_args()
     try:
         agents = parse_agent_arguments(args.agent)
@@ -99,13 +111,23 @@ def main() -> int:
             suite_root=Path(__file__).resolve().parent,
             results=args.results,
             agents=agents,
+            definition_ids=tuple(args.definition_id),
         )
-    except (ValueError, ReportError) as exc:
+    except (SelectionError, ValueError, ReportError) as exc:
         parser.exit(2, f"ERROR: {exc}\n")
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    fd, temporary = tempfile.mkstemp(
+        prefix=f".{args.output.name}.",
+        dir=args.output.parent,
     )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, args.output)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
     return 0
 
 
