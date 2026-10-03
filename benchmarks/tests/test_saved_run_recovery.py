@@ -733,7 +733,10 @@ class SavedRunRecoveryTests(unittest.TestCase):
             with (
                 mock.patch("benchmarks.__main__._resolve_config", return_value=config),
                 mock.patch("benchmarks.__main__.load_suite", return_value=suite),
-                mock.patch("benchmarks.__main__._select", return_value=[row]),
+                mock.patch(
+                    "benchmarks.__main__.select_scoring_definitions",
+                    return_value=[row],
+                ) as select_frozen,
                 mock.patch(
                     "benchmarks.__main__._validate_reporting_contract",
                     return_value=(Path("score.py"), Path("score.json")),
@@ -764,6 +767,11 @@ class SavedRunRecoveryTests(unittest.TestCase):
                     ),
                     0,
                 )
+            select_frozen.assert_called_once_with(
+                suite,
+                agents=("opencode-native",),
+                definition_ids=(definition,),
+            )
             persist.assert_called_once()
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["run_id"], "000001")
