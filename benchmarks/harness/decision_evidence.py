@@ -19,6 +19,94 @@ def _counter(values: list[str]) -> dict[str, int]:
     return dict(sorted(Counter(values).items()))
 
 
+def _assistance_funnel(
+    subject_adoption: list[dict[str, Any]],
+    usage_summary: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    usage = {
+        (
+            str(row.get("agent_id")),
+            str(row.get("subject_id")),
+            str(row.get("invocation_state")),
+        ): row
+        for row in usage_summary
+        if isinstance(row, dict)
+    }
+
+    def conditional(
+        agent_id: str,
+        subject_id: str,
+        state: str,
+    ) -> dict[str, Any]:
+        row = usage.get((agent_id, subject_id, state), {})
+        transitions = row.get("transitions")
+        if not isinstance(transitions, dict):
+            transitions = {}
+        return {
+            "pairs": int(row.get("total_pairs", 0) or 0),
+            "subject_mcp_calls": int(row.get("subject_mcp_calls", 0) or 0),
+            "transitions": {
+                name: int(transitions.get(name, 0) or 0)
+                for name in ("gain", "preserved", "unresolved", "regression")
+            },
+        }
+
+    output: list[dict[str, Any]] = []
+    for row in subject_adoption:
+        agent_id = str(row.get("agent_id"))
+        subject_id = str(row.get("subject_id"))
+        trials = int(row.get("trials", 0) or 0)
+        available = int(row.get("available_trials", 0) or 0)
+        configured = int(row.get("configured_trials", 0) or 0)
+        observed = int(row.get("invocation_observed_trials", 0) or 0)
+        invoked = int(row.get("invoked_trials", 0) or 0)
+        not_invoked = int(row.get("not_invoked_trials", 0) or 0)
+        unknown = int(row.get("invocation_unknown_trials", 0) or 0)
+        output.append(
+            {
+                "agent_id": agent_id,
+                "subject_id": subject_id,
+                "availability": {
+                    "trials": trials,
+                    "available_trials": available,
+                    "rate": available / trials if trials else None,
+                },
+                "configuration": {
+                    "configured_trials": configured,
+                    "rate": configured / trials if trials else None,
+                },
+                "adoption": {
+                    "observed_trials": observed,
+                    "invoked_trials": invoked,
+                    "not_invoked_trials": not_invoked,
+                    "unknown_trials": unknown,
+                    "rate": invoked / observed if observed else None,
+                },
+                "usefulness_when_invoked": conditional(
+                    agent_id, subject_id, "invoked"
+                ),
+                "condition_outcomes_when_not_invoked": conditional(
+                    agent_id, subject_id, "not-invoked"
+                ),
+                "condition_outcomes_when_invocation_unknown": conditional(
+                    agent_id, subject_id, "unknown"
+                ),
+                "interpretation": {
+                    "overall_paired_summary": (
+                        "condition effect; combines invoked and non-invoked assisted pairs"
+                    ),
+                    "usefulness_when_invoked": (
+                        "descriptive outcome transitions only where subject use was observed"
+                    ),
+                    "not_invoked": (
+                        "cannot be attributed to the subject tool because it was not invoked"
+                    ),
+                },
+            }
+        )
+    return output
+
+
 def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
     """Summarize decision-relevant evidence without adding a scoring authority."""
 
@@ -84,6 +172,11 @@ def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
     subject_adoption = [
         row
         for row in report.get("subject_adoption", [])
+        if isinstance(row, dict)
+    ]
+    usage_summary = [
+        row
+        for row in report.get("paired_assistance_usage_summary", [])
         if isinstance(row, dict)
     ]
     adoption_states = [
@@ -164,7 +257,7 @@ def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
         evidence_signals.append("native-tool-strategy-partially-observed")
 
     return {
-        "schema": "agents-cookbook-benchmark-decision-evidence.v1",
+        "schema": "agents-cookbook-benchmark-decision-evidence.v2",
         "authority": {
             "derived_only": True,
             "ranking_performed": False,
@@ -234,10 +327,8 @@ def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
             "assistance": {
                 "subject_adoption": subject_adoption,
                 "paired_summary": report.get("paired_assistance_summary", []),
-                "usage_summary": report.get(
-                    "paired_assistance_usage_summary",
-                    [],
-                ),
+                "usage_summary": usage_summary,
+                "funnel": _assistance_funnel(subject_adoption, usage_summary),
                 "task_signal_counts": _counter(task_signals),
                 "task_evidence": task_assistance,
             },

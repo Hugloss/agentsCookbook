@@ -174,7 +174,7 @@ class LiveTaskMatrixTests(unittest.TestCase):
             "6203         | INCOMPLETE | FAIL      | PASS ",
             rendered,
         )
-        self.assertIn("Paired vs Bare", rendered)
+        self.assertIn("Assisted condition vs Bare (all pairs)", rendered)
         self.assertIn(
             "Hashmarks | 2    | 0         | 0          | 0          | 1",
             rendered,
@@ -183,6 +183,13 @@ class LiveTaskMatrixTests(unittest.TestCase):
             "Enola     | 1    | 0         | 1          | 0          | 1",
             rendered,
         )
+        self.assertIn("Paired outcome by subject use", rendered)
+        self.assertIn("subject-use observed", rendered)
+        self.assertIn("not attributable to subject tool", rendered)
+        self.assertIn("invocation unknown", rendered)
+        self.assertIn("Hashmarks | invoked", rendered)
+        self.assertIn("Hashmarks | not-invoked", rendered)
+        self.assertIn("Enola     | unknown", rendered)
         self.assertIn("Subject tool use", rendered)
         self.assertIn(
             "Hashmarks | 2       | 1           | 0       | 3              | find,task_evidence",
