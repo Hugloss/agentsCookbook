@@ -19,6 +19,9 @@ from benchmarks.harness.runner import TrialRunResult
 from benchmarks.harness.suite import SuiteDefinition
 
 
+_QUALIFYING_OUTCOMES = {"PASS", "FAIL", "NO_QUALIFYING_DEFECT"}
+
+
 def _subject_label(subject: str) -> str:
     if subject == "none":
         return "Bare"
@@ -447,11 +450,21 @@ class LiveCampaignProgress:
         self._verified = int(initial_status["complete_trials"])
         self._pending = int(initial_status["pending_trials"])
         self._interrupted = int(initial_status["interrupted_trials"])
+        self._unresolved = int(initial_status.get("unresolved_outcome_trials", 0))
         self._task_order: list[str] = []
         for row in selected_rows:
             task_id = str(row["task_id"])
             if task_id not in self._task_order:
                 self._task_order.append(task_id)
+
+    def _qualification_suffix(self) -> str:
+        if self._unresolved <= 0:
+            return ""
+        noun = "outcome" if self._unresolved == 1 else "outcomes"
+        return (
+            f" | qualification BLOCKED | unresolved {self._unresolved} {noun} "
+            "| continuing diagnostic evidence"
+        )
 
     def start_line(self, row: dict[str, Any], *, elapsed: float) -> str:
         condition = self._conditions[str(row["condition_id"])]
@@ -467,6 +480,7 @@ class LiveCampaignProgress:
             f"run elapsed {_duration(elapsed)} | verified {self._verified}/{self._total} | "
             f"pending {self._pending} | interrupted {self._interrupted} | "
             f"execution ETA {_duration(eta)}"
+            f"{self._qualification_suffix()}"
         )
 
     def finish_line(
@@ -485,6 +499,8 @@ class LiveCampaignProgress:
             elif previous == "INTERRUPTED":
                 self._interrupted -= 1
             self._states[result.definition_id] = "COMPLETE"
+            if result.status not in _QUALIFYING_OUTCOMES:
+                self._unresolved += 1
         if not result.reused and trial_seconds > 0:
             self._durations.append(trial_seconds)
             condition_id = self._definition_condition[result.definition_id]
@@ -507,6 +523,7 @@ class LiveCampaignProgress:
             f"run elapsed {_duration(elapsed)} | pending {self._pending} | "
             f"interrupted {self._interrupted} | avg {_duration(average)}/execution | "
             f"execution ETA {_duration(eta)}"
+            f"{self._qualification_suffix()}"
         )
 
     def heartbeat_line(
@@ -521,6 +538,7 @@ class LiveCampaignProgress:
             f"ACTIVE {row['task_id']} / {row['condition_id']} replicate {int(row['trial']) + 1} | "
             f"stage {stage} | trial elapsed {_duration(trial_seconds)} | "
             f"run elapsed {_duration(elapsed)} | verified {self._verified}/{self._total}"
+            f"{self._qualification_suffix()}"
         )
 
     def abort_line(

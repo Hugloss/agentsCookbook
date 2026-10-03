@@ -878,13 +878,22 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source) -> int:
         str(item["definition_id"]): item
         for item in initial_status["rows"]
     }
+    unresolved = int(initial_status.get("unresolved_outcome_trials", 0))
+    qualification_detail = (
+        f" | qualification BLOCKED | unresolved {unresolved} "
+        f"{'outcome' if unresolved == 1 else 'outcomes'} | "
+        "continuing diagnostic evidence"
+        if unresolved
+        else ""
+    )
     print(
         f"RUN {paths.run_id} ({paths.root}) | CAMPAIGN {len(rows)} trials | "
         f"verified {initial_status['complete_trials']} | "
         f"pending {initial_status['pending_trials']} | "
         f"interrupted {initial_status['interrupted_trials']} | "
         "completed receipts will be reused; interrupted launches will be "
-        "preserved and retried as numbered attempts",
+        "preserved and retried as numbered attempts"
+        f"{qualification_detail}",
         file=sys.stderr,
         flush=True,
     )
