@@ -274,7 +274,7 @@ uv run --no-project python -m benchmarks status \
 
 `status.complete` means every selected definition has a verified immutable receipt. `status.qualified` additionally requires every receipt to be a valid experimental outcome (`PASS`, `FAIL`, or `NO_QUALIFYING_DEFECT`). A campaign can therefore be structurally complete but not qualified.
 
-Each complete status row includes the receipt's diagnostic stage and reason code when available. Report diagnostics include the same fields and mark older receipts without them as `legacy-inferred`. The detailed diagnostic remains in `result.json`; compact status and report output do not copy tracebacks. A final run summary on stderr reports verified receipts, outcome counts, and qualification. The run exits nonzero when the final selected campaign is not qualified.
+Each complete status row includes the receipt's diagnostic stage and reason code when available. Report diagnostics include the same fields and mark older receipts without them as `legacy-inferred`. The detailed diagnostic remains in `result.json`; compact status and report output do not copy tracebacks. A final run summary on stderr reports verified receipts, outcome counts, and qualification. A completed run exits successfully after its canonical reports are persisted even when the campaign is not qualified; use `benchmark-status --require-qualified` when qualification itself must gate the shell command.
 
 Finally:
 
