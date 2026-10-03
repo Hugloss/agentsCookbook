@@ -168,6 +168,15 @@ if (command === 'session' && filtered[1] === 'list') {
 }
 
 if (command === 'export') {
+  let delayedFinal = false;
+  if (process.env.FAKE_EXPORT_DELAYED_FINAL === '1') {
+    const countPath = statePath + '.exports';
+    const count = fs.existsSync(countPath)
+      ? Number(fs.readFileSync(countPath, 'utf8')) + 1
+      : 1;
+    fs.writeFileSync(countPath, String(count));
+    delayedFinal = count === 1;
+  }
   const text = process.env.FAKE_EXPORT_LARGE === '1'
     ? 'x'.repeat(180000)
     : 'done';
@@ -178,7 +187,7 @@ if (command === 'export') {
         providerID: 'liteLLM',
         modelID: 'gemma4'
       },
-      parts: [{ type: 'text', text }]
+      parts: delayedFinal ? [] : [{ type: 'text', text }]
     }]
   });
   const stdoutIsRegularFile = fs.fstatSync(1).isFile();
@@ -658,6 +667,29 @@ async function testSharedLifecycle() {
     assert.strictEqual(result.final_text, 'done');
     assert.strictEqual(result.export_parse_error, null);
     assert.strictEqual(result.delete.status, 0);
+
+    const exportCountPath = statePath + '.exports';
+    fs.rmSync(exportCountPath, { force: true });
+    const delayed = await runtime.runSessionAndExport({
+      opencodeBin: fake,
+      repoDir: root,
+      title: 'runtime-delayed-final',
+      prompt: 'hello',
+      env: { ...env, FAKE_EXPORT_DELAYED_FINAL: '1' },
+      deleteAfterExport: true,
+      exportAttempts: 3,
+      exportDelayMs: 1,
+    });
+    assert.strictEqual(delayed.run.status, 0);
+    assert.strictEqual(delayed.session_id, 'ses_test');
+    assert.strictEqual(delayed.export.status, 0);
+    assert.strictEqual(delayed.final_text, 'done');
+    assert.strictEqual(delayed.export_parse_error, null);
+    assert.strictEqual(
+      fs.readFileSync(exportCountPath, 'utf8'),
+      '2',
+      'successful run should reread the same session until final text is persisted',
+    );
 
     const legacy = runtime.runSession({
       opencodeBin: fake,
