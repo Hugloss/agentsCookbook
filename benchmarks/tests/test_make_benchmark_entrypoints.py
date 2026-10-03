@@ -106,6 +106,59 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 ):
                     _assert_saved_run_agents(saved, ["codex-native"])
 
+    def test_score_dispatches_exact_frozen_definition_selection(self) -> None:
+        suite = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
+        score_script = suite / "score.py"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            saved = SavedRun("000001", root / "runs/000001")
+            output = root / "score.json"
+            config = mock.Mock()
+            config.runtime_environment.return_value = {}
+            manifest = {
+                "selected_definitions": ["b" * 64, "a" * 64],
+                "agents": {"opencode-native": {}},
+            }
+
+            with (
+                mock.patch("benchmarks.__main__._resolve_config", return_value=config),
+                mock.patch("benchmarks.__main__.select_saved_run", return_value=saved),
+                mock.patch(
+                    "benchmarks.__main__._assert_saved_run_agents",
+                    return_value=manifest,
+                ),
+                mock.patch("benchmarks.__main__.subprocess.run") as run,
+            ):
+                run.return_value.returncode = 0
+                self.assertEqual(
+                    main(
+                        [
+                            "score",
+                            "--env-file",
+                            str(root / "unused.env"),
+                            "--suite",
+                            str(suite),
+                            "--root",
+                            str(root),
+                            "--score-script",
+                            str(score_script),
+                            "--output",
+                            str(output),
+                            "--agent",
+                            "opencode-native",
+                        ]
+                    ),
+                    0,
+                )
+
+            invocation = run.call_args.args[0]
+            observed = [
+                invocation[index + 1]
+                for index, value in enumerate(invocation)
+                if value == "--definition-id"
+            ]
+            self.assertEqual(observed, ["a" * 64, "b" * 64])
+
     def test_resume_selection_must_match_frozen_agents_before_admission(self) -> None:
         suite = load_suite(
             ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
