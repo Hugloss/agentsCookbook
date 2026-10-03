@@ -130,6 +130,10 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 mock.patch("benchmarks.__main__.subprocess.run") as run,
             ):
                 run.return_value.returncode = 0
+                run.return_value.stdout = (
+                    "--results --output --agent --definition-id"
+                )
+                run.return_value.stderr = ""
                 self.assertEqual(
                     main(
                         [
