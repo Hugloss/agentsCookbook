@@ -150,7 +150,7 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         ):
             report = build_report(suite=suite, results_root=Path("/unused"))
 
-        self.assertEqual(report["schema"]["version"], 8)
+        self.assertEqual(report["schema"]["version"], 9)
         stability = {row["subject_id"]: row for row in report["stability"]}
         self.assertEqual(stability["none"]["state"], "unstable")
         self.assertEqual(stability["none"]["semantic_correct"], 2)
@@ -184,6 +184,60 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertFalse(
             report["authority"]["replicate_identity_is_provider_sampling_seed"]
         )
+
+    def test_format_contract_explains_saturated_noncompliance(self) -> None:
+        suite = _suite()
+        rows = suite.trial_definitions()[:3]
+        receipts = []
+        for index, row in enumerate(rows):
+            receipt = _receipt(
+                suite,
+                row,
+                "PASS",
+                chr(ord("a") + index) * 64,
+            )
+            receipt["scoring"] = {
+                "oracle_grade": {
+                    "format_compliant": False,
+                    "semantic_gradeable": True,
+                    "semantic_status": "CORRECT",
+                    "semantic_success": True,
+                    "answer_shape": (
+                        "JSON_FENCE"
+                        if index < 2
+                        else "PROSE_WITH_JSON_FENCE"
+                    ),
+                }
+            }
+            receipts.append(receipt)
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+                selected_definitions={str(row["definition_id"]) for row in rows},
+            )
+
+        contract = report["agent_profiles"]["agent"]["format_contract"]
+        self.assertEqual(
+            contract["state"],
+            "strict-contract-saturated-noncompliant",
+        )
+        self.assertEqual(contract["observations"], 3)
+        self.assertEqual(contract["compliant"], 0)
+        self.assertEqual(contract["noncompliant"], 3)
+        self.assertEqual(contract["semantic_gradeable"], 3)
+        self.assertEqual(
+            contract["answer_shapes"],
+            {
+                "JSON_FENCE": 2,
+                "PROSE_WITH_JSON_FENCE": 1,
+            },
+        )
+        self.assertIn("semantically gradeable", contract["interpretation"])
 
     def test_subject_adoption_distinguishes_available_but_unused_tools(self) -> None:
         suite = _suite()
