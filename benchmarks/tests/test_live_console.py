@@ -313,6 +313,52 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn("avg 1m00s/execution", resumed)
         self.assertIn("execution ETA 7m00s", resumed)
 
+    def test_progress_marks_qualification_blocked_only_for_unresolved_outcomes(self) -> None:
+        suite, rows = self._prefix_opencode_rows()
+        progress = LiveCampaignProgress(suite, rows, self._status(rows))
+
+        failed = progress.finish_line(
+            TrialRunResult(
+                trial_id="a" * 64,
+                definition_id=rows[0]["definition_id"],
+                status="FAIL",
+                result_dir=Path("/tmp/fail"),
+                reused=False,
+            ),
+            elapsed=30.0,
+            trial_seconds=30.0,
+        )
+        self.assertNotIn("qualification BLOCKED", failed)
+
+        incomplete = progress.finish_line(
+            TrialRunResult(
+                trial_id="b" * 64,
+                definition_id=rows[1]["definition_id"],
+                status="INCOMPLETE",
+                result_dir=Path("/tmp/incomplete"),
+                reused=False,
+            ),
+            elapsed=60.0,
+            trial_seconds=30.0,
+        )
+        self.assertIn("qualification BLOCKED", incomplete)
+        self.assertIn("unresolved 1 outcome", incomplete)
+        self.assertIn("continuing diagnostic evidence", incomplete)
+
+        next_line = progress.start_line(rows[2], elapsed=60.0)
+        self.assertIn("qualification BLOCKED", next_line)
+        self.assertIn("unresolved 1 outcome", next_line)
+
+        resumed_status = self._status(
+            rows,
+            complete=[rows[0]["definition_id"]],
+        )
+        resumed_status["unresolved_outcome_trials"] = 1
+        resumed = LiveCampaignProgress(suite, rows, resumed_status)
+        resumed_line = resumed.start_line(rows[1], elapsed=0.0)
+        self.assertIn("qualification BLOCKED", resumed_line)
+        self.assertIn("unresolved 1 outcome", resumed_line)
+
     def test_eta_uses_condition_specific_runtime_samples(self) -> None:
         suite, rows = self._prefix_opencode_rows()
         progress = LiveCampaignProgress(suite, rows, self._status(rows))
