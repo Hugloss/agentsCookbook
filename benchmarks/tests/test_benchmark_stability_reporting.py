@@ -150,7 +150,7 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         ):
             report = build_report(suite=suite, results_root=Path("/unused"))
 
-        self.assertEqual(report["schema"]["version"], 10)
+        self.assertEqual(report["schema"]["version"], 11)
         stability = {row["subject_id"]: row for row in report["stability"]}
         self.assertEqual(stability["none"]["state"], "unstable")
         self.assertEqual(stability["none"]["semantic_correct"], 2)
@@ -345,6 +345,91 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertIn("subject-invocation-observed", evidence["evidence_signals"])
         self.assertIn("invoked-gain-observed", evidence["evidence_signals"])
         self.assertNotIn("invoked-no-gain-observed", evidence["evidence_signals"])
+
+    def test_report_summarizes_native_tool_strategy_without_raw_sequence(self) -> None:
+        suite = _suite()
+        rows = {
+            (str(row["condition_id"]), int(row["trial"])): row
+            for row in suite.trial_definitions()
+        }
+        receipts = []
+        for index in range(3):
+            bare = _receipt(
+                suite,
+                rows[("bare", index)],
+                "PASS",
+                chr(ord("a") + index) * 64,
+            )
+            bare["measurements"]["agent"] = {
+                "tool_strategy_observability": "codex-item-completed",
+                "tool_name_counts": {"command_execution": 2},
+                "tool_sequence": ["command_execution", "command_execution"],
+                "subject_first_tool_call_ordinal": None,
+            }
+            assisted = _receipt(
+                suite,
+                rows[("hashmarks", index)],
+                "PASS",
+                chr(ord("d") + index) * 64,
+            )
+            assisted["measurements"]["agent"] = {
+                "tool_strategy_observability": "codex-item-completed",
+                "tool_name_counts": {
+                    "command_execution": 2,
+                    "mcp:hashmarks/task_evidence": 1,
+                },
+                "tool_sequence": [
+                    "command_execution",
+                    "mcp:hashmarks/task_evidence",
+                    "command_execution",
+                ],
+                "subject_first_tool_call_ordinal": index + 2,
+            }
+            receipts.extend((bare, assisted))
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(suite=suite, results_root=Path("/unused"))
+
+        strategy = report["conditions"]["hashmarks"]["tool_strategy"]
+        self.assertEqual(
+            strategy["observability_counts"],
+            {"codex-item-completed": 3},
+        )
+        self.assertEqual(strategy["partial_observability_trials"], 0)
+        self.assertEqual(
+            strategy["tool_name_counts"],
+            {
+                "command_execution": 6,
+                "mcp:hashmarks/task_evidence": 3,
+            },
+        )
+        self.assertEqual(strategy["sequence_observations"], 3)
+        self.assertEqual(
+            strategy["sequence_length"],
+            {
+                "observations": 3,
+                "mean": 3,
+                "median": 3,
+                "min": 3,
+                "max": 3,
+            },
+        )
+        self.assertEqual(
+            strategy["subject_first_tool_call_ordinal"],
+            {
+                "observations": 3,
+                "mean": 3,
+                "median": 3,
+                "min": 2,
+                "max": 4,
+            },
+        )
+        self.assertTrue(strategy["full_order_retained_in_receipts"])
+        self.assertFalse(strategy["arguments_or_source_contents_included"])
+        self.assertNotIn("tool_sequence", strategy)
 
     def test_format_contract_explains_saturated_noncompliance(self) -> None:
         suite = _suite()

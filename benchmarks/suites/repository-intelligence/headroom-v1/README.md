@@ -68,8 +68,16 @@ uv run --no-project python -m benchmarks score \
   --env-file .env.headroom
 ```
 
-The run command now persists `status.json`, `report.json`, and `score.json`
-automatically when execution completes, even when the campaign is not qualified.
+The run command persists the complete shareable report bundle automatically when
+execution completes, even when the campaign is not qualified:
+
+- `status.json`
+- `report.json`
+- `decision-evidence.json`
+- `score.json`
+
+`decision-evidence.json` is a derived first-read view; it performs no ranking or
+recommendation.
 
 ## Interpretation
 
@@ -88,8 +96,14 @@ Also inspect:
 - subject adoption
 - paired assistance transitions
 - invocation-separated paired economics
+- task-level assistance evidence
+- native tool-strategy summaries (tool identities/counts and subject first-call position)
 - bare stability across replicates
 - unresolved execution diagnostics
+- explicit observability gaps
+
+Full per-trial tool order remains sealed in receipts for drill-down. Shareable reports
+do not copy command arguments, source contents, or guessed source-read archaeology.
 
 Do not infer product benefit from an assisted condition where the subject was
 configured but never invoked.

@@ -88,7 +88,7 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
                 payload = json.loads(output.read_text(encoding="utf-8"))
                 self.assertEqual(
                     payload["schema"],
-                    "agents-cookbook-heldout-observer-outcomes.v10",
+                    "agents-cookbook-heldout-observer-outcomes.v11",
                 )
                 self.assertEqual(payload["selection"], {"agents": sorted(agents)})
                 self.assertEqual(payload["projection_mode"], "live")

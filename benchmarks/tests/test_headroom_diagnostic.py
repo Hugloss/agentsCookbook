@@ -61,6 +61,7 @@ def test_headroom_suite_is_small_repeated_and_subject_neutral() -> None:
             assert forbidden not in prompt
 
     assert suite.agents["opencode-native"]["identity"]["version"] == "native-config-v2"
+    assert suite.experiment["scoring"]["version"] == 2
 
 
 def test_headroom_reuses_behavioral_case_truth_without_rewriting_oracles() -> None:
