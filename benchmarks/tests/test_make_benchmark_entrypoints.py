@@ -507,11 +507,18 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             def fake_run(**kwargs):
                 row = next(item for item in rows if item["trial"] == kwargs["trial_index"])
                 status = "INCOMPLETE" if row["trial"] == 1 else "PASS"
+                result_dir = root / "results" / (str(row["trial"]) * 64)
+                result_dir.mkdir(parents=True)
+                (result_dir / "result.json").write_text(
+                    json.dumps({"definition_id": row["definition_id"], "status": status}),
+                    encoding="utf-8",
+                )
+                kwargs["on_progress"]("publication")
                 return TrialRunResult(
-                    trial_id=str(row["trial"]) * 64,
+                    trial_id=result_dir.name,
                     definition_id=str(row["definition_id"]),
                     status=status,
-                    result_dir=root / "results" / (str(row["trial"]) * 64),
+                    result_dir=result_dir,
                     reused=False,
                 )
 
