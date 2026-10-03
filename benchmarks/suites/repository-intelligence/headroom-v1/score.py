@@ -10,7 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from benchmarks.harness.report import ReportError, build_report
-from benchmarks.harness.selection import SelectionError, parse_agent_arguments
+from benchmarks.harness.selection import (
+    SelectionError,
+    parse_agent_arguments,
+    select_scoring_definitions,
+)
 from benchmarks.harness.suite import load_suite
 
 
@@ -60,6 +64,7 @@ def score(
     suite_root: Path,
     results: Path,
     agents: tuple[str, ...],
+    definition_ids: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     suite = load_suite(suite_root)
     if not agents:
@@ -73,11 +78,17 @@ def score(
         str(condition["id"]): condition
         for condition in suite.experiment["conditions"]
     }
-    definitions = suite.trial_definitions()
+    try:
+        selected_rows = select_scoring_definitions(
+            suite,
+            agents=agents,
+            definition_ids=definition_ids,
+        )
+    except SelectionError as exc:
+        raise ValueError(str(exc)) from exc
     selected = {
         str(row["definition_id"])
-        for row in definitions
-        if conditions[str(row["condition_id"])]["agent"] in selected_agents
+        for row in selected_rows
     }
     report = build_report(
         suite=suite,
@@ -92,15 +103,23 @@ def score(
             "bare_control_included": True,
         },
     )
+    selected_condition_ids = {
+        str(row["condition_id"])
+        for row in selected_rows
+    }
     bare_condition_ids = {
-        str(condition["id"])
-        for condition in suite.experiment["conditions"]
-        if condition["agent"] in selected_agents and condition["subject"] == "none"
+        condition_id
+        for condition_id in selected_condition_ids
+        if conditions[condition_id]["subject"] == "none"
     }
     return {
-        "schema": "agents-cookbook-repository-intelligence-headroom.v2",
+        "schema": "agents-cookbook-repository-intelligence-headroom.v3",
         "diagnostic_only": True,
-        "selection": {"agents": sorted(agents)},
+        "selection": {
+            "agents": sorted(agents),
+            "definition_count": len(selected),
+            "definition_ids": sorted(selected),
+        },
         "expected_trials": report["expected_trials"],
         "observed_trials": report["observed_trials"],
         "status_counts": report["status_counts"],
@@ -140,6 +159,7 @@ def main() -> int:
     parser.add_argument("--results", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--agent", action="append", required=True)
+    parser.add_argument("--definition-id", action="append", default=[])
     args = parser.parse_args()
     try:
         agents = parse_agent_arguments(args.agent)
@@ -147,6 +167,7 @@ def main() -> int:
             suite_root=Path(__file__).resolve().parent,
             results=args.results,
             agents=agents,
+            definition_ids=tuple(args.definition_id),
         )
     except (SelectionError, ValueError, ReportError) as exc:
         parser.exit(2, f"ERROR: {exc}\n")
