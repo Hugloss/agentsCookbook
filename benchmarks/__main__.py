@@ -722,7 +722,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0 if report.ready else 2
 
-    rows = _select(args, suite)
+    rows = [] if args.command == "reports" else _select(args, suite)
 
     if args.command in {"preflight", "campaign-audit", "prepare", "run"}:
         try:
