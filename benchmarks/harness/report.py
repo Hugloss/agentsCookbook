@@ -1041,7 +1041,9 @@ def build_report(
 
     statuses = Counter(str(row.get("status")) for row in receipts)
     invalid_outcomes = sum(
-        statuses.get(status, 0) for status in ("INCOMPLETE", "INVALID", "CONTAMINATED")
+        count
+        for status, count in statuses.items()
+        if status not in _VALID_OUTCOMES
     )
     campaign_complete = not missing
     campaign_qualified = campaign_complete and invalid_outcomes == 0
