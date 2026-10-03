@@ -367,6 +367,14 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 mock.patch("benchmarks.__main__.verify_saved_campaign", return_value={"campaign_id": "c" * 64}),
                 mock.patch("benchmarks.__main__.campaign_status", side_effect=[initial, final]),
                 mock.patch("benchmarks.__main__.run_trial", side_effect=fake_run),
+                mock.patch(
+                    "benchmarks.__main__._persist_completed_run_reports",
+                    return_value={
+                        "status": root / "reports/status.json",
+                        "report": root / "reports/report.json",
+                        "score": root / "reports/score.json",
+                    },
+                ) as persist_reports,
                 redirect_stdout(stdout),
                 redirect_stderr(stderr),
             ):
@@ -380,6 +388,8 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         self.assertEqual(len(json.loads(stdout.getvalue())), 3)
         self.assertIn("RUN SUMMARY processed 3/3 | verified 3/3", stderr.getvalue())
         self.assertIn("qualified True", stderr.getvalue())
+        self.assertIn("REPORTS saved", stderr.getvalue())
+        persist_reports.assert_called_once()
 
     def test_run_abort_reports_active_trial_without_stdout_result(self) -> None:
         suite_path = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
