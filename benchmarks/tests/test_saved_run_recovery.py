@@ -697,6 +697,78 @@ class SavedRunRecoveryTests(unittest.TestCase):
             for name, value in previous.items():
                 self.assertEqual((reports / name).read_text(encoding="utf-8"), value)
 
+    def test_reports_command_regenerates_complete_set_through_one_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Path(temporary) / "campaigns"
+            run_root = store / "runs/000001"
+            definition = "a" * 64
+            _campaign(run_root / "results", [definition])
+            suite = SimpleNamespace(
+                experiment={
+                    "conditions": [
+                        {
+                            "id": "bare",
+                            "agent": "opencode-native",
+                            "subject": "none",
+                        }
+                    ]
+                }
+            )
+            row = {
+                "definition_id": definition,
+                "task_id": "task-a",
+                "condition_id": "bare",
+                "trial": 0,
+                "replicate_id": 1,
+            }
+            config = SimpleNamespace(runtime_environment=lambda: {})
+            final_status = {"complete": True, "qualified": True}
+            written = {
+                "status": run_root / "reports/status.json",
+                "report": run_root / "reports/report.json",
+                "decision_evidence": run_root / "reports/decision-evidence.json",
+                "score": run_root / "reports/score.json",
+            }
+            stdout = io.StringIO()
+            with (
+                mock.patch("benchmarks.__main__._resolve_config", return_value=config),
+                mock.patch("benchmarks.__main__.load_suite", return_value=suite),
+                mock.patch("benchmarks.__main__._select", return_value=[row]),
+                mock.patch(
+                    "benchmarks.__main__._validate_reporting_contract",
+                    return_value=(Path("score.py"), Path("score.json")),
+                ),
+                mock.patch(
+                    "benchmarks.__main__.campaign_status",
+                    return_value=final_status,
+                ),
+                mock.patch(
+                    "benchmarks.__main__._persist_completed_run_reports",
+                    return_value=written,
+                ) as persist,
+                redirect_stdout(stdout),
+            ):
+                self.assertEqual(
+                    main(
+                        [
+                            "reports",
+                            "--suite",
+                            "unused",
+                            "--root",
+                            str(store),
+                            "--env-file",
+                            str(Path(temporary) / "unused.env"),
+                            "--agent",
+                            "opencode-native",
+                        ]
+                    ),
+                    0,
+                )
+            persist.assert_called_once()
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["run_id"], "000001")
+            self.assertEqual(payload["reports"]["score"], str(written["score"]))
+
     def test_new_runs_are_numbered_and_latest_never_overwrites_history(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
