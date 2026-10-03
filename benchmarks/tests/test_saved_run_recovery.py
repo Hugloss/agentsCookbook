@@ -773,6 +773,10 @@ class SavedRunRecoveryTests(unittest.TestCase):
                 definition_ids=(definition,),
             )
             persist.assert_called_once()
+            persisted_args = persist.call_args.kwargs["args"]
+            self.assertEqual(persisted_args.task, ["task-a"])
+            self.assertEqual(persisted_args.subject, ["none"])
+            self.assertEqual(persisted_args.condition, "bare")
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["run_id"], "000001")
             self.assertEqual(payload["reports"]["score"], str(written["score"]))
