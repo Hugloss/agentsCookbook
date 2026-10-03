@@ -79,3 +79,54 @@ def select_definitions(
             "no trials matched selected agent(s): " + ", ".join(missing_agents)
         )
     return rows
+
+
+def select_scoring_definitions(
+    suite: SuiteDefinition,
+    *,
+    agents: tuple[str, ...],
+    definition_ids: tuple[str, ...] = (),
+) -> list[dict[str, Any]]:
+    """Bind scoring to exact frozen definitions when campaign authority provides them."""
+    if not agents:
+        raise SelectionError("select at least one benchmark agent")
+    if len(set(definition_ids)) != len(definition_ids):
+        raise SelectionError("duplicate benchmark definition ID in score selection")
+
+    if not definition_ids:
+        return select_definitions(suite, agents=agents)
+
+    conditions = {str(row["id"]): row for row in suite.experiment["conditions"]}
+    rows_by_id = {
+        str(row["definition_id"]): row
+        for row in suite.trial_definitions()
+    }
+    unknown = sorted(set(definition_ids) - set(rows_by_id))
+    if unknown:
+        raise SelectionError(
+            "unknown benchmark definition ID(s): " + ", ".join(unknown)
+        )
+
+    requested = set(definition_ids)
+    rows = [
+        row
+        for definition_id, row in rows_by_id.items()
+        if definition_id in requested
+    ]
+    represented_agents = {
+        str(conditions[str(row["condition_id"])]["agent"])
+        for row in rows
+    }
+    unexpected_agents = sorted(represented_agents - set(agents))
+    if unexpected_agents:
+        raise SelectionError(
+            "score selection contains definition(s) for unselected agent(s): "
+            + ", ".join(unexpected_agents)
+        )
+    missing_agents = sorted(set(agents) - represented_agents)
+    if missing_agents:
+        raise SelectionError(
+            "score selection contains no definition for selected agent(s): "
+            + ", ".join(missing_agents)
+        )
+    return rows
