@@ -1200,6 +1200,17 @@ def _stability(
     return rows
 
 
+def _bounded_report_reason(value: Any, *, limit: int = 1_000) -> str | None:
+    if not isinstance(value, str):
+        return None
+    rendered = value.strip()
+    if not rendered:
+        return None
+    if len(rendered) <= limit:
+        return rendered
+    return rendered[:limit] + "…"
+
+
 def _diagnostic(receipt: dict[str, Any]) -> dict[str, Any]:
     status = receipt.get("status")
     grade = receipt.get("scoring", {}).get("oracle_grade", {})
@@ -1215,7 +1226,8 @@ def _diagnostic(receipt: dict[str, Any]) -> dict[str, Any]:
         "semantic_ungradeable": grade.get("semantic_gradeable") is False,
         "semantic_incorrect": grade.get("semantic_status") == "INCORRECT",
     }
-    reason = str(receipt.get("reason") or "").lower()
+    raw_reason = str(receipt.get("reason") or "")
+    reason = raw_reason.lower()
     if reason_code == "interrupted-launch":
         primary = "runtime"
     elif reason_code == "agent-timeout":
@@ -1255,6 +1267,7 @@ def _diagnostic(receipt: dict[str, Any]) -> dict[str, Any]:
         "flags": flags,
         "stage": stage,
         "reason_code": reason_code,
+        "reason": _bounded_report_reason(raw_reason),
         "diagnostic_source": "receipt" if source is not None else "legacy-inferred",
     }
 
