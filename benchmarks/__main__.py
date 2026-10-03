@@ -15,6 +15,11 @@ from pathlib import Path
 
 from benchmarks.config import BenchmarkConfig, BenchmarkConfigError
 from benchmarks.diagnostic import DiagnosticError, prepare_diagnostic_suite
+from benchmarks.tool_probe import ToolProbeError, prepare_tool_probe_suite
+from benchmarks.hashmarks_retrieval_probe import (
+    HashmarksRetrievalProbeError,
+    run_hashmarks_retrieval_probe,
+)
 from benchmarks.harness.campaign import (
     CampaignError,
     campaign_status,
@@ -40,6 +45,10 @@ from benchmarks.harness.oracle_review_runner import run_pending_oracle_reviews
 from benchmarks.harness.readiness import check_runtime_readiness
 from benchmarks.harness.runtime_authority import required_runtime_authority
 from benchmarks.harness.report import ReportError, build_report
+from benchmarks.harness.trace_diagnostics import (
+    TraceDiagnosticError,
+    build_trace_diagnostics,
+)
 from benchmarks.harness.runner import (
     TrialRunnerError,
     reuse_completed_trial,
@@ -135,6 +144,22 @@ def _parser() -> argparse.ArgumentParser:
     diagnostic.add_argument("--source-results", type=Path, required=True)
     diagnostic.add_argument("--output-suite", type=Path, required=True)
     diagnostic.add_argument("--include-task", action="append", default=[])
+
+    trace_diagnostics = sub.add_parser("trace-diagnostics")
+    trace_diagnostics.add_argument("--results", type=Path, required=True)
+    trace_diagnostics.add_argument("--output", type=Path)
+
+    tool_probe = sub.add_parser("tool-probe-prepare")
+    tool_probe.add_argument("--suite", type=Path, required=True)
+    tool_probe.add_argument("--subject", choices=("hashmarks", "enola"), required=True)
+    tool_probe.add_argument("--output-suite", type=Path, required=True)
+
+    retrieval_probe = sub.add_parser("hashmarks-retrieval-probe")
+    retrieval_probe.add_argument("--results", type=Path, required=True)
+    retrieval_probe.add_argument("--task", required=True)
+    retrieval_probe.add_argument("--workspace", type=Path, required=True)
+    retrieval_probe.add_argument("--executable", type=Path, required=True)
+    retrieval_probe.add_argument("--output", type=Path, required=True)
 
     reviews = sub.add_parser("oracle-review-check")
     reviews.add_argument("--suite", type=Path, required=True)
@@ -561,6 +586,49 @@ def _guard_automatic_start(
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     explicit_score_output = getattr(args, "output", None) is not None
+    if args.command == "trace-diagnostics":
+        try:
+            evidence = build_trace_diagnostics(args.results)
+        except (TraceDiagnosticError, OSError, ValueError) as exc:
+            raise SystemExit(f"trace diagnostics unavailable: {exc}") from exc
+        if args.output is None:
+            print(json.dumps(evidence, indent=2, sort_keys=True))
+        else:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(
+                json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            print(str(args.output))
+        return 0
+    if args.command == "tool-probe-prepare":
+        try:
+            evidence = prepare_tool_probe_suite(
+                source_suite=args.suite,
+                destination=args.output_suite,
+                subject=args.subject,
+            )
+        except (ToolProbeError, OSError, ValueError) as exc:
+            raise SystemExit(f"tool probe unavailable: {exc}") from exc
+        print(json.dumps(evidence, indent=2, sort_keys=True))
+        return 0
+    if args.command == "hashmarks-retrieval-probe":
+        try:
+            evidence = run_hashmarks_retrieval_probe(
+                results_root=args.results,
+                task_id=args.task,
+                workspace=args.workspace,
+                executable=args.executable,
+            )
+        except (HashmarksRetrievalProbeError, OSError, ValueError) as exc:
+            raise SystemExit(f"Hashmarks retrieval probe unavailable: {exc}") from exc
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        print(str(args.output))
+        return 0
     if args.command == "oracle-review-check":
         suite = load_suite(args.suite)
         try:
@@ -918,6 +986,11 @@ def main(argv: list[str] | None = None) -> int:
                 decision = build_decision_evidence(report_data)
                 decision["run_id"] = paths.run_id
                 _write_derived_json(paths.root, "decision-evidence.json", decision)
+                _write_derived_json(
+                    paths.root,
+                    "trace-diagnostics.json",
+                    build_trace_diagnostics(paths.results),
+                )
             else:
                 print(
                     f"REPORT inspection only | {persistence_gap}; canonical "
@@ -1133,6 +1206,7 @@ def _persist_completed_run_reports(
 
     decision_data = build_decision_evidence(report_data)
     decision_data["run_id"] = paths.run_id
+    trace_data = build_trace_diagnostics(paths.results)
 
     score_path = reports_dir / score_output
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -1178,6 +1252,9 @@ def _persist_completed_run_reports(
             "decision-evidence.json",
             decision_data,
         )
+        trace_path = _write_derived_json(
+            paths.root, "trace-diagnostics.json", trace_data
+        )
         os.replace(staged_score, score_path)
         directory_fd = os.open(reports_dir, os.O_RDONLY)
         try:
@@ -1191,6 +1268,7 @@ def _persist_completed_run_reports(
         "status": status_path,
         "report": report_path,
         "decision_evidence": decision_path,
+        "trace_diagnostics": trace_path,
         "score": score_path,
     }
 

@@ -2288,7 +2288,7 @@ class PilotExecutionTests(unittest.TestCase):
                 selected_definitions={row["definition_id"] for row in selected},
             )
         profile = report["conditions"][condition["id"]]
-        self.assertEqual(report["schema"]["version"], 12)
+        self.assertEqual(report["schema"]["version"], 13)
         self.assertEqual(profile["subject_tool_adoption_denominator"], 1)
         self.assertEqual(profile["subject_tool_adoption_rate"], 1.0)
         self.assertEqual(

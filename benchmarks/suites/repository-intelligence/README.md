@@ -84,6 +84,59 @@ replace heldout-v1, or carry release authority.
 
 See `headroom-v1/README.md` for its isolated config and commands.
 
+## Required-tool diagnostics after heldout-v1 run 000007
+
+Run 000007 completed 108 receipts but did not qualify: Enola was never called, and
+Hashmarks was called in 7 of its 36 assisted trials. Its gradeable location answers
+also used JSON fences even though the prompts requested one plain JSON object. The
+ordinary paired suite remains the natural-use measure. The separate tool probes below
+ask what happens after a specific subject tool is required; they are diagnostic only.
+
+Prepare one 9-trial suite per subject from the reviewed heldout task and oracle bytes:
+
+```bash
+python3 -m benchmarks tool-probe-prepare \
+  --suite benchmarks/suites/repository-intelligence/heldout-v1 \
+  --subject hashmarks --output-suite /tmp/hashmarks-required-tool-probe
+python3 -m benchmarks tool-probe-prepare \
+  --suite benchmarks/suites/repository-intelligence/heldout-v1 \
+  --subject enola --output-suite /tmp/enola-required-tool-probe
+```
+
+Each generated suite contains `.env.example` and `score.py`. Copy the example config,
+set the exact Hashmarks source for its suite, and complete the independent oracle
+reviews required after the task prompts change. When OpenCode is available, use
+`benchmarks oracle-review --suite <generated-suite> --execute`, followed by
+`benchmarks oracle-review-check --suite <generated-suite> --require-complete`. Then
+run `benchmarks check --env-file <copied-env>`, `benchmarks run --new --env-file
+<copied-env>`, and `benchmarks score --env-file <copied-env>` separately for each
+subject. Run from this repository root. The generated score records a completed
+required call with nonempty output, an attempted call that failed, an observed trace
+without the call, or an unavailable trace independently of semantic correctness.
+
+Every completed report now writes `trace-diagnostics.json`, a derived view of sealed
+traces with per-call order, status, failure category, input hash, file path attempts,
+and Hashmarks returned-candidate target rank. It reports absent or unsupported traces
+as unknown. To inspect an older campaign without rewriting its historical reports:
+
+```bash
+python3 -m benchmarks trace-diagnostics \
+  --results .benchmark-runs/heldout-v1/runs/000007/results \
+  --output .benchmark-runs/heldout-v1/runs/000007/reports/trace-diagnostics-retro.json
+```
+
+For an observed Hashmarks query, `hashmarks-retrieval-probe` replays its exact text
+against a specified checkout and executable at limits 20 and 50, then checks whether
+exact symbol search can find the frozen oracle target. This is candidate evidence;
+its output does not claim a product defect or comparability across repository
+revisions.
+
+Run 000007's pinned repository replay is saved as
+`reports/hashmarks-retrieval-probe-retro.json`. It used the currently installed
+Hashmarks executable against the task's pinned repository checkout, so the repository
+revision matches while the executable's implementation remains a separate recorded
+identity.
+
 ## behavioral-v3
 
 `behavioral-v3/` adds independent agent-outcome challenges for post-edit refresh,

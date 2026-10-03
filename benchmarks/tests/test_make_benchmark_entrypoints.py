@@ -339,6 +339,10 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                     return_value={"schema": {"version": 7}, "expected_trials": 108},
                 ),
                 mock.patch(
+                    "benchmarks.__main__.build_trace_diagnostics",
+                    return_value={"schema": "agents-cookbook-trace-diagnostics.v1", "trials": []},
+                ),
+                mock.patch(
                     "benchmarks.__main__._canonical_campaign_persistence_gap",
                     return_value=None,
                 ),
@@ -376,6 +380,8 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             )
             self.assertEqual(stored_decision["run_id"], "000001")
             self.assertTrue(stored_decision["authority"]["derived_only"])
+            trace_file = run_root / "reports/trace-diagnostics.json"
+            self.assertTrue(trace_file.is_file())
 
     def test_status_can_require_qualified_campaign(self) -> None:
         suite = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
