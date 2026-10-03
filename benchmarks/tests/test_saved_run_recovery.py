@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from benchmarks.__main__ import (
+    _canonical_campaign_persistence_gap,
     _execute_run,
     _persist_completed_run_reports,
     _validate_reporting_contract,
@@ -451,6 +452,43 @@ class SavedRunRecoveryTests(unittest.TestCase):
                     SimpleNamespace(root=root),
                     {},
                 )
+
+    def test_exact_definition_match_cannot_hide_suite_authority_drift(self) -> None:
+        suite_path = (
+            Path(__file__).resolve().parents[1]
+            / "suites/repository-intelligence/heldout-v1"
+        )
+        from benchmarks.harness.suite import load_suite
+
+        suite = load_suite(suite_path)
+        row = next(
+            row
+            for row in suite.trial_definitions()
+            if row["task_id"] == "locate-prefix-path-enumerator"
+            and row["condition_id"] == "none-opencode-native"
+        )
+        definition = str(row["definition_id"])
+        with tempfile.TemporaryDirectory() as temporary:
+            results = Path(temporary) / "results"
+            payload = {
+                "contract": "benchmark-campaign-authority.v3",
+                "selected_definitions": [definition],
+                "agents": {"opencode-native": {}},
+                "suite_identity": "0" * 64,
+            }
+            payload["campaign_id"] = digest(payload)
+            directory = results / ".campaign"
+            directory.mkdir(parents=True)
+            (directory / "authority.json").write_bytes(canonical_json(payload))
+
+            self.assertEqual(
+                _canonical_campaign_persistence_gap(
+                    suite=suite,
+                    results_root=results,
+                    rows=[row],
+                ),
+                "saved campaign suite authority differs from current suite",
+            )
 
     def test_subset_status_and_report_do_not_replace_canonical_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
