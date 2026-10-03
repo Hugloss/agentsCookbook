@@ -62,6 +62,43 @@ class TrialRunResult:
     recovered: bool = False
 
 
+def reuse_completed_trial(
+    *,
+    results_root: Path,
+    definition_id: str,
+    trial_id: str,
+) -> TrialRunResult:
+    """Reuse one verified durable result without participant admission."""
+    final_dir = results_root / trial_id
+    valid, invalid_reason = verify_bundle(final_dir)
+    if not valid:
+        raise TrialRunnerError(
+            f"existing trial bundle is invalid: {final_dir}: {invalid_reason}"
+        )
+    existing = json.loads(
+        (final_dir / "result.json").read_text(encoding="utf-8")
+    )
+    if existing.get("definition_id") != definition_id:
+        raise TrialRunnerError(
+            "existing trial bundle does not match selected definition"
+        )
+    diagnostic = existing.get("diagnostic")
+    if not isinstance(diagnostic, dict):
+        diagnostic = {}
+    return TrialRunResult(
+        trial_id=trial_id,
+        definition_id=definition_id,
+        status=str(existing["status"]),
+        result_dir=final_dir,
+        reused=True,
+        reason=existing.get("reason"),
+        stage=diagnostic.get("stage"),
+        reason_code=diagnostic.get("reason_code"),
+        diagnostic=diagnostic.get("detail"),
+        recovered=False,
+    )
+
+
 def _validate_result_receipt(receipt: dict[str, Any]) -> None:
     schema_path = Path(__file__).resolve().parents[1] / "schema" / "result.schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
