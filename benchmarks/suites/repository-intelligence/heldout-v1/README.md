@@ -37,6 +37,23 @@ semantic failure. Paired bare-to-assisted rows also classify each valid replicat
 `gain`, `preserved`, `unresolved`, or `regression`, so aggregate success rates
 cannot hide an assisted regression.
 
+### Assistance attribution
+
+The assisted condition and actual subject use are separate evidence. A Hashmarks or Enola
+condition proves that the subject was available to the native agent; it does not prove that
+the agent invoked it. Therefore:
+
+- `paired_assistance_summary` is the overall **condition effect** and intentionally includes
+  both invoked and non-invoked assisted pairs;
+- `subject_adoption` reports availability, configuration, observed invocation, and non-use;
+- `paired_assistance_usage_summary` and the derived decision-evidence assistance funnel
+  split outcome transitions by `invoked`, `not-invoked`, and `unknown`;
+- a gain or regression on a `not-invoked` pair is condition variance and must not be
+  attributed to the subject tool.
+
+This keeps the natural benchmark unforced while separating the path
+`availability -> adoption -> usefulness when invoked`.
+
 The committed `qualification/oracle-reviews.json` binds each expected owner to its task digest and records independent source-audit evidence. One independent review with a `unique` decision is the default qualification requirement. A second independent review is required only when the task carries an explicit evidence-backed escalation reason, such as prior benchmark instability or unresolved ownership ambiguity. Campaign admission fails before any model call while any task lacks its required reviews or has a non-unique decision. If a task has two defensible owners, repair or retire it and start a new saved run; do not add a grading exception. Current heldout-v1 authority escalates `locate-prefix-path-enumerator`, `locate-directory-pruning`, and `locate-resource-invalidation` to two independent reviews because run 000007 exposed semantic instability on those task boundaries; both committed reviews independently retain the frozen owner as unique.
 
 The campaign authority receipt freezes runtime and task inputs before inference. One launch claim is written before each model call; an interrupted claim is evidence and cannot be rerun in place. Reports expose execution, gradeability, semantic stability, output compliance, diagnostic boundaries, paired transitions, and excluded pairs separately. A diagnostic suite prepared with `diagnostic-prepare` has ten replicates per selected unstable task and its own root; its results never enter the official held-out score.
