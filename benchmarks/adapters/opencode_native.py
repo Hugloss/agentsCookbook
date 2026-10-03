@@ -160,6 +160,17 @@ def _bounded_diagnostic(value: Any, *, limit: int = 2_000) -> str | None:
     return rendered[:limit] + "…"
 
 
+def _bounded_tail_diagnostic(value: Any, *, limit: int = 2_000) -> str | None:
+    if not isinstance(value, str):
+        return None
+    rendered = value.strip()
+    if not rendered:
+        return None
+    if len(rendered) <= limit:
+        return rendered
+    return "…" + rendered[-limit:]
+
+
 def _run_failure_reason(
     run_evidence: dict[str, Any] | None,
     *,
@@ -182,6 +193,10 @@ def _run_failure_reason(
         error = _bounded_diagnostic(run_evidence.get("error"))
         if error:
             details.append(f"error={error!r}")
+        if not details:
+            stdout_tail = _bounded_tail_diagnostic(run_evidence.get("stdout"))
+            if stdout_tail:
+                details.append(f"stdout_tail={stdout_tail!r}")
         signal = run_evidence.get("signal")
         if isinstance(signal, str) and signal:
             details.append(f"signal={signal}")
