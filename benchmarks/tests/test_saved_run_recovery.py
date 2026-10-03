@@ -218,6 +218,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
                     return_value={
                         "status": root / "reports/status.json",
                         "report": root / "reports/report.json",
+                        "decision_evidence": root / "reports/decision-evidence.json",
                         "score": root / "reports/score.json",
                     },
                 ) as persist_reports,
@@ -342,6 +343,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
 
             self.assertTrue(written["status"].is_file())
             self.assertTrue(written["report"].is_file())
+            self.assertTrue(written["decision_evidence"].is_file())
             self.assertTrue(written["score"].is_file())
             stored_status = json.loads(written["status"].read_text(encoding="utf-8"))
             self.assertFalse(stored_status["qualified"])
@@ -351,6 +353,14 @@ class SavedRunRecoveryTests(unittest.TestCase):
                 stored_report["campaign_qualification"]["status"],
                 "NOT_QUALIFIED",
             )
+            stored_decision = json.loads(
+                written["decision_evidence"].read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                stored_decision["campaign"]["qualification"]["status"],
+                "NOT_QUALIFIED",
+            )
+            self.assertTrue(stored_decision["authority"]["derived_only"])
 
     def test_new_runs_are_numbered_and_latest_never_overwrites_history(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
