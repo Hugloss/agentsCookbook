@@ -378,7 +378,10 @@ class SavedRunRecoveryTests(unittest.TestCase):
             self.assertTrue(stored_decision["authority"]["derived_only"])
 
     def test_run_rejects_invalid_score_output_before_campaign_admission(self) -> None:
-        suite = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
+        suite = (
+            Path(__file__).resolve().parents[1]
+            / "suites/repository-intelligence/heldout-v1"
+        )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "runs"
             config = SimpleNamespace(
@@ -407,7 +410,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
                         "--root",
                         str(root),
                         "--harness-root",
-                        str(ROOT),
+                        str(Path(__file__).resolve().parents[2]),
                         "--env-file",
                         str(Path(temporary) / "unused.env"),
                         "--agent",
