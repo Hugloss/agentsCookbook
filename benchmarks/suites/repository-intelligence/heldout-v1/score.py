@@ -99,7 +99,10 @@ def main() -> int:
             ),
             "paired_assistance_exclusions": report["paired_assistance_exclusions"],
             "expected_assistance_pairs": report["expected_assistance_pairs"],
-            "task_assistance_evidence": report["task_assistance_evidence"],
+            "task_assistance_evidence": report.get(
+                "task_assistance_evidence",
+                [],
+            ),
             "stability": report["stability"],
             "task_agent_authority": report["task_agent_authority"],
             "subject_adoption": report["subject_adoption"],
