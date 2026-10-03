@@ -130,6 +130,86 @@ def _metric_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     return metrics
 
 
+def _tool_strategy_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
+    observability = Counter()
+    tool_names = Counter()
+    first_subject_ordinals: list[int | float] = []
+    sequence_lengths: list[int] = []
+    observed_sequences = 0
+
+    for row in receipts:
+        agent = row.get("measurements", {}).get("agent", {})
+        if not isinstance(agent, dict):
+            continue
+
+        state = agent.get("tool_strategy_observability")
+        if isinstance(state, str) and state:
+            observability[state] += 1
+
+        counts = agent.get("tool_name_counts")
+        if isinstance(counts, dict):
+            for name, value in counts.items():
+                if (
+                    isinstance(name, str)
+                    and name
+                    and isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and value >= 0
+                ):
+                    tool_names[name] += int(value)
+
+        sequence = agent.get("tool_sequence")
+        if isinstance(sequence, list) and all(
+            isinstance(name, str) and name for name in sequence
+        ):
+            observed_sequences += 1
+            sequence_lengths.append(len(sequence))
+
+        ordinal = agent.get("subject_first_tool_call_ordinal")
+        if (
+            isinstance(ordinal, (int, float))
+            and not isinstance(ordinal, bool)
+            and ordinal >= 1
+        ):
+            first_subject_ordinals.append(ordinal)
+
+    partial = sum(
+        count
+        for state, count in observability.items()
+        if "partial" in state
+    )
+    return {
+        "observability_counts": dict(sorted(observability.items())),
+        "partial_observability_trials": partial,
+        "tool_name_counts": dict(sorted(tool_names.items())),
+        "sequence_observations": observed_sequences,
+        "sequence_length": {
+            "observations": len(sequence_lengths),
+            "mean": mean(sequence_lengths) if sequence_lengths else None,
+            "median": median(sequence_lengths) if sequence_lengths else None,
+            "min": min(sequence_lengths) if sequence_lengths else None,
+            "max": max(sequence_lengths) if sequence_lengths else None,
+        },
+        "subject_first_tool_call_ordinal": {
+            "observations": len(first_subject_ordinals),
+            "mean": (
+                mean(first_subject_ordinals)
+                if first_subject_ordinals
+                else None
+            ),
+            "median": (
+                median(first_subject_ordinals)
+                if first_subject_ordinals
+                else None
+            ),
+            "min": min(first_subject_ordinals) if first_subject_ordinals else None,
+            "max": max(first_subject_ordinals) if first_subject_ordinals else None,
+        },
+        "full_order_retained_in_receipts": True,
+        "arguments_or_source_contents_included": False,
+    }
+
+
 def _format_contract_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     observed: list[tuple[bool, bool | None, str | None]] = []
     for row in receipts:
@@ -275,6 +355,7 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "subject_tool_adoption_denominator": len(tool_available),
         "source_read_observability": observability,
+        "tool_strategy": _tool_strategy_summary(receipts),
         "metrics": _metric_summary(receipts),
         "valid_outcome_metrics": _metric_summary(valid),
     }
@@ -1409,7 +1490,7 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 10,
+            "version": 11,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
