@@ -120,7 +120,7 @@ Human-facing derived outputs are kept separately from raw evidence:
 
 `decision-evidence.json` is a compact derived first-read view over `report.json`: runtime/host instability, semantic misses, strict-format behavior, subject adoption/assistance evidence, and explicit observability gaps. It performs no ranking or recommendation.
 
-`make benchmark-status`, `make benchmark-report`, and `make benchmark-score` refresh their normal outputs; `benchmark-report` also refreshes `decision-evidence.json`. `make benchmark-reports` refreshes the whole shareable set. Share or archive only `reports/` for ordinary benchmark review; keep `results/` when raw execution evidence is needed for audit or debugging.
+`make benchmark-status`, `make benchmark-report`, and `make benchmark-score` refresh their normal outputs; `benchmark-report` also refreshes `decision-evidence.json`. `make benchmark-reports` refreshes the whole shareable set. Canonical files under `reports/` always describe the run's exact frozen campaign selection. Selector subsets and `report --allow-incomplete` are inspection-only: they print derived views but do not replace canonical first-read artifacts. Share or archive only `reports/` for ordinary benchmark review; keep `results/` when raw execution evidence is needed for audit or debugging.
 
 In the selected Hashmarks source checkout, install its locked MCP extra with `uv sync --frozen --extra mcp --group test` before running readiness. A correct `HASHMARKS_BENCH_SOURCE` path alone does not install the MCP server dependency.
 
@@ -144,7 +144,7 @@ make benchmark-resume  # continue the frozen run
 make benchmark-new     # intentionally start a separate fresh run
 ```
 
-`benchmark-new` also executes immediately; it does not stop after preparation. `benchmark-resume` requires the current `BENCHMARK_AGENT` population and selected definitions to match the run's frozen campaign before expensive admission or any model work. Scoring enforces the same frozen agent set.
+`benchmark-new` also executes immediately; it does not stop after preparation. `benchmark-resume` requires the current `BENCHMARK_AGENT` population and selected definitions to match the run's frozen campaign before expensive admission or any model work. Before preflight, preparation, or execution can begin, the harness also verifies that the selected suite scorer exists, belongs to that suite, accepts the exact frozen-definition interface (`--results`, `--output`, `--agent`, repeated `--definition-id`), and has a canonical score filename suitable for the run's `reports/` directory. Scoring enforces the same frozen agent set.
 
 The remaining targets are optional diagnostics or advanced controls:
 
