@@ -263,6 +263,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
             root = Path(temporary)
             results = root / "results"
             results.mkdir()
+            _campaign(results, ["a" * 64])
             suite_root = root / "suite"
             suite_root.mkdir()
             score_script = suite_root / "score.py"
@@ -650,6 +651,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
             root = Path(temporary)
             results = root / "results"
             results.mkdir()
+            _campaign(results, ["a" * 64])
             suite_root = root / "suite"
             suite_root.mkdir()
             score_script = suite_root / "score.py"
