@@ -16,6 +16,7 @@ from pathlib import Path
 from benchmarks.config import BenchmarkConfig, BenchmarkConfigError
 from benchmarks.diagnostic import DiagnosticError, prepare_diagnostic_suite
 from benchmarks.tool_probe import ToolProbeError, prepare_tool_probe_suite
+from benchmarks.tool_probe_score import smoke_gate
 from benchmarks.hashmarks_retrieval_probe import (
     HashmarksRetrievalProbeError,
     run_hashmarks_retrieval_probe,
@@ -153,6 +154,12 @@ def _parser() -> argparse.ArgumentParser:
     tool_probe.add_argument("--suite", type=Path, required=True)
     tool_probe.add_argument("--subject", choices=("hashmarks", "enola"), required=True)
     tool_probe.add_argument("--output-suite", type=Path, required=True)
+    tool_probe.add_argument("--runtime-env-file", type=Path)
+    tool_probe.add_argument("--reuse", action="store_true")
+
+    probe_gate = sub.add_parser("tool-probe-smoke-gate")
+    probe_gate.add_argument("--root", type=Path, required=True)
+    probe_gate.add_argument("--subject", choices=("hashmarks", "enola"), required=True)
 
     retrieval_probe = sub.add_parser("hashmarks-retrieval-probe")
     retrieval_probe.add_argument("--results", type=Path, required=True)
@@ -607,10 +614,21 @@ def main(argv: list[str] | None = None) -> int:
                 source_suite=args.suite,
                 destination=args.output_suite,
                 subject=args.subject,
+                runtime_env_file=args.runtime_env_file,
+                reuse=args.reuse,
             )
         except (ToolProbeError, OSError, ValueError) as exc:
             raise SystemExit(f"tool probe unavailable: {exc}") from exc
         print(json.dumps(evidence, indent=2, sort_keys=True))
+        return 0
+    if args.command == "tool-probe-smoke-gate":
+        try:
+            saved = select_saved_run(args.root)
+            score = json.loads((saved.root / "reports/score.json").read_text(encoding="utf-8"))
+            smoke_gate(score, subject=args.subject)
+        except (RunStoreError, OSError, ValueError) as exc:
+            raise SystemExit(f"tool probe smoke gate failed: {exc}") from exc
+        print(f"tool probe smoke gate passed: {saved.run_id}")
         return 0
     if args.command == "hashmarks-retrieval-probe":
         try:

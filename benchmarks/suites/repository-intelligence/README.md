@@ -95,24 +95,41 @@ ask what happens after a specific subject tool is required; they are diagnostic 
 Prepare one 9-trial suite per subject from the reviewed heldout task and oracle bytes:
 
 ```bash
-python3 -m benchmarks tool-probe-prepare \
-  --suite benchmarks/suites/repository-intelligence/heldout-v1 \
-  --subject hashmarks --output-suite /tmp/hashmarks-required-tool-probe
-python3 -m benchmarks tool-probe-prepare \
-  --suite benchmarks/suites/repository-intelligence/heldout-v1 \
-  --subject enola --output-suite /tmp/enola-required-tool-probe
+make benchmark-tool-probe-prepare PROBE_SUBJECT=hashmarks
+make benchmark-tool-probe-prepare PROBE_SUBJECT=enola
 ```
 
-Each generated suite contains `.env.example` and `score.py`. Copy the example config,
-set the exact Hashmarks source for its suite, and complete the independent oracle
-reviews required after the task prompts change. When OpenCode is available, use
-`benchmarks oracle-review --suite <generated-suite> --execute`, followed by
-`benchmarks oracle-review-check --suite <generated-suite> --require-complete`. Then
-run `benchmarks check --env-file <copied-env>`, `benchmarks run --new --env-file
-<copied-env>`, and `benchmarks score --env-file <copied-env>` separately for each
-subject. Run from this repository root. The generated score records a completed
-required call with nonempty output, an attempted call that failed, an observed trace
-without the call, or an unavailable trace independently of semantic correctness.
+The v2 generator copies task and independent review records exactly. It puts the
+required-tool instruction in the diagnostic OpenCode agent definition, which changes
+the trial definition identity while preserving reviewed oracle authority. The generated
+`.env` uses runtime choices from the root `.env` and points to the diagnostic suite,
+scorer, and separate ignored run root. `--reuse` checks that an existing suite still
+matches source tasks, reviews, subject, agent definition, and runtime choices; it never
+overwrites that suite.
+
+First check the suite and native runtime without a model call:
+
+```bash
+make benchmark-tool-probe-check PROBE_SUBJECT=hashmarks
+make benchmark-tool-probe-check PROBE_SUBJECT=enola
+```
+
+When model calls to the pinned public Hashmarks source are authorized, run one
+three-trial smoke per subject. Inspect its score and use the read-only gate before
+launching the nine-trial diagnostic:
+
+```bash
+make benchmark-tool-probe-smoke PROBE_SUBJECT=hashmarks
+make benchmark-tool-probe-smoke-gate PROBE_SUBJECT=hashmarks
+make benchmark-tool-probe PROBE_SUBJECT=hashmarks
+```
+
+Repeat with `PROBE_SUBJECT=enola`. `benchmark-tool-probe` checks the saved smoke gate
+before the full run. Use `benchmark-tool-probe-resume`, `-status`, and `-score` for a
+saved full run. The v2 score records required-call attempt and nonempty completion,
+whether that call preceded native file search, and unknown observations independently
+of semantic correctness. A complete nested Code Mode call without visible output
+bytes remains unknown; the smoke gate will not treat it as success.
 
 Every completed report now writes `trace-diagnostics.json`, a derived view of sealed
 traces with per-call order, status, failure category, input hash, file path attempts,

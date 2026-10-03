@@ -31,7 +31,54 @@ def _required_call_result(
         and call["result_bytes"] > 0
         for call in matching
     )
-    return bool(matching), succeeded
+    if succeeded:
+        return True, True
+    if matching and any(
+        call.get("status") == "completed" and call.get("result_bytes") is None
+        for call in matching
+    ):
+        return True, None
+    return bool(matching), False
+
+
+def _required_before_search(
+    calls: list[dict[str, object]] | None, subject: str, required: str
+) -> bool | None:
+    if calls is None:
+        return None
+    first_search = next((index for index, call in enumerate(calls)
+                         if call.get("tool") in {"read", "grep", "glob", "bash"}), len(calls))
+    prior = calls[:first_search]
+    _, succeeded = _required_call_result(prior, subject, required)
+    return succeeded
+
+
+def smoke_gate(
+    score: dict[str, object], *, subject: str, expected_trials: int = 3
+) -> None:
+    if score.get("schema") != "agents-cookbook-tool-probe-score.v2":
+        raise ValueError("tool-probe smoke score v2 is required")
+    if score.get("subject") != subject or score.get("required_tool") != REQUIRED_TOOLS[subject]:
+        raise ValueError("smoke score subject or required tool differs from selection")
+    rows = score.get("required_tool_results")
+    if not isinstance(rows, list) or len(rows) != expected_trials or (
+        score.get("expected_trials") != expected_trials or
+        score.get("observed_trials") != expected_trials
+    ):
+        raise ValueError("smoke requires exactly three observed trials")
+    if len({row.get("trial_id") for row in rows}) != expected_trials or len({
+        row.get("task_id") for row in rows
+    }) != 1 or any(
+        not isinstance(row.get("trial_id"), str) or not row["trial_id"] or
+        not isinstance(row.get("task_id"), str) or not row["task_id"]
+        for row in rows
+    ):
+        raise ValueError("smoke trial identities or task selection are inconsistent")
+    for row in rows:
+        if row.get("status") not in {"PASS", "FAIL"} or row.get("required_call_succeeded") is not True or (
+            row.get("required_before_file_search") is not True
+        ):
+            raise ValueError("smoke requires completed nonempty tool calls before file search in all trials")
 
 
 def main(suite_root: Path) -> int:
@@ -69,9 +116,10 @@ def main(suite_root: Path) -> int:
             "trace_observed": trace_observed,
             "required_call_attempted": attempted,
             "required_call_succeeded": successful,
+            "required_before_file_search": _required_before_search(calls, subject, required),
         })
     score = {
-        "schema": "agents-cookbook-tool-probe-score.v1",
+        "schema": "agents-cookbook-tool-probe-score.v2",
         "authority": {"diagnostic_only": True, "heldout_comparable": False},
         "subject": subject,
         "required_tool": required,
@@ -82,6 +130,15 @@ def main(suite_root: Path) -> int:
         "required_call_successes": sum(row["required_call_succeeded"] is True for row in rows),
         "required_call_failures": sum(row["required_call_succeeded"] is False for row in rows),
         "required_call_unknown": sum(row["required_call_succeeded"] is None for row in rows),
+        "required_before_file_search_successes": sum(
+            row["required_before_file_search"] is True for row in rows
+        ),
+        "required_before_file_search_failures": sum(
+            row["required_before_file_search"] is False for row in rows
+        ),
+        "required_before_file_search_unknown": sum(
+            row["required_before_file_search"] is None for row in rows
+        ),
     }
     args.output.write_text(json.dumps(score, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0

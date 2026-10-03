@@ -107,10 +107,16 @@ def build_agent(definition: dict[str, Any], *, budgets: dict[str, Any]):
                 "installed OpenCode config, not the benchmark: "
                 + ", ".join(sorted(forbidden))
             )
+        diagnostic_required_tool = config.get("diagnostic_required_tool")
+        if diagnostic_required_tool is not None and diagnostic_required_tool not in {
+            "hashmarks_task_evidence", "enola_explore"
+        }:
+            raise AdapterConfigurationError("unsupported diagnostic required tool")
         return OpenCodeNativeAgent(
             timeout_seconds=timeout_seconds,
             max_output_bytes=max_output_bytes,
             max_tool_calls=max_tool_calls,
+            diagnostic_required_tool=diagnostic_required_tool,
         )
 
     raise AdapterConfigurationError(f"unknown agent adapter: {adapter}")
