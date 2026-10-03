@@ -14,7 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from benchmarks.__main__ import main
+from benchmarks.__main__ import _execute_run, main
 from benchmarks.harness.campaign import campaign_status
 from benchmarks.harness.campaign_authority import (
     CampaignAuthorityError,
@@ -37,7 +37,7 @@ from benchmarks.harness.run_store import (
     select_saved_run,
 )
 from benchmarks.harness.receipt import is_complete_receipt
-from benchmarks.harness.runner import _fsync_path, _publish_bundle
+from benchmarks.harness.runner import TrialRunResult, _fsync_path, _publish_bundle
 from scripts.agent_economics.bounded_process import retain_lock_in_subprocesses, run_bounded
 
 
@@ -127,6 +127,113 @@ class SavedRunRecoveryTests(unittest.TestCase):
             self.assertEqual(admit.call_count, 2)
             verify_resume.assert_called_once()
             self.assertEqual(execute.call_count, 2)
+
+    def test_execute_run_reuses_complete_receipt_without_trial_admission(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            results = root / "results"
+            result_dir = results / ("b" * 64)
+            result_dir.mkdir(parents=True)
+            receipt = {
+                "definition_id": "a" * 64,
+                "status": "PASS",
+                "scoring": {"oracle_grade": {}},
+                "measurements": {"agent": {}},
+            }
+            (result_dir / "result.json").write_text(
+                json.dumps(receipt),
+                encoding="utf-8",
+            )
+            row = {
+                "definition_id": "a" * 64,
+                "task_id": "task-a",
+                "condition_id": "bare",
+                "trial": 0,
+                "replicate_id": 9,
+            }
+            suite = SimpleNamespace(
+                experiment={
+                    "conditions": [
+                        {
+                            "id": "bare",
+                            "agent": "opencode-native",
+                            "subject": "none",
+                            "trials": 1,
+                        }
+                    ]
+                }
+            )
+            status = {
+                "complete_trials": 1,
+                "pending_trials": 0,
+                "interrupted_trials": 0,
+                "rows": [
+                    {
+                        **row,
+                        "state": "COMPLETE",
+                        "trial_ids": ["b" * 64],
+                    }
+                ],
+                "outcomes": {"PASS": 1},
+                "qualified": True,
+            }
+            reused = TrialRunResult(
+                trial_id="b" * 64,
+                definition_id="a" * 64,
+                status="PASS",
+                result_dir=result_dir,
+                reused=True,
+            )
+            args = SimpleNamespace(
+                root=root,
+                harness_root=root,
+                source=None,
+                codex_auth=None,
+            )
+            paths = SimpleNamespace(
+                root=root,
+                cache=root / "cache",
+                work=root / "work",
+                results=results,
+                run_id="000001",
+            )
+
+            with (
+                mock.patch(
+                    "benchmarks.__main__.campaign_status",
+                    side_effect=[status, status],
+                ),
+                mock.patch(
+                    "benchmarks.__main__.reuse_completed_trial",
+                    return_value=reused,
+                ) as reuse,
+                mock.patch(
+                    "benchmarks.__main__.run_trial",
+                    side_effect=AssertionError(
+                        "completed receipt must not enter participant admission"
+                    ),
+                ) as run,
+                redirect_stdout(io.StringIO()),
+                redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(
+                    _execute_run(
+                        args,
+                        suite,
+                        [row],
+                        paths,
+                        {"campaign_id": "c" * 64},
+                        {},
+                    ),
+                    0,
+                )
+
+            reuse.assert_called_once_with(
+                results_root=results,
+                definition_id="a" * 64,
+                trial_id="b" * 64,
+            )
+            run.assert_not_called()
 
     def test_new_runs_are_numbered_and_latest_never_overwrites_history(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
