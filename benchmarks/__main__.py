@@ -768,7 +768,15 @@ def main(argv: list[str] | None = None) -> int:
                     need_execution=True,
                 )
                 paths = replace(paths, run_id=saved.run_id)
-                return _execute_run(args, suite, rows, paths, campaign, runtime_source)
+                return _execute_run(
+                    args,
+                    suite,
+                    rows,
+                    paths,
+                    campaign,
+                    runtime_source,
+                    config,
+                )
         except (RunStoreError, CampaignAuthorityError, OracleReviewError) as exc:
             raise SystemExit(f"benchmark run unavailable: {exc}") from exc
 
@@ -858,7 +866,97 @@ def main(argv: list[str] | None = None) -> int:
     raise SystemExit(f"unsupported benchmark command: {args.command}")
 
 
-def _execute_run(args, suite, rows, paths, campaign, runtime_source) -> int:
+def _persist_completed_run_reports(
+    *,
+    args,
+    config: BenchmarkConfig,
+    suite,
+    rows,
+    paths,
+    runtime_source,
+    final_status: dict[str, object],
+) -> dict[str, Path]:
+    """Persist derived artifacts after final campaign verification."""
+    assert paths.root is not None
+    assert paths.results is not None
+
+    selection = _selection_metadata(args, suite, rows)
+    reports_dir = _reports_dir(paths.root)
+
+    status_payload = dict(final_status)
+    status_payload["paths"] = paths.as_dict()
+    status_payload["paths"]["reports"] = str(reports_dir)
+    status_payload["run_id"] = paths.run_id
+    status_payload["selection"] = selection
+    status_path = _write_derived_json(paths.root, "status.json", status_payload)
+
+    report_data = build_report(
+        suite=suite,
+        results_root=paths.results,
+        require_complete=True,
+        selected_definitions={str(row["definition_id"]) for row in rows},
+        selection=selection,
+    )
+    report_data["run_id"] = paths.run_id
+    report_data["reports_dir"] = str(reports_dir)
+    report_path = _write_derived_json(paths.root, "report.json", report_data)
+
+    score_script = config.path("BENCHMARK_SCORE_SCRIPT_PATH") or (
+        suite.root / "score.py"
+    )
+    score_output = config.path("BENCHMARK_SCORE_OUTPUT_PATH") or Path("score.json")
+    if score_script is None or not score_script.is_file():
+        raise ReportError(f"benchmark score script does not exist: {score_script}")
+    if score_script.resolve().parent != suite.root.resolve():
+        raise ReportError(
+            f"benchmark score script must belong to selected suite: {suite.root}"
+        )
+    if score_output.is_absolute() or len(score_output.parts) != 1:
+        raise ReportError(
+            "BENCHMARK_SCORE_OUTPUT_PATH must be a filename within "
+            "the selected run's reports directory"
+        )
+    score_path = reports_dir / score_output
+    score_path.parent.mkdir(parents=True, exist_ok=True)
+    invocation = [
+        sys.executable,
+        str(score_script),
+        "--results",
+        str(paths.results),
+        "--output",
+        str(score_path),
+    ]
+    for agent in args.agent:
+        invocation.extend(("--agent", agent))
+    environment = dict(runtime_source)
+    project_root = str(Path(__file__).resolve().parents[1])
+    environment["PYTHONPATH"] = os.pathsep.join(
+        filter(None, (project_root, environment.get("PYTHONPATH", "")))
+    )
+    completed = subprocess.run(
+        invocation,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise ReportError(
+            "benchmark score generation failed"
+            + (f": {detail}" if detail else "")
+        )
+    if not score_path.is_file():
+        raise ReportError("benchmark score generation produced no output")
+
+    return {
+        "status": status_path,
+        "report": report_path,
+        "score": score_path,
+    }
+
+
+def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> int:
     results = []
     assert paths.results is not None
     live_matrix = LiveTaskMatrix(suite, rows)
@@ -1056,6 +1154,33 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source) -> int:
         file=sys.stderr,
         flush=True,
     )
+    try:
+        report_paths = _persist_completed_run_reports(
+            args=args,
+            config=config,
+            suite=suite,
+            rows=rows,
+            paths=paths,
+            runtime_source=runtime_source,
+            final_status=final_status,
+        )
+    except (OSError, ReportError, ValueError) as exc:
+        print(
+            f"REPORTS unavailable after completed execution: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        print(json.dumps(results, indent=2, sort_keys=True))
+        return 2
+    print(
+        "REPORTS saved | "
+        f"status {report_paths['status']} | "
+        f"report {report_paths['report']} | "
+        f"score {report_paths['score']}",
+        file=sys.stderr,
+        flush=True,
+    )
+
     if not final_status["qualified"]:
         blockers = [
             f"{label} {final_status[key]}"
