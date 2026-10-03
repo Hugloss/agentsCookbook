@@ -52,11 +52,25 @@ cp benchmarks/suites/repository-intelligence/headroom-v1/.env.example .env.headr
 $EDITOR .env.headroom
 ```
 
-Then:
+Then run a cheap provider/host/subject smoke before spending on the full diagnostic:
 
 ```bash
 uv run --no-project python -m benchmarks check --env-file .env.headroom
 
+uv run --no-project python -m benchmarks run \
+  --new \
+  --env-file .env.headroom \
+  --task freshness-00 \
+  --condition hashmarks-opencode-native
+```
+
+That smoke is exactly three frozen definitions. Its automatic scorer is bound to those
+three definition IDs; it does not demand the rest of the 36-trial OpenCode population.
+
+Only after the smoke completes and writes its report bundle, run the full paired
+diagnostic:
+
+```bash
 uv run --no-project python -m benchmarks run \
   --new \
   --env-file .env.headroom
