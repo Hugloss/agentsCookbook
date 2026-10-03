@@ -1192,6 +1192,8 @@ async function runSessionAndExport({
   env = {},
   deleteAfterExport = true,
   pure = true,
+  exportAttempts = 4,
+  exportDelayMs = 250,
 }) {
   const started = runSession({
     opencodeBin,
@@ -1217,19 +1219,28 @@ async function runSessionAndExport({
   let finalText = null;
   let exportParseError = null;
   if (sessionId) {
-    exported = exportSession({
-      opencodeBin,
-      repoDir,
-      sessionId,
-      env,
-      pure,
-    });
-    if (exported.status === 0) {
-      try {
-        finalText = extractFinalAnswer(exported.stdout).text;
-      } catch (error) {
-        exportParseError = String(error.message || error);
+    const attempts = run.status === 0 ? Math.max(1, exportAttempts) : 1;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      exported = exportSession({
+        opencodeBin,
+        repoDir,
+        sessionId,
+        env,
+        pure,
+      });
+      finalText = null;
+      exportParseError = null;
+      if (exported.status === 0) {
+        try {
+          finalText = extractFinalAnswer(exported.stdout).text;
+        } catch (error) {
+          exportParseError = String(error.message || error);
+        }
       }
+      if (finalText || attempt === attempts - 1) {
+        break;
+      }
+      await sleep(exportDelayMs);
     }
     if (deleteAfterExport) {
       deleted = deleteSession({
