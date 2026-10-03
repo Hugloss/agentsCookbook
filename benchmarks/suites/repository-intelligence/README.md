@@ -73,6 +73,17 @@ by Hashmarks release or ordinary test workflows. See its README for exact comman
 
 `native-matrix-v3/` is the current native Codex/OpenCode comparison, with one paired smoke task by default from Hashmarks. It pins a source revision without checked-in answers. `enola-cycle-reproduction-v1/` adapts the published TypeScript cycle example and reports functional success and cycle introduction separately. Both are development-only experiments in agentsCookbook; neither enters the installed Hashmarks product.
 
+## headroom-v1
+
+`headroom-v1/` is a diagnostic-only repeated paired suite created after heldout-v1
+campaign 000006 exposed a bare-control ceiling. It reuses four harder behavioral-v4
+case/oracle authorities (change impact, freshness, declarations, and verification)
+with three replicates per bare/Hashmarks/Enola condition. It explicitly reports whether
+bare-control headroom was actually observed; it does not assume assistance benefit,
+replace heldout-v1, or carry release authority.
+
+See `headroom-v1/README.md` for its isolated config and commands.
+
 ## behavioral-v3
 
 `behavioral-v3/` adds independent agent-outcome challenges for post-edit refresh,
