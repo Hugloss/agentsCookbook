@@ -14,7 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from benchmarks.__main__ import _execute_run, main
+from benchmarks.__main__ import _execute_run, _persist_completed_run_reports, main
 from benchmarks.harness.campaign import campaign_status
 from benchmarks.harness.campaign_authority import (
     CampaignAuthorityError,
@@ -213,6 +213,14 @@ class SavedRunRecoveryTests(unittest.TestCase):
                         "completed receipt must not enter participant admission"
                     ),
                 ) as run,
+                mock.patch(
+                    "benchmarks.__main__._persist_completed_run_reports",
+                    return_value={
+                        "status": root / "reports/status.json",
+                        "report": root / "reports/report.json",
+                        "score": root / "reports/score.json",
+                    },
+                ) as persist_reports,
                 redirect_stdout(io.StringIO()),
                 redirect_stderr(io.StringIO()),
             ):
@@ -224,6 +232,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
                         paths,
                         {"campaign_id": "c" * 64},
                         {},
+                        SimpleNamespace(),
                     ),
                     0,
                 )
@@ -234,6 +243,114 @@ class SavedRunRecoveryTests(unittest.TestCase):
                 trial_id="b" * 64,
             )
             run.assert_not_called()
+            persist_reports.assert_called_once()
+
+    def test_completed_nonqualified_run_persists_derived_reports(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            results = root / "results"
+            results.mkdir()
+            suite_root = root / "suite"
+            suite_root.mkdir()
+            score_script = suite_root / "score.py"
+            score_script.write_text("# score fixture\n", encoding="utf-8")
+            suite = SimpleNamespace(
+                root=suite_root,
+                experiment={
+                    "conditions": [
+                        {
+                            "id": "bare",
+                            "agent": "opencode-native",
+                            "subject": "none",
+                        }
+                    ]
+                },
+            )
+            row = {
+                "definition_id": "a" * 64,
+                "task_id": "task-a",
+                "condition_id": "bare",
+                "trial": 0,
+            }
+            args = SimpleNamespace(
+                task=[],
+                agent=["opencode-native"],
+                subject=[],
+                condition=None,
+            )
+            paths = SimpleNamespace(
+                root=root,
+                results=results,
+                run_id="000006",
+                as_dict=lambda: {
+                    "root": str(root),
+                    "results": str(results),
+                    "cache": None,
+                    "work": None,
+                    "run_id": "000006",
+                },
+            )
+            final_status = {
+                "complete": True,
+                "complete_trials": 1,
+                "expected_trials": 1,
+                "pending_trials": 0,
+                "interrupted_trials": 0,
+                "conflicting_trials": 0,
+                "corrupt_bundles": [],
+                "foreign_bundles": [],
+                "outcomes": {"INCOMPLETE": 1},
+                "unresolved_outcome_trials": 1,
+                "qualified": False,
+            }
+            config = SimpleNamespace(
+                path=lambda key: {
+                    "BENCHMARK_SCORE_SCRIPT_PATH": score_script,
+                    "BENCHMARK_SCORE_OUTPUT_PATH": Path("score.json"),
+                }.get(key)
+            )
+
+            def score_run(invocation, **_kwargs):
+                output = Path(invocation[invocation.index("--output") + 1])
+                output.write_text(
+                    json.dumps({"campaign_qualification": {"status": "NOT_QUALIFIED"}}),
+                    encoding="utf-8",
+                )
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with (
+                mock.patch(
+                    "benchmarks.__main__.build_report",
+                    return_value={
+                        "campaign_qualification": {"status": "NOT_QUALIFIED"}
+                    },
+                ),
+                mock.patch(
+                    "benchmarks.__main__.subprocess.run",
+                    side_effect=score_run,
+                ),
+            ):
+                written = _persist_completed_run_reports(
+                    args=args,
+                    config=config,
+                    suite=suite,
+                    rows=[row],
+                    paths=paths,
+                    runtime_source={},
+                    final_status=final_status,
+                )
+
+            self.assertTrue(written["status"].is_file())
+            self.assertTrue(written["report"].is_file())
+            self.assertTrue(written["score"].is_file())
+            stored_status = json.loads(written["status"].read_text(encoding="utf-8"))
+            self.assertFalse(stored_status["qualified"])
+            self.assertEqual(stored_status["unresolved_outcome_trials"], 1)
+            stored_report = json.loads(written["report"].read_text(encoding="utf-8"))
+            self.assertEqual(
+                stored_report["campaign_qualification"]["status"],
+                "NOT_QUALIFIED",
+            )
 
     def test_new_runs_are_numbered_and_latest_never_overwrites_history(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
