@@ -438,20 +438,31 @@ def _canonical_campaign_persistence_gap(
     return None
 
 
-def _selection_metadata(args, suite, rows) -> dict[str, object]:
+def _selection_metadata(suite, rows) -> dict[str, object]:
+    """Project selection metadata from the exact resolved definition rows."""
     conditions = {
         str(condition["id"]): condition for condition in suite.experiment["conditions"]
     }
-    bare_control_included = any(
-        conditions.get(str(row["condition_id"]), {}).get("subject") == "none"
-        for row in rows
-    )
+    condition_ids = sorted({str(row["condition_id"]) for row in rows})
     return {
-        "tasks": sorted(set(getattr(args, "task", []))),
-        "agents": sorted(set(args.agent)),
-        "subjects": sorted(set(getattr(args, "subject", []))),
-        "condition": getattr(args, "condition", None),
-        "bare_control_included": bare_control_included,
+        "tasks": sorted({str(row["task_id"]) for row in rows}),
+        "agents": sorted(
+            {
+                str(conditions[str(row["condition_id"])]["agent"])
+                for row in rows
+            }
+        ),
+        "subjects": sorted(
+            {
+                str(conditions[str(row["condition_id"])]["subject"])
+                for row in rows
+            }
+        ),
+        "condition": condition_ids[0] if len(condition_ids) == 1 else None,
+        "bare_control_included": any(
+            conditions[str(row["condition_id"])]["subject"] == "none"
+            for row in rows
+        ),
     }
 
 
@@ -778,21 +789,6 @@ def main(argv: list[str] | None = None) -> int:
                     agents=tuple(args.agent),
                     definition_ids=frozen_ids,
                 )
-                conditions = {
-                    str(condition["id"]): condition
-                    for condition in suite.experiment["conditions"]
-                }
-                args.task = sorted({str(row["task_id"]) for row in rows})
-                args.subject = sorted(
-                    {
-                        str(conditions[str(row["condition_id"])]["subject"])
-                        for row in rows
-                    }
-                )
-                condition_ids = sorted(
-                    {str(row["condition_id"]) for row in rows}
-                )
-                args.condition = condition_ids[0] if len(condition_ids) == 1 else None
                 paths = resolve_campaign_paths(
                     root=saved.root,
                     cache=None,
@@ -857,7 +853,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         status["paths"] = paths.as_dict()
         status["run_id"] = paths.run_id
-        status["selection"] = _selection_metadata(args, suite, rows)
+        status["selection"] = _selection_metadata(suite, rows)
         if paths.root is not None:
             status["paths"]["reports"] = str(_reports_dir(paths.root))
             persistence_gap = _canonical_campaign_persistence_gap(
@@ -899,7 +895,7 @@ def main(argv: list[str] | None = None) -> int:
                 results_root=paths.results,
                 require_complete=not args.allow_incomplete,
                 selected_definitions={str(row["definition_id"]) for row in rows},
-                selection=_selection_metadata(args, suite, rows),
+                selection=_selection_metadata(suite, rows),
             )
         except ReportError as exc:
             raise SystemExit(
@@ -1087,7 +1083,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         payload = {
             "paths": paths.as_dict(),
-            "selection": _selection_metadata(args, suite, rows),
+            "selection": _selection_metadata(suite, rows),
             "summary": dict(sorted(counts.items())),
             "ready": all(row["status"] in {"READY", "COMPLETE"} for row in results),
             "trials": results,
@@ -1116,7 +1112,7 @@ def _persist_completed_run_reports(
         suite=suite,
         campaign=read_campaign(paths.results),
     )
-    selection = _selection_metadata(args, suite, rows)
+    selection = _selection_metadata(suite, rows)
     reports_dir = _reports_dir(paths.root)
     score_script, score_output = _score_contract(config, suite)
 
