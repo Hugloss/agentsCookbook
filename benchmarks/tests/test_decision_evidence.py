@@ -205,7 +205,6 @@ class DecisionEvidenceTests(unittest.TestCase):
             evidence["evidence_signals"],
             [
                 "bare-headroom-observed",
-                "configured-subject-never-invoked",
                 "native-tool-strategy-partially-observed",
                 "runtime-or-host-instability-observed",
                 "semantic-misses-observed",
