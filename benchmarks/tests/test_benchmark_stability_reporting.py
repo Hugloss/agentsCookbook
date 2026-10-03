@@ -185,6 +185,167 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
             report["authority"]["replicate_identity_is_provider_sampling_seed"]
         )
 
+    def test_task_assistance_evidence_prevents_attributing_unused_subject_changes(self) -> None:
+        suite = _suite()
+        rows = {
+            (str(row["condition_id"]), int(row["trial"])): row
+            for row in suite.trial_definitions()
+        }
+        bare_statuses = ("FAIL", "PASS", "PASS")
+        assisted_statuses = ("PASS", "FAIL", "PASS")
+        receipts = []
+        for index in range(3):
+            bare = _receipt(
+                suite,
+                rows[("bare", index)],
+                bare_statuses[index],
+                chr(ord("a") + index) * 64,
+            )
+            assisted = _receipt(
+                suite,
+                rows[("hashmarks", index)],
+                assisted_statuses[index],
+                chr(ord("d") + index) * 64,
+            )
+            assisted["authority"]["subject"]["available"] = True
+            assisted["measurements"]["agent"] = {
+                "subject_tool_configured": True,
+                "subject_tool_invoked": False,
+                "subject_mcp_calls": 0,
+                "subject_tool_names": [],
+                "duration_ms": 120 + index,
+                "tool_calls": 3,
+                "mcp_calls": 0,
+                "input_tokens": 1200,
+                "output_tokens": 120,
+            }
+            bare["measurements"]["agent"] = {
+                "duration_ms": 100 + index,
+                "tool_calls": 2,
+                "mcp_calls": 0,
+                "input_tokens": 1000,
+                "output_tokens": 100,
+            }
+            receipts.extend((bare, assisted))
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(suite=suite, results_root=Path("/unused"))
+
+        self.assertEqual(len(report["task_assistance_evidence"]), 1)
+        evidence = report["task_assistance_evidence"][0]
+        self.assertEqual(evidence["task_id"], "task")
+        self.assertEqual(evidence["condition_id"], "hashmarks")
+        self.assertEqual(evidence["subject_id"], "hashmarks")
+        self.assertEqual(evidence["expected_pairs"], 3)
+        self.assertEqual(evidence["comparable_pairs"], 3)
+        self.assertEqual(evidence["excluded_pairs"], 0)
+        self.assertEqual(
+            evidence["transitions"],
+            {
+                "gain": 1,
+                "preserved": 1,
+                "unresolved": 0,
+                "regression": 1,
+            },
+        )
+        self.assertEqual(
+            evidence["transitions_by_invocation"]["not-invoked"],
+            {
+                "gain": 1,
+                "preserved": 1,
+                "unresolved": 0,
+                "regression": 1,
+            },
+        )
+        self.assertEqual(evidence["subject_use"]["invoked_pairs"], 0)
+        self.assertEqual(evidence["subject_use"]["not_invoked_pairs"], 3)
+        self.assertEqual(evidence["subject_use"]["subject_mcp_calls"], 0)
+        self.assertEqual(evidence["subject_use"]["subject_tool_names"], [])
+        self.assertIn("bare-headroom-observed", evidence["evidence_signals"])
+        self.assertIn("subject-not-invoked", evidence["evidence_signals"])
+        self.assertIn(
+            "bare-headroom-without-subject-invocation",
+            evidence["evidence_signals"],
+        )
+        self.assertIn(
+            "regression-without-subject-invocation",
+            evidence["evidence_signals"],
+        )
+        self.assertEqual(
+            evidence["delta_metrics_by_invocation"]["not-invoked"]["input_tokens"],
+            {
+                "observations": 3,
+                "mean": 200,
+                "median": 200,
+            },
+        )
+
+    def test_task_assistance_evidence_preserves_invoked_tool_names_and_effect(self) -> None:
+        suite = _suite()
+        rows = {
+            (str(row["condition_id"]), int(row["trial"])): row
+            for row in suite.trial_definitions()
+        }
+        receipts = []
+        for index in range(3):
+            bare = _receipt(
+                suite,
+                rows[("bare", index)],
+                "FAIL" if index == 0 else "PASS",
+                chr(ord("a") + index) * 64,
+            )
+            assisted = _receipt(
+                suite,
+                rows[("hashmarks", index)],
+                "PASS",
+                chr(ord("d") + index) * 64,
+            )
+            invoked = index == 0
+            assisted["authority"]["subject"]["available"] = True
+            assisted["measurements"]["agent"] = {
+                "subject_tool_configured": True,
+                "subject_tool_invoked": invoked,
+                "subject_mcp_calls": 1 if invoked else 0,
+                "subject_tool_names": ["task_evidence"] if invoked else [],
+                "duration_ms": 180 if invoked else 120,
+                "tool_calls": 5 if invoked else 3,
+                "mcp_calls": 1 if invoked else 0,
+                "input_tokens": 1800 if invoked else 1200,
+                "output_tokens": 140 if invoked else 110,
+            }
+            bare["measurements"]["agent"] = {
+                "duration_ms": 100,
+                "tool_calls": 2,
+                "mcp_calls": 0,
+                "input_tokens": 1000,
+                "output_tokens": 100,
+            }
+            receipts.extend((bare, assisted))
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(suite=suite, results_root=Path("/unused"))
+
+        evidence = report["task_assistance_evidence"][0]
+        self.assertEqual(evidence["subject_use"]["invoked_pairs"], 1)
+        self.assertEqual(evidence["subject_use"]["subject_mcp_calls"], 1)
+        self.assertEqual(
+            evidence["subject_use"]["subject_tool_names"],
+            ["task_evidence"],
+        )
+        self.assertEqual(
+            evidence["transitions_by_invocation"]["invoked"]["gain"],
+            1,
+        )
+        self.assertIn("subject-invocation-observed", evidence["evidence_signals"])
+        self.assertIn("invoked-gain-observed", evidence["evidence_signals"])
+        self.assertNotIn("invoked-no-gain-observed", evidence["evidence_signals"])
+
     def test_format_contract_explains_saturated_noncompliance(self) -> None:
         suite = _suite()
         rows = suite.trial_definitions()[:3]
