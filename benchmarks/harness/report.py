@@ -726,6 +726,26 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             .get("subject_tool_invoked")
         )
         row["subject_tool_invoked"] = invoked if isinstance(invoked, bool) else None
+        configured = (
+            receipt.get("measurements", {})
+            .get("agent", {})
+            .get("subject_tool_configured")
+        )
+        row["subject_tool_configured"] = (
+            configured if isinstance(configured, bool) else None
+        )
+        tool_names = (
+            receipt.get("measurements", {})
+            .get("agent", {})
+            .get("subject_tool_names")
+        )
+        row["subject_tool_names"] = sorted(
+            {
+                name
+                for name in tool_names
+                if isinstance(name, str) and name
+            }
+        ) if isinstance(tool_names, list) else []
         subject_calls = _agent_metric(receipt, "subject_mcp_calls")
         row["subject_mcp_calls"] = subject_calls
         for metric in (
@@ -843,6 +863,196 @@ def _paired_assistance_usage_summary(
             }
         )
     return summaries
+
+
+def _task_assistance_evidence(
+    rows: list[dict[str, Any]],
+    exclusions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[
+        tuple[str, str, str, str],
+        dict[str, list[dict[str, Any]]],
+    ] = defaultdict(lambda: {"pairs": [], "exclusions": []})
+    for row in rows:
+        key = (
+            str(row["task_id"]),
+            str(row["agent_id"]),
+            str(row["condition_id"]),
+            str(row["subject_id"]),
+        )
+        grouped[key]["pairs"].append(row)
+    for row in exclusions:
+        key = (
+            str(row["task_id"]),
+            str(row["agent_id"]),
+            str(row["condition_id"]),
+            str(row["subject_id"]),
+        )
+        grouped[key]["exclusions"].append(row)
+
+    output: list[dict[str, Any]] = []
+    for (task_id, agent_id, condition_id, subject_id), evidence in sorted(
+        grouped.items()
+    ):
+        pairs = evidence["pairs"]
+        excluded = evidence["exclusions"]
+        transitions = Counter(
+            str(row["assistance_transition"])
+            for row in pairs
+            if isinstance(row.get("assistance_transition"), str)
+        )
+        by_invocation: dict[str, list[dict[str, Any]]] = {
+            "invoked": [],
+            "not-invoked": [],
+            "unknown": [],
+        }
+        for row in pairs:
+            invoked = row.get("subject_tool_invoked")
+            state = (
+                "invoked"
+                if invoked is True
+                else "not-invoked"
+                if invoked is False
+                else "unknown"
+            )
+            by_invocation[state].append(row)
+
+        transition_by_invocation = {}
+        economics_by_invocation = {}
+        for state, state_rows in by_invocation.items():
+            counts = Counter(
+                str(row["assistance_transition"])
+                for row in state_rows
+                if isinstance(row.get("assistance_transition"), str)
+            )
+            transition_by_invocation[state] = {
+                name: counts.get(name, 0)
+                for name in ("gain", "preserved", "unresolved", "regression")
+            }
+            metrics: dict[str, dict[str, int | float | None]] = {}
+            for metric in (
+                "duration_ms",
+                "command_calls",
+                "tool_calls",
+                "mcp_calls",
+                "input_tokens",
+                "output_tokens",
+            ):
+                values = [
+                    value
+                    for row in state_rows
+                    if isinstance(
+                        (value := row.get(f"{metric}_delta")),
+                        (int, float),
+                    )
+                    and not isinstance(value, bool)
+                ]
+                metrics[metric] = {
+                    "observations": len(values),
+                    "mean": mean(values) if values else None,
+                    "median": median(values) if values else None,
+                }
+            economics_by_invocation[state] = metrics
+
+        bare_semantic_failures = (
+            transitions.get("gain", 0) + transitions.get("unresolved", 0)
+        )
+        bare_semantic_successes = (
+            transitions.get("preserved", 0) + transitions.get("regression", 0)
+        )
+        assisted_semantic_failures = (
+            transitions.get("unresolved", 0) + transitions.get("regression", 0)
+        )
+        assisted_semantic_successes = (
+            transitions.get("gain", 0) + transitions.get("preserved", 0)
+        )
+        invoked_transitions = transition_by_invocation["invoked"]
+        not_invoked_transitions = transition_by_invocation["not-invoked"]
+
+        signals: list[str] = []
+        if excluded:
+            signals.append("runtime-or-comparability-exclusions")
+        if pairs and bare_semantic_failures:
+            signals.append("bare-headroom-observed")
+        elif pairs and not bare_semantic_failures:
+            signals.append("bare-no-headroom-observed")
+        if by_invocation["invoked"]:
+            signals.append("subject-invocation-observed")
+            if invoked_transitions["gain"]:
+                signals.append("invoked-gain-observed")
+            if invoked_transitions["regression"]:
+                signals.append("invoked-regression-observed")
+            if not invoked_transitions["gain"]:
+                signals.append("invoked-no-gain-observed")
+        elif pairs and not by_invocation["unknown"]:
+            signals.append("subject-not-invoked")
+        if bare_semantic_failures and not by_invocation["invoked"]:
+            signals.append("bare-headroom-without-subject-invocation")
+        if not_invoked_transitions["regression"]:
+            signals.append("regression-without-subject-invocation")
+
+        tools = sorted(
+            {
+                name
+                for row in pairs
+                for name in row.get("subject_tool_names", [])
+                if isinstance(name, str) and name
+            }
+        )
+        output.append(
+            {
+                "task_id": task_id,
+                "agent_id": agent_id,
+                "condition_id": condition_id,
+                "subject_id": subject_id,
+                "expected_pairs": len(pairs) + len(excluded),
+                "comparable_pairs": len(pairs),
+                "excluded_pairs": len(excluded),
+                "excluded_statuses": {
+                    "bare": dict(
+                        sorted(Counter(str(row["bare_status"]) for row in excluded).items())
+                    ),
+                    "assisted": dict(
+                        sorted(
+                            Counter(
+                                str(row["assisted_status"]) for row in excluded
+                            ).items()
+                        )
+                    ),
+                },
+                "bare_semantic": {
+                    "successes": bare_semantic_successes,
+                    "failures": bare_semantic_failures,
+                },
+                "assisted_semantic": {
+                    "successes": assisted_semantic_successes,
+                    "failures": assisted_semantic_failures,
+                },
+                "transitions": {
+                    name: transitions.get(name, 0)
+                    for name in ("gain", "preserved", "unresolved", "regression")
+                },
+                "subject_use": {
+                    "invoked_pairs": len(by_invocation["invoked"]),
+                    "not_invoked_pairs": len(by_invocation["not-invoked"]),
+                    "unknown_pairs": len(by_invocation["unknown"]),
+                    "subject_mcp_calls": sum(
+                        int(value)
+                        for row in pairs
+                        if isinstance(
+                            (value := row.get("subject_mcp_calls")),
+                            (int, float),
+                        )
+                        and not isinstance(value, bool)
+                    ),
+                    "subject_tool_names": tools,
+                },
+                "transitions_by_invocation": transition_by_invocation,
+                "delta_metrics_by_invocation": economics_by_invocation,
+                "evidence_signals": signals,
+            }
+        )
+    return output
 
 
 def _stability(
@@ -1199,7 +1409,7 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 9,
+            "version": 10,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
@@ -1230,6 +1440,10 @@ def build_report(
         ),
         "paired_assistance_exclusions": pair_exclusions,
         "expected_assistance_pairs": len(paired_assistance) + len(pair_exclusions),
+        "task_assistance_evidence": _task_assistance_evidence(
+            paired_assistance,
+            pair_exclusions,
+        ),
         "stability": stability,
         "task_agent_authority": _task_agent_authority(receipts),
         "subject_adoption": _subject_adoption_summary(receipts),
