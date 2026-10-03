@@ -1647,6 +1647,76 @@ class PilotExecutionTests(unittest.TestCase):
             self.assertLess(len(terminal["reason"]), 2_200)
             self.assertTrue(terminal["reason"].endswith("…'"))
 
+    def test_opencode_nonzero_run_falls_back_to_bounded_stdout_tail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            control.mkdir()
+            context = TrialContext(
+                workspace,
+                control,
+                {"BENCHMARK_OPENCODE_AGENT": "build"},
+            )
+            evidence = {
+                "selected_server": None,
+                "native_config_sha256": "a" * 64,
+                "native_mcp_servers": [],
+                "subject_exposure_sha256": None,
+                "model": "test-provider/test-model",
+                "provider": "test-provider",
+                "runtime_contract": "agents-cookbook-opencode-runtime/v2",
+            }
+            (control / "opencode-native-evidence.json").write_text(
+                json.dumps(evidence),
+                encoding="utf-8",
+            )
+            runtime_result = mock.Mock(
+                elapsed_ms=100,
+                stdout=b"{}",
+                stderr=b"",
+                executable_missing=False,
+                stdout_truncated=False,
+            )
+            runtime_result.metrics.return_value = {"return_code": 0}
+            stdout = (
+                '{"type":"progress","message":"' + ("x" * 4_000) + '"}\n'
+                '{"type":"error","message":"provider unavailable"}\n'
+            )
+            envelope = {
+                "session_id": None,
+                "run": {
+                    "status": 1,
+                    "stdout": stdout,
+                    "stderr": "",
+                    "error": None,
+                    "signal": None,
+                },
+                "export": None,
+                "final_text": None,
+                "export_parse_error": None,
+            }
+            agent = OpenCodeNativeAgent()
+            with (
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._native_environment",
+                    return_value={"OPENCODE_BIN": "/bin/opencode"},
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call",
+                    return_value=(envelope, runtime_result),
+                ),
+            ):
+                observation = agent.run(context, "prompt", None)
+
+            terminal = observation.payload["terminal_event"]
+            self.assertEqual(terminal["type"], "turn.failed")
+            self.assertIn("OpenCode run exited with status 1", terminal["reason"])
+            self.assertIn("stdout_tail=", terminal["reason"])
+            self.assertIn("provider unavailable", terminal["reason"])
+            self.assertLess(len(terminal["reason"]), 2_200)
+
     def test_opencode_export_observes_native_model_and_mcp_adoption(self) -> None:
         exported = {
             "messages": [
