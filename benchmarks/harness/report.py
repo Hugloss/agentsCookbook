@@ -130,6 +130,65 @@ def _metric_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     return metrics
 
 
+def _format_contract_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
+    observed: list[tuple[bool, bool | None, str | None]] = []
+    for row in receipts:
+        grade = row.get("scoring", {}).get("oracle_grade", {})
+        compliant = grade.get("format_compliant")
+        if not isinstance(compliant, bool):
+            continue
+        gradeable = grade.get("semantic_gradeable")
+        answer_shape = grade.get("answer_shape")
+        observed.append(
+            (
+                compliant,
+                gradeable if isinstance(gradeable, bool) else None,
+                answer_shape if isinstance(answer_shape, str) else None,
+            )
+        )
+
+    shapes = Counter(shape for _compliant, _gradeable, shape in observed if shape)
+    compliant_count = sum(compliant for compliant, _gradeable, _shape in observed)
+    gradeable = [
+        value
+        for _compliant, value, _shape in observed
+        if isinstance(value, bool)
+    ]
+    if not observed:
+        state = "not-observed"
+        interpretation = "no strict format evidence is available"
+    elif compliant_count == len(observed):
+        state = "strict-contract-compliant"
+        interpretation = "all observed answers satisfy the strict output contract"
+    elif (
+        compliant_count == 0
+        and len(gradeable) == len(observed)
+        and all(gradeable)
+    ):
+        state = "strict-contract-saturated-noncompliant"
+        interpretation = (
+            "all observed answers violate the strict output contract while remaining "
+            "semantically gradeable; inspect answer_shapes instead of treating format "
+            "noncompliance as semantic failure"
+        )
+    else:
+        state = "mixed"
+        interpretation = (
+            "strict output compliance varies across observed answers; inspect "
+            "answer_shapes and semantic gradeability separately"
+        )
+    return {
+        "state": state,
+        "observations": len(observed),
+        "compliant": compliant_count,
+        "noncompliant": len(observed) - compliant_count,
+        "answer_shapes": dict(sorted(shapes.items())),
+        "semantic_gradeable_observations": len(gradeable),
+        "semantic_gradeable": sum(gradeable),
+        "interpretation": interpretation,
+    }
+
+
 def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     statuses = Counter(str(row.get("status")) for row in receipts)
     valid = [row for row in receipts if row.get("status") in _VALID_OUTCOMES]
@@ -210,6 +269,7 @@ def _aggregate_condition(receipts: list[dict[str, Any]]) -> dict[str, Any]:
             sum(format_rows) / len(format_rows) if format_rows else None
         ),
         "format_compliance_denominator": len(format_rows),
+        "format_contract": _format_contract_summary(valid),
         "subject_tool_adoption_rate": (
             len(invoked) / len(tool_available) if tool_available else None
         ),
@@ -1139,7 +1199,7 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 8,
+            "version": 9,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
