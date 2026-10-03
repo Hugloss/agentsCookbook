@@ -149,7 +149,31 @@ class ReviewAndDiagnosticTests(unittest.TestCase):
         self.assertEqual(result["pending_tasks"], [])
         self.assertEqual(result["missing_review_tasks"], [])
         self.assertEqual(result["non_unique_tasks"], [])
-        self.assertEqual(result["escalated_tasks"], [])
+        self.assertEqual(
+            result["escalated_tasks"],
+            [
+                "locate-prefix-path-enumerator",
+                "locate-directory-pruning",
+                "locate-resource-invalidation",
+            ],
+        )
+        review_evidence = json.loads(
+            (SOURCE / "qualification/oracle-reviews.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        for task_id in result["escalated_tasks"]:
+            row = review_evidence["tasks"][task_id]
+            self.assertEqual(
+                row["review_requirement"]["minimum_independent_reviews"],
+                2,
+            )
+            self.assertTrue(row["review_requirement"]["escalation_reason"])
+            self.assertEqual(len(row["reviews"]), 2)
+            self.assertEqual(
+                {review["decision"] for review in row["reviews"]},
+                {"unique"},
+            )
         self.assertTrue(result["complete"])
 
     def test_missing_repaired_identity_review_is_still_blocking(self) -> None:
