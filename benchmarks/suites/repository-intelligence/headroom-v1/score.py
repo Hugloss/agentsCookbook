@@ -98,7 +98,7 @@ def score(
         if condition["agent"] in selected_agents and condition["subject"] == "none"
     }
     return {
-        "schema": "agents-cookbook-repository-intelligence-headroom.v1",
+        "schema": "agents-cookbook-repository-intelligence-headroom.v2",
         "diagnostic_only": True,
         "selection": {"agents": sorted(agents)},
         "expected_trials": report["expected_trials"],
@@ -121,7 +121,9 @@ def score(
             [],
         ),
         "paired_assistance_exclusions": report["paired_assistance_exclusions"],
+        "task_assistance_evidence": report.get("task_assistance_evidence", []),
         "conditions": report["conditions"],
+        "agent_profiles": report["agent_profiles"],
         "diagnostics": report["diagnostics"],
         "authority": {
             "release_authority": False,
