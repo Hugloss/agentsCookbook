@@ -88,6 +88,10 @@ class SavedRunRecoveryTests(unittest.TestCase):
             with (
                 mock.patch("benchmarks.__main__._resolve_config", return_value=config),
                 mock.patch("benchmarks.__main__.admit_campaign", side_effect=admit_with_progress) as admit,
+                mock.patch(
+                    "benchmarks.__main__.verify_saved_campaign",
+                    side_effect=lambda **kwargs: read_campaign(kwargs["results_root"]),
+                ) as verify_resume,
                 mock.patch("benchmarks.__main__._execute_run", return_value=0) as execute,
             ):
                 for command in (
@@ -99,19 +103,29 @@ class SavedRunRecoveryTests(unittest.TestCase):
                         stdout, stderr = io.StringIO(), io.StringIO()
                         with redirect_stdout(stdout), redirect_stderr(stderr):
                             self.assertEqual(main(command), 0)
-                        self.assertIn("ADMISSION oracle review | checking", stderr.getvalue())
-                        expected_status = "reused" if "--resume" in command else "published"
-                        self.assertIn(
-                            f"ADMISSION campaign authority | {expected_status}",
-                            stderr.getvalue(),
-                        )
-                        self.assertIn("admission elapsed", stderr.getvalue())
+                        if "--resume" in command:
+                            self.assertIn(
+                                "RESUME campaign authority | verified |",
+                                stderr.getvalue(),
+                            )
+                            self.assertNotIn("ADMISSION [", stderr.getvalue())
+                        else:
+                            self.assertIn(
+                                "ADMISSION oracle review | checking",
+                                stderr.getvalue(),
+                            )
+                            self.assertIn(
+                                "ADMISSION campaign authority | published",
+                                stderr.getvalue(),
+                            )
+                            self.assertIn("admission elapsed", stderr.getvalue())
                         if command[0] == "prepare":
                             self.assertEqual(json.loads(stdout.getvalue())["run_id"], "000001")
                         else:
                             self.assertEqual(stdout.getvalue(), "")
 
-            self.assertEqual(admit.call_count, 3)
+            self.assertEqual(admit.call_count, 2)
+            verify_resume.assert_called_once()
             self.assertEqual(execute.call_count, 2)
 
     def test_new_runs_are_numbered_and_latest_never_overwrites_history(self) -> None:
