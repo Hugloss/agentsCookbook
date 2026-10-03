@@ -105,6 +105,39 @@ def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
         int(row.get("invocation_unknown_trials", 0) or 0)
         for row in subject_adoption
     )
+    agent_tool_strategy = []
+    for agent_id, summary in sorted(
+        (report.get("agent_profiles") or {}).items()
+    ):
+        if not isinstance(summary, dict):
+            continue
+        strategy = summary.get("tool_strategy")
+        if isinstance(strategy, dict):
+            agent_tool_strategy.append(
+                {
+                    "agent_id": str(agent_id),
+                    **strategy,
+                }
+            )
+
+    condition_tool_strategy = []
+    for condition_id, summary in sorted(
+        (report.get("conditions") or {}).items()
+    ):
+        if not isinstance(summary, dict):
+            continue
+        strategy = summary.get("tool_strategy")
+        if isinstance(strategy, dict):
+            condition_tool_strategy.append(
+                {
+                    "condition_id": str(condition_id),
+                    **strategy,
+                }
+            )
+    partial_tool_strategy_trials = sum(
+        int(row.get("partial_observability_trials", 0) or 0)
+        for row in agent_tool_strategy
+    )
 
     evidence_signals: list[str] = []
     if runtime_rows:
@@ -127,6 +160,8 @@ def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
         evidence_signals.append("source-read-archaeology-unavailable")
     if invocation_unknown:
         evidence_signals.append("subject-invocation-partially-unobserved")
+    if partial_tool_strategy_trials:
+        evidence_signals.append("native-tool-strategy-partially-observed")
 
     return {
         "schema": "agents-cookbook-benchmark-decision-evidence.v1",
@@ -206,10 +241,15 @@ def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
                 "task_signal_counts": _counter(task_signals),
                 "task_evidence": task_assistance,
             },
+            "tool_strategy": {
+                "agent_profiles": agent_tool_strategy,
+                "conditions": condition_tool_strategy,
+            },
         },
         "evidence_gaps": {
             "source_read_observability": source_read_observability,
             "subject_invocation_unknown_trials": invocation_unknown,
+            "tool_strategy_partial_trials": partial_tool_strategy_trials,
         },
         "evidence_signals": sorted(set(evidence_signals)),
     }
