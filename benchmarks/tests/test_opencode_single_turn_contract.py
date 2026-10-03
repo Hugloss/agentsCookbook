@@ -25,9 +25,9 @@ class OpenCodeSingleTurnContractTests(unittest.TestCase):
         )
         self.assertIn("compaction_auto: false", source)
 
-    def test_opencode_agent_identity_versions_single_turn_runtime(self) -> None:
+    def test_opencode_agent_identity_versions_execution_runtime(self) -> None:
         agent = json.loads(AGENT.read_text(encoding="utf-8"))
-        self.assertEqual(agent["identity"]["version"], "native-config-v2")
+        self.assertEqual(agent["identity"]["version"], "native-config-v3")
 
 
 if __name__ == "__main__":
