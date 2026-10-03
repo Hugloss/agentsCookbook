@@ -376,7 +376,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             )
             self.assertEqual(
                 stored_decision["schema"],
-                "agents-cookbook-benchmark-decision-evidence.v1",
+                "agents-cookbook-benchmark-decision-evidence.v2",
             )
             self.assertEqual(stored_decision["run_id"], "000001")
             self.assertTrue(stored_decision["authority"]["derived_only"])
