@@ -25,9 +25,7 @@ benchmark-status:
 	@uv run --no-project python -m benchmarks status --env-file .env
 
 benchmark-reports:
-	@$(MAKE) --no-print-directory benchmark-status
-	@$(MAKE) --no-print-directory benchmark-report
-	@$(MAKE) --no-print-directory benchmark-score
+	@uv run --no-project python -m benchmarks reports --env-file .env
 
 benchmark:
 	@uv run --no-project python -m benchmarks run --auto --env-file .env

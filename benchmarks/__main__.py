@@ -64,6 +64,7 @@ from benchmarks.harness.selection import (
     SelectionError,
     parse_agent_arguments,
     select_definitions,
+    select_scoring_definitions,
 )
 from benchmarks.harness.suite import load_runtime_suite, load_suite
 from scripts.agent_economics.bounded_process import retain_lock_in_subprocesses
@@ -213,6 +214,13 @@ def _parser() -> argparse.ArgumentParser:
         help="report available valid receipts without requiring every frozen definition",
     )
 
+    reports = sub.add_parser("reports")
+    reports.add_argument("--suite", type=Path)
+    reports.add_argument("--env-file", type=Path, required=True)
+    reports.add_argument("--root", type=Path)
+    reports.add_argument("--run-id")
+    reports.add_argument("--agent", action="append", default=[])
+
     score = sub.add_parser("score")
     score.add_argument("--env-file", type=Path, required=True)
     score.add_argument("--suite", type=Path)
@@ -255,7 +263,15 @@ def _resolve_config(args: argparse.Namespace) -> BenchmarkConfig:
         if hasattr(args, "suite") and args.suite is None:
             raise BenchmarkConfigError("BENCHMARK_SUITE_PATH or --suite is required")
         if (
-            args.command in {"preflight", "campaign-audit", "prepare", "run", "report", "score"}
+            args.command in {
+                "preflight",
+                "campaign-audit",
+                "prepare",
+                "run",
+                "report",
+                "reports",
+                "score",
+            }
             and not args.agent
         ):
             raise BenchmarkConfigError("BENCHMARK_AGENT or --agent is required")
@@ -342,6 +358,73 @@ def _write_derived_json(run_root: Path, filename: str, payload: object) -> Path:
     return destination
 
 
+def _score_environment(runtime_source) -> dict[str, str]:
+    environment = dict(runtime_source)
+    project_root = str(Path(__file__).resolve().parents[1])
+    environment["PYTHONPATH"] = os.pathsep.join(
+        filter(None, (project_root, environment.get("PYTHONPATH", "")))
+    )
+    return environment
+
+
+def _score_contract(config: BenchmarkConfig, suite) -> tuple[Path, Path]:
+    """Resolve the one suite-owned scoring contract used by run completion."""
+    script = (config.path("BENCHMARK_SCORE_SCRIPT_PATH") or (suite.root / "score.py")).resolve()
+    output = config.path("BENCHMARK_SCORE_OUTPUT_PATH") or Path("score.json")
+    if not script.is_file():
+        raise ReportError(f"benchmark score script does not exist: {script}")
+    if script.parent != suite.root.resolve():
+        raise ReportError(
+            f"benchmark score script must belong to selected suite: {suite.root}"
+        )
+    if output.is_absolute() or len(output.parts) != 1:
+        raise ReportError(
+            "BENCHMARK_SCORE_OUTPUT_PATH must be a filename within "
+            "the selected run's reports directory"
+        )
+    return script, output
+
+
+def _validate_score_cli(script: Path, runtime_source) -> None:
+    """Prove the frozen-selection scorer interface before participant work."""
+    completed = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        env=_score_environment(runtime_source),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise ReportError(
+            "benchmark score contract check failed"
+            + (f": {detail}" if detail else "")
+        )
+    help_text = "\n".join((completed.stdout, completed.stderr))
+    missing = [
+        option
+        for option in ("--results", "--output", "--agent", "--definition-id")
+        if option not in help_text
+    ]
+    if missing:
+        raise ReportError(
+            "benchmark score script lacks required frozen-selection option(s): "
+            + ", ".join(missing)
+        )
+
+
+def _validate_reporting_contract(config: BenchmarkConfig, suite, runtime_source) -> tuple[Path, Path]:
+    script, output = _score_contract(config, suite)
+    _validate_score_cli(script, runtime_source)
+    return script, output
+
+
+def _is_frozen_campaign_selection(results_root: Path, rows) -> bool:
+    manifest = read_campaign(results_root)
+    selected = {str(row["definition_id"]) for row in rows}
+    return selected == {str(value) for value in manifest["selected_definitions"]}
+
+
 def _selection_metadata(args, suite, rows) -> dict[str, object]:
     conditions = {
         str(condition["id"]): condition for condition in suite.experiment["conditions"]
@@ -351,10 +434,10 @@ def _selection_metadata(args, suite, rows) -> dict[str, object]:
         for row in rows
     )
     return {
-        "tasks": sorted(set(args.task)),
+        "tasks": sorted(set(getattr(args, "task", []))),
         "agents": sorted(set(args.agent)),
-        "subjects": sorted(set(args.subject)),
-        "condition": args.condition,
+        "subjects": sorted(set(getattr(args, "subject", []))),
+        "condition": getattr(args, "condition", None),
         "bare_control_included": bare_control_included,
     }
 
@@ -548,6 +631,10 @@ def main(argv: list[str] | None = None) -> int:
                 f"ERROR: benchmark score script must belong to selected suite: {args.suite}"
             )
         try:
+            _validate_score_cli(script, runtime_source)
+        except ReportError as exc:
+            raise SystemExit(f"benchmark reporting contract unavailable: {exc}") from exc
+        try:
             saved = select_saved_run(args.root, args.run_id)
             manifest = _assert_saved_run_agents(saved, args.agent)
         except (RunStoreError, CampaignAuthorityError) as exc:
@@ -574,12 +661,11 @@ def main(argv: list[str] | None = None) -> int:
             str(value) for value in manifest["selected_definitions"]
         ):
             invocation.extend(("--definition-id", definition_id))
-        environment = dict(runtime_source)
-        project_root = str(Path(__file__).resolve().parents[1])
-        environment["PYTHONPATH"] = os.pathsep.join(
-            filter(None, (project_root, environment.get("PYTHONPATH", "")))
-        )
-        return subprocess.run(invocation, env=environment, check=False).returncode
+        return subprocess.run(
+            invocation,
+            env=_score_environment(runtime_source),
+            check=False,
+        ).returncode
     suite = (
         load_runtime_suite(args.suite)
         if args.command == "check"
@@ -636,16 +722,91 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0 if report.ready else 2
 
-    rows = _select(args, suite)
+    rows = [] if args.command == "reports" else _select(args, suite)
 
     if args.command in {"preflight", "campaign-audit", "prepare", "run"}:
         try:
             config.require(*required_runtime_authority(suite, rows))
+            _validate_reporting_contract(config, suite, runtime_source)
         except BenchmarkConfigError as exc:
             raise SystemExit(f"ERROR: {exc}") from exc
+        except ReportError as exc:
+            raise SystemExit(f"benchmark reporting contract unavailable: {exc}") from exc
+
+    if args.command == "reports":
+        try:
+            _validate_reporting_contract(config, suite, runtime_source)
+        except ReportError as exc:
+            raise SystemExit(f"benchmark reporting contract unavailable: {exc}") from exc
 
     if args.command == "plan":
         print(json.dumps(rows, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "reports":
+        if args.root is None:
+            raise SystemExit(
+                "reports requires --root or BENCHMARK_CAMPAIGN_ROOT"
+            )
+        try:
+            with exclusive_store(args.root):
+                saved = select_saved_run(args.root, args.run_id)
+                manifest = _assert_saved_run_agents(saved, args.agent)
+                frozen_ids = tuple(
+                    str(value) for value in manifest["selected_definitions"]
+                )
+                rows = select_scoring_definitions(
+                    suite,
+                    agents=tuple(args.agent),
+                    definition_ids=frozen_ids,
+                )
+                paths = resolve_campaign_paths(
+                    root=saved.root,
+                    cache=None,
+                    work=None,
+                    results=None,
+                    need_execution=False,
+                )
+                paths = replace(paths, run_id=saved.run_id)
+                assert paths.results is not None
+                selected_definitions = set(frozen_ids)
+                final_status = campaign_status(
+                    suite=suite,
+                    results_root=paths.results,
+                    selected_definitions=selected_definitions,
+                )
+                if not final_status["complete"]:
+                    raise ReportError(
+                        "complete report set requires every frozen definition to finish"
+                    )
+                written = _persist_completed_run_reports(
+                    args=args,
+                    config=config,
+                    suite=suite,
+                    rows=rows,
+                    paths=paths,
+                    runtime_source=runtime_source,
+                    final_status=final_status,
+                )
+        except (
+            RunStoreError,
+            CampaignAuthorityError,
+            ReportError,
+            SelectionError,
+        ) as exc:
+            raise SystemExit(f"benchmark reports unavailable: {exc}") from exc
+        print(
+            json.dumps(
+                {
+                    "run_id": paths.run_id,
+                    "reports": {
+                        key: str(value) for key, value in written.items()
+                    },
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return 0
 
     if args.command == "status":
@@ -666,7 +827,15 @@ def main(argv: list[str] | None = None) -> int:
         status["selection"] = _selection_metadata(args, suite, rows)
         if paths.root is not None:
             status["paths"]["reports"] = str(_reports_dir(paths.root))
-            _write_derived_json(paths.root, "status.json", status)
+            if _is_frozen_campaign_selection(paths.results, rows):
+                _write_derived_json(paths.root, "status.json", status)
+            else:
+                print(
+                    "STATUS inspection only | selected definitions differ from "
+                    "frozen campaign; canonical reports/status.json unchanged",
+                    file=sys.stderr,
+                    flush=True,
+                )
         print(json.dumps(status, indent=2, sort_keys=True))
         return (
             2
@@ -701,10 +870,24 @@ def main(argv: list[str] | None = None) -> int:
         report_data["run_id"] = paths.run_id
         if paths.root is not None:
             report_data["reports_dir"] = str(_reports_dir(paths.root))
-            _write_derived_json(paths.root, "report.json", report_data)
-            decision = build_decision_evidence(report_data)
-            decision["run_id"] = paths.run_id
-            _write_derived_json(paths.root, "decision-evidence.json", decision)
+            canonical_selection = _is_frozen_campaign_selection(paths.results, rows)
+            if canonical_selection and not args.allow_incomplete:
+                _write_derived_json(paths.root, "report.json", report_data)
+                decision = build_decision_evidence(report_data)
+                decision["run_id"] = paths.run_id
+                _write_derived_json(paths.root, "decision-evidence.json", decision)
+            else:
+                reason = (
+                    "--allow-incomplete is inspection-only"
+                    if args.allow_incomplete
+                    else "selected definitions differ from frozen campaign"
+                )
+                print(
+                    f"REPORT inspection only | {reason}; canonical report.json "
+                    "and decision-evidence.json unchanged",
+                    file=sys.stderr,
+                    flush=True,
+                )
         print(json.dumps(report_data, indent=2, sort_keys=True))
         return 0
 
@@ -890,14 +1073,13 @@ def _persist_completed_run_reports(
 
     selection = _selection_metadata(args, suite, rows)
     reports_dir = _reports_dir(paths.root)
+    score_script, score_output = _score_contract(config, suite)
 
     status_payload = dict(final_status)
     status_payload["paths"] = paths.as_dict()
     status_payload["paths"]["reports"] = str(reports_dir)
     status_payload["run_id"] = paths.run_id
     status_payload["selection"] = selection
-    status_path = _write_derived_json(paths.root, "status.json", status_payload)
-
     report_data = build_report(
         suite=suite,
         results_root=paths.results,
@@ -907,65 +1089,62 @@ def _persist_completed_run_reports(
     )
     report_data["run_id"] = paths.run_id
     report_data["reports_dir"] = str(reports_dir)
-    report_path = _write_derived_json(paths.root, "report.json", report_data)
 
     decision_data = build_decision_evidence(report_data)
     decision_data["run_id"] = paths.run_id
-    decision_path = _write_derived_json(
-        paths.root,
-        "decision-evidence.json",
-        decision_data,
-    )
 
-    score_script = config.path("BENCHMARK_SCORE_SCRIPT_PATH") or (
-        suite.root / "score.py"
-    )
-    score_output = config.path("BENCHMARK_SCORE_OUTPUT_PATH") or Path("score.json")
-    if score_script is None or not score_script.is_file():
-        raise ReportError(f"benchmark score script does not exist: {score_script}")
-    if score_script.resolve().parent != suite.root.resolve():
-        raise ReportError(
-            f"benchmark score script must belong to selected suite: {suite.root}"
-        )
-    if score_output.is_absolute() or len(score_output.parts) != 1:
-        raise ReportError(
-            "BENCHMARK_SCORE_OUTPUT_PATH must be a filename within "
-            "the selected run's reports directory"
-        )
     score_path = reports_dir / score_output
-    score_path.parent.mkdir(parents=True, exist_ok=True)
-    invocation = [
-        sys.executable,
-        str(score_script),
-        "--results",
-        str(paths.results),
-        "--output",
-        str(score_path),
-    ]
-    for agent in args.agent:
-        invocation.extend(("--agent", agent))
-    for definition_id in sorted(str(row["definition_id"]) for row in rows):
-        invocation.extend(("--definition-id", definition_id))
-    environment = dict(runtime_source)
-    project_root = str(Path(__file__).resolve().parents[1])
-    environment["PYTHONPATH"] = os.pathsep.join(
-        filter(None, (project_root, environment.get("PYTHONPATH", "")))
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    fd, temporary_score = tempfile.mkstemp(
+        prefix=f".{score_path.name}.staged.",
+        dir=reports_dir,
     )
-    completed = subprocess.run(
-        invocation,
-        env=environment,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout).strip()
-        raise ReportError(
-            "benchmark score generation failed"
-            + (f": {detail}" if detail else "")
+    os.close(fd)
+    staged_score = Path(temporary_score)
+    try:
+        invocation = [
+            sys.executable,
+            str(score_script),
+            "--results",
+            str(paths.results),
+            "--output",
+            str(staged_score),
+        ]
+        for agent in args.agent:
+            invocation.extend(("--agent", agent))
+        for definition_id in sorted(str(row["definition_id"]) for row in rows):
+            invocation.extend(("--definition-id", definition_id))
+        completed = subprocess.run(
+            invocation,
+            env=_score_environment(runtime_source),
+            text=True,
+            capture_output=True,
+            check=False,
         )
-    if not score_path.is_file():
-        raise ReportError("benchmark score generation produced no output")
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout).strip()
+            raise ReportError(
+                "benchmark score generation failed"
+                + (f": {detail}" if detail else "")
+            )
+        if not staged_score.is_file() or staged_score.stat().st_size == 0:
+            raise ReportError("benchmark score generation produced no output")
+
+        status_path = _write_derived_json(paths.root, "status.json", status_payload)
+        report_path = _write_derived_json(paths.root, "report.json", report_data)
+        decision_path = _write_derived_json(
+            paths.root,
+            "decision-evidence.json",
+            decision_data,
+        )
+        os.replace(staged_score, score_path)
+        directory_fd = os.open(reports_dir, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        staged_score.unlink(missing_ok=True)
 
     return {
         "status": status_path,

@@ -40,7 +40,7 @@ BENCHMARK_HARNESS_REPO_ROOT=.
 BENCHMARK_AGENT=opencode-native
 HASHMARKS_BENCH_SOURCE=/absolute/path/to/clean/Hashmarks
 BENCHMARK_SCORE_SCRIPT_PATH=benchmarks/suites/repository-intelligence/behavioral-v3/score.py
-BENCHMARK_SCORE_OUTPUT_PATH=/tmp/agentscookbook-behavioral-v3/score.json
+BENCHMARK_SCORE_OUTPUT_PATH=score.json
 ```
 
 Then run:

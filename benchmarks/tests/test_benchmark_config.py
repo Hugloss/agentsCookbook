@@ -109,7 +109,11 @@ class BenchmarkConfigTests(unittest.TestCase):
                 )
             with patch(
                 "benchmarks.__main__.subprocess.run",
-                return_value=SimpleNamespace(returncode=0),
+                return_value=SimpleNamespace(
+                    returncode=0,
+                    stdout="--results --output --agent --definition-id",
+                    stderr="",
+                ),
             ) as run, patch(
                 "benchmarks.__main__.select_saved_run",
                 return_value=SimpleNamespace(run_id="000001", root=root),

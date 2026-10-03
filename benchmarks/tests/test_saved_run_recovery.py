@@ -14,7 +14,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from benchmarks.__main__ import _execute_run, _persist_completed_run_reports, main
+from benchmarks.__main__ import (
+    _execute_run,
+    _persist_completed_run_reports,
+    _validate_reporting_contract,
+    main,
+)
 from benchmarks.harness.campaign import campaign_status
 from benchmarks.harness.campaign_authority import (
     CampaignAuthorityError,
@@ -37,6 +42,7 @@ from benchmarks.harness.run_store import (
     select_saved_run,
 )
 from benchmarks.harness.receipt import is_complete_receipt
+from benchmarks.harness.report import ReportError
 from benchmarks.harness.runner import TrialRunResult, _fsync_path, _publish_bundle
 from scripts.agent_economics.bounded_process import retain_lock_in_subprocesses, run_bounded
 
@@ -93,6 +99,10 @@ class SavedRunRecoveryTests(unittest.TestCase):
                     side_effect=lambda **kwargs: read_campaign(kwargs["results_root"]),
                 ) as verify_resume,
                 mock.patch("benchmarks.__main__._execute_run", return_value=0) as execute,
+                mock.patch(
+                    "benchmarks.__main__._validate_reporting_contract",
+                    return_value=(suite / "score.py", Path("score.json")),
+                ),
             ):
                 for command in (
                     ["prepare", "--new", *common],
@@ -366,6 +376,406 @@ class SavedRunRecoveryTests(unittest.TestCase):
                 "NOT_QUALIFIED",
             )
             self.assertTrue(stored_decision["authority"]["derived_only"])
+
+    def test_run_rejects_invalid_score_output_before_campaign_admission(self) -> None:
+        suite = (
+            Path(__file__).resolve().parents[1]
+            / "suites/repository-intelligence/heldout-v1"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "runs"
+            config = SimpleNamespace(
+                runtime_environment=lambda: {},
+                require=lambda *_keys: None,
+                path=lambda key: {
+                    "BENCHMARK_SCORE_SCRIPT_PATH": suite / "score.py",
+                    "BENCHMARK_SCORE_OUTPUT_PATH": Path(temporary) / "score.json",
+                }.get(key),
+            )
+            with (
+                mock.patch("benchmarks.__main__._resolve_config", return_value=config),
+                mock.patch("benchmarks.__main__.admit_campaign") as admit,
+                mock.patch("benchmarks.__main__._execute_run") as execute,
+                self.assertRaisesRegex(
+                    SystemExit,
+                    "BENCHMARK_SCORE_OUTPUT_PATH must be a filename",
+                ),
+            ):
+                main(
+                    [
+                        "run",
+                        "--new",
+                        "--suite",
+                        str(suite),
+                        "--root",
+                        str(root),
+                        "--harness-root",
+                        str(Path(__file__).resolve().parents[2]),
+                        "--env-file",
+                        str(Path(temporary) / "unused.env"),
+                        "--agent",
+                        "opencode-native",
+                        "--task",
+                        "locate-prefix-path-enumerator",
+                    ]
+                )
+            admit.assert_not_called()
+            execute.assert_not_called()
+            self.assertFalse(root.exists())
+
+    def test_reporting_contract_rejects_scorer_without_exact_definition_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            score = root / "score.py"
+            score.write_text(
+                "import argparse\n"
+                "p=argparse.ArgumentParser()\n"
+                "p.add_argument('--results')\n"
+                "p.add_argument('--output')\n"
+                "p.add_argument('--agent')\n"
+                "p.parse_args()\n",
+                encoding="utf-8",
+            )
+            config = SimpleNamespace(
+                path=lambda key: {
+                    "BENCHMARK_SCORE_SCRIPT_PATH": score,
+                    "BENCHMARK_SCORE_OUTPUT_PATH": Path("score.json"),
+                }.get(key)
+            )
+            with self.assertRaisesRegex(ReportError, "--definition-id"):
+                _validate_reporting_contract(
+                    config,
+                    SimpleNamespace(root=root),
+                    {},
+                )
+
+    def test_subset_status_and_report_do_not_replace_canonical_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Path(temporary)
+            run_root = store / "runs/000001"
+            results = run_root / "results"
+            first, second = "a" * 64, "b" * 64
+            _campaign(results, [first, second])
+            reports = run_root / "reports"
+            reports.mkdir()
+            canonical = {
+                "status.json": "canonical status\n",
+                "report.json": "canonical report\n",
+                "decision-evidence.json": "canonical decision\n",
+            }
+            for name, value in canonical.items():
+                (reports / name).write_text(value, encoding="utf-8")
+
+            condition = {
+                "id": "bare",
+                "agent": "opencode-native",
+                "subject": "none",
+            }
+            suite = SimpleNamespace(experiment={"conditions": [condition]})
+            row = {
+                "definition_id": first,
+                "task_id": "task-a",
+                "condition_id": "bare",
+                "trial": 0,
+                "replicate_id": 1,
+            }
+            config = SimpleNamespace(runtime_environment=lambda: {})
+            status = {
+                "conflicting_trials": 0,
+                "corrupt_bundles": [],
+                "foreign_bundles": [],
+                "qualified": True,
+            }
+            with (
+                mock.patch("benchmarks.__main__._resolve_config", return_value=config),
+                mock.patch("benchmarks.__main__.load_suite", return_value=suite),
+                mock.patch("benchmarks.__main__._select", return_value=[row]),
+                mock.patch("benchmarks.__main__.campaign_status", return_value=status),
+                redirect_stdout(io.StringIO()),
+                redirect_stderr(io.StringIO()) as stderr,
+            ):
+                self.assertEqual(
+                    main(
+                        [
+                            "status",
+                            "--suite",
+                            "unused",
+                            "--root",
+                            str(store),
+                        ]
+                    ),
+                    0,
+                )
+            self.assertIn("STATUS inspection only", stderr.getvalue())
+
+            report_payload = {"campaign_qualification": {"status": "QUALIFIED"}}
+            with (
+                mock.patch("benchmarks.__main__._resolve_config", return_value=config),
+                mock.patch("benchmarks.__main__.load_suite", return_value=suite),
+                mock.patch("benchmarks.__main__._select", return_value=[row]),
+                mock.patch("benchmarks.__main__.build_report", return_value=report_payload),
+                mock.patch("benchmarks.__main__.build_decision_evidence") as decision,
+                redirect_stdout(io.StringIO()),
+                redirect_stderr(io.StringIO()) as stderr,
+            ):
+                self.assertEqual(
+                    main(
+                        [
+                            "report",
+                            "--suite",
+                            "unused",
+                            "--root",
+                            str(store),
+                        ]
+                    ),
+                    0,
+                )
+            decision.assert_not_called()
+            self.assertIn("REPORT inspection only", stderr.getvalue())
+            for name, value in canonical.items():
+                self.assertEqual((reports / name).read_text(encoding="utf-8"), value)
+
+    def test_allow_incomplete_report_is_inspection_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Path(temporary)
+            run_root = store / "runs/000001"
+            results = run_root / "results"
+            first = "a" * 64
+            _campaign(results, [first])
+            reports = run_root / "reports"
+            reports.mkdir()
+            (reports / "report.json").write_text("canonical report\n", encoding="utf-8")
+            (reports / "decision-evidence.json").write_text(
+                "canonical decision\n", encoding="utf-8"
+            )
+            suite = SimpleNamespace(
+                experiment={
+                    "conditions": [
+                        {
+                            "id": "bare",
+                            "agent": "opencode-native",
+                            "subject": "none",
+                        }
+                    ]
+                }
+            )
+            row = {
+                "definition_id": first,
+                "task_id": "task-a",
+                "condition_id": "bare",
+                "trial": 0,
+                "replicate_id": 1,
+            }
+            config = SimpleNamespace(runtime_environment=lambda: {})
+            with (
+                mock.patch("benchmarks.__main__._resolve_config", return_value=config),
+                mock.patch("benchmarks.__main__.load_suite", return_value=suite),
+                mock.patch("benchmarks.__main__._select", return_value=[row]),
+                mock.patch(
+                    "benchmarks.__main__.build_report",
+                    return_value={"campaign_qualification": {"status": "NOT_QUALIFIED"}},
+                ),
+                mock.patch("benchmarks.__main__.build_decision_evidence") as decision,
+                redirect_stdout(io.StringIO()),
+                redirect_stderr(io.StringIO()) as stderr,
+            ):
+                self.assertEqual(
+                    main(
+                        [
+                            "report",
+                            "--suite",
+                            "unused",
+                            "--root",
+                            str(store),
+                            "--allow-incomplete",
+                        ]
+                    ),
+                    0,
+                )
+            decision.assert_not_called()
+            self.assertIn("--allow-incomplete is inspection-only", stderr.getvalue())
+            self.assertEqual(
+                (reports / "report.json").read_text(encoding="utf-8"),
+                "canonical report\n",
+            )
+            self.assertEqual(
+                (reports / "decision-evidence.json").read_text(encoding="utf-8"),
+                "canonical decision\n",
+            )
+
+    def test_score_failure_preserves_existing_derived_report_set(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            results = root / "results"
+            results.mkdir()
+            suite_root = root / "suite"
+            suite_root.mkdir()
+            score_script = suite_root / "score.py"
+            score_script.write_text("# score fixture\n", encoding="utf-8")
+            suite = SimpleNamespace(
+                root=suite_root,
+                experiment={
+                    "conditions": [
+                        {
+                            "id": "bare",
+                            "agent": "opencode-native",
+                            "subject": "none",
+                        }
+                    ]
+                },
+            )
+            row = {
+                "definition_id": "a" * 64,
+                "task_id": "task-a",
+                "condition_id": "bare",
+                "trial": 0,
+            }
+            args = SimpleNamespace(
+                task=[],
+                agent=["opencode-native"],
+                subject=[],
+                condition=None,
+            )
+            paths = SimpleNamespace(
+                root=root,
+                results=results,
+                run_id="000009",
+                as_dict=lambda: {
+                    "root": str(root),
+                    "results": str(results),
+                    "cache": None,
+                    "work": None,
+                    "run_id": "000009",
+                },
+            )
+            config = SimpleNamespace(
+                path=lambda key: {
+                    "BENCHMARK_SCORE_SCRIPT_PATH": score_script,
+                    "BENCHMARK_SCORE_OUTPUT_PATH": Path("score.json"),
+                }.get(key)
+            )
+            reports = root / "reports"
+            reports.mkdir()
+            previous = {}
+            for name in (
+                "status.json",
+                "report.json",
+                "decision-evidence.json",
+                "score.json",
+            ):
+                value = f"previous {name}\n"
+                previous[name] = value
+                (reports / name).write_text(value, encoding="utf-8")
+
+            with (
+                mock.patch(
+                    "benchmarks.__main__.build_report",
+                    return_value={
+                        "campaign_qualification": {"status": "NOT_QUALIFIED"}
+                    },
+                ),
+                mock.patch(
+                    "benchmarks.__main__.subprocess.run",
+                    return_value=SimpleNamespace(
+                        returncode=2,
+                        stdout="",
+                        stderr="score failed",
+                    ),
+                ),
+                self.assertRaisesRegex(ReportError, "score generation failed"),
+            ):
+                _persist_completed_run_reports(
+                    args=args,
+                    config=config,
+                    suite=suite,
+                    rows=[row],
+                    paths=paths,
+                    runtime_source={},
+                    final_status={"qualified": False},
+                )
+
+            for name, value in previous.items():
+                self.assertEqual((reports / name).read_text(encoding="utf-8"), value)
+
+    def test_reports_command_regenerates_complete_set_through_one_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Path(temporary) / "campaigns"
+            run_root = store / "runs/000001"
+            definition = "a" * 64
+            _campaign(run_root / "results", [definition])
+            suite = SimpleNamespace(
+                experiment={
+                    "conditions": [
+                        {
+                            "id": "bare",
+                            "agent": "opencode-native",
+                            "subject": "none",
+                        }
+                    ]
+                }
+            )
+            row = {
+                "definition_id": definition,
+                "task_id": "task-a",
+                "condition_id": "bare",
+                "trial": 0,
+                "replicate_id": 1,
+            }
+            config = SimpleNamespace(runtime_environment=lambda: {})
+            final_status = {"complete": True, "qualified": True}
+            written = {
+                "status": run_root / "reports/status.json",
+                "report": run_root / "reports/report.json",
+                "decision_evidence": run_root / "reports/decision-evidence.json",
+                "score": run_root / "reports/score.json",
+            }
+            stdout = io.StringIO()
+            with (
+                mock.patch("benchmarks.__main__._resolve_config", return_value=config),
+                mock.patch("benchmarks.__main__.load_suite", return_value=suite),
+                mock.patch(
+                    "benchmarks.__main__.select_scoring_definitions",
+                    return_value=[row],
+                ) as select_frozen,
+                mock.patch(
+                    "benchmarks.__main__._validate_reporting_contract",
+                    return_value=(Path("score.py"), Path("score.json")),
+                ),
+                mock.patch(
+                    "benchmarks.__main__.campaign_status",
+                    return_value=final_status,
+                ),
+                mock.patch(
+                    "benchmarks.__main__._persist_completed_run_reports",
+                    return_value=written,
+                ) as persist,
+                redirect_stdout(stdout),
+            ):
+                self.assertEqual(
+                    main(
+                        [
+                            "reports",
+                            "--suite",
+                            "unused",
+                            "--root",
+                            str(store),
+                            "--env-file",
+                            str(Path(temporary) / "unused.env"),
+                            "--agent",
+                            "opencode-native",
+                        ]
+                    ),
+                    0,
+                )
+            select_frozen.assert_called_once_with(
+                suite,
+                agents=("opencode-native",),
+                definition_ids=(definition,),
+            )
+            persist.assert_called_once()
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["run_id"], "000001")
+            self.assertEqual(payload["reports"]["score"], str(written["score"]))
 
     def test_new_runs_are_numbered_and_latest_never_overwrites_history(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

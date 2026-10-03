@@ -39,7 +39,7 @@ BENCHMARK_HARNESS_REPO_ROOT=.
 BENCHMARK_AGENT=codex-native,opencode-native
 HASHMARKS_BENCH_SOURCE=/absolute/path/to/clean/Hashmarks
 BENCHMARK_SCORE_SCRIPT_PATH=benchmarks/suites/repository-intelligence/multidomain-v2/score.py
-BENCHMARK_SCORE_OUTPUT_PATH=/tmp/agentscookbook-multidomain-v2/score.json
+BENCHMARK_SCORE_OUTPUT_PATH=score.json
 ```
 
 All required local settings must be explicit; a missing setting stops the target
