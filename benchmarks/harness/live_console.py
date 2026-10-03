@@ -200,7 +200,7 @@ class LiveTaskMatrix:
                 item for item in conditions if self._conditions[item]["subject"] != "none"
             ]
             if assisted_conditions:
-                lines.extend(["", "Paired vs Bare"])
+                lines.extend(["", "Assisted condition vs Bare (all pairs)"])
                 transition_rows: list[list[str]] = []
                 for condition_id in assisted_conditions:
                     assisted = {
@@ -241,6 +241,78 @@ class LiveTaskMatrix:
                         transition_rows,
                     )
                 )
+
+                lines.extend(["", "Paired outcome by subject use"])
+                attributed_rows: list[list[str]] = []
+                for condition_id in assisted_conditions:
+                    assisted = {
+                        _replicate_key(row): receipt
+                        for row, observed_condition, receipt in outcomes
+                        if observed_condition == condition_id
+                    }
+                    by_use: dict[str, Counter[str]] = {
+                        "invoked": Counter(),
+                        "not-invoked": Counter(),
+                        "unknown": Counter(),
+                    }
+                    for key in sorted(assisted, key=repr):
+                        baseline = controls.get(key)
+                        candidate = assisted.get(key)
+                        transition = (
+                            classify_assistance_pair(baseline, candidate)
+                            if baseline is not None and candidate is not None
+                            else None
+                        )
+                        invoked, _calls, _names, _observability = _subject_tool_use(
+                            candidate
+                        )
+                        use_state = (
+                            "invoked"
+                            if invoked is True
+                            else "not-invoked"
+                            if invoked is False
+                            else "unknown"
+                        )
+                        by_use[use_state][transition or "excluded"] += 1
+                    for use_state, interpretation in (
+                        ("invoked", "subject-use observed"),
+                        ("not-invoked", "not attributable to subject tool"),
+                        ("unknown", "invocation unknown"),
+                    ):
+                        counts = by_use[use_state]
+                        pairs = sum(counts.values())
+                        if pairs == 0:
+                            continue
+                        attributed_rows.append(
+                            [
+                                label(condition_id),
+                                use_state,
+                                str(pairs),
+                                str(counts["gain"]),
+                                str(counts["preserved"]),
+                                str(counts["unresolved"]),
+                                str(counts["regression"]),
+                                str(counts["excluded"]),
+                                interpretation,
+                            ]
+                        )
+                if attributed_rows:
+                    lines.extend(
+                        _render_table(
+                            [
+                                "Subject",
+                                "Use",
+                                "Pairs",
+                                "Gain",
+                                "Preserved",
+                                "Unresolved",
+                                "Regression",
+                                "Excluded",
+                                "Interpretation",
+                            ],
+                            attributed_rows,
+                        )
+                    )
 
                 lines.extend(["", "Subject tool use"])
                 usage_rows: list[list[str]] = []
