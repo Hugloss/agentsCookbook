@@ -661,9 +661,11 @@ async function testSharedLifecycle() {
       env,
       deleteAfterExport: true,
     });
+    assert.strictEqual(result.schema, 'agents-cookbook-opencode-runtime/v2');
     assert.strictEqual(result.run.status, 0);
     assert.strictEqual(result.session_id, 'ses_test');
     assert.strictEqual(result.export.status, 0);
+    assert.strictEqual(result.export_attempts, 1);
     assert.strictEqual(result.final_text, 'done');
     assert.strictEqual(result.export_parse_error, null);
     assert.strictEqual(result.delete.status, 0);
@@ -683,6 +685,7 @@ async function testSharedLifecycle() {
     assert.strictEqual(delayed.run.status, 0);
     assert.strictEqual(delayed.session_id, 'ses_test');
     assert.strictEqual(delayed.export.status, 0);
+    assert.strictEqual(delayed.export_attempts, 2);
     assert.strictEqual(delayed.final_text, 'done');
     assert.strictEqual(delayed.export_parse_error, null);
     assert.strictEqual(
