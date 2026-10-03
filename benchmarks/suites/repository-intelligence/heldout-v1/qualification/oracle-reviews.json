@@ -32,7 +32,7 @@
       "task_digest": "757fffa7ddca15e6867d8cb4dd0137c9bc3b914cb13c36c383497c7b26d568f9",
       "review_requirement": {
         "minimum_independent_reviews": 2,
-        "escalation_reason": "Heldout run 000007 showed semantic instability for this task across bare/Enola conditions, including a plausible repository-identity traversal alternative; require a second independent source audit before future campaigns."
+        "escalation_reason": "Heldout run 000007 (report sha256:9d1a40bc6f0e5bc1831fe272b36fed3575e5559218198fbc68315dff1f746fd1; decision-evidence sha256:24d979dde9b71d945e78d3380fbd7fd3509104c1e703176a0af3493b614080c9) showed semantic instability for this task across bare/Enola conditions, including a plausible repository-identity traversal alternative; require a second independent source audit before future campaigns."
       }
     },
     "locate-mcp-task-evidence": {
@@ -95,7 +95,7 @@
       "task_digest": "bb522aaf7a3988b5c1e51986cbc4d9aa9eae7b78ee63840f3a2f52f66b6dc705",
       "review_requirement": {
         "minimum_independent_reviews": 2,
-        "escalation_reason": "Heldout run 000007 showed semantic instability for this task across bare/Hashmarks/Enola conditions; require a second independent source audit before future campaigns."
+        "escalation_reason": "Heldout run 000007 (report sha256:9d1a40bc6f0e5bc1831fe272b36fed3575e5559218198fbc68315dff1f746fd1; decision-evidence sha256:24d979dde9b71d945e78d3380fbd7fd3509104c1e703176a0af3493b614080c9) showed semantic instability for this task across bare/Hashmarks/Enola conditions; require a second independent source audit before future campaigns."
       }
     },
     "locate-read-scope-invalidation": {
@@ -222,7 +222,7 @@
       "task_digest": "0b45beec1fe0da4a5d21f788d2ab7e13547f977bc34486fc90bfe616918add1c",
       "review_requirement": {
         "minimum_independent_reviews": 2,
-        "escalation_reason": "Heldout run 000007 showed semantic instability for this task across Hashmarks/Enola conditions; require a second independent source audit before future campaigns."
+        "escalation_reason": "Heldout run 000007 (report sha256:9d1a40bc6f0e5bc1831fe272b36fed3575e5559218198fbc68315dff1f746fd1; decision-evidence sha256:24d979dde9b71d945e78d3380fbd7fd3509104c1e703176a0af3493b614080c9) showed semantic instability for this task across Hashmarks/Enola conditions; require a second independent source audit before future campaigns."
       }
     },
     "locate-run-poll-delay": {
