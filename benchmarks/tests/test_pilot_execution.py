@@ -1540,6 +1540,7 @@ class PilotExecutionTests(unittest.TestCase):
                     "status": 0,
                     "stdout": json.dumps(exported),
                 },
+                "export_attempts": 4,
                 "final_text": None,
                 "export_parse_error": None,
             }
@@ -1558,6 +1559,7 @@ class PilotExecutionTests(unittest.TestCase):
 
             self.assertFalse(observation.payload["terminal_complete"])
             self.assertIsNone(observation.payload["final_message"])
+            self.assertEqual(observation.measurements["session_export_attempts"], 4)
             self.assertEqual(
                 observation.payload["terminal_event"],
                 {
