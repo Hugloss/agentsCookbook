@@ -267,6 +267,45 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertEqual(report["stability"][0]["valid_outcomes"], 2)
         self.assertEqual(report["stability"][0]["semantic_correct"], 2)
 
+    def test_unknown_outcome_cannot_qualify_report(self) -> None:
+        suite = _suite()
+        rows = [
+            row
+            for row in suite.trial_definitions()
+            if row["condition_id"] == "hashmarks"
+        ]
+        receipts = [
+            _receipt(
+                suite,
+                row,
+                "FUTURE_UNRESOLVED" if int(row["trial"]) == 1 else "PASS",
+                chr(ord("a") + int(row["trial"])) * 64,
+            )
+            for row in rows
+        ]
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+                selected_definitions={str(row["definition_id"]) for row in rows},
+            )
+
+        self.assertEqual(
+            report["campaign_qualification"]["status"],
+            "NOT_QUALIFIED",
+        )
+        self.assertEqual(
+            report["campaign_qualification"]["invalid_outcomes"],
+            1,
+        )
+        self.assertEqual(
+            report["conditions"]["hashmarks"]["valid_outcomes"],
+            2,
+        )
+
     def test_missing_replicate_remains_visible_in_stability_and_pair_exclusions(
         self,
     ) -> None:
