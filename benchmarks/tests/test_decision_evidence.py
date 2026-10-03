@@ -57,6 +57,30 @@ class DecisionEvidenceTests(unittest.TestCase):
                     "source_read_observability": [
                         "not-authoritatively-exposed-by-opencode-export"
                     ],
+                    "tool_strategy": {
+                        "observability_counts": {
+                            "opencode-export-direct-only-partial": 1
+                        },
+                        "partial_observability_trials": 1,
+                        "tool_name_counts": {"bash": 2},
+                        "sequence_observations": 1,
+                        "sequence_length": {
+                            "observations": 1,
+                            "mean": 2,
+                            "median": 2,
+                            "min": 2,
+                            "max": 2,
+                        },
+                        "subject_first_tool_call_ordinal": {
+                            "observations": 0,
+                            "mean": None,
+                            "median": None,
+                            "min": None,
+                            "max": None,
+                        },
+                        "full_order_retained_in_receipts": True,
+                        "arguments_or_source_contents_included": False,
+                    },
                 }
             },
             "conditions": {},
@@ -115,10 +139,21 @@ class DecisionEvidenceTests(unittest.TestCase):
             ["not-authoritatively-exposed-by-opencode-export"],
         )
         self.assertEqual(
+            evidence["evidence_gaps"]["tool_strategy_partial_trials"],
+            1,
+        )
+        self.assertEqual(
+            evidence["surfaces"]["tool_strategy"]["agent_profiles"][0][
+                "tool_name_counts"
+            ],
+            {"bash": 2},
+        )
+        self.assertEqual(
             evidence["evidence_signals"],
             [
                 "bare-headroom-observed",
                 "configured-subject-never-invoked",
+                "native-tool-strategy-partially-observed",
                 "runtime-or-host-instability-observed",
                 "semantic-misses-observed",
                 "source-read-archaeology-unavailable",
