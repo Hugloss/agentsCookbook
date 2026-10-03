@@ -301,6 +301,17 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 stored_report["reports_dir"],
                 str(run_root / "reports"),
             )
+            decision_file = run_root / "reports/decision-evidence.json"
+            self.assertTrue(decision_file.is_file())
+            stored_decision = json.loads(
+                decision_file.read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                stored_decision["schema"],
+                "agents-cookbook-benchmark-decision-evidence.v1",
+            )
+            self.assertEqual(stored_decision["run_id"], "000001")
+            self.assertTrue(stored_decision["authority"]["derived_only"])
 
     def test_status_can_require_qualified_campaign(self) -> None:
         suite = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
@@ -372,6 +383,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                     return_value={
                         "status": root / "reports/status.json",
                         "report": root / "reports/report.json",
+                        "decision_evidence": root / "reports/decision-evidence.json",
                         "score": root / "reports/score.json",
                     },
                 ) as persist_reports,
