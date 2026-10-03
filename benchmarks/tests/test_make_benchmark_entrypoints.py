@@ -57,6 +57,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             ("benchmark-resume", "run --resume"),
             ("benchmark-status", "status"),
             ("benchmark-report", "report"),
+            ("benchmark-reports", "reports"),
             ("benchmark-score", "score"),
         ):
             with self.subTest(target=target):
@@ -64,13 +65,6 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                     f"{target}:\n\t@uv run --no-project python -m benchmarks {command} --env-file .env",
                     makefile,
                 )
-        self.assertIn(
-            "benchmark-reports:\n"
-            "\t@$(MAKE) --no-print-directory benchmark-status\n"
-            "\t@$(MAKE) --no-print-directory benchmark-report\n"
-            "\t@$(MAKE) --no-print-directory benchmark-score",
-            makefile,
-        )
         self.assertIn("benchmark-oracle-review:", makefile)
         self.assertIn(
             "python -m benchmarks oracle-review \\\n"
