@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
@@ -348,10 +349,15 @@ def _metrics(
         for name in names
         if any(name.startswith(f"{server}_") for server in mcp_servers)
     ]
+    nested_tool_calls: list[str] = []
     nested_mcp_calls: list[str] = []
+    observed_tool_sequence: list[str] = []
     nested_observable = True
     for part in tool_parts:
-        if _tool_name(part) != "execute":
+        direct_name = _tool_name(part)
+        if direct_name:
+            observed_tool_sequence.append(direct_name)
+        if direct_name != "execute":
             continue
         state = part.get("state")
         metadata = state.get("metadata") if isinstance(state, dict) else None
@@ -362,10 +368,12 @@ def _metrics(
         ):
             nested_observable = False
             continue
-        nested_mcp_calls.extend(call["tool"] for call in calls)
+        nested_names = [call["tool"] for call in calls]
+        nested_tool_calls.extend(nested_names)
+        observed_tool_sequence.extend(f"nested:{name}" for name in nested_names)
     nested_mcp_calls = [
         name
-        for name in nested_mcp_calls
+        for name in nested_tool_calls
         if any(
             name.startswith(f"{server}.") or name.startswith(f"tools.{server}.")
             for server in mcp_servers
@@ -410,6 +418,11 @@ def _metrics(
             )
             result_bytes += len(rendered.encode("utf-8"))
     input_tokens, output_tokens, cached_tokens = _token_metrics(exported)
+    subject_ordinals = [
+        index
+        for index, name in enumerate(observed_tool_sequence, 1)
+        if is_subject_call(name.removeprefix("nested:"))
+    ]
     metrics: dict[str, Any] = {
         "event_count": len(parts),
         "command_calls": len(command_calls),
@@ -420,6 +433,19 @@ def _metrics(
         "cached_input_tokens": cached_tokens,
         "output_tokens": output_tokens,
         "source_read_observability": ("not-authoritatively-exposed-by-opencode-export"),
+        "tool_strategy_observability": (
+            "opencode-export-direct+execute-metadata"
+            if nested_observable
+            else "opencode-export-direct-only-partial"
+        ),
+        "tool_name_counts": dict(
+            sorted(Counter(observed_tool_sequence).items())
+        ),
+        "tool_sequence": observed_tool_sequence,
+        "subject_tool_call_ordinals": subject_ordinals,
+        "subject_first_tool_call_ordinal": (
+            subject_ordinals[0] if subject_ordinals else None
+        ),
     }
     if selected_server is not None:
         observed_subject_calls = (

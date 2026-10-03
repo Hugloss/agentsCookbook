@@ -1769,6 +1769,20 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(metrics["output_tokens"], 20)
         self.assertEqual(metrics["cached_input_tokens"], 5)
         self.assertEqual(metrics["mcp_result_bytes"], len("evidence".encode()))
+        self.assertEqual(
+            metrics["tool_strategy_observability"],
+            "opencode-export-direct+execute-metadata",
+        )
+        self.assertEqual(
+            metrics["tool_sequence"],
+            ["hashmarks_find", "bash"],
+        )
+        self.assertEqual(
+            metrics["tool_name_counts"],
+            {"bash": 1, "hashmarks_find": 1},
+        )
+        self.assertEqual(metrics["subject_tool_call_ordinals"], [1])
+        self.assertEqual(metrics["subject_first_tool_call_ordinal"], 1)
 
     def test_opencode_code_mode_counts_child_calls_without_guessing_bytes(self) -> None:
         exported = {
@@ -1817,6 +1831,21 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(metrics["subject_tool_observability"], "complete")
         self.assertTrue(metrics["subject_tool_invoked"])
         self.assertNotIn("mcp_result_bytes", metrics)
+        self.assertEqual(
+            metrics["tool_strategy_observability"],
+            "opencode-export-direct+execute-metadata",
+        )
+        self.assertEqual(
+            metrics["tool_sequence"],
+            [
+                "execute",
+                "nested:hashmarks.find",
+                "nested:tools.enola.explain",
+                "hashmarks_find",
+            ],
+        )
+        self.assertEqual(metrics["subject_tool_call_ordinals"], [2, 4])
+        self.assertEqual(metrics["subject_first_tool_call_ordinal"], 2)
 
         exported["messages"][0]["parts"][0]["state"].pop("metadata")
         partial = opencode_metrics(
@@ -1831,6 +1860,13 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(partial["subject_tool_names"], ["find"])
         self.assertEqual(partial["subject_tool_observability"], "partial")
         self.assertTrue(partial["subject_tool_invoked"])
+        self.assertEqual(
+            partial["tool_strategy_observability"],
+            "opencode-export-direct-only-partial",
+        )
+        self.assertEqual(partial["tool_sequence"], ["execute", "hashmarks_find"])
+        self.assertEqual(partial["subject_tool_call_ordinals"], [2])
+        self.assertEqual(partial["subject_first_tool_call_ordinal"], 2)
 
     def test_codex_jsonl_separates_tool_availability_from_adoption(self) -> None:
         raw = (
@@ -1898,7 +1934,20 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(metrics["command_calls"], 1)
         self.assertEqual(metrics["tool_calls"], 2)
         self.assertTrue(metrics["subject_tool_configured"])
+        self.assertEqual(metrics["subject_tool_names"], ["find"])
         self.assertEqual(metrics["input_tokens"], 100)
+        self.assertEqual(metrics["tool_strategy_observability"], "codex-item-completed")
+        self.assertEqual(
+            metrics["tool_sequence"],
+            ["mcp:hashmarks/find", "command_execution"],
+        )
+        self.assertEqual(
+            metrics["tool_name_counts"],
+            {"command_execution": 1, "mcp:hashmarks/find": 1},
+        )
+        self.assertEqual(metrics["subject_tool_call_ordinals"], [1])
+        self.assertEqual(metrics["subject_first_tool_call_ordinal"], 1)
+        self.assertNotIn("git status", json.dumps(metrics))
         self.assertEqual(
             _final_message(events),
             '{"path":"x","symbol":"y"}',

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections import Counter
 import json
 import re
 import shutil
@@ -88,7 +89,7 @@ def _metrics(
     events: list[dict[str, Any]],
     *,
     subject_server: str | None,
-) -> dict[str, int | float | str | bool]:
+) -> dict[str, Any]:
     items = _completed_items(events)
     commands = [item for item in items if item.get("type") == "command_execution"]
     changes = [item for item in items if item.get("type") == "file_change"]
@@ -98,6 +99,41 @@ def _metrics(
         for item in mcp_calls
         if subject_server and item.get("server") == subject_server
     ]
+    tool_sequence: list[str] = []
+    subject_ordinals: list[int] = []
+    for item in items:
+        item_type = item.get("type")
+        if item_type == "command_execution":
+            name = "command_execution"
+        elif item_type == "file_change":
+            name = "file_change"
+        elif item_type == "mcp_tool_call":
+            server = item.get("server")
+            tool = item.get("tool")
+            name = (
+                f"mcp:{server}/{tool}"
+                if isinstance(server, str)
+                and server
+                and isinstance(tool, str)
+                and tool
+                else "mcp_tool_call"
+            )
+        else:
+            continue
+        tool_sequence.append(name)
+        if (
+            item_type == "mcp_tool_call"
+            and subject_server
+            and item.get("server") == subject_server
+        ):
+            subject_ordinals.append(len(tool_sequence))
+    subject_tool_names = sorted(
+        {
+            str(item.get("tool"))
+            for item in subject_calls
+            if isinstance(item.get("tool"), str) and item.get("tool")
+        }
+    )
     completed = [event for event in events if event.get("type") == "turn.completed"]
     usage = completed[-1].get("usage", {}) if completed else {}
     if not isinstance(usage, dict):
@@ -122,11 +158,19 @@ def _metrics(
         "subject_mcp_calls": len(subject_calls),
         "subject_tool_configured": subject_server is not None,
         "subject_tool_invoked": bool(subject_calls),
+        "subject_tool_names": subject_tool_names,
         "mcp_result_bytes": result_bytes,
         "input_tokens": int(usage.get("input_tokens", 0) or 0),
         "cached_input_tokens": int(usage.get("cached_input_tokens", 0) or 0),
         "output_tokens": int(usage.get("output_tokens", 0) or 0),
         "source_read_observability": ("not-authoritatively-exposed-by-codex-jsonl"),
+        "tool_strategy_observability": "codex-item-completed",
+        "tool_name_counts": dict(sorted(Counter(tool_sequence).items())),
+        "tool_sequence": tool_sequence,
+        "subject_tool_call_ordinals": subject_ordinals,
+        "subject_first_tool_call_ordinal": (
+            subject_ordinals[0] if subject_ordinals else None
+        ),
     }
 
 
