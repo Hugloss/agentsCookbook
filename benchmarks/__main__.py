@@ -549,7 +549,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         try:
             saved = select_saved_run(args.root, args.run_id)
-            _assert_saved_run_agents(saved, args.agent)
+            manifest = _assert_saved_run_agents(saved, args.agent)
         except (RunStoreError, CampaignAuthorityError) as exc:
             raise SystemExit(str(exc)) from exc
         if not explicit_score_output:
@@ -570,6 +570,10 @@ def main(argv: list[str] | None = None) -> int:
         ]
         for agent in args.agent:
             invocation.extend(("--agent", agent))
+        for definition_id in sorted(
+            str(value) for value in manifest["selected_definitions"]
+        ):
+            invocation.extend(("--definition-id", definition_id))
         environment = dict(runtime_source)
         project_root = str(Path(__file__).resolve().parents[1])
         environment["PYTHONPATH"] = os.pathsep.join(
@@ -940,6 +944,8 @@ def _persist_completed_run_reports(
     ]
     for agent in args.agent:
         invocation.extend(("--agent", agent))
+    for definition_id in sorted(str(row["definition_id"]) for row in rows):
+        invocation.extend(("--definition-id", definition_id))
     environment = dict(runtime_source)
     project_root = str(Path(__file__).resolve().parents[1])
     environment["PYTHONPATH"] = os.pathsep.join(
