@@ -312,6 +312,11 @@ class SavedRunRecoveryTests(unittest.TestCase):
             )
 
             def score_run(invocation, **_kwargs):
+                self.assertIn("--definition-id", invocation)
+                self.assertEqual(
+                    invocation[invocation.index("--definition-id") + 1],
+                    "a" * 64,
+                )
                 output = Path(invocation[invocation.index("--output") + 1])
                 output.write_text(
                     json.dumps({"campaign_qualification": {"status": "NOT_QUALIFIED"}}),
