@@ -31,7 +31,7 @@ function runCommand(command, args, options = {}) {
   });
 
   return {
-    status: result.error ? 1 : typeof result.status === 'number' ? result.status : 1,
+    status: typeof result.status === 'number' ? result.status : 1,
     stdout: result.stdout || '',
     stderr: result.stderr || '',
     error: result.error ? String(result.error.message || result.error) : null,
@@ -57,7 +57,7 @@ function runCommandToFile(command, args, options = {}) {
     });
     const stdout = fs.readFileSync(outputPath, 'utf8');
     return {
-      status: result.error ? 1 : typeof result.status === 'number' ? result.status : 1,
+      status: typeof result.status === 'number' ? result.status : 1,
       stdout,
       stderr: result.stderr || '',
       error: result.error ? String(result.error.message || result.error) : null,
@@ -1049,6 +1049,18 @@ function prepareBenchmarkConfig({
     return {
       status: 'failed',
       reason: 'native OpenCode config could not be resolved',
+      native_config_probe: {
+        status: base.command?.status ?? null,
+        error: base.command?.error ?? null,
+        signal: base.command?.signal ?? null,
+        stderr_bytes: typeof base.command?.stderr === 'string'
+          ? Buffer.byteLength(base.command.stderr)
+          : null,
+        stderr_sha256: typeof base.command?.stderr === 'string'
+          ? crypto.createHash('sha256').update(base.command.stderr).digest('hex')
+          : null,
+        parse_error: base.parse_error ?? null,
+      },
       inspection: base.inspection,
     };
   }

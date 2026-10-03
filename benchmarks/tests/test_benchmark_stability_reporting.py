@@ -150,7 +150,7 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         ):
             report = build_report(suite=suite, results_root=Path("/unused"))
 
-        self.assertEqual(report["schema"]["version"], 12)
+        self.assertEqual(report["schema"]["version"], 13)
         stability = {row["subject_id"]: row for row in report["stability"]}
         self.assertEqual(stability["none"]["state"], "unstable")
         self.assertEqual(stability["none"]["semantic_correct"], 2)
@@ -536,6 +536,7 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertEqual(adoption["not_invoked_trials"], 3)
         self.assertEqual(adoption["subject_mcp_calls"], 0)
         self.assertEqual(adoption["output_contract_failures"], 1)
+        self.assertEqual(adoption["format_noncompliant_trials"], 1)
         self.assertEqual(adoption["state"], "configured-never-invoked")
 
     def test_paired_economics_separate_invoked_from_configured_unused(self) -> None:

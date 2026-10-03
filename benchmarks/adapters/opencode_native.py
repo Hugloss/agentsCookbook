@@ -236,6 +236,7 @@ def _native_environment(context: TrialContext) -> dict[str, str]:
         "TMP": context.environment["TMP"],
         "TEMP": context.environment["TEMP"],
         "XDG_CACHE_HOME": context.environment["XDG_CACHE_HOME"],
+        "XDG_DATA_HOME": context.environment["XDG_DATA_HOME"],
         "XDG_STATE_HOME": context.environment["XDG_STATE_HOME"],
     }
     for name in PROCESS_SUBSTRATE_ENV_KEYS:
@@ -519,6 +520,7 @@ class OpenCodeNativeAgent:
     timeout_seconds: int = 600
     max_output_bytes: int = 50_000_000
     max_tool_calls: int | None = None
+    diagnostic_required_tool: str | None = None
 
     def subject_lifecycle_mode(self) -> SubjectLifecycleMode:
         return SubjectLifecycleMode.AGENT_NATIVE
@@ -646,6 +648,9 @@ class OpenCodeNativeAgent:
                     "failure_stage": envelope.get("failure_stage")
                     if envelope
                     else None,
+                    "native_config_probe": envelope.get("native_config_probe")
+                    if envelope
+                    else None,
                     "runtime_process": result.metrics(),
                     "stderr": result.stderr.decode(
                         "utf-8",
@@ -662,6 +667,13 @@ class OpenCodeNativeAgent:
         exposed_subject: SubjectAdapter | None,
     ) -> Observation:
         selected_subject = self._selected_subject(exposed_subject)
+        if self.diagnostic_required_tool is not None and not self.diagnostic_required_tool.startswith(
+            f"{selected_subject}_"
+        ):
+            return Observation({
+                "available": False,
+                "reason": "diagnostic required tool does not match selected subject",
+            }, "")
         try:
             exposure_path, subject_exposure = self._subject_exposure(
                 context,
@@ -847,6 +859,13 @@ class OpenCodeNativeAgent:
         environment = _native_environment(context)
         title = "agents-cookbook-benchmark:" + context.control_root.parent.name
         prompt_path = context.control_root / "opencode-prompt.txt"
+        if self.diagnostic_required_tool is not None:
+            prompt = (
+                f"Diagnostic tool requirement: call {self.diagnostic_required_tool} "
+                "for this repository task before using file search. Inspect source "
+                "evidence before answering. The tool call is required even if you "
+                "believe you already know the answer.\n\n" + prompt
+            )
         prompt_path.write_text(prompt, encoding="utf-8")
         run_args = (
             "run-export",

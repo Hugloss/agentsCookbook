@@ -21,12 +21,18 @@
           "reason": "The pinned discovery walker calls _prune_discovery_dirs before os.walk descends; it mutates dirs in place.",
           "reviewer": "codex-independent-audit-2026-10-02",
           "task_digest": "757fffa7ddca15e6867d8cb4dd0137c9bc3b914cb13c36c383497c7b26d568f9"
+        },
+        {
+          "decision": "unique",
+          "reason": "Independent pinned-source inspection found the owner unique at the task's CodeMap repository-file-discovery boundary: _iter_admitted_directory_files mutates os.walk's dirs through _prune_discovery_dirs before descent. hashmarks/test_shards.py::_repository_identity_files performs separate test-shard repository-content identity traversal, not CodeMap repository file discovery.",
+          "reviewer": "gpt-5.6-sol-independent-source-audit-2026-10-03",
+          "task_digest": "757fffa7ddca15e6867d8cb4dd0137c9bc3b914cb13c36c383497c7b26d568f9"
         }
       ],
       "task_digest": "757fffa7ddca15e6867d8cb4dd0137c9bc3b914cb13c36c383497c7b26d568f9",
       "review_requirement": {
-        "minimum_independent_reviews": 1,
-        "escalation_reason": null
+        "minimum_independent_reviews": 2,
+        "escalation_reason": "Heldout run 000007 (report sha256:9d1a40bc6f0e5bc1831fe272b36fed3575e5559218198fbc68315dff1f746fd1; decision-evidence sha256:24d979dde9b71d945e78d3380fbd7fd3509104c1e703176a0af3493b614080c9) showed semantic instability for this task across bare/Enola conditions, including a plausible repository-identity traversal alternative; require a second independent source audit before future campaigns."
       }
     },
     "locate-mcp-task-evidence": {
@@ -78,12 +84,18 @@
           "reason": "RepositoryIndexStore.paths_under queries file_map for an exact path or descendants below a prefix.",
           "reviewer": "codex-independent-audit-2026-10-02",
           "task_digest": "bb522aaf7a3988b5c1e51986cbc4d9aa9eae7b78ee63840f3a2f52f66b6dc705"
+        },
+        {
+          "decision": "unique",
+          "reason": "Independent pinned-source inspection found RepositoryIndexStore.paths_under uniquely owns indexed-path prefix enumeration: it queries the persisted file_map index for the exact path or descendant range. _declaration_provider_paths instead traverses currently admitted repository files for declaration-provider input and is not an indexed-store query.",
+          "reviewer": "gpt-5.6-sol-independent-source-audit-2026-10-03",
+          "task_digest": "bb522aaf7a3988b5c1e51986cbc4d9aa9eae7b78ee63840f3a2f52f66b6dc705"
         }
       ],
       "task_digest": "bb522aaf7a3988b5c1e51986cbc4d9aa9eae7b78ee63840f3a2f52f66b6dc705",
       "review_requirement": {
-        "minimum_independent_reviews": 1,
-        "escalation_reason": null
+        "minimum_independent_reviews": 2,
+        "escalation_reason": "Heldout run 000007 (report sha256:9d1a40bc6f0e5bc1831fe272b36fed3575e5559218198fbc68315dff1f746fd1; decision-evidence sha256:24d979dde9b71d945e78d3380fbd7fd3509104c1e703176a0af3493b614080c9) showed semantic instability for this task across bare/Hashmarks/Enola conditions; require a second independent source audit before future campaigns."
       }
     },
     "locate-read-scope-invalidation": {
@@ -199,12 +211,18 @@
           "reason": "resourcesInvalidatedByMutation returns the MUTATION_RESOURCES mapping for a mutation scope.",
           "reviewer": "codex-independent-audit-2026-10-02",
           "task_digest": "0b45beec1fe0da4a5d21f788d2ab7e13547f977bc34486fc90bfe616918add1c"
+        },
+        {
+          "decision": "unique",
+          "reason": "Independent pinned-source inspection found resourcesInvalidatedByMutation uniquely maps MutationScope directly to ReadResource values via MUTATION_RESOURCES. readScopesInvalidatedByMutation consumes those resources and returns ReadScope values, so it does not own the resource mapping requested by the task.",
+          "reviewer": "gpt-5.6-sol-independent-source-audit-2026-10-03",
+          "task_digest": "0b45beec1fe0da4a5d21f788d2ab7e13547f977bc34486fc90bfe616918add1c"
         }
       ],
       "task_digest": "0b45beec1fe0da4a5d21f788d2ab7e13547f977bc34486fc90bfe616918add1c",
       "review_requirement": {
-        "minimum_independent_reviews": 1,
-        "escalation_reason": null
+        "minimum_independent_reviews": 2,
+        "escalation_reason": "Heldout run 000007 (report sha256:9d1a40bc6f0e5bc1831fe272b36fed3575e5559218198fbc68315dff1f746fd1; decision-evidence sha256:24d979dde9b71d945e78d3380fbd7fd3509104c1e703176a0af3493b614080c9) showed semantic instability for this task across Hashmarks/Enola conditions; require a second independent source audit before future campaigns."
       }
     },
     "locate-run-poll-delay": {

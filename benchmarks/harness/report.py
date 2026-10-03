@@ -440,6 +440,11 @@ def _subject_adoption_summary(
             is False
             for row in group
         )
+        format_noncompliant = sum(
+            row.get("scoring", {}).get("oracle_grade", {}).get("format_compliant")
+            is False
+            for row in group
+        )
         semantic_incorrect = sum(
             row.get("scoring", {})
             .get("oracle_grade", {})
@@ -471,6 +476,7 @@ def _subject_adoption_summary(
                 "subject_mcp_calls": sum(calls),
                 "subject_tool_names": tools,
                 "output_contract_failures": output_contract_failures,
+                "format_noncompliant_trials": format_noncompliant,
                 "semantic_incorrect_trials": semantic_incorrect,
                 "status_counts": dict(
                     sorted(Counter(str(row.get("status")) for row in group).items())
@@ -792,6 +798,8 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "replicate_id": key[3],
             **({"seed": key[3]} if "seed" in receipt["execution"] else {}),
             "condition_id": _condition_id(receipt),
+            "bare_trial_id": baseline["trial_id"],
+            "assisted_trial_id": receipt["trial_id"],
             "subject_id": receipt["condition"]["subject_definition"]["id"],
             "pair_input_id": pair_input,
             "bare_status": baseline["status"],
@@ -1503,7 +1511,7 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 12,
+            "version": 13,
         },
         "suite": suite.experiment["suite"],
         "experiment": {

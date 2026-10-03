@@ -84,6 +84,76 @@ replace heldout-v1, or carry release authority.
 
 See `headroom-v1/README.md` for its isolated config and commands.
 
+## Required-tool diagnostics after heldout-v1 run 000007
+
+Run 000007 completed 108 receipts but did not qualify: Enola was never called, and
+Hashmarks was called in 7 of its 36 assisted trials. Its gradeable location answers
+also used JSON fences even though the prompts requested one plain JSON object. The
+ordinary paired suite remains the natural-use measure. The separate tool probes below
+ask what happens after a specific subject tool is required; they are diagnostic only.
+
+Prepare one 9-trial suite per subject from the reviewed heldout task and oracle bytes:
+
+```bash
+make benchmark-tool-probe-prepare PROBE_SUBJECT=hashmarks
+make benchmark-tool-probe-prepare PROBE_SUBJECT=enola
+```
+
+The v2 generator copies task and independent review records exactly. It puts the
+required-tool instruction in the diagnostic OpenCode agent definition, which changes
+the trial definition identity while preserving reviewed oracle authority. The generated
+`.env` uses runtime choices from the root `.env` and points to the diagnostic suite,
+scorer, and separate ignored run root. `--reuse` checks that an existing suite still
+matches source tasks, reviews, subject, agent definition, and runtime choices; it never
+overwrites that suite.
+
+First check the suite and native runtime without a model call:
+
+```bash
+make benchmark-tool-probe-check PROBE_SUBJECT=hashmarks
+make benchmark-tool-probe-check PROBE_SUBJECT=enola
+```
+
+When model calls to the pinned public Hashmarks source are authorized, run one
+three-trial smoke per subject. Inspect its score and use the read-only gate before
+launching the nine-trial diagnostic:
+
+```bash
+make benchmark-tool-probe-smoke PROBE_SUBJECT=hashmarks
+make benchmark-tool-probe-smoke-gate PROBE_SUBJECT=hashmarks
+make benchmark-tool-probe PROBE_SUBJECT=hashmarks
+```
+
+Repeat with `PROBE_SUBJECT=enola`. `benchmark-tool-probe` checks the saved smoke gate
+before the full run. Use `benchmark-tool-probe-resume`, `-status`, and `-score` for a
+saved full run. The v2 score records required-call attempt and nonempty completion,
+whether that call preceded native file search, and unknown observations independently
+of semantic correctness. A complete nested Code Mode call without visible output
+bytes remains unknown; the smoke gate will not treat it as success.
+
+Every completed report now writes `trace-diagnostics.json`, a derived view of sealed
+traces with per-call order, status, failure category, input hash, file path attempts,
+and Hashmarks returned-candidate target rank. It reports absent or unsupported traces
+as unknown. To inspect an older campaign without rewriting its historical reports:
+
+```bash
+python3 -m benchmarks trace-diagnostics \
+  --results .benchmark-runs/heldout-v1/runs/000007/results \
+  --output .benchmark-runs/heldout-v1/runs/000007/reports/trace-diagnostics-retro.json
+```
+
+For an observed Hashmarks query, `hashmarks-retrieval-probe` replays its exact text
+against a specified checkout and executable at limits 20 and 50, then checks whether
+exact symbol search can find the frozen oracle target. This is candidate evidence;
+its output does not claim a product defect or comparability across repository
+revisions.
+
+Run 000007's pinned repository replay is saved as
+`reports/hashmarks-retrieval-probe-retro.json`. It used the currently installed
+Hashmarks executable against the task's pinned repository checkout, so the repository
+revision matches while the executable's implementation remains a separate recorded
+identity.
+
 ## behavioral-v3
 
 `behavioral-v3/` adds independent agent-outcome challenges for post-edit refresh,
