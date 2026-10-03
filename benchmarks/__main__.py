@@ -213,6 +213,12 @@ def _parser() -> argparse.ArgumentParser:
         help="report available valid receipts without requiring every frozen definition",
     )
 
+    reports = sub.add_parser("reports")
+    reports.add_argument("--suite", type=Path)
+    reports.add_argument("--env-file", type=Path, required=True)
+    _add_selectors(reports)
+    _add_campaign_paths(reports, execution=False)
+
     score = sub.add_parser("score")
     score.add_argument("--env-file", type=Path, required=True)
     score.add_argument("--suite", type=Path)
@@ -255,7 +261,15 @@ def _resolve_config(args: argparse.Namespace) -> BenchmarkConfig:
         if hasattr(args, "suite") and args.suite is None:
             raise BenchmarkConfigError("BENCHMARK_SUITE_PATH or --suite is required")
         if (
-            args.command in {"preflight", "campaign-audit", "prepare", "run", "report", "score"}
+            args.command in {
+                "preflight",
+                "campaign-audit",
+                "prepare",
+                "run",
+                "report",
+                "reports",
+                "score",
+            }
             and not args.agent
         ):
             raise BenchmarkConfigError("BENCHMARK_AGENT or --agent is required")
@@ -717,8 +731,65 @@ def main(argv: list[str] | None = None) -> int:
         except ReportError as exc:
             raise SystemExit(f"benchmark reporting contract unavailable: {exc}") from exc
 
+    if args.command == "reports":
+        try:
+            _validate_reporting_contract(config, suite, runtime_source)
+        except ReportError as exc:
+            raise SystemExit(f"benchmark reporting contract unavailable: {exc}") from exc
+
     if args.command == "plan":
         print(json.dumps(rows, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "reports":
+        if args.root is None:
+            raise SystemExit(
+                "reports requires --root or BENCHMARK_CAMPAIGN_ROOT"
+            )
+        try:
+            with exclusive_store(args.root):
+                paths = _paths(args, need_execution=False)
+                assert paths.root is not None
+                assert paths.results is not None
+                selected_definitions = {
+                    str(row["definition_id"]) for row in rows
+                }
+                if not _is_frozen_campaign_selection(paths.results, rows):
+                    raise RunStoreError(
+                        "complete reports require the exact frozen campaign selection"
+                    )
+                final_status = campaign_status(
+                    suite=suite,
+                    results_root=paths.results,
+                    selected_definitions=selected_definitions,
+                )
+                if not final_status["complete"]:
+                    raise ReportError(
+                        "complete report set requires every frozen definition to finish"
+                    )
+                written = _persist_completed_run_reports(
+                    args=args,
+                    config=config,
+                    suite=suite,
+                    rows=rows,
+                    paths=paths,
+                    runtime_source=runtime_source,
+                    final_status=final_status,
+                )
+        except (RunStoreError, CampaignAuthorityError, ReportError) as exc:
+            raise SystemExit(f"benchmark reports unavailable: {exc}") from exc
+        print(
+            json.dumps(
+                {
+                    "run_id": paths.run_id,
+                    "reports": {
+                        key: str(value) for key, value in written.items()
+                    },
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return 0
 
     if args.command == "status":
