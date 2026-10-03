@@ -238,6 +238,75 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertEqual(adoption["output_contract_failures"], 1)
         self.assertEqual(adoption["state"], "configured-never-invoked")
 
+    def test_paired_economics_separate_invoked_from_configured_unused(self) -> None:
+        suite = _suite()
+        rows = {
+            (str(row["condition_id"]), int(row["trial"])): row
+            for row in suite.trial_definitions()
+        }
+        receipts = []
+        for index in range(3):
+            bare = _receipt(
+                suite,
+                rows[("bare", index)],
+                "PASS",
+                chr(ord("a") + index) * 64,
+            )
+            bare["measurements"]["agent"] = {
+                "duration_ms": 100,
+                "command_calls": 1,
+                "tool_calls": 2,
+                "mcp_calls": 0,
+                "subject_mcp_calls": 0,
+                "input_tokens": 1000,
+                "output_tokens": 100,
+            }
+            assisted = _receipt(
+                suite,
+                rows[("hashmarks", index)],
+                "PASS",
+                chr(ord("d") + index) * 64,
+            )
+            invoked = index == 2
+            assisted["measurements"]["agent"] = {
+                "duration_ms": 130 if not invoked else 180,
+                "command_calls": 1,
+                "tool_calls": 3 if not invoked else 5,
+                "mcp_calls": 0 if not invoked else 1,
+                "subject_mcp_calls": 0 if not invoked else 1,
+                "subject_tool_invoked": invoked,
+                "input_tokens": 1200 if not invoked else 1800,
+                "output_tokens": 110 if not invoked else 140,
+            }
+            receipts.extend((bare, assisted))
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(suite=suite, results_root=Path("/unused"))
+
+        summaries = {
+            row["invocation_state"]: row
+            for row in report["paired_assistance_usage_summary"]
+            if row["subject_id"] == "hashmarks"
+        }
+        unused = summaries["not-invoked"]
+        self.assertEqual(unused["total_pairs"], 2)
+        self.assertEqual(unused["subject_mcp_calls"], 0)
+        self.assertEqual(unused["transitions"]["preserved"], 2)
+        self.assertEqual(unused["delta_metrics"]["input_tokens"]["mean"], 200)
+        self.assertEqual(unused["delta_metrics"]["input_tokens"]["median"], 200)
+        self.assertEqual(unused["delta_metrics"]["duration_ms"]["mean"], 30)
+
+        used = summaries["invoked"]
+        self.assertEqual(used["total_pairs"], 1)
+        self.assertEqual(used["subject_mcp_calls"], 1)
+        self.assertEqual(used["transitions"]["preserved"], 1)
+        self.assertEqual(used["delta_metrics"]["mcp_calls"]["mean"], 1)
+        self.assertEqual(used["delta_metrics"]["input_tokens"]["mean"], 800)
+        self.assertEqual(used["delta_metrics"]["duration_ms"]["mean"], 80)
+
     def test_non_outcome_is_execution_instability_not_semantic_failure(self) -> None:
         suite = _suite()
         rows = [
