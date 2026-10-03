@@ -10,7 +10,11 @@ from pathlib import Path
 
 from benchmarks.harness.regrade import RegradeError, project_campaign_receipts
 from benchmarks.harness.report import ReportError, build_report
-from benchmarks.harness.selection import SelectionError, parse_agent_arguments
+from benchmarks.harness.selection import (
+    SelectionError,
+    parse_agent_arguments,
+    select_scoring_definitions,
+)
 from benchmarks.harness.suite import load_suite
 
 
@@ -21,6 +25,7 @@ def main() -> int:
     source.add_argument("--regrade-source-results", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--agent", action="append", required=True)
+    parser.add_argument("--definition-id", action="append", default=[])
     args = parser.parse_args()
     if args.regrade_source_results is not None:
         try:
@@ -41,7 +46,18 @@ def main() -> int:
     conditions = {
         str(condition["id"]): condition for condition in suite.experiment["conditions"]
     }
-    definitions = suite.trial_definitions()
+    try:
+        selected_rows = select_scoring_definitions(
+            suite,
+            agents=agents,
+            definition_ids=tuple(args.definition_id),
+        )
+    except SelectionError as exc:
+        raise SystemExit(str(exc)) from exc
+    selected_definition_ids = {
+        str(row["definition_id"])
+        for row in selected_rows
+    }
     languages = {}
     all_lineage = []
     for language in ("python", "typescript"):
@@ -52,20 +68,16 @@ def main() -> int:
         }
         selected = {
             str(row["definition_id"])
-            for row in definitions
+            for row in selected_rows
             if row["task_id"] in task_ids
-            and conditions[str(row["condition_id"])]["agent"] in selected_agents
         }
-        expected = sum(
-            int(condition["trials"])
-            for condition in conditions.values()
-            if condition["agent"] in selected_agents
-        ) * len(task_ids)
-        if not task_ids or len(selected) != expected:
-            raise ValueError(
-                f"{language}: expected {len(task_ids)} tasks and {expected} frozen trials "
-                f"for agents {', '.join(agents)}"
-            )
+        if not selected:
+            continue
+        selected_task_ids = {
+            str(row["task_id"])
+            for row in selected_rows
+            if str(row["definition_id"]) in selected
+        }
         try:
             projected = None
             if args.regrade_source_results is not None:
@@ -85,7 +97,7 @@ def main() -> int:
         except (RegradeError, ReportError) as exc:
             raise SystemExit(f"heldout score unavailable: {exc}") from exc
         languages[language] = {
-            "task_ids": sorted(task_ids),
+            "task_ids": sorted(selected_task_ids),
             "expected_trials": report["expected_trials"],
             "observed_trials": report["observed_trials"],
             "status_counts": report["status_counts"],
@@ -110,15 +122,22 @@ def main() -> int:
             "agent_profiles": report["agent_profiles"],
             "cross_agent_observations": report["cross_agent_observations"],
         }
+    if not languages:
+        raise SystemExit("heldout score selection contains no language tasks")
+
     payload = {
-        "schema": "agents-cookbook-heldout-observer-outcomes.v11",
+        "schema": "agents-cookbook-heldout-observer-outcomes.v12",
         "projection_mode": (
             "offline-regrade" if args.regrade_source_results is not None else "live"
         ),
         "expected_trials": sum(row["expected_trials"] for row in languages.values()),
         "observed_trials": sum(row["observed_trials"] for row in languages.values()),
         "languages": languages,
-        "selection": {"agents": sorted(agents)},
+        "selection": {
+            "agents": sorted(agents),
+            "definition_count": len(selected_definition_ids),
+            "definition_ids": sorted(selected_definition_ids),
+        },
         "campaign_qualification": {
             "status": (
                 "QUALIFIED"
