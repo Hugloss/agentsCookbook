@@ -345,6 +345,9 @@ class SavedRunRecoveryTests(unittest.TestCase):
                     "benchmarks.__main__.subprocess.run",
                     side_effect=score_run,
                 ),
+                mock.patch(
+                    "benchmarks.__main__.verify_campaign_suite_authority"
+                ),
             ):
                 written = _persist_completed_run_reports(
                     args=args,
@@ -682,6 +685,9 @@ class SavedRunRecoveryTests(unittest.TestCase):
                         stderr="score failed",
                     ),
                 ),
+                mock.patch(
+                    "benchmarks.__main__.verify_campaign_suite_authority"
+                ),
                 self.assertRaisesRegex(ReportError, "score generation failed"),
             ):
                 _persist_completed_run_reports(
@@ -742,6 +748,9 @@ class SavedRunRecoveryTests(unittest.TestCase):
                     return_value=(Path("score.py"), Path("score.json")),
                 ),
                 mock.patch(
+                    "benchmarks.__main__.verify_campaign_suite_authority"
+                ) as verify_suite,
+                mock.patch(
                     "benchmarks.__main__.campaign_status",
                     return_value=final_status,
                 ),
@@ -767,6 +776,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
                     ),
                     0,
                 )
+            verify_suite.assert_called_once()
             select_frozen.assert_called_once_with(
                 suite,
                 agents=("opencode-native",),
