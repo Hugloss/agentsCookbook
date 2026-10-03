@@ -114,10 +114,13 @@ Human-facing derived outputs are kept separately from raw evidence:
 └── reports/          # small shareable output
     ├── status.json
     ├── report.json
+    ├── decision-evidence.json
     └── score.json
 ```
 
-`make benchmark-status`, `make benchmark-report`, and `make benchmark-score` refresh those files while preserving their normal command behavior. `make benchmark-reports` refreshes all three. Share or archive only `reports/` for ordinary benchmark review; keep `results/` when raw execution evidence is needed for audit or debugging.
+`decision-evidence.json` is a compact derived first-read view over `report.json`: runtime/host instability, semantic misses, strict-format behavior, subject adoption/assistance evidence, and explicit observability gaps. It performs no ranking or recommendation.
+
+`make benchmark-status`, `make benchmark-report`, and `make benchmark-score` refresh their normal outputs; `benchmark-report` also refreshes `decision-evidence.json`. `make benchmark-reports` refreshes the whole shareable set. Share or archive only `reports/` for ordinary benchmark review; keep `results/` when raw execution evidence is needed for audit or debugging.
 
 In the selected Hashmarks source checkout, install its locked MCP extra with `uv sync --frozen --extra mcp --group test` before running readiness. A correct `HASHMARKS_BENCH_SOURCE` path alone does not install the MCP server dependency.
 
@@ -150,9 +153,9 @@ make benchmark-check       # fast runtime readiness
 make benchmark-oracle-review-check # oracle qualification check
 make benchmark-check-all   # exhaustive model-free preflight
 make benchmark-runs        # list saved run IDs
-make benchmark-report      # print + save reports/report.json
+make benchmark-report      # print report + save report/decision-evidence
 make benchmark-score       # save reports/<score filename>
-make benchmark-reports     # refresh status/report/score together
+make benchmark-reports     # refresh the complete shareable reports set
 ```
 
 The Makefile passes only `.env` and fixed smoke task selectors to the CLI. The configuration loader owns benchmark choices and validates them before runtime work. Codex, OpenCode, and Enola use their installed host conventions; the benchmark observes what resolves. Missing selected-agent choices fail before preflight, execution, reporting, or scoring.

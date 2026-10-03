@@ -28,6 +28,7 @@ from benchmarks.harness.campaign_authority import (
     verify_saved_campaign,
 )
 from benchmarks.harness.preflight import preflight_trial
+from benchmarks.harness.decision_evidence import build_decision_evidence
 from benchmarks.harness.oracle_reviews import (
     OracleReviewError,
     oracle_review_guide,
@@ -697,6 +698,9 @@ def main(argv: list[str] | None = None) -> int:
         if paths.root is not None:
             report_data["reports_dir"] = str(_reports_dir(paths.root))
             _write_derived_json(paths.root, "report.json", report_data)
+            decision = build_decision_evidence(report_data)
+            decision["run_id"] = paths.run_id
+            _write_derived_json(paths.root, "decision-evidence.json", decision)
         print(json.dumps(report_data, indent=2, sort_keys=True))
         return 0
 
@@ -901,6 +905,14 @@ def _persist_completed_run_reports(
     report_data["reports_dir"] = str(reports_dir)
     report_path = _write_derived_json(paths.root, "report.json", report_data)
 
+    decision_data = build_decision_evidence(report_data)
+    decision_data["run_id"] = paths.run_id
+    decision_path = _write_derived_json(
+        paths.root,
+        "decision-evidence.json",
+        decision_data,
+    )
+
     score_script = config.path("BENCHMARK_SCORE_SCRIPT_PATH") or (
         suite.root / "score.py"
     )
@@ -952,6 +964,7 @@ def _persist_completed_run_reports(
     return {
         "status": status_path,
         "report": report_path,
+        "decision_evidence": decision_path,
         "score": score_path,
     }
 
@@ -1176,6 +1189,7 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
         "REPORTS saved | "
         f"status {report_paths['status']} | "
         f"report {report_paths['report']} | "
+        f"decision {report_paths['decision_evidence']} | "
         f"score {report_paths['score']}",
         file=sys.stderr,
         flush=True,
