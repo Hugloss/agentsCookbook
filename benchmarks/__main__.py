@@ -64,6 +64,7 @@ from benchmarks.harness.selection import (
     SelectionError,
     parse_agent_arguments,
     select_definitions,
+    select_scoring_definitions,
 )
 from benchmarks.harness.suite import load_runtime_suite, load_suite
 from scripts.agent_economics.bounded_process import retain_lock_in_subprocesses
@@ -216,8 +217,9 @@ def _parser() -> argparse.ArgumentParser:
     reports = sub.add_parser("reports")
     reports.add_argument("--suite", type=Path)
     reports.add_argument("--env-file", type=Path, required=True)
-    _add_selectors(reports)
-    _add_campaign_paths(reports, execution=False)
+    reports.add_argument("--root", type=Path)
+    reports.add_argument("--run-id")
+    reports.add_argument("--agent", action="append", default=[])
 
     score = sub.add_parser("score")
     score.add_argument("--env-file", type=Path, required=True)
@@ -432,10 +434,10 @@ def _selection_metadata(args, suite, rows) -> dict[str, object]:
         for row in rows
     )
     return {
-        "tasks": sorted(set(args.task)),
+        "tasks": sorted(set(getattr(args, "task", []))),
         "agents": sorted(set(args.agent)),
-        "subjects": sorted(set(args.subject)),
-        "condition": args.condition,
+        "subjects": sorted(set(getattr(args, "subject", []))),
+        "condition": getattr(args, "condition", None),
         "bare_control_included": bare_control_included,
     }
 
@@ -748,16 +750,26 @@ def main(argv: list[str] | None = None) -> int:
             )
         try:
             with exclusive_store(args.root):
-                paths = _paths(args, need_execution=False)
-                assert paths.root is not None
+                saved = select_saved_run(args.root, args.run_id)
+                manifest = _assert_saved_run_agents(saved, args.agent)
+                frozen_ids = tuple(
+                    str(value) for value in manifest["selected_definitions"]
+                )
+                rows = select_scoring_definitions(
+                    suite,
+                    agents=tuple(args.agent),
+                    definition_ids=frozen_ids,
+                )
+                paths = resolve_campaign_paths(
+                    root=saved.root,
+                    cache=None,
+                    work=None,
+                    results=None,
+                    need_execution=False,
+                )
+                paths = replace(paths, run_id=saved.run_id)
                 assert paths.results is not None
-                selected_definitions = {
-                    str(row["definition_id"]) for row in rows
-                }
-                if not _is_frozen_campaign_selection(paths.results, rows):
-                    raise RunStoreError(
-                        "complete reports require the exact frozen campaign selection"
-                    )
+                selected_definitions = set(frozen_ids)
                 final_status = campaign_status(
                     suite=suite,
                     results_root=paths.results,
@@ -776,7 +788,12 @@ def main(argv: list[str] | None = None) -> int:
                     runtime_source=runtime_source,
                     final_status=final_status,
                 )
-        except (RunStoreError, CampaignAuthorityError, ReportError) as exc:
+        except (
+            RunStoreError,
+            CampaignAuthorityError,
+            ReportError,
+            SelectionError,
+        ) as exc:
             raise SystemExit(f"benchmark reports unavailable: {exc}") from exc
         print(
             json.dumps(
