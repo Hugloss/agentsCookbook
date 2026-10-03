@@ -78,7 +78,7 @@
   ],
   "scoring": {
     "id": "repository-intelligence-headroom-score",
-    "version": 2,
+    "version": 3,
     "metrics": [
       "task_success",
       "subject_tool_invoked",
