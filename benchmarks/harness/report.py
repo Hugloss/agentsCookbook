@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
-from statistics import mean
+from statistics import mean, median
 from typing import Any
 
 from benchmarks.adapters.oracles import (
@@ -660,9 +660,18 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             ),
             "assistance_transition": transition,
         }
+        invoked = (
+            receipt.get("measurements", {})
+            .get("agent", {})
+            .get("subject_tool_invoked")
+        )
+        row["subject_tool_invoked"] = invoked if isinstance(invoked, bool) else None
+        subject_calls = _agent_metric(receipt, "subject_mcp_calls")
+        row["subject_mcp_calls"] = subject_calls
         for metric in (
             "duration_ms",
             "command_calls",
+            "tool_calls",
             "mcp_calls",
             "input_tokens",
             "output_tokens",
@@ -702,6 +711,78 @@ def _paired_assistance_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any
         }
         for key, counts in sorted(grouped.items())
     ]
+
+
+def _paired_assistance_usage_summary(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        invoked = row.get("subject_tool_invoked")
+        state = (
+            "invoked"
+            if invoked is True
+            else "not-invoked"
+            if invoked is False
+            else "unknown"
+        )
+        grouped[
+            (str(row["agent_id"]), str(row["subject_id"]), state)
+        ].append(row)
+
+    summaries: list[dict[str, Any]] = []
+    for (agent_id, subject_id, state), group in sorted(grouped.items()):
+        transitions = Counter(
+            str(row["assistance_transition"])
+            for row in group
+            if isinstance(row.get("assistance_transition"), str)
+        )
+        metric_summary: dict[str, dict[str, int | float | None]] = {}
+        for metric in (
+            "duration_ms",
+            "command_calls",
+            "tool_calls",
+            "mcp_calls",
+            "input_tokens",
+            "output_tokens",
+        ):
+            values = [
+                value
+                for row in group
+                if isinstance(
+                    (value := row.get(f"{metric}_delta")),
+                    (int, float),
+                )
+                and not isinstance(value, bool)
+            ]
+            metric_summary[metric] = {
+                "observations": len(values),
+                "mean": mean(values) if values else None,
+                "median": median(values) if values else None,
+            }
+        summaries.append(
+            {
+                "agent_id": agent_id,
+                "subject_id": subject_id,
+                "invocation_state": state,
+                "total_pairs": len(group),
+                "subject_mcp_calls": sum(
+                    int(value)
+                    for row in group
+                    if isinstance(
+                        (value := row.get("subject_mcp_calls")),
+                        (int, float),
+                    )
+                    and not isinstance(value, bool)
+                ),
+                "transitions": {
+                    name: transitions.get(name, 0)
+                    for name in ("gain", "preserved", "unresolved", "regression")
+                },
+                "delta_metrics": metric_summary,
+            }
+        )
+    return summaries
 
 
 def _stability(
@@ -1084,6 +1165,9 @@ def build_report(
         },
         "paired_assistance": paired_assistance,
         "paired_assistance_summary": _paired_assistance_summary(paired_assistance),
+        "paired_assistance_usage_summary": _paired_assistance_usage_summary(
+            paired_assistance
+        ),
         "paired_assistance_exclusions": pair_exclusions,
         "expected_assistance_pairs": len(paired_assistance) + len(pair_exclusions),
         "stability": stability,
