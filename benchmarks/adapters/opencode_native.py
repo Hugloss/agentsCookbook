@@ -939,6 +939,9 @@ class OpenCodeNativeAgent:
                 ),
             }
         )
+        export_attempts = envelope.get("export_attempts") if isinstance(envelope, dict) else None
+        if type(export_attempts) is int and export_attempts >= 0:
+            metrics["session_export_attempts"] = export_attempts
         metrics["duration_ms"] = result.elapsed_ms
         metrics["stdout_bytes"] = len(result.stdout)
         metrics["stderr_bytes"] = len(result.stderr)
