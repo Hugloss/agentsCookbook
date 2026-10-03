@@ -615,6 +615,10 @@ def main(argv: list[str] | None = None) -> int:
                 f"ERROR: benchmark score script must belong to selected suite: {args.suite}"
             )
         try:
+            _validate_score_cli(script, runtime_source)
+        except ReportError as exc:
+            raise SystemExit(f"benchmark reporting contract unavailable: {exc}") from exc
+        try:
             saved = select_saved_run(args.root, args.run_id)
             manifest = _assert_saved_run_agents(saved, args.agent)
         except (RunStoreError, CampaignAuthorityError) as exc:
