@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from typing import Any
 
@@ -13,6 +15,17 @@ TOOL_ROUTER = "tool-router"
 OTHER = "other"
 
 DISCOVERY_CLASSES = frozenset({NATIVE_SEARCH, NATIVE_READ, SHELL})
+
+
+def routing_artifact_sha256(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
 
 _SEARCH_OPERATIONS = frozenset({
     "grep",
@@ -183,6 +196,21 @@ def catalog_tool_names(payload: object) -> list[str]:
     return names
 
 
+def catalog_discovery_classes(
+    name: object,
+    *,
+    subject: str,
+) -> frozenset[str]:
+    base = classify_tool(name, subject=subject)
+    if base in DISCOVERY_CLASSES:
+        return frozenset({base})
+
+    tokens = tool_tokens(name)
+    if tokens and tokens[-1] == "fetch" and "github" in tokens:
+        return frozenset({NATIVE_READ, NATIVE_SEARCH})
+    return frozenset()
+
+
 def catalog_admission(
     tool_names: list[str] | tuple[str, ...],
     *,
@@ -200,9 +228,12 @@ def catalog_admission(
         for name in tool_names
     )
     native_classes = sorted({
-        classify_tool(name, subject=subject)
+        tool_class
         for name in tool_names
-        if classify_tool(name, subject=subject) in DISCOVERY_CLASSES
+        for tool_class in catalog_discovery_classes(
+            name,
+            subject=subject,
+        )
     })
     reasons: list[str] = []
     if not required_visible:
@@ -217,4 +248,243 @@ def catalog_admission(
         "required_tool_visible": required_visible,
         "native_discovery_classes": native_classes,
         "reason_codes": reasons,
+    }
+
+
+def result_bytes(value: object) -> int | None:
+    """Return exact serialized result size when a captured result is observable."""
+    if isinstance(value, str):
+        return len(value.encode("utf-8"))
+    if isinstance(value, (dict, list)):
+        return len(json.dumps(value, sort_keys=True).encode("utf-8"))
+    if isinstance(value, bytes):
+        return len(value)
+    return None
+
+
+def normalized_call(
+    call: dict[str, object],
+    *,
+    subject: str,
+) -> dict[str, object]:
+    """Project one host call into canonical routing evidence."""
+    tool = call.get("tool")
+    inputs = call.get("inputs")
+    if not isinstance(inputs, dict):
+        inputs = call.get("input")
+    if not isinstance(inputs, dict):
+        inputs = {}
+
+    captured_result = (
+        call["output"]
+        if "output" in call
+        else call.get("result")
+    )
+    measured = result_bytes(captured_result)
+    basis = "captured-output" if measured is not None else "unobserved"
+    if measured is None:
+        declared = call.get("result_bytes")
+        if isinstance(declared, int) and declared >= 0:
+            measured = declared
+            basis = "declared-size"
+
+    tool_class = classify_call(tool, inputs, subject=subject)
+    observability = None
+    if tool_class == TOOL_ROUTER:
+        nested = call.get("nested_calls")
+        observability = "expanded" if isinstance(nested, list) else "opaque"
+
+    return {
+        "tool": tool,
+        "tool_class": tool_class,
+        "status": call.get("status"),
+        "input": inputs,
+        "result_bytes": measured,
+        "result_basis": basis,
+        "routing_observability": observability,
+    }
+
+
+def normalize_calls(
+    calls: list[dict[str, object]],
+    *,
+    subject: str,
+) -> list[dict[str, object]]:
+    """Flatten observable router children and assign one authoritative order."""
+    normalized: list[dict[str, object]] = []
+
+    def append_call(call: dict[str, object]) -> None:
+        row = normalized_call(call, subject=subject)
+        row["ordinal"] = len(normalized) + 1
+        normalized.append(row)
+        nested = call.get("nested_calls")
+        if isinstance(nested, list):
+            for child in nested:
+                if not isinstance(child, dict):
+                    raise ValueError("nested_calls entries must be objects")
+                append_call(child)
+
+    for call in calls:
+        if not isinstance(call, dict):
+            raise ValueError("tool trace calls must be objects")
+        append_call(call)
+    return normalized
+
+
+def required_call_result(
+    calls: list[dict[str, object]] | None,
+    *,
+    subject: str,
+    required_tool: str,
+) -> tuple[bool | None, bool | None]:
+    if calls is None:
+        return None, None
+    matching = [
+        call
+        for call in calls
+        if matches_subject_operation(
+            call.get("tool"),
+            subject=subject,
+            operation=required_tool.removeprefix(subject + "_"),
+        )
+    ]
+    succeeded = any(
+        call.get("status") == "completed"
+        and isinstance(call.get("result_bytes"), int)
+        and call["result_bytes"] > 0
+        for call in matching
+    )
+    if succeeded:
+        return True, True
+    if matching and any(
+        call.get("status") == "completed" and call.get("result_bytes") is None
+        for call in matching
+    ):
+        return True, None
+    return bool(matching), False
+
+
+def required_success_index(
+    calls: list[dict[str, object]],
+    *,
+    subject: str,
+    required_tool: str,
+) -> int | None:
+    for index, call in enumerate(calls):
+        if not matches_subject_operation(
+            call.get("tool"),
+            subject=subject,
+            operation=required_tool.removeprefix(subject + "_"),
+        ):
+            continue
+        if (
+            call.get("status") == "completed"
+            and isinstance(call.get("result_bytes"), int)
+            and call["result_bytes"] > 0
+        ):
+            return index
+    return None
+
+
+def required_before_native_discovery(
+    calls: list[dict[str, object]] | None,
+    *,
+    subject: str,
+    required_tool: str,
+) -> bool | None:
+    if calls is None:
+        return None
+    projected = []
+    for call in calls:
+        row = dict(call)
+        if not isinstance(row.get("tool_class"), str):
+            row["tool_class"] = classify_call(
+                row.get("tool"),
+                row.get("inputs") or row.get("input"),
+                subject=subject,
+            )
+        if (
+            row.get("tool_class") == TOOL_ROUTER
+            and row.get("routing_observability") not in {"expanded", "opaque"}
+        ):
+            row["routing_observability"] = (
+                "expanded" if isinstance(row.get("nested_calls"), list) else "opaque"
+            )
+        projected.append(row)
+
+    discovery_index = first_discovery_index(projected)
+    required_index = required_success_index(
+        projected,
+        subject=subject,
+        required_tool=required_tool,
+    )
+    opaque_router_indexes = [
+        index
+        for index, call in enumerate(projected)
+        if call.get("tool_class") == TOOL_ROUTER
+        and call.get("routing_observability") != "expanded"
+    ]
+
+    prior = projected[:discovery_index]
+    _, succeeded = required_call_result(
+        prior,
+        subject=subject,
+        required_tool=required_tool,
+    )
+    if succeeded is True and required_index is not None:
+        if any(index < required_index for index in opaque_router_indexes):
+            return None
+        return True
+    if any(index < discovery_index for index in opaque_router_indexes):
+        return None
+    return succeeded
+
+
+def first_native_discovery(
+    calls: list[dict[str, object]] | None,
+) -> tuple[str | None, object | None]:
+    if calls is None:
+        return None, None
+    index = first_discovery_index(calls)
+    if index == len(calls):
+        return None, None
+    call = calls[index]
+    tool_class = call.get("tool_class")
+    return (
+        tool_class if isinstance(tool_class, str) else None,
+        call.get("tool"),
+    )
+
+
+def evaluate_routing_calls(
+    calls: list[dict[str, object]],
+    *,
+    subject: str,
+    required_tool: str,
+) -> dict[str, object]:
+    """Evaluate one already-normalized ordered call stream."""
+    attempted, succeeded = required_call_result(
+        calls,
+        subject=subject,
+        required_tool=required_tool,
+    )
+    before = required_before_native_discovery(
+        calls,
+        subject=subject,
+        required_tool=required_tool,
+    )
+    first_class, first_tool = first_native_discovery(calls)
+    if before is True:
+        outcome = "PASS"
+    elif before is False:
+        outcome = "FAIL"
+    else:
+        outcome = "UNKNOWN"
+    return {
+        "outcome": outcome,
+        "required_call_attempted": attempted,
+        "required_call_succeeded": succeeded,
+        "required_before_native_discovery": before,
+        "first_native_discovery_class": first_class,
+        "first_native_discovery_tool": first_tool,
     }

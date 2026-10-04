@@ -175,15 +175,65 @@ This lets OpenCode names such as `grep`/`read` and ChatGPT-style names such as `
 
 A host catalog is admissible only when both the required subject tool and at least one native discovery class are visible. Missing Hashmarks is `ENVIRONMENT_BLOCKED`, not a routing failure; only a READY catalog can answer whether the host selected Hashmarks before native repository discovery.
 
-A captured host catalog can be checked without invoking a model:
+A raw host catalog can be checked without invoking a model:
 
 ```bash
 ./benchmark tool-routing-catalog \
-  --catalog host-tools.json \
+  --catalog host-tools-raw.json \
   --subject hashmarks
 ```
 
-The catalog file may be a JSON list of tool names or an object with a `tools` list containing names or `{"name": "..."}` entries. Exit 0 means `READY`; exit 2 means `ENVIRONMENT_BLOCKED`.
+The raw catalog may be a JSON list of tool names or an object with a `tools` list containing names or `{"name": "..."}` entries. Exit 0 means `READY`; exit 2 means `ENVIRONMENT_BLOCKED`.
+
+For an ordered trace, materialize a canonical catalog capture first so catalog and trace belong to one explicit observation session:
+
+```bash
+./benchmark tool-routing-catalog \
+  --catalog host-tools-raw.json \
+  --subject hashmarks \
+  --host chatgpt \
+  --capture-id chatgpt-routing-001 \
+  --output-capture host-tools.json
+```
+
+The command prints the canonical `catalog_sha256` and writes `agents-cookbook-tool-routing-catalog-capture.v1`. `--host`, `--capture-id`, and `--output-capture` are all-or-nothing so the scorer never receives a partially bound catalog artifact.
+
+The ordered tool trace is a separate authority. Normalize the matching external host run into this small capture shape rather than pretending it is an OpenCode campaign:
+
+```json
+{
+  "schema": "agents-cookbook-tool-routing-trace.v1",
+  "host": "chatgpt",
+  "capture_id": "chatgpt-routing-001",
+  "catalog_sha256": "sha256:<digest printed by tool-routing-catalog>",
+  "calls": [
+    {
+      "tool": "mcp__hashmarks__task_evidence",
+      "status": "completed",
+      "result_bytes": 1200
+    },
+    {
+      "tool": "mcp__GitHub__search",
+      "status": "completed",
+      "input": {"query": "checkout discount owner"}
+    }
+  ]
+}
+```
+
+The capture owns only observed tool name/order/status/input/result evidence. It must carry the same `host` and `capture_id` as the canonical catalog capture plus that capture's exact `catalog_sha256`. Host/session/catalog mismatches are rejected before scoring. It must not supply derived fields such as `tool_class`, `ordinal`, or router observability. A wrapper call may include observable `nested_calls`; without them an orchestration router is treated as opaque and cannot produce a false Hashmarks-first PASS.
+
+Score a READY catalog and its matching trace without executing a model:
+
+```bash
+./benchmark tool-routing-trace \
+  --catalog host-tools.json \
+  --trace host-trace.json \
+  --subject hashmarks \
+  --output routing-score.json
+```
+
+Outcomes are `PASS` when the required subject call completed with an observable nonempty result before native discovery, `FAIL` when observable native discovery won first, `UNKNOWN` when ordering/result evidence is insufficient, and `ENVIRONMENT_BLOCKED` when the host catalog was not admissible. Exit codes are respectively 0, 1, 3, and 2. The score records canonical hashes of both input artifacts and recomputes all semantic classifications itself.
 
 ### Advanced direct CLI
 
