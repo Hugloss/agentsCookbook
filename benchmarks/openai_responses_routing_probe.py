@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import hashlib
 import json
 import os
@@ -16,6 +15,11 @@ import urllib.request
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
+
+try:
+    import fcntl as _fcntl
+except ImportError:  # pragma: no cover - native Windows import boundary
+    _fcntl = None
 
 from benchmarks.tool_routing import routing_artifact_sha256
 from benchmarks.tool_routing_trace import (
@@ -631,17 +635,22 @@ def _response_items(
 def _tunnel_lock(tunnel_id: str) -> Iterator[None]:
     token = hashlib.sha256(tunnel_id.encode("utf-8")).hexdigest()[:24]
     path = Path(tempfile.gettempdir()) / f"agentscookbook-tunnel-{token}.lock"
+    if _fcntl is None:
+        raise OpenAIRoutingProbeError(
+            "OpenAI routing probe tunnel locking currently requires a POSIX host "
+            "(use WSL/Linux rather than native Windows)"
+        )
     fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
     try:
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _fcntl.flock(fd, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise OpenAIRoutingProbeError(
                 "another local OpenAI routing probe already owns this tunnel ID"
             ) from exc
         yield
     finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        _fcntl.flock(fd, _fcntl.LOCK_UN)
         os.close(fd)
 
 
