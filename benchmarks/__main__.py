@@ -33,7 +33,6 @@ from benchmarks.hashmarks_retrieval_probe import (
 )
 from benchmarks.openai_responses_routing_probe import (
     OpenAIRoutingProbeError,
-    preflight_probe as preflight_openai_routing_probe,
     run_probe as run_openai_routing_probe,
 )
 from benchmarks.openai_routing_dogfood import (
