@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest import mock
 
+from benchmarks.__main__ import main as benchmark_main
 from benchmarks.openai_responses_routing_probe import OpenAIRoutingProbeError
 from benchmarks.openai_routing_dogfood import (
     OpenAIRoutingDogfoodError,
@@ -240,6 +244,125 @@ class OpenAIRoutingDogfoodTests(unittest.TestCase):
             )
             second_id, _ = allocate_run_directory(settings.run_root)
             self.assertEqual(second_id, "000002")
+
+    def test_easy_cli_new_uses_env_settings_and_numbered_saved_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_file = root / ".env"
+            env_file.write_text(
+                "OPENAI_ROUTING_TUNNEL_ID=tunnel_" + "d" * 32 + "\n"
+                "OPENAI_ROUTING_MODEL=gpt-test\n",
+                encoding="utf-8",
+            )
+            settings = OpenAIRoutingSettings(
+                workspace=root,
+                handoff=root / "handoff.json",
+                tunnel_client=root / "tunnel-client",
+                tunnel_id="tunnel_" + "d" * 32,
+                model="gpt-test",
+                manifest=root / "manifest.json",
+                repeats=1,
+                run_root=root / "run-root",
+            )
+            output_dir = settings.run_root / "runs" / "000001"
+            summary = {
+                "aggregate": {"outcomes": {"PASS": 1}},
+                "status": "COMPLETE",
+            }
+
+            stdout = StringIO()
+            with (
+                mock.patch(
+                    "benchmarks.__main__.OpenAIRoutingSettings.load",
+                    return_value=settings,
+                ) as loader,
+                mock.patch(
+                    "benchmarks.__main__.run_saved_openai_dogfood",
+                    return_value=("000001", output_dir, summary),
+                ) as runner,
+                mock.patch(
+                    "benchmarks.__main__.openai_dogfood_exit_code",
+                    return_value=0,
+                ),
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        "OPENAI_API_KEY": "openai-secret",
+                        "CONTROL_PLANE_API_KEY": "control-secret",
+                    },
+                    clear=False,
+                ),
+                redirect_stdout(stdout),
+            ):
+                code = benchmark_main(
+                    [
+                        "openai-routing-new",
+                        "--env-file",
+                        str(env_file),
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            loader.assert_called_once_with(env_file)
+            kwargs = runner.call_args.kwargs
+            self.assertEqual(kwargs["settings"], settings)
+            self.assertEqual(kwargs["openai_api_key"], "openai-secret")
+            self.assertEqual(
+                kwargs["control_plane_api_key"],
+                "control-secret",
+            )
+            rendered = json.loads(stdout.getvalue())
+            self.assertEqual(rendered["run_id"], "000001")
+            self.assertEqual(rendered["run_root"], str(output_dir))
+
+    def test_easy_cli_runs_and_status_need_only_run_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_root = root / "routing-runs"
+            env_file = root / ".env"
+            env_file.write_text(
+                f"OPENAI_ROUTING_RUN_ROOT={run_root}\n",
+                encoding="utf-8",
+            )
+            run_id, run_dir = allocate_run_directory(run_root)
+            summary = {
+                "status": "COMPLETE",
+                "aggregate": {
+                    "outcomes": {"PASS": 1},
+                    "hashmarks_first_rate": 1.0,
+                },
+            }
+            (run_dir / "summary.json").write_text(
+                json.dumps(summary),
+                encoding="utf-8",
+            )
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                code = benchmark_main(
+                    [
+                        "openai-routing-runs",
+                        "--env-file",
+                        str(env_file),
+                    ]
+                )
+            self.assertEqual(code, 0)
+            listed = json.loads(stdout.getvalue())
+            self.assertEqual(listed["runs"][0]["run_id"], run_id)
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                code = benchmark_main(
+                    [
+                        "openai-routing-status",
+                        "--env-file",
+                        str(env_file),
+                    ]
+                )
+            self.assertEqual(code, 0)
+            status = json.loads(stdout.getvalue())
+            self.assertEqual(status["run_id"], run_id)
+            self.assertEqual(status["summary"]["status"], "COMPLETE")
 
     def test_manifest_rejects_tool_directing_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
