@@ -520,6 +520,10 @@ async function testSharedLifecycle() {
     assert.strictEqual(enola.workspace_binding.verified, true);
     assert.strictEqual(enola.native_subject_identity.verified, true);
     assert.strictEqual(enola.native_subject_identity.subject, 'enola');
+    assert.match(
+      enola.native_subject_identity.configuration_sha256,
+      /^[0-9a-f]{64}$/,
+    );
     assert.strictEqual(
       enola.workspace_binding.method,
       'enola-explicit-config-repository',
@@ -678,6 +682,107 @@ async function testSharedLifecycle() {
     );
     assert.strictEqual(changedAuthorityRun.status, 0, changedAuthorityRun.stderr);
     assert.strictEqual(JSON.parse(changedAuthorityRun.stdout).run.status, 1);
+
+    const configDriftRun = require('child_process').spawnSync(
+      process.execPath,
+      [
+        path.join(__dirname, 'opencode-runtime.js'),
+        'run-export',
+        '--repo',
+        root,
+        '--agent',
+        'build',
+        '--title',
+        'config-drift-during-run',
+        '--prompt-file',
+        promptFile,
+        '--benchmark-subject',
+        'hashmarks',
+        '--benchmark-exposure-file',
+        exposurePath,
+        '--subject-exposure-sha256',
+        admitted.overlay_identity.subject_exposure_sha256,
+        '--subject-runtime-sha256',
+        runtime.runtimeIdentitySha256(admitted.native_subject_identity),
+        '--native-config-sha256',
+        admitted.inspection.config_sha256,
+        '--opencode-executable-sha256',
+        fakeOpenCodeSha256,
+      ],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          ...env,
+          OPENCODE_BIN: fake[1],
+          FAKE_CONFIG_DRIFT_AFTER_RUN: '1',
+        },
+      },
+    );
+    assert.strictEqual(configDriftRun.status, 0, configDriftRun.stderr);
+    const configDriftEnvelope = JSON.parse(configDriftRun.stdout);
+    assert.strictEqual(configDriftEnvelope.run.status, 0);
+    assert.strictEqual(
+      configDriftEnvelope.authority_revalidation.status,
+      'failed',
+    );
+    assert.match(
+      configDriftEnvelope.error,
+      /authority changed during inference: native OpenCode configuration changed/,
+    );
+    assert.strictEqual(configDriftEnvelope.final_text, null);
+
+    const enolaExposurePath = path.join(root, 'enola-exposure.json');
+    fs.writeFileSync(enolaExposurePath, JSON.stringify(enolaExposure), 'utf8');
+    const enolaDriftRun = require('child_process').spawnSync(
+      process.execPath,
+      [
+        path.join(__dirname, 'opencode-runtime.js'),
+        'run-export',
+        '--repo',
+        root,
+        '--agent',
+        'build',
+        '--title',
+        'enola-config-drift-during-run',
+        '--prompt-file',
+        promptFile,
+        '--benchmark-subject',
+        'enola',
+        '--benchmark-exposure-file',
+        enolaExposurePath,
+        '--subject-exposure-sha256',
+        enola.overlay_identity.subject_exposure_sha256,
+        '--subject-runtime-sha256',
+        runtime.runtimeIdentitySha256(enola.native_subject_identity),
+        '--native-config-sha256',
+        enola.inspection.config_sha256,
+        '--opencode-executable-sha256',
+        fakeOpenCodeSha256,
+      ],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          ...env,
+          OPENCODE_BIN: fake[1],
+          FAKE_ENOLA_CONFIG_DRIFT_AFTER_RUN: '1',
+          FAKE_ENOLA_CONFIG_PATH: enolaExposure.command[1],
+        },
+      },
+    );
+    assert.strictEqual(enolaDriftRun.status, 0, enolaDriftRun.stderr);
+    const enolaDriftEnvelope = JSON.parse(enolaDriftRun.stdout);
+    assert.strictEqual(enolaDriftEnvelope.run.status, 0);
+    assert.strictEqual(
+      enolaDriftEnvelope.authority_revalidation.status,
+      'failed',
+    );
+    assert.match(
+      enolaDriftEnvelope.error,
+      /authority changed during inference: benchmark subject runtime authority changed/,
+    );
+    assert.strictEqual(enolaDriftEnvelope.final_text, null);
 
     fs.appendFileSync(path.join(root, 'hashmarks'), '# replaced-after-admission\n', 'utf8');
     const replacedExecutableRun = require('child_process').spawnSync(
