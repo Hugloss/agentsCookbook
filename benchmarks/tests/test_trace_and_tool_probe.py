@@ -358,6 +358,20 @@ class TraceAndToolProbeTests(unittest.TestCase):
         self.assertTrue(ready["required_tool_visible"])
         self.assertEqual(ready["reason_codes"], [])
 
+        generic_fetch = catalog_admission(
+            [
+                "mcp__hashmarks__task_evidence",
+                "mcp__GitHub__fetch",
+            ],
+            subject="hashmarks",
+            required_tool="hashmarks_task_evidence",
+        )
+        self.assertEqual(generic_fetch["status"], "READY")
+        self.assertEqual(
+            generic_fetch["native_discovery_classes"],
+            [NATIVE_READ, NATIVE_SEARCH],
+        )
+
     def test_tool_routing_catalog_cli_is_model_free_admission(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
