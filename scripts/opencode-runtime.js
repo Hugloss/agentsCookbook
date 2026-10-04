@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const RUNTIME_SCHEMA = 'agents-cookbook-opencode-runtime/v2';
+const RUNTIME_SCHEMA = 'agents-cookbook-opencode-runtime/v3';
 const SECRET_KEYS = new Set([
   'api_key',
   'apikey',
