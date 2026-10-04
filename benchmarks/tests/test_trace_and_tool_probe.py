@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+from benchmarks.__main__ import main as benchmark_main
 from benchmarks.adapters.opencode_native import OpenCodeNativeAgent
 from benchmarks.adapters.registry import build_agent
 from benchmarks.harness.identity import digest
@@ -349,6 +352,62 @@ class TraceAndToolProbeTests(unittest.TestCase):
         self.assertEqual(ready["status"], "READY")
         self.assertTrue(ready["required_tool_visible"])
         self.assertEqual(ready["reason_codes"], [])
+
+    def test_tool_routing_catalog_cli_is_model_free_admission(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            blocked_catalog = root / "blocked.json"
+            blocked_catalog.write_text(
+                json.dumps(
+                    {
+                        "tools": [
+                            {"name": "mcp__GitHub__search"},
+                            {"name": "mcp__GitHub__fetch_file"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = benchmark_main(
+                    [
+                        "tool-routing-catalog",
+                        "--catalog",
+                        str(blocked_catalog),
+                        "--subject",
+                        "hashmarks",
+                    ]
+                )
+            self.assertEqual(code, 2)
+            self.assertEqual(
+                json.loads(stdout.getvalue())["reason_codes"],
+                ["required-subject-tool-missing"],
+            )
+
+            ready_catalog = root / "ready.json"
+            ready_catalog.write_text(
+                json.dumps(
+                    [
+                        "mcp__hashmarks__task_evidence",
+                        "mcp__GitHub__search",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = benchmark_main(
+                    [
+                        "tool-routing-catalog",
+                        "--catalog",
+                        str(ready_catalog),
+                        "--subject",
+                        "hashmarks",
+                    ]
+                )
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(stdout.getvalue())["status"], "READY")
 
     def test_required_tool_name_forms(self) -> None:
         self.assertTrue(_matches_required(
