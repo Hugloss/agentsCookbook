@@ -74,13 +74,11 @@ class OpenAIRoutingSettings:
         host_values = dict(os.environ if host is None else host)
 
         workspace = Path(
-            values.get("OPENAI_ROUTING_WORKSPACE", ".")
+            values.get("OPENAI_ROUTING_WORKSPACE") or "."
         ).expanduser().resolve()
         handoff = Path(
-            values.get(
-                "OPENAI_ROUTING_HANDOFF",
-                "../Hashmarks/dist/chatgpt-secure-mcp-tunnel-handoff.json",
-            )
+            values.get("OPENAI_ROUTING_HANDOFF")
+            or "../Hashmarks/dist/chatgpt-secure-mcp-tunnel-handoff.json"
         ).expanduser().resolve()
         tunnel_value = values.get("OPENAI_ROUTING_TUNNEL_CLIENT")
         if tunnel_value:
@@ -109,18 +107,14 @@ class OpenAIRoutingSettings:
             )
 
         manifest = Path(
-            values.get(
-                "OPENAI_ROUTING_MANIFEST",
-                "benchmarks/dogfood/openai-routing-v1.json",
-            )
+            values.get("OPENAI_ROUTING_MANIFEST")
+            or "benchmarks/dogfood/openai-routing-v1.json"
         ).expanduser().resolve()
         run_root = Path(
-            values.get(
-                "OPENAI_ROUTING_RUN_ROOT",
-                ".benchmark-runs/openai-routing",
-            )
+            values.get("OPENAI_ROUTING_RUN_ROOT")
+            or ".benchmark-runs/openai-routing"
         ).expanduser().resolve()
-        repeats_raw = values.get("OPENAI_ROUTING_REPEATS", "1")
+        repeats_raw = values.get("OPENAI_ROUTING_REPEATS") or "1"
         try:
             repeats = int(repeats_raw)
         except ValueError as exc:
@@ -141,6 +135,20 @@ class OpenAIRoutingSettings:
             repeats=repeats,
             run_root=run_root,
         )
+
+
+def routing_run_root(env_file: Path) -> Path:
+    try:
+        values = load_env_values(
+            env_file,
+            allowed_keys=_ROUTING_CONFIG_KEYS,
+        )
+    except BenchmarkConfigError as exc:
+        raise OpenAIRoutingDogfoodError(str(exc)) from exc
+    return Path(
+        values.get("OPENAI_ROUTING_RUN_ROOT")
+        or ".benchmark-runs/openai-routing"
+    ).expanduser().resolve()
 
 
 class OpenAIRoutingDogfoodError(RuntimeError):
@@ -399,13 +407,20 @@ def list_dogfood_runs(root: Path) -> list[dict[str, object]]:
                 }
             )
             continue
+        start_error = path / "start-error.json"
         error_files = list((path / "trials").glob("*/error.json")) if (
             path / "trials"
         ).is_dir() else []
         rows.append(
             {
                 "run_id": run_id,
-                "status": "INCOMPLETE" if error_files else "INTERRUPTED",
+                "status": (
+                    "PRECHECK_FAILED"
+                    if start_error.is_file()
+                    else "INCOMPLETE"
+                    if error_files
+                    else "INTERRUPTED"
+                ),
                 "path": str(path),
                 "hashmarks_first_rate": None,
                 "outcomes": None,
@@ -676,7 +691,20 @@ def run_saved_campaign(
             prepared_output_dir=True,
             run_id=run_id,
         )
-    except Exception:
+    except (
+        OSError,
+        OpenAIRoutingProbeError,
+        OpenAIRoutingDogfoodError,
+        ValueError,
+    ) as exc:
+        _write_json(
+            output_dir / "start-error.json",
+            {
+                "schema": "agents-cookbook-openai-routing-start-error.v1",
+                "run_id": run_id,
+                "error": str(exc),
+            },
+        )
         raise
     return run_id, output_dir, summary
 
