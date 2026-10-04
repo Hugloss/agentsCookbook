@@ -207,6 +207,10 @@ class TraceAndToolProbeTests(unittest.TestCase):
             TOOL_ROUTER,
         )
         self.assertEqual(
+            classify_tool("container.exec", subject="hashmarks"),
+            "shell",
+        )
+        self.assertEqual(
             classify_tool("image_gen", subject="hashmarks"),
             OTHER,
         )
