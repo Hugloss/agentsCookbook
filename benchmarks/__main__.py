@@ -854,41 +854,42 @@ def main(argv: list[str] | None = None) -> int:
         except ReportError as exc:
             raise SystemExit(f"benchmark reporting contract unavailable: {exc}") from exc
         try:
-            saved = select_saved_run(args.root, args.run_id)
-            manifest = _assert_saved_run_agents(saved, args.agent)
-            verify_campaign_suite_authority(
-                suite=load_suite(args.suite),
-                campaign=manifest,
-            )
+            with exclusive_store(args.root):
+                saved = select_saved_run(args.root, args.run_id)
+                manifest = _assert_saved_run_agents(saved, args.agent)
+                verify_campaign_suite_authority(
+                    suite=load_suite(args.suite),
+                    campaign=manifest,
+                )
+                if not explicit_score_output:
+                    if args.output.is_absolute() or len(args.output.parts) != 1:
+                        raise SystemExit(
+                            "BENCHMARK_SCORE_OUTPUT_PATH must be a filename within "
+                            "the selected run's reports directory"
+                        )
+                    args.output = _reports_dir(saved.root) / args.output
+                    args.output.parent.mkdir(parents=True, exist_ok=True)
+                invocation = [
+                    sys.executable,
+                    str(script),
+                    "--results",
+                    str(saved.root / "results"),
+                    "--output",
+                    str(args.output),
+                ]
+                for agent in args.agent:
+                    invocation.extend(("--agent", agent))
+                for definition_id in sorted(
+                    str(value) for value in manifest["selected_definitions"]
+                ):
+                    invocation.extend(("--definition-id", definition_id))
+                return subprocess.run(
+                    invocation,
+                    env=_score_environment(runtime_source),
+                    check=False,
+                ).returncode
         except (RunStoreError, CampaignAuthorityError) as exc:
             raise SystemExit(str(exc)) from exc
-        if not explicit_score_output:
-            if args.output.is_absolute() or len(args.output.parts) != 1:
-                raise SystemExit(
-                    "BENCHMARK_SCORE_OUTPUT_PATH must be a filename within "
-                    "the selected run's reports directory"
-                )
-            args.output = _reports_dir(saved.root) / args.output
-            args.output.parent.mkdir(parents=True, exist_ok=True)
-        invocation = [
-            sys.executable,
-            str(script),
-            "--results",
-            str(saved.root / "results"),
-            "--output",
-            str(args.output),
-        ]
-        for agent in args.agent:
-            invocation.extend(("--agent", agent))
-        for definition_id in sorted(
-            str(value) for value in manifest["selected_definitions"]
-        ):
-            invocation.extend(("--definition-id", definition_id))
-        return subprocess.run(
-            invocation,
-            env=_score_environment(runtime_source),
-            check=False,
-        ).returncode
     suite = (
         load_runtime_suite(args.suite)
         if args.command in {"check", "doctor"}
