@@ -1210,6 +1210,64 @@ function prepareBenchmarkConfig({
   }
 }
 
+function runtimeIdentitySha256(identity) {
+  return identity && typeof identity === 'object' && !Array.isArray(identity)
+    ? sha256Text(canonicalJson(identity))
+    : null;
+}
+
+function executableIdentitySha256(command, repoDir, env) {
+  const executable = Array.isArray(command) ? command[0] : command;
+  const resolved = resolveExecutable(executable, repoDir, env);
+  if (!resolved) return null;
+  try {
+    return sha256File(resolved);
+  } catch {
+    return null;
+  }
+}
+
+function benchmarkAuthorityFailure({
+  prepared,
+  options,
+  selectedSubject,
+  opencodeBin,
+  repoDir,
+  env,
+}) {
+  if (!prepared || prepared.status !== 'completed') {
+    return prepared?.reason || 'benchmark OpenCode authority could not be resolved';
+  }
+  if (prepared.workspace_binding?.verified !== true) {
+    return 'benchmark workspace binding changed';
+  }
+  if (
+    prepared.inspection?.config_sha256 !== options['native-config-sha256']
+  ) {
+    return 'native OpenCode configuration changed';
+  }
+  if (
+    executableIdentitySha256(opencodeBin, repoDir, env) !==
+      options['opencode-executable-sha256']
+  ) {
+    return 'OpenCode executable authority changed';
+  }
+  if (!selectedSubject) return null;
+  if (
+    prepared.overlay_identity?.subject_exposure_sha256 !==
+      options['subject-exposure-sha256']
+  ) {
+    return 'benchmark subject exposure changed';
+  }
+  if (
+    runtimeIdentitySha256(prepared.native_subject_identity) !==
+      options['subject-runtime-sha256']
+  ) {
+    return 'benchmark subject runtime authority changed';
+  }
+  return null;
+}
+
 function runSession({
   opencodeBin = process.env.OPENCODE_BIN || 'opencode',
   repoDir,
@@ -1400,40 +1458,38 @@ async function main(argv) {
       'utf8',
     );
     let env = process.env;
+    const opencodeBin = process.env.OPENCODE_BIN || 'opencode';
     if (benchmarkMode) {
       const prepared = prepareBenchmarkConfig({
+        opencodeBin,
         repoDir,
         env: process.env,
         selectedSubject,
         subjectExposure,
         agentName: options.agent,
       });
-      if (
-        prepared.status !== 'completed' ||
-        prepared.workspace_binding?.verified !== true ||
-        prepared.inspection.config_sha256 !==
-          options['native-config-sha256'] ||
-        (
-          selectedSubject &&
-          prepared.overlay_identity?.subject_exposure_sha256 !==
-            options['subject-exposure-sha256']
-        ) ||
-        (
-          selectedSubject &&
-          prepared.native_subject_identity?.executable_sha256 !==
-            options['subject-executable-sha256']
-        )
-      ) {
+      const authorityFailure = benchmarkAuthorityFailure({
+        prepared,
+        options,
+        selectedSubject,
+        opencodeBin,
+        repoDir,
+        env: process.env,
+      });
+      if (authorityFailure) {
         process.stdout.write(`${JSON.stringify({
           schema: RUNTIME_SCHEMA,
           run: { status: 1 },
-          error: prepared.reason || 'benchmark OpenCode authority changed after admission',
+          error:
+            prepared.reason ||
+            `benchmark OpenCode authority changed after admission: ${authorityFailure}`,
         })}\n`);
         return;
       }
       env = prepared.environment;
     }
-    const result = await runSessionAndExport({
+    let result = await runSessionAndExport({
+      opencodeBin,
       repoDir,
       title: options.title,
       agent: benchmarkMode ? options.agent : (options.agent || 'build'),
@@ -1441,6 +1497,42 @@ async function main(argv) {
       env,
       deleteAfterExport: options['keep-session'] !== 'true',
     });
+    if (benchmarkMode) {
+      const revalidated = prepareBenchmarkConfig({
+        opencodeBin,
+        repoDir,
+        env: process.env,
+        selectedSubject,
+        subjectExposure,
+        agentName: options.agent,
+        probe: false,
+      });
+      const authorityFailure = benchmarkAuthorityFailure({
+        prepared: revalidated,
+        options,
+        selectedSubject,
+        opencodeBin,
+        repoDir,
+        env: process.env,
+      });
+      if (authorityFailure) {
+        result = {
+          ...result,
+          final_text: null,
+          error:
+            `benchmark OpenCode authority changed during inference: ${authorityFailure}`,
+          authority_revalidation: {
+            status: 'failed',
+            reason: authorityFailure,
+          },
+        };
+      } else {
+        result = {
+          ...result,
+          authority_revalidation: { status: 'verified' },
+        };
+      }
+    }
     process.stdout.write(`${JSON.stringify(result)}\n`);
     return;
   }
@@ -1460,7 +1552,9 @@ module.exports = {
   inlineConfig,
   mergeObjects,
   benchmarkOverlay,
+  benchmarkAuthorityFailure,
   prepareBenchmarkConfig,
+  runtimeIdentitySha256,
   providerFromModel,
   readBenchmarkExposure,
   readJsonText,
