@@ -17,7 +17,11 @@ from benchmarks.config import BenchmarkConfig, BenchmarkConfigError
 from benchmarks.diagnostic import DiagnosticError, prepare_diagnostic_suite
 from benchmarks.tool_probe import REQUIRED_TOOLS, ToolProbeError, prepare_tool_probe_suite
 from benchmarks.tool_probe_score import smoke_gate
-from benchmarks.tool_routing import catalog_admission, catalog_tool_names
+from benchmarks.tool_routing import (
+    catalog_admission,
+    catalog_tool_names,
+    routing_artifact_sha256,
+)
 from benchmarks.tool_routing_trace import exit_code as tool_routing_exit_code
 from benchmarks.tool_routing_trace import score_trace as score_tool_routing_trace
 from benchmarks.hashmarks_retrieval_probe import (
@@ -769,6 +773,7 @@ def main(argv: list[str] | None = None) -> int:
                 subject=args.subject,
                 required_tool=REQUIRED_TOOLS[args.subject],
             )
+            evidence["catalog_sha256"] = routing_artifact_sha256(payload)
         except (OSError, ValueError) as exc:
             raise SystemExit(f"tool routing catalog unavailable: {exc}") from exc
         print(json.dumps(evidence, indent=2, sort_keys=True))
