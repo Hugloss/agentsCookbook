@@ -293,7 +293,7 @@ This diagnostic deliberately remains `heldout_comparable=false`. It proves model
 
 ### Multi-task OpenAI routing dogfood campaign
 
-For a real dogfood pass, use the frozen neutral task manifest at `benchmarks/dogfood/openai-routing-v1.json`. It currently contains five repository-localization tasks against agentsCookbook and intentionally does not name Hashmarks, `task_evidence`, MCP, or native grep. Expected owner paths are used only after the model returns as a lightweight answer-sanity signal.
+For a real dogfood pass, use the balanced manifest at `benchmarks/dogfood/openai-routing-v2.json`. It contains five semantic repository-localization tasks where Hashmarks should reduce the problem before native discovery, plus two known-path controls where native `read` should win immediately. The semantic prompts intentionally do not name Hashmarks, `task_evidence`, MCP, or native grep. Expected owner paths and routing expectations are used only after the model returns; they are never inserted into the model-visible instructions.
 
 First create a fresh Hashmarks handoff bound to the agentsCookbook checkout from the sibling Hashmarks repository:
 
@@ -365,7 +365,7 @@ runs/
         └── receipt.json
 ```
 
-`summary.json` reports routing outcome counts, Hashmarks-first rate over PASS/FAIL trials, exact expected-path mention rate, first-tool counts, total reported tokens, and elapsed time. The expected-path signal is diagnostic only and does not change the routing outcome.
+`summary.json` preserves the raw host-neutral Hashmarks-first outcomes and separately reports task-semantic routing fit. The two primary rates are `semantic_hashmarks_first_rate` for unknown-path behavior localization and `known_path_native_read_rate` for exact-path controls, plus overall `routing_fit_rate`, expected-path mention rate, first-tool counts, token totals, and elapsed time. A strong Hashmarks routing change should raise or preserve the semantic rate **without lowering the known-path native-read control rate**.
 
 The checked-in agentsCookbook repository is intentionally small enough for the current native comparison snapshot bound; preflight still rechecks the actual local checkout before any model work.
 
