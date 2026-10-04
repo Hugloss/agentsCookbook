@@ -119,6 +119,31 @@ def classify_tool(name: object, *, subject: object = None) -> str:
     return OTHER
 
 
+def classify_call(
+    name: object,
+    inputs: object = None,
+    *,
+    subject: object = None,
+) -> str:
+    """Classify a concrete call, including generic API discovery surfaces."""
+    base = classify_tool(name, subject=subject)
+    if base != OTHER:
+        return base
+    if not isinstance(inputs, dict):
+        return base
+
+    tokens = tool_tokens(name)
+    operation = tokens[-1] if tokens else ""
+    url = inputs.get("url")
+    if operation == "fetch" and isinstance(url, str):
+        lowered = url.lower()
+        if "/git/trees/" in lowered or "/search/code" in lowered:
+            return NATIVE_SEARCH
+        if "/contents/" in lowered or "/git/blobs/" in lowered:
+            return NATIVE_READ
+    return base
+
+
 def first_discovery_index(calls: list[dict[str, Any]]) -> int:
     return next(
         (
