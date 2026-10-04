@@ -15,8 +15,9 @@ from pathlib import Path
 
 from benchmarks.config import BenchmarkConfig, BenchmarkConfigError
 from benchmarks.diagnostic import DiagnosticError, prepare_diagnostic_suite
-from benchmarks.tool_probe import ToolProbeError, prepare_tool_probe_suite
+from benchmarks.tool_probe import REQUIRED_TOOLS, ToolProbeError, prepare_tool_probe_suite
 from benchmarks.tool_probe_score import smoke_gate
+from benchmarks.tool_routing import catalog_admission, catalog_tool_names
 from benchmarks.hashmarks_retrieval_probe import (
     HashmarksRetrievalProbeError,
     run_hashmarks_retrieval_probe,
@@ -160,6 +161,14 @@ def _parser() -> argparse.ArgumentParser:
     probe_gate = sub.add_parser("tool-probe-smoke-gate")
     probe_gate.add_argument("--root", type=Path, required=True)
     probe_gate.add_argument("--subject", choices=("hashmarks", "enola"), required=True)
+
+    routing_catalog = sub.add_parser("tool-routing-catalog")
+    routing_catalog.add_argument("--catalog", type=Path, required=True)
+    routing_catalog.add_argument(
+        "--subject",
+        choices=tuple(sorted(REQUIRED_TOOLS)),
+        required=True,
+    )
 
     retrieval_probe = sub.add_parser("hashmarks-retrieval-probe")
     retrieval_probe.add_argument("--results", type=Path, required=True)
@@ -739,6 +748,19 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"tool probe smoke gate failed: {exc}") from exc
         print(f"tool probe smoke gate passed: {saved.run_id}")
         return 0
+    if args.command == "tool-routing-catalog":
+        try:
+            payload = json.loads(args.catalog.read_text(encoding="utf-8"))
+            names = catalog_tool_names(payload)
+            evidence = catalog_admission(
+                names,
+                subject=args.subject,
+                required_tool=REQUIRED_TOOLS[args.subject],
+            )
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"tool routing catalog unavailable: {exc}") from exc
+        print(json.dumps(evidence, indent=2, sort_keys=True))
+        return 0 if evidence["status"] == "READY" else 2
     if args.command == "hashmarks-retrieval-probe":
         try:
             evidence = run_hashmarks_retrieval_probe(
