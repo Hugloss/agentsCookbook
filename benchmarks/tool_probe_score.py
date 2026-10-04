@@ -11,124 +11,10 @@ from benchmarks.harness.suite import load_suite
 from benchmarks.harness.trace_diagnostics import build_trace_diagnostics
 from benchmarks.tool_probe import REQUIRED_TOOLS
 from benchmarks.tool_routing import (
-    TOOL_ROUTER,
-    classify_call,
-    first_discovery_index,
-    matches_subject_operation,
+    first_native_discovery,
+    required_before_native_discovery,
+    required_call_result,
 )
-
-
-def _matches_required(name: object, subject: str, required: str) -> bool:
-    return matches_subject_operation(
-        name,
-        subject=subject,
-        operation=required.removeprefix(subject + "_"),
-    )
-
-
-def _call_class(call: dict[str, object], subject: str) -> str:
-    value = call.get("tool_class")
-    if isinstance(value, str):
-        return value
-    return classify_call(
-        call.get("tool"),
-        call.get("inputs") or call.get("input"),
-        subject=subject,
-    )
-
-
-def _required_call_result(
-    calls: list[dict[str, object]] | None, subject: str, required: str
-) -> tuple[bool | None, bool | None]:
-    if calls is None:
-        return None, None
-    matching = [call for call in calls if _matches_required(
-        call.get("tool"), subject, required
-    )]
-    succeeded = any(
-        call.get("status") == "completed"
-        and isinstance(call.get("result_bytes"), int)
-        and call["result_bytes"] > 0
-        for call in matching
-    )
-    if succeeded:
-        return True, True
-    if matching and any(
-        call.get("status") == "completed" and call.get("result_bytes") is None
-        for call in matching
-    ):
-        return True, None
-    return bool(matching), False
-
-
-def _required_success_index(
-    calls: list[dict[str, object]],
-    subject: str,
-    required: str,
-) -> int | None:
-    for index, call in enumerate(calls):
-        if not _matches_required(call.get("tool"), subject, required):
-            continue
-        if (
-            call.get("status") == "completed"
-            and isinstance(call.get("result_bytes"), int)
-            and call["result_bytes"] > 0
-        ):
-            return index
-    return None
-
-
-def _required_before_native_discovery(
-    calls: list[dict[str, object]] | None,
-    subject: str,
-    required: str,
-) -> bool | None:
-    if calls is None:
-        return None
-    normalized = [
-        {**call, "tool_class": _call_class(call, subject)}
-        for call in calls
-    ]
-    discovery_index = first_discovery_index(normalized)
-    required_index = _required_success_index(normalized, subject, required)
-    opaque_router_indexes = [
-        index
-        for index, call in enumerate(normalized)
-        if call.get("tool_class") == TOOL_ROUTER
-        and call.get("routing_observability") != "expanded"
-    ]
-
-    prior = normalized[:discovery_index]
-    _, succeeded = _required_call_result(prior, subject, required)
-    if succeeded is True and required_index is not None:
-        if any(index < required_index for index in opaque_router_indexes):
-            return None
-        return True
-    if any(index < discovery_index for index in opaque_router_indexes):
-        return None
-    return succeeded
-
-
-def _first_native_discovery(
-    calls: list[dict[str, object]] | None,
-    subject: str,
-) -> tuple[str | None, object | None]:
-    if calls is None:
-        return None, None
-    normalized = [
-        {**call, "tool_class": _call_class(call, subject)}
-        for call in calls
-    ]
-    index = first_discovery_index(normalized)
-    if index == len(normalized):
-        return None, None
-    call = normalized[index]
-    tool_class = call.get("tool_class")
-    return (
-        tool_class if isinstance(tool_class, str) else None,
-        call.get("tool"),
-    )
-
 
 def smoke_gate(
     score: dict[str, object], *, subject: str, expected_trials: int = 3
@@ -187,8 +73,12 @@ def main(suite_root: Path) -> int:
             continue
         calls = trial["calls"]
         trace_observed = calls is not None
-        attempted, successful = _required_call_result(calls, subject, required)
-        first_class, first_tool = _first_native_discovery(calls, subject)
+        attempted, successful = required_call_result(
+            calls,
+            subject=subject,
+            required_tool=required,
+        )
+        first_class, first_tool = first_native_discovery(calls)
         rows.append({
             "trial_id": trial["trial_id"],
             "task_id": trial["task_id"],
@@ -197,10 +87,10 @@ def main(suite_root: Path) -> int:
             "trace_observed": trace_observed,
             "required_call_attempted": attempted,
             "required_call_succeeded": successful,
-            "required_before_native_discovery": _required_before_native_discovery(
+            "required_before_native_discovery": required_before_native_discovery(
                 calls,
-                subject,
-                required,
+                subject=subject,
+                required_tool=required,
             ),
             "first_native_discovery_class": first_class,
             "first_native_discovery_tool": first_tool,
