@@ -27,7 +27,7 @@ class OpenCodeSingleTurnContractTests(unittest.TestCase):
 
     def test_opencode_agent_identity_versions_execution_runtime(self) -> None:
         agent = json.loads(AGENT.read_text(encoding="utf-8"))
-        self.assertEqual(agent["identity"]["version"], "native-config-v3")
+        self.assertEqual(agent["identity"]["version"], "native-config-v4")
 
 
 if __name__ == "__main__":

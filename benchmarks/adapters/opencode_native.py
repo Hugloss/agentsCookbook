@@ -13,7 +13,6 @@ import json
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Lock
 from typing import Any
 
 from benchmarks.adapters.runtime import observe_executable, resolve_native_executable
@@ -33,12 +32,6 @@ _RUNTIME_SCRIPT = (
     Path(__file__).resolve().parents[2] / "scripts" / "opencode-runtime.js"
 )
 
-_EXECUTABLE_OBSERVATION_CACHE: dict[tuple[str, str], Observation] = {}
-_EXECUTABLE_OBSERVATION_CACHE_LOCK = Lock()
-_BASE_CONFIG_CACHE: dict[tuple[str, str, str, str, str, str], dict[str, Any]] = {}
-_BASE_CONFIG_CACHE_LOCK = Lock()
-
-
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -51,96 +44,27 @@ def _observe_opencode_executable(
     context: TrialContext,
     environment: dict[str, str],
 ) -> Observation:
-    """Reuse version evidence only for byte-identical OpenCode executables.
-
-    Config, MCP, workspace-binding, and model authority remain freshly observed.
-    """
-    command = environment["OPENCODE_BIN"]
-    resolved = resolve_native_executable(
+    """Freshly observe executable/version authority for every admission."""
+    return observe_executable(
         context,
-        command,
-        environment=environment,
-    )
-    if resolved is None:
-        return observe_executable(
-            context,
-            command,
-            environment=environment,
-        )
-
-    try:
-        executable_sha256 = _sha256_file(Path(resolved))
-    except OSError:
-        return observe_executable(
-            context,
-            command,
-            environment=environment,
-        )
-
-    key = (resolved, executable_sha256)
-    with _EXECUTABLE_OBSERVATION_CACHE_LOCK:
-        cached = _EXECUTABLE_OBSERVATION_CACHE.get(key)
-    if cached is not None:
-        return Observation(
-            {**cached.payload, "cache_hit": True},
-            cached.raw,
-            {**cached.measurements, "cache_hit": True},
-        )
-
-    observed = observe_executable(
-        context,
-        command,
-        environment=environment,
-    )
-    if (
-        observed.payload.get("available") is True
-        and observed.payload.get("executable_sha256") == executable_sha256
-    ):
-        with _EXECUTABLE_OBSERVATION_CACHE_LOCK:
-            _EXECUTABLE_OBSERVATION_CACHE[key] = observed
-    return observed
-
-
-def _base_config_cache_key(
-    context: TrialContext,
-    environment: dict[str, str],
-    executable: Observation,
-) -> tuple[str, str, str, str, str, str] | None:
-    """Scope reusable base config to one exact admitted task/native authority."""
-    scope = context.admission_scope
-    executable_sha256 = executable.payload.get("executable_sha256")
-    if not isinstance(scope, str) or not scope:
-        return None
-    if not isinstance(executable_sha256, str) or not executable_sha256:
-        return None
-    return (
-        scope,
         environment["OPENCODE_BIN"],
-        executable_sha256,
-        context.environment["BENCHMARK_OPENCODE_AGENT"],
-        environment["HOME"],
-        environment["XDG_CONFIG_HOME"],
+        environment=environment,
     )
 
 
-def _cached_base_config(
-    key: tuple[str, str, str, str, str, str] | None,
-) -> dict[str, Any] | None:
-    if key is None:
-        return None
-    with _BASE_CONFIG_CACHE_LOCK:
-        cached = _BASE_CONFIG_CACHE.get(key)
-    return dict(cached) if cached is not None else None
-
-
-def _store_base_config(
-    key: tuple[str, str, str, str, str, str] | None,
-    value: Any,
-) -> None:
-    if key is None or not isinstance(value, dict):
-        return
-    with _BASE_CONFIG_CACHE_LOCK:
-        _BASE_CONFIG_CACHE[key] = dict(value)
+def _subject_source_identity_sha256(
+    subject: SubjectAdapter | None,
+    context: TrialContext,
+) -> tuple[str | None, str | None]:
+    observer = getattr(subject, "source_identity", None)
+    if observer is None or not callable(observer):
+        return None, None
+    identity, error = observer(context)
+    if error:
+        return None, str(error)
+    if not isinstance(identity, dict):
+        return None, "benchmark subject source identity is unavailable"
+    return hashlib.sha256(canonical_json(identity)).hexdigest(), None
 
 
 def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
@@ -534,7 +458,7 @@ class OpenCodeNativeAgent:
                 "configuration": "native-opencode",
                 "model_provider": "native-opencode",
                 "runtime_overlay": "benchmark-subject-exposure+tool-gating-only",
-                "surface": "shared-opencode-runtime-v3",
+                "surface": "shared-opencode-runtime-v4",
             },
         )
 
@@ -593,8 +517,6 @@ class OpenCodeNativeAgent:
             context,
             environment,
         )
-        base_cache_key = _base_config_cache_key(context, environment, executable)
-        cached_base = _cached_base_config(base_cache_key)
         args = (
             "inspect-config",
             "--repo",
@@ -606,13 +528,6 @@ class OpenCodeNativeAgent:
         )
         if exposure_path is not None:
             args += ("--benchmark-exposure-file", str(exposure_path))
-        if cached_base is not None:
-            base_path = context.control_root / "opencode-base-config.json"
-            base_path.parent.mkdir(parents=True, exist_ok=True)
-            base_path.write_bytes(canonical_json(cached_base))
-            args += ("--base-config-file", str(base_path))
-        elif base_cache_key is not None:
-            args += ("--emit-base-config", "true")
         envelope, result = _runtime_call(
             context,
             args=args,
@@ -620,17 +535,6 @@ class OpenCodeNativeAgent:
             timeout_seconds=min(30.0, float(self.timeout_seconds)),
             max_stdout_bytes=2_000_000,
         )
-        base_snapshot = (
-            envelope.pop("base_config_snapshot", None)
-            if isinstance(envelope, dict)
-            else None
-        )
-        if (
-            cached_base is None
-            and isinstance(envelope, dict)
-            and envelope.get("status") == "completed"
-        ):
-            _store_base_config(base_cache_key, base_snapshot)
         if (
             envelope is None
             or envelope.get("status") != "completed"
@@ -688,6 +592,17 @@ class OpenCodeNativeAgent:
                 },
                 "",
             )
+        subject_source_identity_sha256, source_identity_error = (
+            _subject_source_identity_sha256(exposed_subject, context)
+        )
+        if source_identity_error is not None:
+            return Observation(
+                {
+                    "available": False,
+                    "reason": source_identity_error,
+                },
+                "",
+            )
         resolved, executable = self._resolve_native(
             context,
             selected_subject,
@@ -740,6 +655,11 @@ class OpenCodeNativeAgent:
         native_subject_identity = resolved.get("native_subject_identity")
         if not isinstance(native_subject_identity, dict):
             native_subject_identity = None
+        native_subject_identity_sha256 = (
+            hashlib.sha256(canonical_json(native_subject_identity)).hexdigest()
+            if native_subject_identity is not None
+            else None
+        )
         native_identity_verified = selected is None or (
             isinstance(native_subject_identity, dict)
             and native_subject_identity.get("verified") is True
@@ -755,7 +675,7 @@ class OpenCodeNativeAgent:
             "reason_code": workspace_binding.get("reason_code"),
         }
         evidence = {
-            "runtime_contract": "agents-cookbook-opencode-runtime/v3",
+            "runtime_contract": "agents-cookbook-opencode-runtime/v4",
             "opencode_executable_path": executable.payload.get("resolved_path"),
             "opencode_executable_sha256": executable.payload.get("executable_sha256"),
             "native_config_sha256": inspection.get("config_sha256"),
@@ -769,6 +689,8 @@ class OpenCodeNativeAgent:
             "selected_server": selected,
             "workspace_binding": workspace_binding_identity,
             "native_subject_identity": native_subject_identity,
+            "native_subject_identity_sha256": native_subject_identity_sha256,
+            "subject_source_identity_sha256": subject_source_identity_sha256,
             "subject_exposure_sha256": overlay_identity.get("subject_exposure_sha256"),
             "native_server_shadowed": overlay_identity.get("native_server_shadowed"),
             "native_server_conflict": overlay_identity.get("native_server_conflict"),
@@ -818,7 +740,7 @@ class OpenCodeNativeAgent:
                 "provider": provider,
                 "native_config_sha256": evidence["native_config_sha256"],
                 "native_mcp_servers": evidence["native_mcp_servers"],
-                "base_config_source": resolved.get("base_config_source", "fresh"),
+                "base_config_source": "fresh",
                 "workspace_binding": workspace_binding,
                 "native_subject_identity": native_subject_identity,
                 "mcp_exposure": (
@@ -835,9 +757,7 @@ class OpenCodeNativeAgent:
             executable.raw,
             {
                 **executable.measurements,
-                "base_config_reused": (
-                    resolved.get("base_config_source") == "task-cache"
-                ),
+                "base_config_reused": False,
             },
         )
 
@@ -860,6 +780,18 @@ class OpenCodeNativeAgent:
     ) -> Observation:
         evidence = self._load_prepared(context)
         environment = _native_environment(context)
+        admitted_source_identity_sha256 = evidence.get(
+            "subject_source_identity_sha256"
+        )
+        current_source_identity_sha256, source_identity_error = (
+            _subject_source_identity_sha256(exposed_subject, context)
+        )
+        if source_identity_error is not None:
+            raise ValueError(source_identity_error)
+        if current_source_identity_sha256 != admitted_source_identity_sha256:
+            raise ValueError(
+                "benchmark subject source authority changed after admission"
+            )
         current_opencode_path = str(Path(environment["OPENCODE_BIN"]).resolve())
         admitted_opencode_path = evidence.get("opencode_executable_path")
         admitted_opencode_sha256 = evidence.get("opencode_executable_sha256")
@@ -904,27 +836,26 @@ class OpenCodeNativeAgent:
             ),
         )
         if evidence.get("selected_server"):
-            native_subject_identity = evidence.get("native_subject_identity")
-            subject_executable_sha256 = (
-                native_subject_identity.get("executable_sha256")
-                if isinstance(native_subject_identity, dict)
-                else None
+            subject_runtime_sha256 = evidence.get(
+                "native_subject_identity_sha256"
             )
-            if not isinstance(subject_executable_sha256, str):
+            if not isinstance(subject_runtime_sha256, str):
                 raise ValueError(
-                    "benchmark subject executable authority is unavailable"
+                    "benchmark subject runtime authority is unavailable"
                 )
             run_args += (
                 "--benchmark-exposure-file",
                 str(context.control_root / "opencode-benchmark-exposure.json"),
                 "--subject-exposure-sha256",
                 str(evidence["subject_exposure_sha256"]),
-                "--subject-executable-sha256",
-                subject_executable_sha256,
+                "--subject-runtime-sha256",
+                subject_runtime_sha256,
             )
         run_args += (
             "--native-config-sha256",
             evidence["native_config_sha256"],
+            "--opencode-executable-sha256",
+            str(evidence["opencode_executable_sha256"]),
         )
         envelope, result = _runtime_call(
             context,
@@ -933,17 +864,36 @@ class OpenCodeNativeAgent:
             timeout_seconds=self.timeout_seconds + 120,
             max_stdout_bytes=self.max_output_bytes,
         )
+        post_source_identity_sha256, post_source_identity_error = (
+            _subject_source_identity_sha256(exposed_subject, context)
+        )
+        source_authority_error = (
+            post_source_identity_error
+            or (
+                "benchmark subject source authority changed during inference"
+                if post_source_identity_sha256 != admitted_source_identity_sha256
+                else None
+            )
+        )
 
         exported: dict[str, Any] = {}
         export_raw = ""
         export_error: str | None = None
         session_id: str | None = None
+        operation_id: str | None = None
+        authority_revalidation: dict[str, Any] | None = None
         run_evidence: dict[str, Any] | None = None
         if envelope is None:
             export_error = "shared OpenCode runtime failed"
         else:
             session = envelope.get("session_id")
             session_id = session if isinstance(session, str) else None
+            operation = envelope.get("operation_id")
+            operation_id = operation if isinstance(operation, str) else None
+            revalidation = envelope.get("authority_revalidation")
+            authority_revalidation = (
+                revalidation if isinstance(revalidation, dict) else None
+            )
             run_value = envelope.get("run")
             run_evidence = run_value if isinstance(run_value, dict) else None
             runtime_error = envelope.get("error")
@@ -969,6 +919,8 @@ class OpenCodeNativeAgent:
             parse_error = envelope.get("export_parse_error")
             if isinstance(parse_error, str) and parse_error:
                 export_error = parse_error
+        if source_authority_error is not None:
+            export_error = source_authority_error
 
         selected = evidence.get("selected_server")
         server_names = tuple(evidence.get("native_mcp_servers", []))
@@ -1001,6 +953,8 @@ class OpenCodeNativeAgent:
         )
         final_text = envelope.get("final_text") if isinstance(envelope, dict) else None
         if not isinstance(final_text, str) or not final_text:
+            final_text = None
+        if source_authority_error is not None:
             final_text = None
 
         model_mismatch = observed_model is not None and observed_model != evidence.get(
@@ -1043,6 +997,8 @@ class OpenCodeNativeAgent:
                 "native_config_sha256": evidence.get("native_config_sha256"),
                 "native_mcp_servers": list(server_names),
                 "session_id": session_id,
+                "operation_id": operation_id,
+                "authority_revalidation": authority_revalidation,
                 "runtime_contract": evidence.get("runtime_contract"),
                 "budget_violation": (
                     (

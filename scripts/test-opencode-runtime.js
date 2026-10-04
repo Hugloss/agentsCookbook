@@ -2,6 +2,7 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -97,6 +98,13 @@ function config() {
     provider: { liteLLM: { options: { apiKey: 'must-not-leak' } } },
     mcp: nested ? { servers } : servers,
   };
+  if (
+    process.env.FAKE_CONFIG_DRIFT_AFTER_RUN === '1' &&
+    statePath &&
+    fs.existsSync(statePath + '.config-drift')
+  ) {
+    base.permission = { edit: 'deny-after-run' };
+  }
   const inline = process.env.OPENCODE_CONFIG_CONTENT
     ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : {};
   const resolved = merge(base, inline);
@@ -164,6 +172,23 @@ if (command === 'run') {
     pure: args[0] === '--pure'
   };
   fs.writeFileSync(statePath, JSON.stringify(state));
+  if (process.env.FAKE_CONFIG_DRIFT_AFTER_RUN === '1') {
+    fs.writeFileSync(statePath + '.config-drift', '1');
+  }
+  if (
+    process.env.FAKE_ENOLA_CONFIG_DRIFT_AFTER_RUN === '1' &&
+    process.env.FAKE_ENOLA_CONFIG_PATH
+  ) {
+    const current = JSON.parse(
+      fs.readFileSync(process.env.FAKE_ENOLA_CONFIG_PATH, 'utf8'),
+    );
+    current.output = { dir: '.benchmark-enola-drifted' };
+    fs.writeFileSync(
+      process.env.FAKE_ENOLA_CONFIG_PATH,
+      JSON.stringify(current),
+      'utf8',
+    );
+  }
   process.stdout.write('{"type":"run"}\\n');
   process.exit(0);
 }
@@ -312,6 +337,9 @@ async function testSharedLifecycle() {
   );
   try {
     const fake = [process.execPath, writeFakeOpenCode(root)];
+    const fakeOpenCodeSha256 = crypto.createHash('sha256')
+      .update(fs.readFileSync(fake[1]))
+      .digest('hex');
     for (const name of ['hashmarks', 'enola']) {
       const executable = path.join(root, name);
       fs.writeFileSync(executable, '#!/bin/sh\nexit 0\n', 'utf8');
@@ -336,54 +364,20 @@ async function testSharedLifecycle() {
     assert.strictEqual(resolved.inspection.model, 'liteLLM/gemma4');
     assert.ok(!JSON.stringify(resolved).includes('must-not-leak'));
 
-    const cachedBase = {
-      model: 'liteLLM/gemma4',
-      provider: { liteLLM: { options: { apiKey: 'cached-secret' } } },
-      mcp: {
-        hashmarks: {
-          type: 'local',
-          command: ['ambient-hashmarks'],
-          cwd: '.',
-          enabled: false,
-        },
-        enola: { type: 'local', command: ['enola'], enabled: false },
-      },
-    };
     const cachedExposure = subjectExposure(root, 'hashmarks');
-    const cachedPrepared = runtime.prepareBenchmarkConfig({
+    const staleSnapshotRejected = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
       env: { ...env, FAKE_FAIL_BASE_CONFIG: '1' },
       selectedSubject: 'hashmarks',
       subjectExposure: cachedExposure,
-      baseConfig: cachedBase,
+      baseConfig: { model: 'old-config', mcp: {} },
     });
-    assert.strictEqual(
-      cachedPrepared.status,
-      'completed',
-      cachedPrepared.reason,
-    );
-    assert.strictEqual(cachedPrepared.base_config_source, 'task-cache');
-    assert.strictEqual(cachedPrepared.inspection.model, 'liteLLM/gemma4');
-
-    const cachedDrift = runtime.prepareBenchmarkConfig({
-      opencodeBin: fake,
-      repoDir: root,
-      agentName: 'build',
-      env: {
-        ...env,
-        FAKE_FAIL_BASE_CONFIG: '1',
-        FAKE_EFFECTIVE_MCP_DRIFT: '1',
-      },
-      selectedSubject: 'hashmarks',
-      subjectExposure: cachedExposure,
-      baseConfig: cachedBase,
-    });
-    assert.strictEqual(cachedDrift.status, 'failed');
+    assert.strictEqual(staleSnapshotRejected.status, 'failed');
     assert.match(
-      cachedDrift.reason,
-      /effective benchmark MCP definition changed/,
+      staleSnapshotRejected.reason,
+      /native OpenCode config could not be resolved/,
     );
 
     const nativeConflict = runtime.prepareBenchmarkConfig({
@@ -526,6 +520,10 @@ async function testSharedLifecycle() {
     assert.strictEqual(enola.workspace_binding.verified, true);
     assert.strictEqual(enola.native_subject_identity.verified, true);
     assert.strictEqual(enola.native_subject_identity.subject, 'enola');
+    assert.match(
+      enola.native_subject_identity.configuration_sha256,
+      /^[0-9a-f]{64}$/,
+    );
     assert.strictEqual(
       enola.workspace_binding.method,
       'enola-explicit-config-repository',
@@ -670,10 +668,12 @@ async function testSharedLifecycle() {
         exposurePath,
         '--subject-exposure-sha256',
         '0'.repeat(64),
-        '--subject-executable-sha256',
-        admitted.native_subject_identity.executable_sha256,
+        '--subject-runtime-sha256',
+        runtime.runtimeIdentitySha256(admitted.native_subject_identity),
         '--native-config-sha256',
         admitted.inspection.config_sha256,
+        '--opencode-executable-sha256',
+        fakeOpenCodeSha256,
       ],
       {
         encoding: 'utf8',
@@ -682,6 +682,107 @@ async function testSharedLifecycle() {
     );
     assert.strictEqual(changedAuthorityRun.status, 0, changedAuthorityRun.stderr);
     assert.strictEqual(JSON.parse(changedAuthorityRun.stdout).run.status, 1);
+
+    const configDriftRun = require('child_process').spawnSync(
+      process.execPath,
+      [
+        path.join(__dirname, 'opencode-runtime.js'),
+        'run-export',
+        '--repo',
+        root,
+        '--agent',
+        'build',
+        '--title',
+        'config-drift-during-run',
+        '--prompt-file',
+        promptFile,
+        '--benchmark-subject',
+        'hashmarks',
+        '--benchmark-exposure-file',
+        exposurePath,
+        '--subject-exposure-sha256',
+        admitted.overlay_identity.subject_exposure_sha256,
+        '--subject-runtime-sha256',
+        runtime.runtimeIdentitySha256(admitted.native_subject_identity),
+        '--native-config-sha256',
+        admitted.inspection.config_sha256,
+        '--opencode-executable-sha256',
+        fakeOpenCodeSha256,
+      ],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          ...env,
+          OPENCODE_BIN: fake[1],
+          FAKE_CONFIG_DRIFT_AFTER_RUN: '1',
+        },
+      },
+    );
+    assert.strictEqual(configDriftRun.status, 0, configDriftRun.stderr);
+    const configDriftEnvelope = JSON.parse(configDriftRun.stdout);
+    assert.strictEqual(configDriftEnvelope.run.status, 0);
+    assert.strictEqual(
+      configDriftEnvelope.authority_revalidation.status,
+      'failed',
+    );
+    assert.match(
+      configDriftEnvelope.error,
+      /authority changed during inference: native OpenCode configuration changed/,
+    );
+    assert.strictEqual(configDriftEnvelope.final_text, null);
+
+    const enolaExposurePath = path.join(root, 'enola-exposure.json');
+    fs.writeFileSync(enolaExposurePath, JSON.stringify(enolaExposure), 'utf8');
+    const enolaDriftRun = require('child_process').spawnSync(
+      process.execPath,
+      [
+        path.join(__dirname, 'opencode-runtime.js'),
+        'run-export',
+        '--repo',
+        root,
+        '--agent',
+        'build',
+        '--title',
+        'enola-config-drift-during-run',
+        '--prompt-file',
+        promptFile,
+        '--benchmark-subject',
+        'enola',
+        '--benchmark-exposure-file',
+        enolaExposurePath,
+        '--subject-exposure-sha256',
+        enola.overlay_identity.subject_exposure_sha256,
+        '--subject-runtime-sha256',
+        runtime.runtimeIdentitySha256(enola.native_subject_identity),
+        '--native-config-sha256',
+        enola.inspection.config_sha256,
+        '--opencode-executable-sha256',
+        fakeOpenCodeSha256,
+      ],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          ...env,
+          OPENCODE_BIN: fake[1],
+          FAKE_ENOLA_CONFIG_DRIFT_AFTER_RUN: '1',
+          FAKE_ENOLA_CONFIG_PATH: enolaExposure.command[1],
+        },
+      },
+    );
+    assert.strictEqual(enolaDriftRun.status, 0, enolaDriftRun.stderr);
+    const enolaDriftEnvelope = JSON.parse(enolaDriftRun.stdout);
+    assert.strictEqual(enolaDriftEnvelope.run.status, 0);
+    assert.strictEqual(
+      enolaDriftEnvelope.authority_revalidation.status,
+      'failed',
+    );
+    assert.match(
+      enolaDriftEnvelope.error,
+      /authority changed during inference: benchmark subject runtime authority changed/,
+    );
+    assert.strictEqual(enolaDriftEnvelope.final_text, null);
 
     fs.appendFileSync(path.join(root, 'hashmarks'), '# replaced-after-admission\n', 'utf8');
     const replacedExecutableRun = require('child_process').spawnSync(
@@ -703,10 +804,12 @@ async function testSharedLifecycle() {
         exposurePath,
         '--subject-exposure-sha256',
         admitted.overlay_identity.subject_exposure_sha256,
-        '--subject-executable-sha256',
-        admitted.native_subject_identity.executable_sha256,
+        '--subject-runtime-sha256',
+        runtime.runtimeIdentitySha256(admitted.native_subject_identity),
         '--native-config-sha256',
         admitted.inspection.config_sha256,
+        '--opencode-executable-sha256',
+        fakeOpenCodeSha256,
       ],
       {
         encoding: 'utf8',
@@ -725,6 +828,32 @@ async function testSharedLifecycle() {
       /authority changed after admission/,
     );
 
+    const staleStartedAt = Date.now();
+    fs.writeFileSync(
+      statePath,
+      JSON.stringify({
+        id: 'ses_stale',
+        title: 'stale-operation',
+        directory: root,
+        updated: staleStartedAt - 10_000,
+      }),
+      'utf8',
+    );
+    const staleSession = await runtime.findSessionId({
+      opencodeBin: fake,
+      repoDir: root,
+      title: 'stale-operation',
+      startedAt: staleStartedAt,
+      env,
+      attempts: 1,
+      delayMs: 0,
+    });
+    assert.strictEqual(
+      staleSession,
+      '',
+      'session discovery must reject an older matching session',
+    );
+
     const result = await runtime.runSessionAndExport({
       opencodeBin: fake,
       repoDir: root,
@@ -733,7 +862,16 @@ async function testSharedLifecycle() {
       env,
       deleteAfterExport: true,
     });
-    assert.strictEqual(result.schema, 'agents-cookbook-opencode-runtime/v2');
+    assert.strictEqual(result.schema, 'agents-cookbook-opencode-runtime/v3');
+    assert.match(
+      result.operation_id,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    const operationState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    assert.strictEqual(
+      operationState.title,
+      `runtime-test:${result.operation_id}`,
+    );
     assert.strictEqual(result.run.status, 0);
     assert.strictEqual(result.session_id, 'ses_test');
     assert.strictEqual(result.export.status, 0);

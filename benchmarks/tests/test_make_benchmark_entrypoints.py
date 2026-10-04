@@ -18,7 +18,7 @@ from benchmarks.__main__ import (
     main,
 )
 from benchmarks.harness.runner import TrialRunResult, TrialRunnerError
-from benchmarks.harness.run_store import RunStoreError, SavedRun
+from benchmarks.harness.run_store import RunStoreError, SavedRun, exclusive_store
 from benchmarks.harness.selection import select_definitions
 from benchmarks.harness.suite import load_suite
 
@@ -172,6 +172,48 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 if value == "--definition-id"
             ]
             self.assertEqual(observed, ["a" * 64, "b" * 64])
+
+    def test_manual_score_cannot_race_active_campaign_owner(self) -> None:
+        suite = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
+        score_script = suite / "score.py"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            saved = SavedRun("000001", root / "runs/000001")
+            config = mock.Mock()
+            config.runtime_environment.return_value = {}
+            with (
+                exclusive_store(root),
+                mock.patch("benchmarks.__main__._resolve_config", return_value=config),
+                mock.patch("benchmarks.__main__.select_saved_run", return_value=saved),
+                mock.patch("benchmarks.__main__.subprocess.run") as run,
+            ):
+                run.return_value.returncode = 0
+                run.return_value.stdout = (
+                    "--results --output --agent --definition-id"
+                )
+                run.return_value.stderr = ""
+                with self.assertRaisesRegex(
+                    SystemExit,
+                    "another benchmark command",
+                ):
+                    main(
+                        [
+                            "score",
+                            "--env-file",
+                            str(root / "unused.env"),
+                            "--suite",
+                            str(suite),
+                            "--root",
+                            str(root),
+                            "--score-script",
+                            str(score_script),
+                            "--output",
+                            str(root / "score.json"),
+                            "--agent",
+                            "opencode-native",
+                        ]
+                    )
+            self.assertEqual(run.call_count, 1)
 
     def test_resume_selection_must_match_frozen_agents_before_admission(self) -> None:
         suite = load_suite(
@@ -393,6 +435,100 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             self.assertTrue(stored_decision["authority"]["derived_only"])
             trace_file = run_root / "reports/trace-diagnostics.json"
             self.assertTrue(trace_file.is_file())
+
+    def test_active_campaign_keeps_status_and_report_persistence_inspection_only(
+        self,
+    ) -> None:
+        suite_path = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_root = root / "runs/000001"
+            results = run_root / "results"
+            results.mkdir(parents=True)
+            (results / "receipt").write_text("present", encoding="utf-8")
+            reports = run_root / "reports"
+            reports.mkdir()
+            status_path = reports / "status.json"
+            report_path = reports / "report.json"
+            status_path.write_text("newer status\n", encoding="utf-8")
+            report_path.write_text("newer report\n", encoding="utf-8")
+            saved = SavedRun("000001", run_root)
+            status_payload = {
+                "rows": [],
+                "complete_trials": 0,
+                "pending_trials": 1,
+                "interrupted_trials": 0,
+                "conflicting_trials": [],
+                "corrupt_bundles": [],
+                "foreign_bundles": [],
+                "qualified": False,
+            }
+
+            with exclusive_store(root):
+                with (
+                    mock.patch(
+                        "benchmarks.__main__.select_saved_run",
+                        return_value=saved,
+                    ),
+                    mock.patch(
+                        "benchmarks.__main__.campaign_status",
+                        return_value=dict(status_payload),
+                    ),
+                    redirect_stdout(io.StringIO()),
+                    redirect_stderr(io.StringIO()) as status_stderr,
+                ):
+                    self.assertEqual(
+                        main(
+                            [
+                                "status",
+                                "--suite",
+                                str(suite_path),
+                                "--root",
+                                str(root),
+                            ]
+                        ),
+                        0,
+                    )
+                self.assertIn("inspection only", status_stderr.getvalue())
+                self.assertEqual(
+                    status_path.read_text(encoding="utf-8"),
+                    "newer status\n",
+                )
+
+                with (
+                    mock.patch(
+                        "benchmarks.__main__.select_saved_run",
+                        return_value=saved,
+                    ),
+                    mock.patch(
+                        "benchmarks.__main__.build_report",
+                        return_value={
+                            "schema": {"version": 12},
+                            "expected_trials": 1,
+                        },
+                    ),
+                    redirect_stdout(io.StringIO()),
+                    redirect_stderr(io.StringIO()) as report_stderr,
+                ):
+                    self.assertEqual(
+                        main(
+                            [
+                                "report",
+                                "--suite",
+                                str(suite_path),
+                                "--root",
+                                str(root),
+                                "--agent",
+                                "opencode-native",
+                            ]
+                        ),
+                        0,
+                    )
+                self.assertIn("inspection only", report_stderr.getvalue())
+                self.assertEqual(
+                    report_path.read_text(encoding="utf-8"),
+                    "newer report\n",
+                )
 
     def test_status_can_require_qualified_campaign(self) -> None:
         suite = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"

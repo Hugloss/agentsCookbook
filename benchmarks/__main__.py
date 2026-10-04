@@ -474,6 +474,111 @@ def _canonical_campaign_persistence_gap(
     return None
 
 
+def _same_saved_run_under_lock(
+    *,
+    store_root: Path,
+    run_id: str | None,
+    run_root: Path,
+) -> None:
+    """Prove canonical derived writes still target the run selected before locking."""
+    saved = select_saved_run(store_root, run_id)
+    if saved.root.resolve() != run_root.resolve():
+        raise RunStoreError(
+            "selected benchmark run changed before canonical persistence"
+        )
+
+
+def _refresh_canonical_status(
+    *,
+    store_root: Path,
+    paths,
+    suite,
+    rows,
+) -> tuple[dict[str, object] | None, str | None]:
+    """Recompute and persist status only while owning the campaign store."""
+    try:
+        with exclusive_store(store_root):
+            _same_saved_run_under_lock(
+                store_root=store_root,
+                run_id=paths.run_id,
+                run_root=paths.root,
+            )
+            selected_definitions = {
+                str(row["definition_id"]) for row in rows
+            }
+            status = campaign_status(
+                suite=suite,
+                results_root=paths.results,
+                selected_definitions=selected_definitions,
+            )
+            status["paths"] = paths.as_dict()
+            status["run_id"] = paths.run_id
+            status["selection"] = _selection_metadata(suite, rows)
+            status["paths"]["reports"] = str(_reports_dir(paths.root))
+            gap = _canonical_campaign_persistence_gap(
+                suite=suite,
+                results_root=paths.results,
+                rows=rows,
+            )
+            if gap is not None:
+                return None, gap
+            _write_derived_json(paths.root, "status.json", status)
+            return status, None
+    except RunStoreError as exc:
+        return None, f"run store is active or changed: {exc}"
+
+
+def _refresh_canonical_report(
+    *,
+    store_root: Path,
+    paths,
+    suite,
+    rows,
+) -> tuple[dict[str, object] | None, str | None]:
+    """Recompute and persist the report projection under the campaign store lock."""
+    try:
+        with exclusive_store(store_root):
+            _same_saved_run_under_lock(
+                store_root=store_root,
+                run_id=paths.run_id,
+                run_root=paths.root,
+            )
+            gap = _canonical_campaign_persistence_gap(
+                suite=suite,
+                results_root=paths.results,
+                rows=rows,
+            )
+            if gap is not None:
+                return None, gap
+            report_data = build_report(
+                suite=suite,
+                results_root=paths.results,
+                require_complete=True,
+                selected_definitions={
+                    str(row["definition_id"]) for row in rows
+                },
+                selection=_selection_metadata(suite, rows),
+            )
+            report_data["run_id"] = paths.run_id
+            report_data["reports_dir"] = str(_reports_dir(paths.root))
+            _write_derived_json(paths.root, "report.json", report_data)
+            decision = build_decision_evidence(report_data)
+            decision["run_id"] = paths.run_id
+            _write_derived_json(
+                paths.root,
+                "decision-evidence.json",
+                decision,
+            )
+            _write_derived_json(
+                paths.root,
+                "trace-diagnostics.json",
+                build_trace_diagnostics(paths.results),
+            )
+            return report_data, None
+    except (RunStoreError, ReportError) as exc:
+        return None, f"run store is active or changed: {exc}"
+
+
 def _selection_metadata(suite, rows) -> dict[str, object]:
     """Project selection metadata from the exact resolved definition rows."""
     conditions = {
@@ -749,41 +854,42 @@ def main(argv: list[str] | None = None) -> int:
         except ReportError as exc:
             raise SystemExit(f"benchmark reporting contract unavailable: {exc}") from exc
         try:
-            saved = select_saved_run(args.root, args.run_id)
-            manifest = _assert_saved_run_agents(saved, args.agent)
-            verify_campaign_suite_authority(
-                suite=load_suite(args.suite),
-                campaign=manifest,
-            )
+            with exclusive_store(args.root):
+                saved = select_saved_run(args.root, args.run_id)
+                manifest = _assert_saved_run_agents(saved, args.agent)
+                verify_campaign_suite_authority(
+                    suite=load_suite(args.suite),
+                    campaign=manifest,
+                )
+                if not explicit_score_output:
+                    if args.output.is_absolute() or len(args.output.parts) != 1:
+                        raise SystemExit(
+                            "BENCHMARK_SCORE_OUTPUT_PATH must be a filename within "
+                            "the selected run's reports directory"
+                        )
+                    args.output = _reports_dir(saved.root) / args.output
+                    args.output.parent.mkdir(parents=True, exist_ok=True)
+                invocation = [
+                    sys.executable,
+                    str(script),
+                    "--results",
+                    str(saved.root / "results"),
+                    "--output",
+                    str(args.output),
+                ]
+                for agent in args.agent:
+                    invocation.extend(("--agent", agent))
+                for definition_id in sorted(
+                    str(value) for value in manifest["selected_definitions"]
+                ):
+                    invocation.extend(("--definition-id", definition_id))
+                return subprocess.run(
+                    invocation,
+                    env=_score_environment(runtime_source),
+                    check=False,
+                ).returncode
         except (RunStoreError, CampaignAuthorityError) as exc:
             raise SystemExit(str(exc)) from exc
-        if not explicit_score_output:
-            if args.output.is_absolute() or len(args.output.parts) != 1:
-                raise SystemExit(
-                    "BENCHMARK_SCORE_OUTPUT_PATH must be a filename within "
-                    "the selected run's reports directory"
-                )
-            args.output = _reports_dir(saved.root) / args.output
-            args.output.parent.mkdir(parents=True, exist_ok=True)
-        invocation = [
-            sys.executable,
-            str(script),
-            "--results",
-            str(saved.root / "results"),
-            "--output",
-            str(args.output),
-        ]
-        for agent in args.agent:
-            invocation.extend(("--agent", agent))
-        for definition_id in sorted(
-            str(value) for value in manifest["selected_definitions"]
-        ):
-            invocation.extend(("--definition-id", definition_id))
-        return subprocess.run(
-            invocation,
-            env=_score_environment(runtime_source),
-            check=False,
-        ).returncode
     suite = (
         load_runtime_suite(args.suite)
         if args.command in {"check", "doctor"}
@@ -946,13 +1052,14 @@ def main(argv: list[str] | None = None) -> int:
         status["selection"] = _selection_metadata(suite, rows)
         if paths.root is not None:
             status["paths"]["reports"] = str(_reports_dir(paths.root))
-            persistence_gap = _canonical_campaign_persistence_gap(
+            refreshed, persistence_gap = _refresh_canonical_status(
+                store_root=args.root,
+                paths=paths,
                 suite=suite,
-                results_root=paths.results,
                 rows=rows,
             )
-            if persistence_gap is None:
-                _write_derived_json(paths.root, "status.json", status)
+            if refreshed is not None:
+                status = refreshed
             else:
                 print(
                     f"STATUS inspection only | {persistence_gap}; canonical "
@@ -994,26 +1101,18 @@ def main(argv: list[str] | None = None) -> int:
         report_data["run_id"] = paths.run_id
         if paths.root is not None:
             report_data["reports_dir"] = str(_reports_dir(paths.root))
-            persistence_gap = (
-                "--allow-incomplete is inspection-only"
-                if args.allow_incomplete
-                else _canonical_campaign_persistence_gap(
+            if args.allow_incomplete:
+                persistence_gap = "--allow-incomplete is inspection-only"
+            else:
+                refreshed, persistence_gap = _refresh_canonical_report(
+                    store_root=args.root,
+                    paths=paths,
                     suite=suite,
-                    results_root=paths.results,
                     rows=rows,
                 )
-            )
-            if persistence_gap is None:
-                _write_derived_json(paths.root, "report.json", report_data)
-                decision = build_decision_evidence(report_data)
-                decision["run_id"] = paths.run_id
-                _write_derived_json(paths.root, "decision-evidence.json", decision)
-                _write_derived_json(
-                    paths.root,
-                    "trace-diagnostics.json",
-                    build_trace_diagnostics(paths.results),
-                )
-            else:
+                if refreshed is not None:
+                    report_data = refreshed
+            if persistence_gap is not None:
                 print(
                     f"REPORT inspection only | {persistence_gap}; canonical "
                     "report.json and decision-evidence.json unchanged",

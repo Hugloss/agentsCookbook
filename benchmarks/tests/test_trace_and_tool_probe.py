@@ -8,6 +8,7 @@ from unittest import mock
 
 from benchmarks.adapters.opencode_native import OpenCodeNativeAgent
 from benchmarks.adapters.registry import build_agent
+from benchmarks.harness.identity import digest
 from benchmarks.harness.model import TrialContext
 from benchmarks.harness.oracle_reviews import validate_oracle_reviews
 from benchmarks.harness.suite import load_suite
@@ -136,6 +137,9 @@ class TraceAndToolProbeTests(unittest.TestCase):
                 "native_config_sha256": "a" * 64,
                 "subject_exposure_sha256": "b" * 64,
                 "native_subject_identity": {"executable_sha256": "d" * 64},
+                "native_subject_identity_sha256": digest(
+                    {"executable_sha256": "d" * 64}
+                ),
                 "native_mcp_servers": [],
             }), encoding="utf-8")
             context = TrialContext(workspace, control, {"BENCHMARK_OPENCODE_AGENT": "build"})

@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const RUNTIME_SCHEMA = 'agents-cookbook-opencode-runtime/v2';
+const RUNTIME_SCHEMA = 'agents-cookbook-opencode-runtime/v3';
 const SECRET_KEYS = new Set([
   'api_key',
   'apikey',
@@ -261,22 +261,6 @@ function inlineConfig(env) {
   return parsed;
 }
 
-function readBaseConfigSnapshot(filePath) {
-  if (!filePath) return null;
-  let parsed;
-  try {
-    parsed = JSON.parse(fs.readFileSync(path.resolve(filePath), 'utf8'));
-  } catch (error) {
-    throw new Error(
-      `benchmark base OpenCode config cannot be read: ${error.message || error}`,
-    );
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('benchmark base OpenCode config must be a JSON object');
-  }
-  return parsed;
-}
-
 function readBenchmarkExposure(filePath, selectedSubject, repoDir) {
   if (!selectedSubject) {
     if (filePath) {
@@ -501,6 +485,38 @@ function sha256File(filePath) {
     .digest('hex');
 }
 
+function normalizedSubjectConfigurationSha256(
+  server,
+  selectedSubject,
+  effectiveCwd,
+  repoDir,
+) {
+  if (
+    selectedSubject !== 'enola' ||
+    !Array.isArray(server.command) ||
+    server.command.length !== 2 ||
+    typeof server.command[1] !== 'string'
+  ) {
+    return null;
+  }
+  try {
+    const configPath = path.resolve(effectiveCwd, server.command[1]);
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      return null;
+    }
+    const workspace = canonicalPath(repoDir);
+    const repo = canonicalPath(config.repo);
+    const normalized = {
+      ...config,
+      repo: repo === workspace ? '<trial-workspace>' : repo,
+    };
+    return sha256Text(canonicalJson(normalized));
+  } catch {
+    return null;
+  }
+}
+
 function resolveExecutable(command, cwd, env) {
   if (typeof command !== 'string' || !command) return null;
   const hasSeparator = command.includes('/') || command.includes('\\');
@@ -542,6 +558,7 @@ function nativeSubjectExecutableIdentity(
       command: null,
       executable_path: null,
       executable_sha256: null,
+      configuration_sha256: null,
       reason_code: 'benchmark-subject-executable-unresolved',
     };
   }
@@ -560,6 +577,7 @@ function nativeSubjectExecutableIdentity(
       command: path.basename(String(server.command[0])),
       executable_path: null,
       executable_sha256: null,
+      configuration_sha256: null,
       reason_code: 'benchmark-subject-executable-unresolved',
     };
   }
@@ -569,6 +587,12 @@ function nativeSubjectExecutableIdentity(
     command: path.basename(resolved),
     executable_path: resolved,
     executable_sha256: sha256File(resolved),
+    configuration_sha256: normalizedSubjectConfigurationSha256(
+      server,
+      selectedSubject,
+      effectiveCwd,
+      repoDir,
+    ),
     reason_code: null,
   };
 }
@@ -912,7 +936,10 @@ async function findSessionId({
             (session) =>
               session &&
               session.title === title &&
-              session.directory === repoDir,
+              session.directory === repoDir &&
+              typeof session.updated === 'number' &&
+              Number.isFinite(session.updated) &&
+              session.updated >= startedAt,
           );
           if (exactMatch && exactMatch.id) {
             return exactMatch.id;
@@ -1037,25 +1064,17 @@ function prepareBenchmarkConfig({
   pure = true,
   probe = true,
   agentName,
-  baseConfig = null,
-  includeBaseConfig = false,
 }) {
   if (typeof agentName !== 'string' || !agentName) {
     throw new Error('benchmark OpenCode agent name is required');
   }
-  const base = baseConfig
-    ? {
-      status: 'completed',
-      inspection: inspectConfig(baseConfig, agentName),
-      config: baseConfig,
-    }
-    : readNativeConfig({
-      opencodeBin,
-      repoDir,
-      env,
-      pure,
-      agentName,
-    });
+  const base = readNativeConfig({
+    opencodeBin,
+    repoDir,
+    env,
+    pure,
+    agentName,
+  });
   if (base.status !== 'completed') {
     return {
       status: 'failed',
@@ -1075,7 +1094,6 @@ function prepareBenchmarkConfig({
       inspection: base.inspection,
     };
   }
-  const baseConfigSource = baseConfig ? 'task-cache' : 'fresh';
   try {
     if (selectedSubject && (!subjectExposure || subjectExposure.name !== selectedSubject)) {
       throw new Error(`benchmark subject ${selectedSubject} has no matching exposure`);
@@ -1093,7 +1111,7 @@ function prepareBenchmarkConfig({
           'there is one admitted subject runtime authority',
         failure_stage: 'runtime-authority-conflict',
         inspection: base.inspection,
-        base_config_source: baseConfigSource,
+        base_config_source: 'fresh',
         selected_server: selectedSubject,
         overlay_identity: {
           shape: overlay.shape,
@@ -1167,8 +1185,7 @@ function prepareBenchmarkConfig({
       status: 'completed',
       inspection: base.inspection,
       effective_inspection: effectiveInspection,
-      base_config_source: baseConfigSource,
-      ...(includeBaseConfig ? { base_config_snapshot: base.config } : {}),
+      base_config_source: 'fresh',
       selected_server: overlay.selected,
       workspace_binding: workspaceBinding,
       native_subject_identity: subjectExecutable,
@@ -1191,6 +1208,64 @@ function prepareBenchmarkConfig({
       inspection: base.inspection,
     };
   }
+}
+
+function runtimeIdentitySha256(identity) {
+  return identity && typeof identity === 'object' && !Array.isArray(identity)
+    ? sha256Text(canonicalJson(identity))
+    : null;
+}
+
+function executableIdentitySha256(command, repoDir, env) {
+  const executable = Array.isArray(command) ? command[0] : command;
+  const resolved = resolveExecutable(executable, repoDir, env);
+  if (!resolved) return null;
+  try {
+    return sha256File(resolved);
+  } catch {
+    return null;
+  }
+}
+
+function benchmarkAuthorityFailure({
+  prepared,
+  options,
+  selectedSubject,
+  opencodeBin,
+  repoDir,
+  env,
+}) {
+  if (!prepared || prepared.status !== 'completed') {
+    return prepared?.reason || 'benchmark OpenCode authority could not be resolved';
+  }
+  if (prepared.workspace_binding?.verified !== true) {
+    return 'benchmark workspace binding changed';
+  }
+  if (
+    prepared.inspection?.config_sha256 !== options['native-config-sha256']
+  ) {
+    return 'native OpenCode configuration changed';
+  }
+  if (
+    executableIdentitySha256(opencodeBin, repoDir, env) !==
+      options['opencode-executable-sha256']
+  ) {
+    return 'OpenCode executable authority changed';
+  }
+  if (!selectedSubject) return null;
+  if (
+    prepared.overlay_identity?.subject_exposure_sha256 !==
+      options['subject-exposure-sha256']
+  ) {
+    return 'benchmark subject exposure changed';
+  }
+  if (
+    runtimeIdentitySha256(prepared.native_subject_identity) !==
+      options['subject-runtime-sha256']
+  ) {
+    return 'benchmark subject runtime authority changed';
+  }
+  return null;
 }
 
 function runSession({
@@ -1239,11 +1314,13 @@ async function runSessionAndExport({
   exportAttempts = 4,
   exportDelayMs = 250,
 }) {
+  const operationId = crypto.randomUUID();
+  const operationTitle = `${title}:${operationId}`;
   const started = runSession({
     opencodeBin,
     repoDir,
     agent,
-    title,
+    title: operationTitle,
     prompt,
     env,
     pure,
@@ -1253,7 +1330,7 @@ async function runSessionAndExport({
   const sessionId = await findSessionId({
     opencodeBin,
     repoDir,
-    title,
+    title: operationTitle,
     startedAt: started.startedAt,
     env,
     pure,
@@ -1301,6 +1378,7 @@ async function runSessionAndExport({
 
   return {
     schema: RUNTIME_SCHEMA,
+    operation_id: operationId,
     run,
     session_id: sessionId || null,
     export: exported,
@@ -1352,9 +1430,6 @@ async function main(argv) {
     )
     : null;
   if (command === 'inspect-config') {
-    const baseConfig = benchmarkMode
-      ? readBaseConfigSnapshot(options['base-config-file'])
-      : null;
     const result = benchmarkMode
       ? prepareBenchmarkConfig({
         repoDir,
@@ -1362,8 +1437,6 @@ async function main(argv) {
         selectedSubject,
         subjectExposure,
         agentName: options.agent,
-        baseConfig,
-        includeBaseConfig: options['emit-base-config'] === 'true',
       })
       : resolveNativeConfig({ repoDir, env: process.env });
     const { environment, ...safe } = result;
@@ -1385,40 +1458,38 @@ async function main(argv) {
       'utf8',
     );
     let env = process.env;
+    const opencodeBin = process.env.OPENCODE_BIN || 'opencode';
     if (benchmarkMode) {
       const prepared = prepareBenchmarkConfig({
+        opencodeBin,
         repoDir,
         env: process.env,
         selectedSubject,
         subjectExposure,
         agentName: options.agent,
       });
-      if (
-        prepared.status !== 'completed' ||
-        prepared.workspace_binding?.verified !== true ||
-        prepared.inspection.config_sha256 !==
-          options['native-config-sha256'] ||
-        (
-          selectedSubject &&
-          prepared.overlay_identity?.subject_exposure_sha256 !==
-            options['subject-exposure-sha256']
-        ) ||
-        (
-          selectedSubject &&
-          prepared.native_subject_identity?.executable_sha256 !==
-            options['subject-executable-sha256']
-        )
-      ) {
+      const authorityFailure = benchmarkAuthorityFailure({
+        prepared,
+        options,
+        selectedSubject,
+        opencodeBin,
+        repoDir,
+        env: process.env,
+      });
+      if (authorityFailure) {
         process.stdout.write(`${JSON.stringify({
           schema: RUNTIME_SCHEMA,
           run: { status: 1 },
-          error: prepared.reason || 'benchmark OpenCode authority changed after admission',
+          error:
+            prepared.reason ||
+            `benchmark OpenCode authority changed after admission: ${authorityFailure}`,
         })}\n`);
         return;
       }
       env = prepared.environment;
     }
-    const result = await runSessionAndExport({
+    let result = await runSessionAndExport({
+      opencodeBin,
       repoDir,
       title: options.title,
       agent: benchmarkMode ? options.agent : (options.agent || 'build'),
@@ -1426,6 +1497,42 @@ async function main(argv) {
       env,
       deleteAfterExport: options['keep-session'] !== 'true',
     });
+    if (benchmarkMode) {
+      const revalidated = prepareBenchmarkConfig({
+        opencodeBin,
+        repoDir,
+        env: process.env,
+        selectedSubject,
+        subjectExposure,
+        agentName: options.agent,
+        probe: false,
+      });
+      const authorityFailure = benchmarkAuthorityFailure({
+        prepared: revalidated,
+        options,
+        selectedSubject,
+        opencodeBin,
+        repoDir,
+        env: process.env,
+      });
+      if (authorityFailure) {
+        result = {
+          ...result,
+          final_text: null,
+          error:
+            `benchmark OpenCode authority changed during inference: ${authorityFailure}`,
+          authority_revalidation: {
+            status: 'failed',
+            reason: authorityFailure,
+          },
+        };
+      } else {
+        result = {
+          ...result,
+          authority_revalidation: { status: 'verified' },
+        };
+      }
+    }
     process.stdout.write(`${JSON.stringify(result)}\n`);
     return;
   }
@@ -1445,9 +1552,10 @@ module.exports = {
   inlineConfig,
   mergeObjects,
   benchmarkOverlay,
+  benchmarkAuthorityFailure,
   prepareBenchmarkConfig,
+  runtimeIdentitySha256,
   providerFromModel,
-  readBaseConfigSnapshot,
   readBenchmarkExposure,
   readJsonText,
   resolveNativeConfig,

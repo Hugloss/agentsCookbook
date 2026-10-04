@@ -27,8 +27,6 @@ from benchmarks.adapters.enola import EnolaSubject
 from benchmarks.adapters.hashmarks import HashmarksSubject
 from benchmarks.adapters.opencode_native import (
     OpenCodeNativeAgent,
-    _BASE_CONFIG_CACHE,
-    _EXECUTABLE_OBSERVATION_CACHE,
     _metrics as opencode_metrics,
     _native_environment as opencode_native_environment,
     _observe_opencode_executable,
@@ -53,6 +51,7 @@ from benchmarks.harness.campaign import (
     resolve_campaign_paths,
 )
 from benchmarks.harness.contamination import classify_contamination
+from benchmarks.harness.identity import digest
 from benchmarks.harness.model import (
     McpExposure,
     Observation,
@@ -75,9 +74,9 @@ from benchmarks.harness.runtime_authority import (
     transport_runtime_authority,
 )
 from benchmarks.harness.selection import SelectionError, select_definitions
-from benchmarks.harness.source import materialize_repository
+from benchmarks.harness.source import _source_cache_lock, materialize_repository
 from benchmarks.harness.suite import SuiteDefinition, SuiteError, load_suite
-from benchmarks.harness.workspace import isolated_environment
+from benchmarks.harness.workspace import WorkspaceError, isolated_environment
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
@@ -311,6 +310,25 @@ class PilotExecutionTests(unittest.TestCase):
                 with_untracked["working_copy_sha256"],
                 changed_untracked["working_copy_sha256"],
             )
+
+    def test_harness_identity_rejects_head_change_during_observation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                mock.patch(
+                    "benchmarks.harness.admission._git_value",
+                    side_effect=("a" * 40, "b" * 40, "c" * 40),
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission._git_bytes",
+                    side_effect=(b"", b""),
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    TrialAdmissionError,
+                    "harness git authority changed during identity observation",
+                ):
+                    harness_identity(root)
 
     def test_native_codex_injects_exact_subject_and_disables_ambient_mcp(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -631,6 +649,41 @@ class PilotExecutionTests(unittest.TestCase):
                 "Hashmarks benchmark source must be a clean committed checkout",
             )
 
+    def test_hashmarks_source_identity_rejects_head_change_during_observation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            source = root / "hashmarks-source"
+            executable = source / ".venv" / "bin" / "hashmarks"
+            executable.parent.mkdir(parents=True)
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            environment = isolated_environment(control)
+            environment["HASHMARKS_BENCH_SOURCE"] = str(source)
+            context = TrialContext(workspace, control, environment)
+            git_results = [
+                SimpleNamespace(returncode=0, stdout=b"1" * 40 + b"\n"),
+                SimpleNamespace(returncode=0, stdout=b"2" * 40 + b"\n"),
+                SimpleNamespace(returncode=0, stdout=b""),
+                SimpleNamespace(returncode=0, stdout=b""),
+                SimpleNamespace(returncode=0, stdout=b"3" * 40 + b"\n"),
+            ]
+
+            with mock.patch(
+                "benchmarks.adapters.hashmarks.subprocess.run",
+                side_effect=git_results,
+            ):
+                identity, error = HashmarksSubject().source_identity(context)
+
+            self.assertIsNone(identity)
+            self.assertEqual(
+                error,
+                "Hashmarks benchmark source changed during identity observation",
+            )
+
     def test_enola_adapter_writes_explicit_trial_output_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -879,7 +932,7 @@ class PilotExecutionTests(unittest.TestCase):
             )
             self.assertNotIn("OPENCODE_CONFIG_CONTENT", environment)
 
-    def test_opencode_executable_version_evidence_reuses_only_identical_bytes(
+    def test_opencode_executable_authority_is_fresh_per_admission(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -893,45 +946,39 @@ class PilotExecutionTests(unittest.TestCase):
                 _opencode_trial_environment(control, root),
             )
             environment = opencode_native_environment(context)
-            executable = Path(environment["OPENCODE_BIN"])
-            first_sha = hashlib.sha256(executable.read_bytes()).hexdigest()
             first = Observation(
                 {
                     "available": True,
                     "version": "opencode 1",
-                    "executable_sha256": first_sha,
+                    "executable_sha256": "a" * 64,
                 },
                 "opencode 1",
             )
-            _EXECUTABLE_OBSERVATION_CACHE.clear()
+            second = Observation(
+                {
+                    "available": True,
+                    "version": "opencode 2",
+                    "executable_sha256": "a" * 64,
+                },
+                "opencode 2",
+            )
             with mock.patch(
                 "benchmarks.adapters.opencode_native.observe_executable",
-                return_value=first,
+                side_effect=(first, second),
             ) as observed:
                 initial = _observe_opencode_executable(context, environment)
-                reused = _observe_opencode_executable(context, environment)
-                self.assertEqual(observed.call_count, 1)
-                self.assertNotIn("cache_hit", initial.payload)
-                self.assertTrue(reused.payload["cache_hit"])
-
-                executable.write_text("#!/bin/sh\necho changed\n", encoding="utf-8")
-                executable.chmod(0o755)
-                second_sha = hashlib.sha256(executable.read_bytes()).hexdigest()
-                observed.return_value = Observation(
-                    {
-                        "available": True,
-                        "version": "opencode 2",
-                        "executable_sha256": second_sha,
-                    },
-                    "opencode 2",
-                )
                 changed = _observe_opencode_executable(context, environment)
 
             self.assertEqual(observed.call_count, 2)
+            self.assertEqual(initial.payload["version"], "opencode 1")
             self.assertEqual(changed.payload["version"], "opencode 2")
-            self.assertNotIn("cache_hit", changed.payload)
+            for call in observed.call_args_list:
+                self.assertEqual(
+                    call.kwargs["environment"],
+                    environment,
+                )
 
-    def test_opencode_reuses_base_config_only_within_exact_admission_scope(
+    def test_opencode_never_reuses_native_config_authority_across_admissions(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -951,10 +998,6 @@ class PilotExecutionTests(unittest.TestCase):
                 "mcp_shape": "flat",
                 "mcp_servers": [],
             }
-            base_config = {
-                "model": "liteLLM/gemma4",
-                "mcp": {},
-            }
             runtime_result = mock.Mock()
             runtime_result.metrics.return_value = {"return_code": 0}
             runtime_result.stderr = b""
@@ -963,18 +1006,8 @@ class PilotExecutionTests(unittest.TestCase):
 
             def runtime_call(context, *, args, **kwargs):
                 calls.append(args)
-                if "--base-config-file" in args:
-                    base_path = Path(args[args.index("--base-config-file") + 1])
-                    self.assertEqual(
-                        json.loads(base_path.read_text(encoding="utf-8")),
-                        base_config,
-                    )
-                    source = "task-cache"
-                    payload = {}
-                else:
-                    self.assertIn("--emit-base-config", args)
-                    source = "fresh"
-                    payload = {"base_config_snapshot": base_config}
+                self.assertNotIn("--base-config-file", args)
+                self.assertNotIn("--emit-base-config", args)
                 return (
                     {
                         "status": "completed",
@@ -984,8 +1017,7 @@ class PilotExecutionTests(unittest.TestCase):
                         "workspace_binding": {"verified": True},
                         "native_subject_identity": None,
                         "overlay_identity": {"shape": "flat"},
-                        "base_config_source": source,
-                        **payload,
+                        "base_config_source": "fresh",
                     },
                     runtime_result,
                 )
@@ -1001,7 +1033,6 @@ class PilotExecutionTests(unittest.TestCase):
                     admission_scope=scope,
                 )
 
-            _BASE_CONFIG_CACHE.clear()
             agent = OpenCodeNativeAgent()
             with (
                 mock.patch(
@@ -1018,14 +1049,12 @@ class PilotExecutionTests(unittest.TestCase):
                 third = agent.prepare(context("third", "different-task"), None)
 
             self.assertEqual(first.payload["base_config_source"], "fresh")
-            self.assertEqual(second.payload["base_config_source"], "task-cache")
+            self.assertEqual(second.payload["base_config_source"], "fresh")
             self.assertEqual(third.payload["base_config_source"], "fresh")
             self.assertFalse(first.measurements["base_config_reused"])
-            self.assertTrue(second.measurements["base_config_reused"])
+            self.assertFalse(second.measurements["base_config_reused"])
             self.assertFalse(third.measurements["base_config_reused"])
-            self.assertNotIn("--base-config-file", calls[0])
-            self.assertIn("--base-config-file", calls[1])
-            self.assertNotIn("--base-config-file", calls[2])
+            self.assertEqual(len(calls), 3)
 
     def test_opencode_prepare_uses_shared_runtime_inspection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1061,6 +1090,20 @@ class PilotExecutionTests(unittest.TestCase):
             runtime_result.stderr = b""
             runtime_result.stdout = b"{}"
             with (
+                mock.patch.object(
+                    HashmarksSubject,
+                    "source_identity",
+                    return_value=(
+                        {
+                            "root": "/work/Hashmarks",
+                            "commit": "a" * 40,
+                            "tree": "b" * 40,
+                            "working_copy_sha256": "c" * 64,
+                            "working_copy_clean": True,
+                        },
+                        None,
+                    ),
+                ),
                 mock.patch(
                     "benchmarks.adapters.opencode_native.observe_executable",
                     return_value=executable,
@@ -1144,6 +1187,20 @@ class PilotExecutionTests(unittest.TestCase):
             subject = HashmarksSubject()
             exposure_path = control / "opencode-benchmark-exposure.json"
             with (
+                mock.patch.object(
+                    HashmarksSubject,
+                    "source_identity",
+                    return_value=(
+                        {
+                            "root": "/work/Hashmarks",
+                            "commit": "a" * 40,
+                            "tree": "b" * 40,
+                            "working_copy_sha256": "c" * 64,
+                            "working_copy_clean": True,
+                        },
+                        None,
+                    ),
+                ),
                 mock.patch(
                     "benchmarks.adapters.opencode_native.observe_executable",
                     return_value=executable,
@@ -1256,6 +1313,20 @@ class PilotExecutionTests(unittest.TestCase):
                 'stderr="Hashmarks MCP support requires the optional extra"'
             )
             with (
+                mock.patch.object(
+                    HashmarksSubject,
+                    "source_identity",
+                    return_value=(
+                        {
+                            "root": "/work/Hashmarks",
+                            "commit": "a" * 40,
+                            "tree": "b" * 40,
+                            "working_copy_sha256": "c" * 64,
+                            "working_copy_clean": True,
+                        },
+                        None,
+                    ),
+                ),
                 mock.patch(
                     "benchmarks.adapters.opencode_native.observe_executable",
                     return_value=executable,
@@ -1334,6 +1405,20 @@ class PilotExecutionTests(unittest.TestCase):
             runtime_result.stderr = b""
             runtime_result.stdout = b"{}"
             with (
+                mock.patch.object(
+                    HashmarksSubject,
+                    "source_identity",
+                    return_value=(
+                        {
+                            "root": "/work/Hashmarks",
+                            "commit": "a" * 40,
+                            "tree": "b" * 40,
+                            "working_copy_sha256": "c" * 64,
+                            "working_copy_clean": True,
+                        },
+                        None,
+                    ),
+                ),
                 mock.patch(
                     "benchmarks.adapters.opencode_native.observe_executable",
                     return_value=executable,
@@ -1555,7 +1640,7 @@ class PilotExecutionTests(unittest.TestCase):
                 "subject_exposure_sha256": None,
                 "model": "test-provider/test-model",
                 "provider": "test-provider",
-                "runtime_contract": "agents-cookbook-opencode-runtime/v3",
+                "runtime_contract": "agents-cookbook-opencode-runtime/v4",
             }
             (control / "opencode-native-evidence.json").write_text(
                 json.dumps(evidence),
@@ -1641,7 +1726,7 @@ class PilotExecutionTests(unittest.TestCase):
                 "subject_exposure_sha256": None,
                 "model": "test-provider/test-model",
                 "provider": "test-provider",
-                "runtime_contract": "agents-cookbook-opencode-runtime/v3",
+                "runtime_contract": "agents-cookbook-opencode-runtime/v4",
             }
             (control / "opencode-native-evidence.json").write_text(
                 json.dumps(evidence),
@@ -1668,6 +1753,154 @@ class PilotExecutionTests(unittest.TestCase):
                     agent.run(context, "prompt", None)
             runtime_call.assert_not_called()
 
+    def test_opencode_rejects_subject_source_drift_before_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            control.mkdir()
+            context = TrialContext(
+                workspace,
+                control,
+                {"BENCHMARK_OPENCODE_AGENT": "build"},
+            )
+            admitted_source = {"commit": "a" * 40, "tree": "b" * 40}
+            current_source = {"commit": "c" * 40, "tree": "d" * 40}
+            native_subject = {"executable_sha256": "e" * 64}
+            evidence = {
+                "selected_server": "hashmarks",
+                "opencode_executable_path": str(Path("/bin/opencode").resolve()),
+                "opencode_executable_sha256": "f" * 64,
+                "native_config_sha256": "1" * 64,
+                "native_mcp_servers": [],
+                "subject_exposure_sha256": "2" * 64,
+                "native_subject_identity": native_subject,
+                "native_subject_identity_sha256": digest(native_subject),
+                "subject_source_identity_sha256": digest(admitted_source),
+                "model": "test-provider/test-model",
+                "provider": "test-provider",
+                "runtime_contract": "agents-cookbook-opencode-runtime/v4",
+            }
+            (control / "opencode-native-evidence.json").write_text(
+                json.dumps(evidence),
+                encoding="utf-8",
+            )
+            subject = mock.Mock()
+            subject.source_identity.return_value = (current_source, None)
+            agent = OpenCodeNativeAgent()
+            with (
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._native_environment",
+                    return_value={"OPENCODE_BIN": "/bin/opencode"},
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._sha256_file",
+                    return_value="f" * 64,
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call"
+                ) as runtime_call,
+            ):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "subject source authority changed after admission",
+                ):
+                    agent.run(context, "prompt", subject)
+            runtime_call.assert_not_called()
+
+    def test_opencode_rejects_subject_source_drift_during_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            control.mkdir()
+            context = TrialContext(
+                workspace,
+                control,
+                {"BENCHMARK_OPENCODE_AGENT": "build"},
+            )
+            admitted_source = {"commit": "a" * 40, "tree": "b" * 40}
+            changed_source = {"commit": "c" * 40, "tree": "d" * 40}
+            native_subject = {"executable_sha256": "e" * 64}
+            evidence = {
+                "selected_server": "hashmarks",
+                "opencode_executable_path": str(Path("/bin/opencode").resolve()),
+                "opencode_executable_sha256": "f" * 64,
+                "native_config_sha256": "1" * 64,
+                "native_mcp_servers": [],
+                "subject_exposure_sha256": "2" * 64,
+                "native_subject_identity": native_subject,
+                "native_subject_identity_sha256": digest(native_subject),
+                "subject_source_identity_sha256": digest(admitted_source),
+                "model": "test-provider/test-model",
+                "provider": "test-provider",
+                "runtime_contract": "agents-cookbook-opencode-runtime/v4",
+            }
+            (control / "opencode-native-evidence.json").write_text(
+                json.dumps(evidence),
+                encoding="utf-8",
+            )
+            subject = mock.Mock()
+            subject.source_identity.side_effect = [
+                (admitted_source, None),
+                (changed_source, None),
+            ]
+            runtime_result = mock.Mock(
+                elapsed_ms=100,
+                stdout=b"{}",
+                stderr=b"",
+                executable_missing=False,
+                stdout_truncated=False,
+            )
+            runtime_result.metrics.return_value = {"return_code": 0}
+            exported = {
+                "messages": [
+                    {
+                        "info": {
+                            "role": "assistant",
+                            "modelID": "test-model",
+                            "providerID": "test-provider",
+                        },
+                        "parts": [{"type": "text", "text": "done"}],
+                    }
+                ]
+            }
+            envelope = {
+                "operation_id": "operation-123",
+                "session_id": "session-123",
+                "authority_revalidation": {"status": "verified"},
+                "run": {"status": 0},
+                "export": {"status": 0, "stdout": json.dumps(exported)},
+                "final_text": "done",
+                "export_parse_error": None,
+            }
+            agent = OpenCodeNativeAgent()
+            with (
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._native_environment",
+                    return_value={"OPENCODE_BIN": "/bin/opencode"},
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._sha256_file",
+                    return_value="f" * 64,
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call",
+                    return_value=(envelope, runtime_result),
+                ),
+            ):
+                observation = agent.run(context, "prompt", subject)
+
+            self.assertFalse(observation.payload["terminal_complete"])
+            self.assertIsNone(observation.payload["final_message"])
+            self.assertEqual(
+                observation.payload["terminal_event"]["reason"],
+                "benchmark subject source authority changed during inference",
+            )
+            self.assertEqual(observation.payload["operation_id"], "operation-123")
+
     def test_opencode_nonzero_run_reports_status_and_bounded_stderr(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1689,7 +1922,7 @@ class PilotExecutionTests(unittest.TestCase):
                 "subject_exposure_sha256": None,
                 "model": "test-provider/test-model",
                 "provider": "test-provider",
-                "runtime_contract": "agents-cookbook-opencode-runtime/v3",
+                "runtime_contract": "agents-cookbook-opencode-runtime/v4",
             }
             (control / "opencode-native-evidence.json").write_text(
                 json.dumps(evidence),
@@ -1776,7 +2009,7 @@ class PilotExecutionTests(unittest.TestCase):
                 "subject_exposure_sha256": None,
                 "model": "test-provider/test-model",
                 "provider": "test-provider",
-                "runtime_contract": "agents-cookbook-opencode-runtime/v3",
+                "runtime_contract": "agents-cookbook-opencode-runtime/v4",
             }
             (control / "opencode-native-evidence.json").write_text(
                 json.dumps(evidence),
@@ -2121,6 +2354,34 @@ class PilotExecutionTests(unittest.TestCase):
         )
         self.assertTrue(result["contaminated"])
         self.assertEqual(result["unexpected"]["added"], ["unexpected.txt"])
+
+    def test_competing_repository_cache_generation_fails_before_git_work(
+        self,
+    ) -> None:
+        repository = {
+            "url": "https://example.invalid/repository.git",
+            "commit": "a" * 40,
+            "tree": "b" * 40,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cache = root / "cache"
+            with (
+                _source_cache_lock(cache, repository["url"]),
+                mock.patch("benchmarks.harness.source._run_git") as run_git,
+                mock.patch("benchmarks.harness.source.materialize_git") as materialize,
+            ):
+                with self.assertRaisesRegex(
+                    WorkspaceError,
+                    "source cache is already in use",
+                ):
+                    materialize_repository(
+                        repository=repository,
+                        destination=root / "workspace",
+                        cache_root=cache,
+                    )
+            run_git.assert_not_called()
+            materialize.assert_not_called()
 
     def test_cycle_fixture_mutation_accounts_for_new_files(self) -> None:
         suite = load_suite(CYCLE)

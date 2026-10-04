@@ -37,6 +37,11 @@ Preflight must prove, for every selected definition:
 - agent/runtime preparation succeeds;
 - native tool/workspace binding is positively verified where required;
 - an enabled native MCP registration with the selected benchmark subject name is rejected as competing runtime authority rather than silently shadowed or auto-disabled;
+- cached observations never stand in for current native configuration authority;
+- source-backed subject identity and referenced runtime configuration are generation-bound across model execution, with drift rejected before evidence publication;
+- operation/session lookup is scoped to the current launch identity rather than title/directory coincidence alone;
+- canonical derived writes acquire the campaign store owner and recompute under that ownership; active-run inspection never overwrites canonical reports;
+- mutable repository mirrors have one per-repository owner, and competing clone/fetch/materialization fails before Git work;
 - the independent oracle healthcheck succeeds;
 - preparation does not contaminate the workspace beyond frozen allowances.
 
