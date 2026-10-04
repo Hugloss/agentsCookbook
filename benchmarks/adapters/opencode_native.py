@@ -13,7 +13,6 @@ import json
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Lock
 from typing import Any
 
 from benchmarks.adapters.runtime import observe_executable, resolve_native_executable
@@ -33,10 +32,6 @@ _RUNTIME_SCRIPT = (
     Path(__file__).resolve().parents[2] / "scripts" / "opencode-runtime.js"
 )
 
-_EXECUTABLE_OBSERVATION_CACHE: dict[tuple[str, str], Observation] = {}
-_EXECUTABLE_OBSERVATION_CACHE_LOCK = Lock()
-
-
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -49,54 +44,12 @@ def _observe_opencode_executable(
     context: TrialContext,
     environment: dict[str, str],
 ) -> Observation:
-    """Reuse version evidence only for byte-identical OpenCode executables.
-
-    Config, MCP, workspace-binding, and model authority remain freshly observed.
-    """
-    command = environment["OPENCODE_BIN"]
-    resolved = resolve_native_executable(
+    """Freshly observe executable/version authority for every admission."""
+    return observe_executable(
         context,
-        command,
+        environment["OPENCODE_BIN"],
         environment=environment,
     )
-    if resolved is None:
-        return observe_executable(
-            context,
-            command,
-            environment=environment,
-        )
-
-    try:
-        executable_sha256 = _sha256_file(Path(resolved))
-    except OSError:
-        return observe_executable(
-            context,
-            command,
-            environment=environment,
-        )
-
-    key = (resolved, executable_sha256)
-    with _EXECUTABLE_OBSERVATION_CACHE_LOCK:
-        cached = _EXECUTABLE_OBSERVATION_CACHE.get(key)
-    if cached is not None:
-        return Observation(
-            {**cached.payload, "cache_hit": True},
-            cached.raw,
-            {**cached.measurements, "cache_hit": True},
-        )
-
-    observed = observe_executable(
-        context,
-        command,
-        environment=environment,
-    )
-    if (
-        observed.payload.get("available") is True
-        and observed.payload.get("executable_sha256") == executable_sha256
-    ):
-        with _EXECUTABLE_OBSERVATION_CACHE_LOCK:
-            _EXECUTABLE_OBSERVATION_CACHE[key] = observed
-    return observed
 
 
 def _subject_source_identity_sha256(
