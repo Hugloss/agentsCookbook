@@ -336,54 +336,20 @@ async function testSharedLifecycle() {
     assert.strictEqual(resolved.inspection.model, 'liteLLM/gemma4');
     assert.ok(!JSON.stringify(resolved).includes('must-not-leak'));
 
-    const cachedBase = {
-      model: 'liteLLM/gemma4',
-      provider: { liteLLM: { options: { apiKey: 'cached-secret' } } },
-      mcp: {
-        hashmarks: {
-          type: 'local',
-          command: ['ambient-hashmarks'],
-          cwd: '.',
-          enabled: false,
-        },
-        enola: { type: 'local', command: ['enola'], enabled: false },
-      },
-    };
     const cachedExposure = subjectExposure(root, 'hashmarks');
-    const cachedPrepared = runtime.prepareBenchmarkConfig({
+    const staleSnapshotRejected = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
       env: { ...env, FAKE_FAIL_BASE_CONFIG: '1' },
       selectedSubject: 'hashmarks',
       subjectExposure: cachedExposure,
-      baseConfig: cachedBase,
+      baseConfig: { model: 'old-config', mcp: {} },
     });
-    assert.strictEqual(
-      cachedPrepared.status,
-      'completed',
-      cachedPrepared.reason,
-    );
-    assert.strictEqual(cachedPrepared.base_config_source, 'task-cache');
-    assert.strictEqual(cachedPrepared.inspection.model, 'liteLLM/gemma4');
-
-    const cachedDrift = runtime.prepareBenchmarkConfig({
-      opencodeBin: fake,
-      repoDir: root,
-      agentName: 'build',
-      env: {
-        ...env,
-        FAKE_FAIL_BASE_CONFIG: '1',
-        FAKE_EFFECTIVE_MCP_DRIFT: '1',
-      },
-      selectedSubject: 'hashmarks',
-      subjectExposure: cachedExposure,
-      baseConfig: cachedBase,
-    });
-    assert.strictEqual(cachedDrift.status, 'failed');
+    assert.strictEqual(staleSnapshotRejected.status, 'failed');
     assert.match(
-      cachedDrift.reason,
-      /effective benchmark MCP definition changed/,
+      staleSnapshotRejected.reason,
+      /native OpenCode config could not be resolved/,
     );
 
     const nativeConflict = runtime.prepareBenchmarkConfig({
