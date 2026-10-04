@@ -86,7 +86,7 @@ class OpenAIRoutingSettings:
         else:
             discovered = shutil.which(
                 "tunnel-client",
-                path=host_values.get("PATH"),
+                path=host_values.get("PATH", ""),
             )
             if discovered is None:
                 raise OpenAIRoutingDogfoodError(
