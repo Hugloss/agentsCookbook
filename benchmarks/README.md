@@ -235,6 +235,62 @@ Score a READY catalog and its matching trace without executing a model:
 
 Outcomes are `PASS` when the required subject call completed with an observable nonempty result before native discovery, `FAIL` when observable native discovery won first, `UNKNOWN` when ordering/result evidence is insufficient, and `ENVIRONMENT_BLOCKED` when the host catalog was not admissible. Exit codes are respectively 0, 1, 3, and 2. The score records canonical hashes of both input artifacts and recomputes all semantic classifications itself.
 
+### OpenAI Responses routing dogfood
+
+After a Hashmarks Secure MCP Tunnel handoff has been qualified, agentsCookbook can run one external OpenAI Responses diagnostic that puts Hashmarks `task_evidence` and bounded native `grep`/`read` in the same model-visible tool set.
+
+Prerequisites:
+
+- a clean Git workspace to analyze;
+- a current Hashmarks `hashmarks.chatgpt-secure-mcp-tunnel-handoff.v1` receipt bound to that exact workspace;
+- a current `tunnel-client` binary;
+- an existing OpenAI tunnel ID with Tunnels Read + Use;
+- `OPENAI_API_KEY` for the Responses API;
+- `CONTROL_PLANE_API_KEY` for `tunnel-client`.
+
+Keep both keys in the process environment. The probe never writes either key to an artifact, and the tunnel runtime receives its control-plane key through a temporary mode-0600 file reference so the Hashmarks stdio child does not inherit OpenAI credentials.
+
+Use an explicit model and prompt file:
+
+```bash
+export OPENAI_API_KEY='...'
+export CONTROL_PLANE_API_KEY='...'
+
+./benchmark openai-routing-probe \
+  --workspace /absolute/path/to/repository \
+  --handoff /absolute/path/to/hashmarks/dist/chatgpt-secure-mcp-tunnel-handoff.json \
+  --tunnel-client /absolute/path/to/tunnel-client \
+  --tunnel-id tunnel_0123456789abcdef0123456789abcdef \
+  --model '<tool-capable-responses-model>' \
+  --prompt-file routing-prompt.txt \
+  --output-dir dist/openai-routing-probe
+```
+
+The probe:
+
+1. verifies the handoff workspace, Hashmarks executable SHA/version, and any source-bound Hashmarks repository identity;
+2. requires a clean Git workspace and snapshots all tracked bytes used by native `grep`/`read`;
+3. takes a nonblocking local lock keyed by tunnel ID;
+4. launches one foreground `tunnel-client` with the exact qualified Hashmarks stdio command;
+5. calls the Responses API with `store:false`, `parallel_tool_calls:false`, and neutral repository instructions;
+6. exposes only Hashmarks `task_evidence` from MCP plus native `grep` and `read`;
+7. revalidates workspace and Hashmarks implementation authority around execution;
+8. emits the same canonical catalog/trace score contract used by the host-neutral scorer.
+
+Artifacts:
+
+```text
+dist/openai-routing-probe/
+├── catalog.json
+├── trace.json
+├── score.json
+└── receipt.json
+```
+
+The shell exit code is the routing outcome: 0 PASS, 1 FAIL, 2 ENVIRONMENT_BLOCKED, 3 UNKNOWN.
+
+This diagnostic deliberately remains `heldout_comparable=false`. It proves model-visible routing under one exact local run, but it cannot prove that no second `tunnel-client` with the same tunnel ID is active on another host. OpenAI documents multiple active stdio clients sharing one tunnel ID as unsupported. Use a dedicated tunnel ID and operator discipline for dogfood runs; promotion to held-out authority requires a separately provable exclusive tunnel lease.
+
 ### Advanced direct CLI
 
 The repository-owned `./benchmark` launcher is the canonical CLI for automation and explicit one-off selections. It resolves the harness root before delegating to uv, so invocation is independent of the caller's current Python environment. The CLI does not discover `.env`; it resolves declared suite, campaign, agent, and harness settings from the selected file when flags are omitted. The snippets below show optional CLI overrides. Direct `--agent` accepts repeated values or a comma-separated list.

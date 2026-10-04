@@ -31,6 +31,10 @@ from benchmarks.hashmarks_retrieval_probe import (
     HashmarksRetrievalProbeError,
     run_hashmarks_retrieval_probe,
 )
+from benchmarks.openai_responses_routing_probe import (
+    OpenAIRoutingProbeError,
+    run_probe as run_openai_routing_probe,
+)
 from benchmarks.harness.campaign import (
     CampaignError,
     campaign_status,
@@ -199,6 +203,15 @@ def _parser() -> argparse.ArgumentParser:
     retrieval_probe.add_argument("--workspace", type=Path, required=True)
     retrieval_probe.add_argument("--executable", type=Path, required=True)
     retrieval_probe.add_argument("--output", type=Path, required=True)
+
+    openai_routing = sub.add_parser("openai-routing-probe")
+    openai_routing.add_argument("--workspace", type=Path, required=True)
+    openai_routing.add_argument("--handoff", type=Path, required=True)
+    openai_routing.add_argument("--tunnel-client", type=Path, required=True)
+    openai_routing.add_argument("--tunnel-id", required=True)
+    openai_routing.add_argument("--model", required=True)
+    openai_routing.add_argument("--prompt-file", type=Path, required=True)
+    openai_routing.add_argument("--output-dir", type=Path, required=True)
 
     reviews = sub.add_parser("oracle-review-check")
     reviews.add_argument("--suite", type=Path, required=True)
@@ -822,6 +835,41 @@ def main(argv: list[str] | None = None) -> int:
             args.output.write_text(rendered + "\n", encoding="utf-8")
             print(str(args.output))
         return tool_routing_exit_code(evidence)
+    if args.command == "openai-routing-probe":
+        try:
+            prompt = args.prompt_file.read_text(encoding="utf-8")
+            openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+            control_plane_api_key = os.environ.get(
+                "CONTROL_PLANE_API_KEY",
+                "",
+            )
+            receipt = run_openai_routing_probe(
+                workspace=args.workspace,
+                handoff_path=args.handoff,
+                tunnel_client=args.tunnel_client,
+                tunnel_id=args.tunnel_id,
+                model=args.model,
+                prompt=prompt,
+                openai_api_key=openai_api_key,
+                control_plane_api_key=control_plane_api_key,
+            )
+        except (OSError, OpenAIRoutingProbeError, ValueError) as exc:
+            raise SystemExit(f"OpenAI routing probe unavailable: {exc}") from exc
+
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        artifacts = {
+            "catalog.json": receipt["catalog"],
+            "trace.json": receipt["trace"],
+            "score.json": receipt["score"],
+            "receipt.json": receipt,
+        }
+        for name, payload in artifacts.items():
+            (args.output_dir / name).write_text(
+                json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        print(str(args.output_dir / "receipt.json"))
+        return tool_routing_exit_code(receipt["score"])
     if args.command == "hashmarks-retrieval-probe":
         try:
             evidence = run_hashmarks_retrieval_probe(
