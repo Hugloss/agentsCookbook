@@ -13,6 +13,7 @@ from benchmarks.tool_routing import (
     routing_artifact_sha256,
 )
 
+CATALOG_CAPTURE_SCHEMA = "agents-cookbook-tool-routing-catalog-capture.v1"
 TRACE_SCHEMA = "agents-cookbook-tool-routing-trace.v1"
 SCORE_SCHEMA = "agents-cookbook-tool-routing-trace-score.v1"
 
@@ -22,6 +23,25 @@ _DERIVED_CALL_FIELDS = frozenset({
     "result_basis",
     "routing_observability",
 })
+
+
+def validate_catalog_capture(payload: object) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        raise ValueError("tool-routing catalog capture must be a JSON object")
+    if payload.get("schema") != CATALOG_CAPTURE_SCHEMA:
+        raise ValueError(
+            f"tool-routing catalog capture schema must be {CATALOG_CAPTURE_SCHEMA}"
+        )
+    host = payload.get("host")
+    if not isinstance(host, str) or not host.strip():
+        raise ValueError("tool-routing catalog capture host must be a nonempty string")
+    capture_id = payload.get("capture_id")
+    if not isinstance(capture_id, str) or not capture_id.strip():
+        raise ValueError(
+            "tool-routing catalog capture capture_id must be a nonempty string"
+        )
+    catalog_tool_names(payload)
+    return payload
 
 
 def _validate_call(call: object, *, path: str) -> dict[str, object]:
@@ -66,6 +86,9 @@ def validate_trace(payload: object) -> dict[str, object]:
     host = payload.get("host")
     if not isinstance(host, str) or not host.strip():
         raise ValueError("tool-routing trace host must be a nonempty string")
+    capture_id = payload.get("capture_id")
+    if not isinstance(capture_id, str) or not capture_id.strip():
+        raise ValueError("tool-routing trace capture_id must be a nonempty string")
     catalog_sha256 = payload.get("catalog_sha256")
     if not isinstance(catalog_sha256, str) or not (
         catalog_sha256.startswith("sha256:")
@@ -96,7 +119,12 @@ def score_trace(
 ) -> dict[str, Any]:
     if subject not in REQUIRED_TOOLS:
         raise ValueError(f"unsupported tool-routing subject: {subject}")
+    catalog = validate_catalog_capture(catalog_payload)
     trace = validate_trace(trace_payload)
+    if trace["host"] != catalog["host"]:
+        raise ValueError("tool-routing catalog and trace host differ")
+    if trace["capture_id"] != catalog["capture_id"]:
+        raise ValueError("tool-routing catalog and trace capture_id differ")
     catalog_sha256 = routing_artifact_sha256(catalog_payload)
     if trace["catalog_sha256"] != catalog_sha256:
         raise ValueError(
@@ -132,6 +160,7 @@ def score_trace(
             "routing_classification_owner": "agents-cookbook",
         },
         "host": trace["host"],
+        "capture_id": trace["capture_id"],
         "subject": subject,
         "required_tool": required_tool,
         "outcome": outcome,
