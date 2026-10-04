@@ -23,6 +23,9 @@ _DERIVED_CALL_FIELDS = frozenset({
     "result_basis",
     "routing_observability",
 })
+_MAX_CATALOG_TOOLS = 4096
+_MAX_TRACE_CALLS = 4096
+_MAX_TRACE_NESTING = 16
 
 
 def build_catalog_capture(
@@ -39,7 +42,8 @@ def build_catalog_capture(
         )
     catalog_tool_names(payload)
     raw_tools = payload.get("tools") if isinstance(payload, dict) else payload
-    assert isinstance(raw_tools, list)
+    if not isinstance(raw_tools, list):
+        raise ValueError("tool catalog must contain a tools list")
     capture = {
         "schema": CATALOG_CAPTURE_SCHEMA,
         "host": host.strip(),
@@ -64,11 +68,24 @@ def validate_catalog_capture(payload: object) -> dict[str, object]:
         raise ValueError(
             "tool-routing catalog capture capture_id must be a nonempty string"
         )
-    catalog_tool_names(payload)
+    names = catalog_tool_names(payload)
+    if len(names) > _MAX_CATALOG_TOOLS:
+        raise ValueError(
+            f"tool-routing catalog capture exceeds {_MAX_CATALOG_TOOLS} tools"
+        )
     return payload
 
 
-def _validate_call(call: object, *, path: str) -> dict[str, object]:
+def _validate_call(
+    call: object,
+    *,
+    path: str,
+    depth: int,
+) -> int:
+    if depth > _MAX_TRACE_NESTING:
+        raise ValueError(
+            f"{path} exceeds maximum nested tool depth {_MAX_TRACE_NESTING}"
+        )
     if not isinstance(call, dict):
         raise ValueError(f"{path} must be an object")
     tool = call.get("tool")
@@ -94,12 +111,21 @@ def _validate_call(call: object, *, path: str) -> dict[str, object]:
     ):
         raise ValueError(f"{path}.result_bytes must be a nonnegative integer")
     nested = call.get("nested_calls")
+    count = 1
     if nested is not None:
         if not isinstance(nested, list):
             raise ValueError(f"{path}.nested_calls must be a list")
         for index, child in enumerate(nested):
-            _validate_call(child, path=f"{path}.nested_calls[{index}]")
-    return call
+            count += _validate_call(
+                child,
+                path=f"{path}.nested_calls[{index}]",
+                depth=depth + 1,
+            )
+            if count > _MAX_TRACE_CALLS:
+                raise ValueError(
+                    f"tool-routing trace exceeds {_MAX_TRACE_CALLS} calls"
+                )
+    return count
 
 
 def validate_trace(payload: object) -> dict[str, object]:
@@ -119,10 +145,15 @@ def validate_trace(payload: object) -> dict[str, object]:
         and len(catalog_sha256) == len("sha256:") + 64
     ):
         raise ValueError(
-            "tool-routing trace catalog_sha256 must be sha256:<64 lowercase/uppercase hex>"
+            "tool-routing trace catalog_sha256 must be sha256:<64 lowercase hex>"
+        )
+    digest = catalog_sha256.removeprefix("sha256:")
+    if digest != digest.lower():
+        raise ValueError(
+            "tool-routing trace catalog_sha256 must use lowercase hexadecimal digits"
         )
     try:
-        int(catalog_sha256.removeprefix("sha256:"), 16)
+        int(digest, 16)
     except ValueError as exc:
         raise ValueError(
             "tool-routing trace catalog_sha256 must contain hexadecimal digits"
@@ -130,8 +161,17 @@ def validate_trace(payload: object) -> dict[str, object]:
     calls = payload.get("calls")
     if not isinstance(calls, list):
         raise ValueError("tool-routing trace calls must be a list")
+    total = 0
     for index, call in enumerate(calls):
-        _validate_call(call, path=f"calls[{index}]")
+        total += _validate_call(
+            call,
+            path=f"calls[{index}]",
+            depth=0,
+        )
+        if total > _MAX_TRACE_CALLS:
+            raise ValueError(
+                f"tool-routing trace exceeds {_MAX_TRACE_CALLS} calls"
+            )
     return payload
 
 
