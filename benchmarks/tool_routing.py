@@ -92,7 +92,13 @@ def matches_subject_operation(
         return False
     tokens = tool_tokens(name)
     normalized = operation.strip().lower().replace("-", "_")
-    return normalized in _operation_candidates(tokens)
+    selected = _subject_tokens(subject)[0]
+    rendered = "_".join(tokens)
+    return (
+        normalized in _operation_candidates(tokens)
+        or rendered == f"{selected}_{normalized}"
+        or rendered.endswith(f"_{selected}_{normalized}")
+    )
 
 
 def classify_tool(name: object, *, subject: object = None) -> str:
