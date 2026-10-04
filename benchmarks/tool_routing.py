@@ -155,6 +155,29 @@ def first_discovery_index(calls: list[dict[str, Any]]) -> int:
     )
 
 
+def catalog_tool_names(payload: object) -> list[str]:
+    """Extract tool names from a simple list or a captured host catalog object."""
+    raw = payload.get("tools") if isinstance(payload, dict) else payload
+    if not isinstance(raw, list):
+        raise ValueError("tool catalog must be a list or an object with a tools list")
+
+    names: list[str] = []
+    for item in raw:
+        if isinstance(item, str):
+            name = item
+        elif isinstance(item, dict) and isinstance(item.get("name"), str):
+            name = item["name"]
+        else:
+            raise ValueError("every tool catalog entry must be a name or object with name")
+        name = name.strip()
+        if not name:
+            raise ValueError("tool catalog names must not be empty")
+        names.append(name)
+    if not names:
+        raise ValueError("tool catalog must contain at least one tool")
+    return names
+
+
 def catalog_admission(
     tool_names: list[str] | tuple[str, ...],
     *,
