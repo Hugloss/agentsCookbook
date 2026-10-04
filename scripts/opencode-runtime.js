@@ -1402,6 +1402,11 @@ async function main(argv) {
           selectedSubject &&
           prepared.overlay_identity?.subject_exposure_sha256 !==
             options['subject-exposure-sha256']
+        ) ||
+        (
+          selectedSubject &&
+          prepared.native_subject_identity?.executable_sha256 !==
+            options['subject-executable-sha256']
         )
       ) {
         process.stdout.write(`${JSON.stringify({
