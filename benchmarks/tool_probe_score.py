@@ -10,11 +10,27 @@ from benchmarks.harness.report import build_report
 from benchmarks.harness.suite import load_suite
 from benchmarks.harness.trace_diagnostics import build_trace_diagnostics
 from benchmarks.tool_probe import REQUIRED_TOOLS
+from benchmarks.tool_routing import (
+    DISCOVERY_CLASSES,
+    classify_tool,
+    first_discovery_index,
+    matches_subject_operation,
+)
 
 
 def _matches_required(name: object, subject: str, required: str) -> bool:
-    tool = required.removeprefix(subject + "_")
-    return name in {required, f"{subject}.{tool}", f"tools.{subject}.{tool}"}
+    return matches_subject_operation(
+        name,
+        subject=subject,
+        operation=required.removeprefix(subject + "_"),
+    )
+
+
+def _call_class(call: dict[str, object], subject: str) -> str:
+    value = call.get("tool_class")
+    if isinstance(value, str):
+        return value
+    return classify_tool(call.get("tool"), subject=subject)
 
 
 def _required_call_result(
@@ -41,23 +57,48 @@ def _required_call_result(
     return bool(matching), False
 
 
-def _required_before_search(
-    calls: list[dict[str, object]] | None, subject: str, required: str
+def _required_before_native_discovery(
+    calls: list[dict[str, object]] | None,
+    subject: str,
+    required: str,
 ) -> bool | None:
     if calls is None:
         return None
-    first_search = next((index for index, call in enumerate(calls)
-                         if call.get("tool") in {"read", "grep", "glob", "bash"}), len(calls))
-    prior = calls[:first_search]
+    normalized = [
+        {**call, "tool_class": _call_class(call, subject)}
+        for call in calls
+    ]
+    prior = normalized[:first_discovery_index(normalized)]
     _, succeeded = _required_call_result(prior, subject, required)
     return succeeded
+
+
+def _first_native_discovery(
+    calls: list[dict[str, object]] | None,
+    subject: str,
+) -> tuple[str | None, object | None]:
+    if calls is None:
+        return None, None
+    normalized = [
+        {**call, "tool_class": _call_class(call, subject)}
+        for call in calls
+    ]
+    index = first_discovery_index(normalized)
+    if index == len(normalized):
+        return None, None
+    call = normalized[index]
+    tool_class = call.get("tool_class")
+    return (
+        tool_class if isinstance(tool_class, str) else None,
+        call.get("tool"),
+    )
 
 
 def smoke_gate(
     score: dict[str, object], *, subject: str, expected_trials: int = 3
 ) -> None:
-    if score.get("schema") != "agents-cookbook-tool-probe-score.v2":
-        raise ValueError("tool-probe smoke score v2 is required")
+    if score.get("schema") != "agents-cookbook-tool-probe-score.v3":
+        raise ValueError("tool-probe smoke score v3 is required")
     if score.get("subject") != subject or score.get("required_tool") != REQUIRED_TOOLS[subject]:
         raise ValueError("smoke score subject or required tool differs from selection")
     rows = score.get("required_tool_results")
@@ -76,9 +117,12 @@ def smoke_gate(
         raise ValueError("smoke trial identities or task selection are inconsistent")
     for row in rows:
         if row.get("status") not in {"PASS", "FAIL"} or row.get("required_call_succeeded") is not True or (
-            row.get("required_before_file_search") is not True
+            row.get("required_before_native_discovery") is not True
         ):
-            raise ValueError("smoke requires completed nonempty tool calls before file search in all trials")
+            raise ValueError(
+                "smoke requires completed nonempty subject calls before native "
+                "repository discovery in all trials"
+            )
 
 
 def main(suite_root: Path) -> int:
@@ -108,6 +152,7 @@ def main(suite_root: Path) -> int:
         calls = trial["calls"]
         trace_observed = calls is not None
         attempted, successful = _required_call_result(calls, subject, required)
+        first_class, first_tool = _first_native_discovery(calls, subject)
         rows.append({
             "trial_id": trial["trial_id"],
             "task_id": trial["task_id"],
@@ -116,10 +161,16 @@ def main(suite_root: Path) -> int:
             "trace_observed": trace_observed,
             "required_call_attempted": attempted,
             "required_call_succeeded": successful,
-            "required_before_file_search": _required_before_search(calls, subject, required),
+            "required_before_native_discovery": _required_before_native_discovery(
+                calls,
+                subject,
+                required,
+            ),
+            "first_native_discovery_class": first_class,
+            "first_native_discovery_tool": first_tool,
         })
     score = {
-        "schema": "agents-cookbook-tool-probe-score.v2",
+        "schema": "agents-cookbook-tool-probe-score.v3",
         "authority": {"diagnostic_only": True, "heldout_comparable": False},
         "subject": subject,
         "required_tool": required,
@@ -130,14 +181,14 @@ def main(suite_root: Path) -> int:
         "required_call_successes": sum(row["required_call_succeeded"] is True for row in rows),
         "required_call_failures": sum(row["required_call_succeeded"] is False for row in rows),
         "required_call_unknown": sum(row["required_call_succeeded"] is None for row in rows),
-        "required_before_file_search_successes": sum(
-            row["required_before_file_search"] is True for row in rows
+        "required_before_native_discovery_successes": sum(
+            row["required_before_native_discovery"] is True for row in rows
         ),
-        "required_before_file_search_failures": sum(
-            row["required_before_file_search"] is False for row in rows
+        "required_before_native_discovery_failures": sum(
+            row["required_before_native_discovery"] is False for row in rows
         ),
-        "required_before_file_search_unknown": sum(
-            row["required_before_file_search"] is None for row in rows
+        "required_before_native_discovery_unknown": sum(
+            row["required_before_native_discovery"] is None for row in rows
         ),
     }
     args.output.write_text(json.dumps(score, indent=2, sort_keys=True) + "\n", encoding="utf-8")
