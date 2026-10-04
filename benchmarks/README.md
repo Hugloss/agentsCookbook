@@ -175,6 +175,16 @@ This lets OpenCode names such as `grep`/`read` and ChatGPT-style names such as `
 
 A host catalog is admissible only when both the required subject tool and at least one native discovery class are visible. Missing Hashmarks is `ENVIRONMENT_BLOCKED`, not a routing failure; only a READY catalog can answer whether the host selected Hashmarks before native repository discovery.
 
+A captured host catalog can be checked without invoking a model:
+
+```bash
+./benchmark tool-routing-catalog \
+  --catalog host-tools.json \
+  --subject hashmarks
+```
+
+The catalog file may be a JSON list of tool names or an object with a `tools` list containing names or `{"name": "..."}` entries. Exit 0 means `READY`; exit 2 means `ENVIRONMENT_BLOCKED`.
+
 ### Advanced direct CLI
 
 The repository-owned `./benchmark` launcher is the canonical CLI for automation and explicit one-off selections. It resolves the harness root before delegating to uv, so invocation is independent of the caller's current Python environment. The CLI does not discover `.env`; it resolves declared suite, campaign, agent, and harness settings from the selected file when flags are omitted. The snippets below show optional CLI overrides. Direct `--agent` accepts repeated values or a comma-separated list.
