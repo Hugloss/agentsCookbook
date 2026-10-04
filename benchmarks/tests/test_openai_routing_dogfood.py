@@ -9,9 +9,15 @@ from unittest import mock
 from benchmarks.openai_responses_routing_probe import OpenAIRoutingProbeError
 from benchmarks.openai_routing_dogfood import (
     OpenAIRoutingDogfoodError,
+    OpenAIRoutingSettings,
+    allocate_run_directory,
     campaign_exit_code,
+    list_dogfood_runs,
     load_manifest,
+    routing_run_root,
     run_campaign,
+    run_saved_campaign,
+    select_dogfood_run,
 )
 
 
@@ -75,6 +81,166 @@ def _receipt(outcome: str, final_text: str) -> dict[str, object]:
 
 
 class OpenAIRoutingDogfoodTests(unittest.TestCase):
+    def test_easy_settings_require_only_two_nonsecret_choices(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tunnel_client = root / "tunnel-client"
+            tunnel_client.write_text("#!/bin/sh\n", encoding="utf-8")
+            tunnel_client.chmod(0o755)
+            env_file = root / ".env"
+            env_file.write_text(
+                "\n".join(
+                    [
+                        "OPENAI_ROUTING_TUNNEL_ID=tunnel_" + "a" * 32,
+                        "OPENAI_ROUTING_MODEL=gpt-test",
+                        f"OPENAI_ROUTING_TUNNEL_CLIENT={tunnel_client}",
+                        "OPENAI_API_KEY=must-not-be-read-from-file",
+                        "CONTROL_PLANE_API_KEY=must-not-be-read-from-file",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch("pathlib.Path.cwd", return_value=root):
+                settings = OpenAIRoutingSettings.load(
+                    env_file,
+                    host={"PATH": ""},
+                )
+
+            self.assertEqual(settings.tunnel_id, "tunnel_" + "a" * 32)
+            self.assertEqual(settings.model, "gpt-test")
+            self.assertEqual(settings.repeats, 1)
+            self.assertEqual(settings.tunnel_client, tunnel_client.resolve())
+            self.assertTrue(
+                str(settings.handoff).endswith(
+                    "Hashmarks/dist/chatgpt-secure-mcp-tunnel-handoff.json"
+                )
+            )
+
+    def test_empty_optional_env_values_use_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tunnel_client = root / "tunnel-client"
+            tunnel_client.write_text("#!/bin/sh\n", encoding="utf-8")
+            tunnel_client.chmod(0o755)
+            env_file = root / ".env"
+            env_file.write_text(
+                "\n".join(
+                    [
+                        "OPENAI_ROUTING_TUNNEL_ID=tunnel_" + "b" * 32,
+                        "OPENAI_ROUTING_MODEL=gpt-test",
+                        f"OPENAI_ROUTING_TUNNEL_CLIENT={tunnel_client}",
+                        "OPENAI_ROUTING_WORKSPACE=",
+                        "OPENAI_ROUTING_HANDOFF=",
+                        "OPENAI_ROUTING_MANIFEST=",
+                        "OPENAI_ROUTING_REPEATS=",
+                        "OPENAI_ROUTING_RUN_ROOT=",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            settings = OpenAIRoutingSettings.load(env_file, host={"PATH": ""})
+
+            self.assertEqual(settings.repeats, 1)
+            self.assertTrue(
+                str(settings.manifest).endswith(
+                    "benchmarks/dogfood/openai-routing-v1.json"
+                )
+            )
+            self.assertTrue(
+                str(settings.run_root).endswith(
+                    ".benchmark-runs/openai-routing"
+                )
+            )
+
+    def test_numbered_runs_allocate_without_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first_id, first = allocate_run_directory(root)
+            second_id, second = allocate_run_directory(root)
+
+            self.assertEqual(first_id, "000001")
+            self.assertEqual(second_id, "000002")
+            self.assertTrue(first.is_dir())
+            self.assertTrue(second.is_dir())
+
+    def test_run_inspection_needs_only_run_root_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_root = root / "custom-runs"
+            env_file = root / ".env"
+            env_file.write_text(
+                f"OPENAI_ROUTING_RUN_ROOT={run_root}\n",
+                encoding="utf-8",
+            )
+            run_id, run_dir = allocate_run_directory(run_root)
+            (run_dir / "summary.json").write_text(
+                json.dumps(
+                    {
+                        "status": "COMPLETE",
+                        "aggregate": {
+                            "hashmarks_first_rate": 1.0,
+                            "outcomes": {"PASS": 5},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(routing_run_root(env_file), run_root.resolve())
+            rows = list_dogfood_runs(run_root)
+            self.assertEqual(rows[0]["run_id"], run_id)
+            self.assertEqual(rows[0]["status"], "COMPLETE")
+            self.assertEqual(
+                select_dogfood_run(run_root)["run_id"],
+                run_id,
+            )
+
+    def test_failed_easy_start_is_visible_and_next_run_advances(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = OpenAIRoutingSettings(
+                workspace=root,
+                handoff=root / "handoff.json",
+                tunnel_client=root / "tunnel-client",
+                tunnel_id="tunnel_" + "c" * 32,
+                model="gpt-test",
+                manifest=root / "manifest.json",
+                repeats=1,
+                run_root=root / "runs-root",
+            )
+
+            with mock.patch(
+                "benchmarks.openai_routing_dogfood.run_campaign",
+                side_effect=OpenAIRoutingDogfoodError("preflight rejected"),
+            ):
+                with self.assertRaisesRegex(
+                    OpenAIRoutingDogfoodError,
+                    "preflight rejected",
+                ):
+                    run_saved_campaign(
+                        settings=settings,
+                        openai_api_key="openai-secret",
+                        control_plane_api_key="control-secret",
+                    )
+
+            rows = list_dogfood_runs(settings.run_root)
+            self.assertEqual(rows[0]["run_id"], "000001")
+            self.assertEqual(rows[0]["status"], "PRECHECK_FAILED")
+            self.assertTrue(
+                (
+                    settings.run_root
+                    / "runs"
+                    / "000001"
+                    / "start-error.json"
+                ).is_file()
+            )
+            second_id, _ = allocate_run_directory(settings.run_root)
+            self.assertEqual(second_id, "000002")
+
     def test_manifest_rejects_tool_directing_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
