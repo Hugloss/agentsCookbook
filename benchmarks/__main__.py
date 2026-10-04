@@ -33,7 +33,14 @@ from benchmarks.hashmarks_retrieval_probe import (
 )
 from benchmarks.openai_responses_routing_probe import (
     OpenAIRoutingProbeError,
+    preflight_probe as preflight_openai_routing_probe,
     run_probe as run_openai_routing_probe,
+)
+from benchmarks.openai_routing_dogfood import (
+    OpenAIRoutingDogfoodError,
+    campaign_exit_code as openai_dogfood_exit_code,
+    preflight_campaign as preflight_openai_dogfood,
+    run_campaign as run_openai_dogfood,
 )
 from benchmarks.harness.campaign import (
     CampaignError,
@@ -212,6 +219,25 @@ def _parser() -> argparse.ArgumentParser:
     openai_routing.add_argument("--model", required=True)
     openai_routing.add_argument("--prompt-file", type=Path, required=True)
     openai_routing.add_argument("--output-dir", type=Path, required=True)
+
+    openai_preflight = sub.add_parser("openai-routing-preflight")
+    openai_preflight.add_argument("--workspace", type=Path, required=True)
+    openai_preflight.add_argument("--handoff", type=Path, required=True)
+    openai_preflight.add_argument("--tunnel-client", type=Path, required=True)
+    openai_preflight.add_argument("--tunnel-id", required=True)
+    openai_preflight.add_argument("--model", required=True)
+    openai_preflight.add_argument("--manifest", type=Path, required=True)
+    openai_preflight.add_argument("--output", type=Path)
+
+    openai_dogfood = sub.add_parser("openai-routing-dogfood")
+    openai_dogfood.add_argument("--workspace", type=Path, required=True)
+    openai_dogfood.add_argument("--handoff", type=Path, required=True)
+    openai_dogfood.add_argument("--tunnel-client", type=Path, required=True)
+    openai_dogfood.add_argument("--tunnel-id", required=True)
+    openai_dogfood.add_argument("--model", required=True)
+    openai_dogfood.add_argument("--manifest", type=Path, required=True)
+    openai_dogfood.add_argument("--repeats", type=int, default=1)
+    openai_dogfood.add_argument("--output-dir", type=Path, required=True)
 
     reviews = sub.add_parser("oracle-review-check")
     reviews.add_argument("--suite", type=Path, required=True)
@@ -835,6 +861,68 @@ def main(argv: list[str] | None = None) -> int:
             args.output.write_text(rendered + "\n", encoding="utf-8")
             print(str(args.output))
         return tool_routing_exit_code(evidence)
+    if args.command == "openai-routing-preflight":
+        try:
+            openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+            control_plane_api_key = os.environ.get(
+                "CONTROL_PLANE_API_KEY",
+                "",
+            )
+            evidence = preflight_openai_dogfood(
+                manifest_path=args.manifest,
+                workspace=args.workspace,
+                handoff_path=args.handoff,
+                tunnel_client=args.tunnel_client,
+                tunnel_id=args.tunnel_id,
+                model=args.model,
+                openai_api_key=openai_api_key,
+                control_plane_api_key=control_plane_api_key,
+            )
+        except (
+            OSError,
+            OpenAIRoutingProbeError,
+            OpenAIRoutingDogfoodError,
+            ValueError,
+        ) as exc:
+            raise SystemExit(f"OpenAI routing preflight unavailable: {exc}") from exc
+        rendered = json.dumps(evidence, indent=2, sort_keys=True)
+        if args.output is None:
+            print(rendered)
+        else:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(rendered + "\n", encoding="utf-8")
+            print(str(args.output))
+        return 0
+
+    if args.command == "openai-routing-dogfood":
+        try:
+            openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+            control_plane_api_key = os.environ.get(
+                "CONTROL_PLANE_API_KEY",
+                "",
+            )
+            summary = run_openai_dogfood(
+                manifest_path=args.manifest,
+                workspace=args.workspace,
+                handoff_path=args.handoff,
+                tunnel_client=args.tunnel_client,
+                tunnel_id=args.tunnel_id,
+                model=args.model,
+                repeats=args.repeats,
+                output_dir=args.output_dir,
+                openai_api_key=openai_api_key,
+                control_plane_api_key=control_plane_api_key,
+            )
+        except (
+            OSError,
+            OpenAIRoutingProbeError,
+            OpenAIRoutingDogfoodError,
+            ValueError,
+        ) as exc:
+            raise SystemExit(f"OpenAI routing dogfood unavailable: {exc}") from exc
+        print(str(args.output_dir / "summary.json"))
+        return openai_dogfood_exit_code(summary)
+
     if args.command == "openai-routing-probe":
         try:
             prompt = args.prompt_file.read_text(encoding="utf-8")
