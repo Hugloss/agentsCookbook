@@ -22,8 +22,11 @@ from benchmarks.tool_routing import (
     catalog_tool_names,
     routing_artifact_sha256,
 )
-from benchmarks.tool_routing_trace import exit_code as tool_routing_exit_code
-from benchmarks.tool_routing_trace import score_trace as score_tool_routing_trace
+from benchmarks.tool_routing_trace import (
+    build_catalog_capture,
+    exit_code as tool_routing_exit_code,
+    score_trace as score_tool_routing_trace,
+)
 from benchmarks.hashmarks_retrieval_probe import (
     HashmarksRetrievalProbeError,
     run_hashmarks_retrieval_probe,
@@ -175,6 +178,10 @@ def _parser() -> argparse.ArgumentParser:
         choices=tuple(sorted(REQUIRED_TOOLS)),
         required=True,
     )
+
+    routing_catalog.add_argument("--host")
+    routing_catalog.add_argument("--capture-id")
+    routing_catalog.add_argument("--output-capture", type=Path)
 
     routing_trace = sub.add_parser("tool-routing-trace")
     routing_trace.add_argument("--catalog", type=Path, required=True)
@@ -767,6 +774,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "tool-routing-catalog":
         try:
             payload = json.loads(args.catalog.read_text(encoding="utf-8"))
+            capture_args = (args.host, args.capture_id, args.output_capture)
+            if any(value is not None for value in capture_args):
+                if not all(value is not None for value in capture_args):
+                    raise ValueError(
+                        "--host, --capture-id, and --output-capture must be supplied together"
+                    )
+                payload = build_catalog_capture(
+                    payload,
+                    host=args.host,
+                    capture_id=args.capture_id,
+                )
+                args.output_capture.parent.mkdir(parents=True, exist_ok=True)
+                args.output_capture.write_text(
+                    json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
             names = catalog_tool_names(payload)
             evidence = catalog_admission(
                 names,
@@ -774,6 +797,8 @@ def main(argv: list[str] | None = None) -> int:
                 required_tool=REQUIRED_TOOLS[args.subject],
             )
             evidence["catalog_sha256"] = routing_artifact_sha256(payload)
+            if args.output_capture is not None:
+                evidence["catalog_capture"] = str(args.output_capture)
         except (OSError, ValueError) as exc:
             raise SystemExit(f"tool routing catalog unavailable: {exc}") from exc
         print(json.dumps(evidence, indent=2, sort_keys=True))
