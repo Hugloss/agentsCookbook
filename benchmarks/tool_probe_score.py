@@ -11,6 +11,7 @@ from benchmarks.harness.suite import load_suite
 from benchmarks.harness.trace_diagnostics import build_trace_diagnostics
 from benchmarks.tool_probe import REQUIRED_TOOLS
 from benchmarks.tool_routing import (
+    TOOL_ROUTER,
     classify_call,
     first_discovery_index,
     matches_subject_operation,
@@ -60,6 +61,23 @@ def _required_call_result(
     return bool(matching), False
 
 
+def _required_success_index(
+    calls: list[dict[str, object]],
+    subject: str,
+    required: str,
+) -> int | None:
+    for index, call in enumerate(calls):
+        if not _matches_required(call.get("tool"), subject, required):
+            continue
+        if (
+            call.get("status") == "completed"
+            and isinstance(call.get("result_bytes"), int)
+            and call["result_bytes"] > 0
+        ):
+            return index
+    return None
+
+
 def _required_before_native_discovery(
     calls: list[dict[str, object]] | None,
     subject: str,
@@ -71,9 +89,22 @@ def _required_before_native_discovery(
         {**call, "tool_class": _call_class(call, subject)}
         for call in calls
     ]
-    prior = normalized[:first_discovery_index(normalized)]
-    _, succeeded = _required_call_result(prior, subject, required)
-    return succeeded
+    discovery_index = first_discovery_index(normalized)
+    required_index = _required_success_index(normalized, subject, required)
+    opaque_router_indexes = [
+        index
+        for index, call in enumerate(normalized)
+        if call.get("tool_class") == TOOL_ROUTER
+        and call.get("routing_observability") != "expanded"
+    ]
+
+    if required_index is not None and required_index < discovery_index:
+        if any(index < required_index for index in opaque_router_indexes):
+            return None
+        return True
+    if any(index < discovery_index for index in opaque_router_indexes):
+        return None
+    return False
 
 
 def _first_native_discovery(
