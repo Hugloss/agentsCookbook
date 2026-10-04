@@ -298,6 +298,81 @@ class ToolRoutingTraceTests(unittest.TestCase):
                 subject="hashmarks",
             )
 
+    def test_catalog_cli_materializes_bound_capture(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = root / "raw-catalog.json"
+            capture = root / "catalog.json"
+            raw.write_text(
+                json.dumps(
+                    [
+                        "mcp__hashmarks__task_evidence",
+                        "mcp__GitHub__search",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = benchmark_main(
+                    [
+                        "tool-routing-catalog",
+                        "--catalog",
+                        str(raw),
+                        "--subject",
+                        "hashmarks",
+                        "--host",
+                        "chatgpt",
+                        "--capture-id",
+                        "capture-cli-1",
+                        "--output-capture",
+                        str(capture),
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            payload = json.loads(capture.read_text(encoding="utf-8"))
+            self.assertEqual(payload["schema"], CATALOG_CAPTURE_SCHEMA)
+            self.assertEqual(payload["host"], "chatgpt")
+            self.assertEqual(payload["capture_id"], "capture-cli-1")
+            evidence = json.loads(stdout.getvalue())
+            self.assertEqual(evidence["status"], "READY")
+            self.assertEqual(evidence["catalog_capture"], str(capture))
+            self.assertEqual(
+                evidence["catalog_sha256"],
+                routing_artifact_sha256(payload),
+            )
+
+    def test_catalog_cli_rejects_partial_capture_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = root / "raw-catalog.json"
+            raw.write_text(
+                json.dumps(
+                    [
+                        "mcp__hashmarks__task_evidence",
+                        "mcp__GitHub__search",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                SystemExit,
+                "--host, --capture-id, and --output-capture",
+            ):
+                benchmark_main(
+                    [
+                        "tool-routing-catalog",
+                        "--catalog",
+                        str(raw),
+                        "--subject",
+                        "hashmarks",
+                        "--host",
+                        "chatgpt",
+                    ]
+                )
+
     def test_trace_cli_writes_canonical_score_and_exit_code(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
