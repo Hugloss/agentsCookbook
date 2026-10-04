@@ -84,6 +84,31 @@ class BenchmarkConfigTests(unittest.TestCase):
                 "/file-source",
             )
 
+    def test_doctor_reuses_check_runtime_authority_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            file = Path(temporary) / ".env"
+            file.write_text(
+                f"BENCHMARK_SUITE_PATH={SUITE}\n"
+                "HASHMARKS_BENCH_SOURCE=/file-source\n"
+                "BENCHMARK_OPENCODE_AGENT=build\n",
+                encoding="utf-8",
+            )
+            fake = SimpleNamespace(checks=(), ready=True)
+            with (
+                patch(
+                    "benchmarks.__main__.check_runtime_readiness",
+                    return_value=fake,
+                ) as check,
+                redirect_stdout(io.StringIO()),
+            ):
+                outcome = main(["doctor", "--env-file", str(file)])
+            self.assertEqual(outcome, 0)
+            check.assert_called_once()
+            self.assertEqual(
+                check.call_args.kwargs["source"]["HASHMARKS_BENCH_SOURCE"],
+                "/file-source",
+            )
+
     def test_score_uses_file_selection_and_cli_override(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
