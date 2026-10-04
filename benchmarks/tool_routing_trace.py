@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from typing import Any
 
 from benchmarks.tool_probe import REQUIRED_TOOLS
@@ -12,6 +10,7 @@ from benchmarks.tool_routing import (
     catalog_tool_names,
     evaluate_routing_calls,
     normalize_calls,
+    routing_artifact_sha256,
 )
 
 TRACE_SCHEMA = "agents-cookbook-tool-routing-trace.v1"
@@ -23,16 +22,6 @@ _DERIVED_CALL_FIELDS = frozenset({
     "result_basis",
     "routing_observability",
 })
-
-
-def _digest(value: object) -> str:
-    encoded = json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode("utf-8")
-    return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
 def _validate_call(call: object, *, path: str) -> dict[str, object]:
@@ -77,6 +66,20 @@ def validate_trace(payload: object) -> dict[str, object]:
     host = payload.get("host")
     if not isinstance(host, str) or not host.strip():
         raise ValueError("tool-routing trace host must be a nonempty string")
+    catalog_sha256 = payload.get("catalog_sha256")
+    if not isinstance(catalog_sha256, str) or not (
+        catalog_sha256.startswith("sha256:")
+        and len(catalog_sha256) == len("sha256:") + 64
+    ):
+        raise ValueError(
+            "tool-routing trace catalog_sha256 must be sha256:<64 lowercase/uppercase hex>"
+        )
+    try:
+        int(catalog_sha256.removeprefix("sha256:"), 16)
+    except ValueError as exc:
+        raise ValueError(
+            "tool-routing trace catalog_sha256 must contain hexadecimal digits"
+        ) from exc
     calls = payload.get("calls")
     if not isinstance(calls, list):
         raise ValueError("tool-routing trace calls must be a list")
@@ -94,6 +97,11 @@ def score_trace(
     if subject not in REQUIRED_TOOLS:
         raise ValueError(f"unsupported tool-routing subject: {subject}")
     trace = validate_trace(trace_payload)
+    catalog_sha256 = routing_artifact_sha256(catalog_payload)
+    if trace["catalog_sha256"] != catalog_sha256:
+        raise ValueError(
+            "tool-routing trace catalog_sha256 does not match the supplied catalog"
+        )
     catalog_names = catalog_tool_names(catalog_payload)
     required_tool = REQUIRED_TOOLS[subject]
     admission = catalog_admission(
@@ -128,8 +136,8 @@ def score_trace(
         "required_tool": required_tool,
         "outcome": outcome,
         "catalog_admission": admission,
-        "catalog_sha256": _digest(catalog_payload),
-        "trace_sha256": _digest(trace_payload),
+        "catalog_sha256": catalog_sha256,
+        "trace_sha256": routing_artifact_sha256(trace_payload),
         "call_count": len(calls),
         "calls": calls,
         "routing_evaluation": evaluation,
