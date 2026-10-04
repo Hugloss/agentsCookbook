@@ -862,7 +862,7 @@ async function testSharedLifecycle() {
       env,
       deleteAfterExport: true,
     });
-    assert.strictEqual(result.schema, 'agents-cookbook-opencode-runtime/v2');
+    assert.strictEqual(result.schema, 'agents-cookbook-opencode-runtime/v3');
     assert.match(
       result.operation_id,
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
