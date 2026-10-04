@@ -52,6 +52,7 @@ from benchmarks.harness.campaign import (
     resolve_campaign_paths,
 )
 from benchmarks.harness.contamination import classify_contamination
+from benchmarks.harness.identity import digest
 from benchmarks.harness.model import (
     McpExposure,
     Observation,
@@ -1704,6 +1705,154 @@ class PilotExecutionTests(unittest.TestCase):
                 ):
                     agent.run(context, "prompt", None)
             runtime_call.assert_not_called()
+
+    def test_opencode_rejects_subject_source_drift_before_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            control.mkdir()
+            context = TrialContext(
+                workspace,
+                control,
+                {"BENCHMARK_OPENCODE_AGENT": "build"},
+            )
+            admitted_source = {"commit": "a" * 40, "tree": "b" * 40}
+            current_source = {"commit": "c" * 40, "tree": "d" * 40}
+            native_subject = {"executable_sha256": "e" * 64}
+            evidence = {
+                "selected_server": "hashmarks",
+                "opencode_executable_path": str(Path("/bin/opencode").resolve()),
+                "opencode_executable_sha256": "f" * 64,
+                "native_config_sha256": "1" * 64,
+                "native_mcp_servers": [],
+                "subject_exposure_sha256": "2" * 64,
+                "native_subject_identity": native_subject,
+                "native_subject_identity_sha256": digest(native_subject),
+                "subject_source_identity_sha256": digest(admitted_source),
+                "model": "test-provider/test-model",
+                "provider": "test-provider",
+                "runtime_contract": "agents-cookbook-opencode-runtime/v3",
+            }
+            (control / "opencode-native-evidence.json").write_text(
+                json.dumps(evidence),
+                encoding="utf-8",
+            )
+            subject = mock.Mock()
+            subject.source_identity.return_value = (current_source, None)
+            agent = OpenCodeNativeAgent()
+            with (
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._native_environment",
+                    return_value={"OPENCODE_BIN": "/bin/opencode"},
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._sha256_file",
+                    return_value="f" * 64,
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call"
+                ) as runtime_call,
+            ):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "subject source authority changed after admission",
+                ):
+                    agent.run(context, "prompt", subject)
+            runtime_call.assert_not_called()
+
+    def test_opencode_rejects_subject_source_drift_during_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            control.mkdir()
+            context = TrialContext(
+                workspace,
+                control,
+                {"BENCHMARK_OPENCODE_AGENT": "build"},
+            )
+            admitted_source = {"commit": "a" * 40, "tree": "b" * 40}
+            changed_source = {"commit": "c" * 40, "tree": "d" * 40}
+            native_subject = {"executable_sha256": "e" * 64}
+            evidence = {
+                "selected_server": "hashmarks",
+                "opencode_executable_path": str(Path("/bin/opencode").resolve()),
+                "opencode_executable_sha256": "f" * 64,
+                "native_config_sha256": "1" * 64,
+                "native_mcp_servers": [],
+                "subject_exposure_sha256": "2" * 64,
+                "native_subject_identity": native_subject,
+                "native_subject_identity_sha256": digest(native_subject),
+                "subject_source_identity_sha256": digest(admitted_source),
+                "model": "test-provider/test-model",
+                "provider": "test-provider",
+                "runtime_contract": "agents-cookbook-opencode-runtime/v3",
+            }
+            (control / "opencode-native-evidence.json").write_text(
+                json.dumps(evidence),
+                encoding="utf-8",
+            )
+            subject = mock.Mock()
+            subject.source_identity.side_effect = [
+                (admitted_source, None),
+                (changed_source, None),
+            ]
+            runtime_result = mock.Mock(
+                elapsed_ms=100,
+                stdout=b"{}",
+                stderr=b"",
+                executable_missing=False,
+                stdout_truncated=False,
+            )
+            runtime_result.metrics.return_value = {"return_code": 0}
+            exported = {
+                "messages": [
+                    {
+                        "info": {
+                            "role": "assistant",
+                            "modelID": "test-model",
+                            "providerID": "test-provider",
+                        },
+                        "parts": [{"type": "text", "text": "done"}],
+                    }
+                ]
+            }
+            envelope = {
+                "operation_id": "operation-123",
+                "session_id": "session-123",
+                "authority_revalidation": {"status": "verified"},
+                "run": {"status": 0},
+                "export": {"status": 0, "stdout": json.dumps(exported)},
+                "final_text": "done",
+                "export_parse_error": None,
+            }
+            agent = OpenCodeNativeAgent()
+            with (
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._native_environment",
+                    return_value={"OPENCODE_BIN": "/bin/opencode"},
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._sha256_file",
+                    return_value="f" * 64,
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call",
+                    return_value=(envelope, runtime_result),
+                ),
+            ):
+                observation = agent.run(context, "prompt", subject)
+
+            self.assertFalse(observation.payload["terminal_complete"])
+            self.assertIsNone(observation.payload["final_message"])
+            self.assertEqual(
+                observation.payload["terminal_event"]["reason"],
+                "benchmark subject source authority changed during inference",
+            )
+            self.assertEqual(observation.payload["operation_id"], "operation-123")
 
     def test_opencode_nonzero_run_reports_status_and_bounded_stderr(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
