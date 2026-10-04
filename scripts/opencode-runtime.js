@@ -912,7 +912,10 @@ async function findSessionId({
             (session) =>
               session &&
               session.title === title &&
-              session.directory === repoDir,
+              session.directory === repoDir &&
+              typeof session.updated === 'number' &&
+              Number.isFinite(session.updated) &&
+              session.updated >= startedAt,
           );
           if (exactMatch && exactMatch.id) {
             return exactMatch.id;
@@ -1239,11 +1242,13 @@ async function runSessionAndExport({
   exportAttempts = 4,
   exportDelayMs = 250,
 }) {
+  const operationId = crypto.randomUUID();
+  const operationTitle = `${title}:${operationId}`;
   const started = runSession({
     opencodeBin,
     repoDir,
     agent,
-    title,
+    title: operationTitle,
     prompt,
     env,
     pure,
@@ -1253,7 +1258,7 @@ async function runSessionAndExport({
   const sessionId = await findSessionId({
     opencodeBin,
     repoDir,
-    title,
+    title: operationTitle,
     startedAt: started.startedAt,
     env,
     pure,
@@ -1301,6 +1306,7 @@ async function runSessionAndExport({
 
   return {
     schema: RUNTIME_SCHEMA,
+    operation_id: operationId,
     run,
     session_id: sessionId || null,
     export: exported,
