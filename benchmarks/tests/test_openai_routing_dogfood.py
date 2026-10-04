@@ -403,7 +403,16 @@ class OpenAIRoutingDogfoodTests(unittest.TestCase):
 
             with mock.patch(
                 "benchmarks.openai_routing_dogfood.preflight_probe",
-                return_value={"schema": "preflight", "status": "READY"},
+                return_value={
+                    "schema": "preflight",
+                    "status": "READY",
+                    "hashmarks_handoff_sha256": "a" * 64,
+                    "hashmarks_runtime": {
+                        "version": "hashmarks version 0.26.1",
+                        "executable_sha256": "b" * 64,
+                    },
+                    "openai": {"model": "gpt-test"},
+                },
             ):
                 summary = run_campaign(
                     manifest_path=manifest,
@@ -439,6 +448,15 @@ class OpenAIRoutingDogfoodTests(unittest.TestCase):
             )
             self.assertEqual(summary["aggregate"]["answer_path_matches"], 2)
             self.assertEqual(summary["aggregate"]["total_tokens"], 246)
+            self.assertEqual(
+                summary["candidate"]["hashmarks_runtime"]["version"],
+                "hashmarks version 0.26.1",
+            )
+            self.assertEqual(
+                summary["candidate"]["hashmarks_runtime"]["executable_sha256"],
+                "b" * 64,
+            )
+            self.assertEqual(summary["openai"], {"model": "gpt-test"})
             self.assertEqual(campaign_exit_code(summary), 1)
             self.assertTrue((output / "preflight.json").is_file())
             self.assertTrue(
