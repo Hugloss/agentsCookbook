@@ -844,16 +844,6 @@ class OpenCodeNativeAgent:
             ),
         )
         if evidence.get("selected_server"):
-            native_subject_identity = evidence.get("native_subject_identity")
-            subject_executable_sha256 = (
-                native_subject_identity.get("executable_sha256")
-                if isinstance(native_subject_identity, dict)
-                else None
-            )
-            if not isinstance(subject_executable_sha256, str):
-                raise ValueError(
-                    "benchmark subject executable authority is unavailable"
-                )
             subject_runtime_sha256 = evidence.get(
                 "native_subject_identity_sha256"
             )
@@ -866,8 +856,6 @@ class OpenCodeNativeAgent:
                 str(context.control_root / "opencode-benchmark-exposure.json"),
                 "--subject-exposure-sha256",
                 str(evidence["subject_exposure_sha256"]),
-                "--subject-executable-sha256",
-                subject_executable_sha256,
                 "--subject-runtime-sha256",
                 subject_runtime_sha256,
             )
@@ -889,12 +877,20 @@ class OpenCodeNativeAgent:
         export_raw = ""
         export_error: str | None = None
         session_id: str | None = None
+        operation_id: str | None = None
+        authority_revalidation: dict[str, Any] | None = None
         run_evidence: dict[str, Any] | None = None
         if envelope is None:
             export_error = "shared OpenCode runtime failed"
         else:
             session = envelope.get("session_id")
             session_id = session if isinstance(session, str) else None
+            operation = envelope.get("operation_id")
+            operation_id = operation if isinstance(operation, str) else None
+            revalidation = envelope.get("authority_revalidation")
+            authority_revalidation = (
+                revalidation if isinstance(revalidation, dict) else None
+            )
             run_value = envelope.get("run")
             run_evidence = run_value if isinstance(run_value, dict) else None
             runtime_error = envelope.get("error")
@@ -994,6 +990,8 @@ class OpenCodeNativeAgent:
                 "native_config_sha256": evidence.get("native_config_sha256"),
                 "native_mcp_servers": list(server_names),
                 "session_id": session_id,
+                "operation_id": operation_id,
+                "authority_revalidation": authority_revalidation,
                 "runtime_contract": evidence.get("runtime_contract"),
                 "budget_violation": (
                     (
