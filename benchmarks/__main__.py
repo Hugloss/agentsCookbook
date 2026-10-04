@@ -177,7 +177,11 @@ def _parser() -> argparse.ArgumentParser:
     review.add_argument("--execute", action="store_true")
     review.add_argument("--cache", type=Path)
 
-    check = sub.add_parser("check")
+    check = sub.add_parser(
+        "check",
+        aliases=("doctor",),
+        help="model-free runtime authority and native host diagnostics",
+    )
     check.add_argument("--suite", type=Path)
     check.add_argument(
         "--agent",
@@ -186,24 +190,6 @@ def _parser() -> argparse.ArgumentParser:
         help="optional native agent filter; without it, check every suite agent",
     )
     check.add_argument(
-        "--env-file",
-        type=Path,
-        required=True,
-        help="explicit benchmark environment file; no file is auto-discovered",
-    )
-
-    doctor = sub.add_parser(
-        "doctor",
-        help="model-free runtime authority and native host diagnostics",
-    )
-    doctor.add_argument("--suite", type=Path)
-    doctor.add_argument(
-        "--agent",
-        action="append",
-        default=[],
-        help="optional native agent filter; without it, check every suite agent",
-    )
-    doctor.add_argument(
         "--env-file",
         type=Path,
         required=True,
