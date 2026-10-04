@@ -33,6 +33,7 @@ from benchmarks.tool_routing import (
     NATIVE_READ,
     NATIVE_SEARCH,
     OTHER,
+    SHELL,
     SUBJECT_REPOSITORY_INTELLIGENCE,
     TOOL_ROUTER,
     catalog_admission,
@@ -208,7 +209,7 @@ class TraceAndToolProbeTests(unittest.TestCase):
         )
         self.assertEqual(
             classify_tool("container.exec", subject="hashmarks"),
-            "shell",
+            SHELL,
         )
         self.assertEqual(
             classify_tool("image_gen", subject="hashmarks"),
