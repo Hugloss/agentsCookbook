@@ -1001,6 +1001,8 @@ class OpenCodeNativeAgent:
         final_text = envelope.get("final_text") if isinstance(envelope, dict) else None
         if not isinstance(final_text, str) or not final_text:
             final_text = None
+        if source_authority_error is not None:
+            final_text = None
 
         model_mismatch = observed_model is not None and observed_model != evidence.get(
             "model"
