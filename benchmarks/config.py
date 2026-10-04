@@ -75,6 +75,47 @@ class BenchmarkConfigError(ValueError):
     pass
 
 
+def load_env_values(
+    file: Path,
+    *,
+    allowed_keys: frozenset[str],
+) -> dict[str, str]:
+    """Parse one dotenv-style file for an explicit allowlist of configuration keys."""
+    if not file.is_file():
+        raise BenchmarkConfigError(f"benchmark env file does not exist: {file}")
+    try:
+        lines = file.read_text(encoding="utf-8-sig").splitlines()
+    except OSError as exc:
+        raise BenchmarkConfigError(
+            f"cannot read benchmark env file {file}: {exc}"
+        ) from exc
+
+    values: dict[str, str] = {}
+    for line_no, raw in enumerate(lines, 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            if line in allowed_keys:
+                raise BenchmarkConfigError(
+                    f"{file}:{line_no}: benchmark entry needs KEY=VALUE"
+                )
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key not in allowed_keys:
+            continue
+        if key in values:
+            raise BenchmarkConfigError(f"{file}:{line_no}: duplicate {key}")
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
 @dataclass(frozen=True)
 class BenchmarkConfig:
     file: Path | None
@@ -89,38 +130,11 @@ class BenchmarkConfig:
         host: Mapping[str, str] | None = None,
     ) -> BenchmarkConfig:
         snapshot = dict(os.environ if host is None else host)
-        values: dict[str, str] = {}
-        if file is not None:
-            if not file.is_file():
-                raise BenchmarkConfigError(f"benchmark env file does not exist: {file}")
-            try:
-                lines = file.read_text(encoding="utf-8-sig").splitlines()
-            except OSError as exc:
-                raise BenchmarkConfigError(
-                    f"cannot read benchmark env file {file}: {exc}"
-                ) from exc
-            for line_no, raw in enumerate(lines, 1):
-                line = raw.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if line.startswith("export "):
-                    line = line[7:].lstrip()
-                if "=" not in line:
-                    if line in FILE_KEYS:
-                        raise BenchmarkConfigError(
-                            f"{file}:{line_no}: benchmark entry needs KEY=VALUE"
-                        )
-                    continue
-                key, value = line.split("=", 1)
-                key = key.strip()
-                if key not in FILE_KEYS:
-                    continue
-                if key in values:
-                    raise BenchmarkConfigError(f"{file}:{line_no}: duplicate {key}")
-                value = value.strip()
-                if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-                    value = value[1:-1]
-                values[key] = value
+        values = (
+            load_env_values(file, allowed_keys=FILE_KEYS)
+            if file is not None
+            else {}
+        )
         return cls(file, MappingProxyType(values), MappingProxyType(snapshot))
 
     def require(self, *keys: str) -> None:
