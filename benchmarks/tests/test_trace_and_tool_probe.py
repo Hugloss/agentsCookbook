@@ -32,6 +32,7 @@ from benchmarks.tool_routing import (
     OTHER,
     SUBJECT_REPOSITORY_INTELLIGENCE,
     TOOL_ROUTER,
+    catalog_admission,
     classify_tool,
 )
 
@@ -239,6 +240,37 @@ class TraceAndToolProbeTests(unittest.TestCase):
                 required,
             )
         )
+
+    def test_catalog_admission_distinguishes_missing_hashmarks_from_routing_failure(
+        self,
+    ) -> None:
+        blocked = catalog_admission(
+            ["mcp__GitHub__search", "mcp__GitHub__fetch_file"],
+            subject="hashmarks",
+            required_tool="hashmarks_task_evidence",
+        )
+        self.assertEqual(blocked["status"], "ENVIRONMENT_BLOCKED")
+        self.assertEqual(
+            blocked["reason_codes"],
+            ["required-subject-tool-missing"],
+        )
+        self.assertEqual(
+            blocked["native_discovery_classes"],
+            [NATIVE_READ, NATIVE_SEARCH],
+        )
+
+        ready = catalog_admission(
+            [
+                "mcp__hashmarks__task_evidence",
+                "mcp__GitHub__search",
+                "mcp__GitHub__fetch_file",
+            ],
+            subject="hashmarks",
+            required_tool="hashmarks_task_evidence",
+        )
+        self.assertEqual(ready["status"], "READY")
+        self.assertTrue(ready["required_tool_visible"])
+        self.assertEqual(ready["reason_codes"], [])
 
     def test_required_tool_name_forms(self) -> None:
         self.assertTrue(_matches_required(
