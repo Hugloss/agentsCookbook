@@ -133,7 +133,7 @@ def _add_execution_inputs(command: argparse.ArgumentParser) -> None:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="uv run --no-project python -m benchmarks")
+    parser = argparse.ArgumentParser(prog="./benchmark")
     sub = parser.add_subparsers(dest="command", required=True)
 
     validate = sub.add_parser("validate-suite")
@@ -186,6 +186,24 @@ def _parser() -> argparse.ArgumentParser:
         help="optional native agent filter; without it, check every suite agent",
     )
     check.add_argument(
+        "--env-file",
+        type=Path,
+        required=True,
+        help="explicit benchmark environment file; no file is auto-discovered",
+    )
+
+    doctor = sub.add_parser(
+        "doctor",
+        help="model-free runtime authority and native host diagnostics",
+    )
+    doctor.add_argument("--suite", type=Path)
+    doctor.add_argument(
+        "--agent",
+        action="append",
+        default=[],
+        help="optional native agent filter; without it, check every suite agent",
+    )
+    doctor.add_argument(
         "--env-file",
         type=Path,
         required=True,
@@ -286,7 +304,7 @@ def _resolve_config(args: argparse.Namespace) -> BenchmarkConfig:
             args.root = config.path("BENCHMARK_CAMPAIGN_ROOT")
         if hasattr(args, "harness_root") and args.harness_root is None:
             args.harness_root = config.path("BENCHMARK_HARNESS_REPO_ROOT")
-        if hasattr(args, "agent") and not args.agent and args.command != "check":
+        if hasattr(args, "agent") and not args.agent and args.command not in {"check", "doctor"}:
             args.agent = list(config.agents())
         if args.command == "score":
             args.score_script = args.score_script or config.path(
@@ -782,7 +800,7 @@ def main(argv: list[str] | None = None) -> int:
         ).returncode
     suite = (
         load_runtime_suite(args.suite)
-        if args.command == "check"
+        if args.command in {"check", "doctor"}
         else load_suite(args.suite)
     )
 
@@ -803,7 +821,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    if args.command == "check":
+    if args.command in {"check", "doctor"}:
         unknown_agents = sorted(set(args.agent) - set(suite.agents))
         if unknown_agents:
             raise SystemExit("unknown benchmark agent(s): " + ", ".join(unknown_agents))
