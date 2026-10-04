@@ -589,13 +589,38 @@ def _wait_tunnel(
     )
 
 
+def _tunnel_environment() -> dict[str, str]:
+    allowed = {
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "XDG_CONFIG_HOME",
+        "XDG_CACHE_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "CA_BUNDLE",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+    }
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key in allowed and value
+    }
+
+
 @contextlib.contextmanager
 def _running_tunnel(
     *,
     tunnel_client: Path,
     tunnel_id: str,
     mcp_command: str,
-    environment: dict[str, str],
+    control_plane_api_key: str,
 ) -> Iterator[dict[str, str]]:
     if not tunnel_client.is_file():
         raise OpenAIRoutingProbeError(
@@ -606,6 +631,10 @@ def _running_tunnel(
         root = Path(tmp)
         health_file = root / "health.url"
         log_path = root / "tunnel.log"
+        secret_path = root / "control-plane-api-key"
+        secret_path.write_text(control_plane_api_key, encoding="utf-8")
+        secret_path.chmod(0o600)
+        environment = _tunnel_environment()
         with log_path.open("wb") as log:
             process = subprocess.Popen(
                 [
@@ -614,7 +643,7 @@ def _running_tunnel(
                     "--control-plane.tunnel-id",
                     tunnel_id,
                     "--control-plane.api-key",
-                    "env:CONTROL_PLANE_API_KEY",
+                    f"file:{secret_path}",
                     "--mcp.command",
                     mcp_command,
                     "--health.listen-addr",
@@ -792,15 +821,13 @@ def run_probe(
     tracked = before["tracked_paths"]
     assert isinstance(tracked, list)
     repository = _NativeRepository(workspace, tracked)
-    environment = dict(os.environ)
-    environment["CONTROL_PLANE_API_KEY"] = control_plane_api_key
 
     with _tunnel_lock(tunnel_id):
         with _running_tunnel(
             tunnel_client=tunnel_client.resolve(),
             tunnel_id=tunnel_id,
             mcp_command=str(handoff["mcp_command"]),
-            environment=environment,
+            control_plane_api_key=control_plane_api_key,
         ) as tunnel:
             result = _run_responses_loop(
                 model=model,
@@ -844,6 +871,8 @@ def run_probe(
             "heldout_comparable": False,
             "openai_response_store": False,
             "parallel_tool_calls": False,
+            "credentials_persisted": False,
+            "hashmarks_receives_openai_credentials": False,
             "hashmarks_allowed_tools": ["task_evidence"],
             "native_tools": ["grep", "read"],
             "tunnel_exclusivity": (
