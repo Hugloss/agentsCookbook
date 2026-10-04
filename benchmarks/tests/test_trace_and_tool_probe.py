@@ -36,6 +36,9 @@ from benchmarks.tool_routing import (
     catalog_admission,
     classify_call,
     classify_tool,
+    matches_subject_operation,
+    required_before_native_discovery,
+    required_call_result,
 )
 
 
