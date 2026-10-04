@@ -71,6 +71,8 @@ function merge(base, overlay) {
 }
 
 function config() {
+  const nested = process.env.FAKE_MCP_SHAPE === 'nested';
+  const hashmarksEnabled = process.env.FAKE_HASHMARKS_ENABLED === '1';
   const servers = {
     hashmarks: {
       type: 'local',
@@ -79,22 +81,21 @@ function config() {
         '--workspace', '.', 'mcp'
       ],
       cwd: '.',
-      enabled: process.env.FAKE_HASHMARKS_ENABLED === '1',
-      disabled: process.env.FAKE_HASHMARKS_ENABLED !== '1'
+      ...(nested
+        ? { disabled: !hashmarksEnabled }
+        : { enabled: hashmarksEnabled })
     },
     enola: {
       type: 'local',
       command: ['enola'],
-      enabled: false,
-      disabled: true
+      ...(nested ? { disabled: true } : { enabled: false })
     },
   };
   if (process.env.FAKE_NO_HASHMARKS === '1') delete servers.hashmarks;
   const base = {
     model: 'liteLLM/gemma4',
     provider: { liteLLM: { options: { apiKey: 'must-not-leak' } } },
-    mcp: process.env.FAKE_MCP_SHAPE === 'nested'
-      ? { servers } : servers,
+    mcp: nested ? { servers } : servers,
   };
   const inline = process.env.OPENCODE_CONFIG_CONTENT
     ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : {};
@@ -344,14 +345,8 @@ async function testSharedLifecycle() {
           command: ['ambient-hashmarks'],
           cwd: '.',
           enabled: false,
-          disabled: true,
         },
-        enola: {
-          type: 'local',
-          command: ['enola'],
-          enabled: false,
-          disabled: true,
-        },
+        enola: { type: 'local', command: ['enola'], enabled: false },
       },
     };
     const cachedExposure = subjectExposure(root, 'hashmarks');
