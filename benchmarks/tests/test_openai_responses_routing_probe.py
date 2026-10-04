@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import os
 import subprocess
@@ -47,12 +48,42 @@ def _workspace(root: Path) -> Path:
     return root
 
 
-def _handoff(path: Path, workspace: Path) -> Path:
+def _fake_hashmarks(root: Path) -> Path:
+    executable = root / "hashmarks"
+    executable.write_text(
+        "#!/bin/sh\necho 'hashmarks version 0.0-test'\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    return executable
+
+
+def _handoff(
+    path: Path,
+    workspace: Path,
+    executable: Path,
+) -> Path:
+    executable = executable.resolve()
+    digest = hashlib.sha256(executable.read_bytes()).hexdigest()
     payload = {
         "schema": "hashmarks.chatgpt-secure-mcp-tunnel-handoff.v1",
         "status": "READY",
         "workspace": str(workspace.resolve()),
-        "mcp_command": "/opt/hashmarks --workspace /repo mcp",
+        "source": None,
+        "hashmarks": {
+            "executable": str(executable),
+            "executable_sha256": digest,
+            "version": "hashmarks version 0.0-test",
+        },
+        "mcp_command_argv": [
+            str(executable),
+            "--workspace",
+            str(workspace.resolve()),
+            "mcp",
+        ],
+        "mcp_command": (
+            f"{executable} --workspace {workspace.resolve()} mcp"
+        ),
         "mcp": {
             "tools": [
                 {"name": "repository_context"},
@@ -206,7 +237,8 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workspace = _workspace(root / "repo")
-            handoff = _handoff(root / "handoff.json", workspace)
+            hashmarks = _fake_hashmarks(root)
+            handoff = _handoff(root / "handoff.json", workspace, hashmarks)
             tunnel_client = root / "tunnel-client"
             tunnel_client.write_bytes(b"binary")
 
@@ -284,7 +316,8 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workspace = _workspace(root / "repo")
-            handoff = _handoff(root / "handoff.json", workspace)
+            hashmarks = _fake_hashmarks(root)
+            handoff = _handoff(root / "handoff.json", workspace, hashmarks)
             tunnel_client = root / "tunnel-client"
             tunnel_client.write_bytes(b"binary")
             calls = 0
@@ -375,11 +408,49 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
                 ["grep", "mcp__hashmarks__task_evidence"],
             )
 
+    def test_stale_hashmarks_handoff_fails_before_tunnel_or_model_work(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = _workspace(root / "repo")
+            hashmarks = _fake_hashmarks(root)
+            handoff = _handoff(root / "handoff.json", workspace, hashmarks)
+            hashmarks.write_text(
+                "#!/bin/sh\necho 'hashmarks version changed'\n",
+                encoding="utf-8",
+            )
+            hashmarks.chmod(0o755)
+            tunnel_client = root / "tunnel-client"
+            tunnel_client.write_bytes(b"binary")
+
+            with (
+                mock.patch(
+                    "benchmarks.openai_responses_routing_probe._running_tunnel"
+                ) as tunnel,
+                self.assertRaisesRegex(
+                    OpenAIRoutingProbeError,
+                    "executable changed after tunnel handoff qualification",
+                ),
+            ):
+                run_probe(
+                    workspace=workspace,
+                    handoff_path=handoff,
+                    tunnel_client=tunnel_client,
+                    tunnel_id="tunnel_" + "a" * 32,
+                    model="gpt-test",
+                    prompt="Locate owner.",
+                    openai_api_key="openai-secret",
+                    control_plane_api_key="control-secret",
+                    requester=mock.Mock(),
+                )
+
+            tunnel.assert_not_called()
+
     def test_dirty_workspace_fails_before_tunnel_or_model_work(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workspace = _workspace(root / "repo")
-            handoff = _handoff(root / "handoff.json", workspace)
+            hashmarks = _fake_hashmarks(root)
+            handoff = _handoff(root / "handoff.json", workspace, hashmarks)
             (workspace / "owner.py").write_text("changed\n", encoding="utf-8")
             tunnel_client = root / "tunnel-client"
             tunnel_client.write_bytes(b"binary")
@@ -413,7 +484,8 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
             workspace = _workspace(root / "repo")
             other = root / "other"
             other.mkdir()
-            handoff = _handoff(root / "handoff.json", other)
+            hashmarks = _fake_hashmarks(root)
+            handoff = _handoff(root / "handoff.json", other, hashmarks)
             tunnel_client = root / "tunnel-client"
             tunnel_client.write_bytes(b"binary")
 
