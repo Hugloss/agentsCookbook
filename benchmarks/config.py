@@ -26,6 +26,7 @@ FILE_KEYS = frozenset(
 
 COMMAND_REQUIRED_KEYS = {
     "check": ("BENCHMARK_SUITE_PATH",),
+    "doctor": ("BENCHMARK_SUITE_PATH",),
     "preflight": (
         "BENCHMARK_SUITE_PATH",
         "BENCHMARK_CAMPAIGN_ROOT",
