@@ -48,10 +48,14 @@ def _source_cache_lock(cache_root: Path, url: str) -> Iterator[None]:
     lock_path = cache_root / (_cache_name(url) + ".lock")
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise WorkspaceError(
+                f"repository source cache is already in use: {lock_path}"
+            ) from exc
         yield
     finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)
 
 
