@@ -167,6 +167,14 @@ OpenCode benchmark trials are deliberately single-turn. The benchmark overlay di
 
 `benchmark-check-all` is an optional intentionally expensive diagnostic: it preflights every frozen definition for the explicitly selected agents. It is not a prerequisite for `make benchmark`, `make benchmark-new`, or `make benchmark-resume`. Held-out v1 has 108 definitions for one agent or 216 when both are listed.
 
+### Host-neutral tool-routing diagnostics
+
+Tool-selection diagnostics score semantic routing rather than host-specific tool names. Trace projection classifies calls as `subject-repository-intelligence`, `native-search`, `native-read`, `shell`, `tool-router`, or `other`. The required subject call must complete before the first native repository-discovery class; wrapper/router calls do not count by themselves.
+
+This lets OpenCode names such as `grep`/`read` and ChatGPT-style names such as `mcp__GitHub__search`/`mcp__GitHub__fetch_file` use the same scoring contract. Subject namespaces are normalized too, so `hashmarks_task_evidence`, `tools.hashmarks.task_evidence`, and `mcp__hashmarks__task_evidence` represent the same operation.
+
+A host catalog is admissible only when both the required subject tool and at least one native discovery class are visible. Missing Hashmarks is `ENVIRONMENT_BLOCKED`, not a routing failure; only a READY catalog can answer whether the host selected Hashmarks before native repository discovery.
+
 ### Advanced direct CLI
 
 The repository-owned `./benchmark` launcher is the canonical CLI for automation and explicit one-off selections. It resolves the harness root before delegating to uv, so invocation is independent of the caller's current Python environment. The CLI does not discover `.env`; it resolves declared suite, campaign, agent, and harness settings from the selected file when flags are omitted. The snippets below show optional CLI overrides. Direct `--agent` accepts repeated values or a comma-separated list.
