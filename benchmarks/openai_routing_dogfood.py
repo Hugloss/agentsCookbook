@@ -137,6 +137,23 @@ def load_manifest(path: Path, *, workspace: Path) -> dict[str, Any]:
     }
 
 
+def _preflight_evidence(
+    *,
+    manifest: dict[str, Any],
+    probe: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema": "agents-cookbook-openai-routing-dogfood-preflight.v1",
+        "status": "READY",
+        "manifest": {
+            "name": manifest["name"],
+            "sha256": manifest["manifest_sha256"],
+            "task_count": len(manifest["tasks"]),
+        },
+        "probe": probe,
+    }
+
+
 def preflight_campaign(
     *,
     manifest_path: Path,
@@ -158,17 +175,12 @@ def preflight_campaign(
         openai_api_key=openai_api_key,
         control_plane_api_key=control_plane_api_key,
     )
-    return {
-        "schema": "agents-cookbook-openai-routing-dogfood-preflight.v1",
-        "status": "READY",
-        "manifest": {
-            "name": manifest["name"],
-            "sha256": manifest["manifest_sha256"],
-            "task_count": len(manifest["tasks"]),
-        },
-        "probe": probe,
-    }
-
+    after = load_manifest(manifest_path, workspace=workspace)
+    if after["manifest_sha256"] != manifest["manifest_sha256"]:
+        raise OpenAIRoutingDogfoodError(
+            "routing dogfood manifest changed during preflight"
+        )
+    return _preflight_evidence(manifest=manifest, probe=probe)
 
 def _usage_total(receipt: dict[str, Any]) -> int:
     total = 0
@@ -226,8 +238,8 @@ def run_campaign(
             f"dogfood output directory already exists: {output_dir}"
         )
 
-    preflight = preflight_campaign(
-        manifest_path=manifest_path,
+    manifest = load_manifest(manifest_path, workspace=workspace)
+    probe_preflight = preflight_probe(
         workspace=workspace,
         handoff_path=handoff_path,
         tunnel_client=tunnel_client,
@@ -236,7 +248,15 @@ def run_campaign(
         openai_api_key=openai_api_key,
         control_plane_api_key=control_plane_api_key,
     )
-    manifest = load_manifest(manifest_path, workspace=workspace)
+    after_preflight = load_manifest(manifest_path, workspace=workspace)
+    if after_preflight["manifest_sha256"] != manifest["manifest_sha256"]:
+        raise OpenAIRoutingDogfoodError(
+            "routing dogfood manifest changed during preflight"
+        )
+    preflight = _preflight_evidence(
+        manifest=manifest,
+        probe=probe_preflight,
+    )
     output_dir.mkdir(parents=True, exist_ok=False)
     _write_json(output_dir / "preflight.json", preflight)
     _write_json(
@@ -254,7 +274,10 @@ def run_campaign(
     first_tool_counts: Counter[str] = Counter()
     total_tokens = 0
 
+    aborted = False
     for task in manifest["tasks"]:
+        if aborted:
+            break
         for repeat in range(repeats):
             trial_id = f"{task['id']}-r{repeat + 1:02d}"
             trial_dir = output_dir / "trials" / trial_id
@@ -294,7 +317,8 @@ def run_campaign(
                     }
                 )
                 outcome_counts["INCOMPLETE"] += 1
-                continue
+                aborted = True
+                break
 
             elapsed_ms = int(round((time.monotonic() - started) * 1000))
             score = receipt.get("score")
@@ -364,6 +388,7 @@ def run_campaign(
             "heldout_comparable": False,
             "parallel_trials": False,
             "automatic_retry": False,
+            "abort_on_infrastructure_error": True,
         },
         "trials": rows,
         "aggregate": {
