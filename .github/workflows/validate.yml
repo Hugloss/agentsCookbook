@@ -93,27 +93,27 @@ jobs:
 
       - name: Validate frozen repository-intelligence suites
         run: |
-          uv run --no-project python -m benchmarks validate-suite \
+          ./benchmark validate-suite \
             --suite benchmarks/suites/repository-intelligence/pilot-v1
-          uv run --no-project python -m benchmarks plan \
+          ./benchmark plan \
             --suite benchmarks/suites/repository-intelligence/pilot-v1 \
             > "$RUNNER_TEMP/repository-intelligence-pilot-plan.json"
 
-          uv run --no-project python -m benchmarks validate-suite \
+          ./benchmark validate-suite \
             --suite benchmarks/suites/repository-intelligence/agent-matrix-v2
-          uv run --no-project python -m benchmarks plan \
+          ./benchmark plan \
             --suite benchmarks/suites/repository-intelligence/agent-matrix-v2 \
             > "$RUNNER_TEMP/repository-intelligence-agent-matrix-v2-plan.json"
 
-          uv run --no-project python -m benchmarks validate-suite \
+          ./benchmark validate-suite \
             --suite benchmarks/suites/repository-intelligence/native-matrix-v3
-          uv run --no-project python -m benchmarks plan \
+          ./benchmark plan \
             --suite benchmarks/suites/repository-intelligence/native-matrix-v3 \
             > "$RUNNER_TEMP/repository-intelligence-native-matrix-v3-plan.json"
 
-          uv run --no-project python -m benchmarks validate-suite \
+          ./benchmark validate-suite \
             --suite benchmarks/suites/repository-intelligence/enola-cycle-reproduction-v1
-          uv run --no-project python -m benchmarks plan \
+          ./benchmark plan \
             --suite benchmarks/suites/repository-intelligence/enola-cycle-reproduction-v1 \
             > "$RUNNER_TEMP/repository-intelligence-enola-cycle-plan.json"
 
