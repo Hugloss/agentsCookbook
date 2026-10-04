@@ -221,7 +221,7 @@ class TraceAndToolProbeTests(unittest.TestCase):
     ) -> None:
         required = "hashmarks_task_evidence"
         self.assertTrue(
-            _required_before_native_discovery(
+            required_before_native_discovery(
                 [
                     {
                         "tool": "mcp__hashmarks__task_evidence",
@@ -231,12 +231,12 @@ class TraceAndToolProbeTests(unittest.TestCase):
                     {"tool": "mcp__GitHub__search", "status": "completed"},
                     {"tool": "mcp__GitHub__fetch_file", "status": "completed"},
                 ],
-                "hashmarks",
-                required,
+                subject="hashmarks",
+                required_tool=required,
             )
         )
         self.assertFalse(
-            _required_before_native_discovery(
+            required_before_native_discovery(
                 [
                     {"tool": "mcp__GitHub__search", "status": "completed"},
                     {
@@ -245,8 +245,8 @@ class TraceAndToolProbeTests(unittest.TestCase):
                         "result_bytes": 42,
                     },
                 ],
-                "hashmarks",
-                required,
+                subject="hashmarks",
+                required_tool=required,
             )
         )
 
@@ -283,7 +283,7 @@ class TraceAndToolProbeTests(unittest.TestCase):
     def test_opaque_router_before_hashmarks_makes_order_unknown(self) -> None:
         required = "hashmarks_task_evidence"
         self.assertIsNone(
-            _required_before_native_discovery(
+            required_before_native_discovery(
                 [
                     {
                         "tool": "functions.exec",
@@ -300,12 +300,12 @@ class TraceAndToolProbeTests(unittest.TestCase):
                         "status": "completed",
                     },
                 ],
-                "hashmarks",
-                required,
+                subject="hashmarks",
+                required_tool=required,
             )
         )
         self.assertTrue(
-            _required_before_native_discovery(
+            required_before_native_discovery(
                 [
                     {
                         "tool": "functions.exec",
@@ -322,8 +322,8 @@ class TraceAndToolProbeTests(unittest.TestCase):
                         "status": "completed",
                     },
                 ],
-                "hashmarks",
-                required,
+                subject="hashmarks",
+                required_tool=required,
             )
         )
 
@@ -415,34 +415,91 @@ class TraceAndToolProbeTests(unittest.TestCase):
             self.assertEqual(json.loads(stdout.getvalue())["status"], "READY")
 
     def test_required_tool_name_forms(self) -> None:
-        self.assertTrue(_matches_required(
-            "tools.enola.explore", "enola", "enola_explore"
-        ))
-        self.assertFalse(_matches_required(
-            "enola.query_facts", "enola", "enola_explore"
-        ))
+        self.assertTrue(
+            matches_subject_operation(
+                "tools.enola.explore",
+                subject="enola",
+                operation="explore",
+            )
+        )
+        self.assertFalse(
+            matches_subject_operation(
+                "enola.query_facts",
+                subject="enola",
+                operation="explore",
+            )
+        )
 
     def test_required_call_outcomes_preserve_unknown_attempt_and_success(self) -> None:
         required = "hashmarks_task_evidence"
-        self.assertEqual(_required_call_result(None, "hashmarks", required), (None, None))
-        self.assertEqual(_required_call_result([], "hashmarks", required), (False, False))
-        self.assertEqual(_required_call_result([
-            {"tool": required, "status": "error", "result_bytes": 50},
-        ], "hashmarks", required), (True, False))
-        self.assertEqual(_required_call_result([
-            {"tool": required, "status": "completed", "result_bytes": 42},
-        ], "hashmarks", required), (True, True))
-        self.assertEqual(_required_call_result([
-            {"tool": required, "status": "completed", "result_bytes": None},
-        ], "hashmarks", required), (True, None))
-        self.assertFalse(_required_before_native_discovery([
-            {"tool": "grep"},
-            {"tool": required, "status": "completed", "result_bytes": 42},
-        ], "hashmarks", required))
-        self.assertTrue(_required_before_native_discovery([
-            {"tool": required, "status": "completed", "result_bytes": 42},
-            {"tool": "grep"},
-        ], "hashmarks", required))
+        self.assertEqual(
+            required_call_result(
+                None,
+                subject="hashmarks",
+                required_tool=required,
+            ),
+            (None, None),
+        )
+        self.assertEqual(
+            required_call_result(
+                [],
+                subject="hashmarks",
+                required_tool=required,
+            ),
+            (False, False),
+        )
+        self.assertEqual(
+            required_call_result(
+                [{"tool": required, "status": "error", "result_bytes": 50}],
+                subject="hashmarks",
+                required_tool=required,
+            ),
+            (True, False),
+        )
+        self.assertEqual(
+            required_call_result(
+                [{"tool": required, "status": "completed", "result_bytes": 42}],
+                subject="hashmarks",
+                required_tool=required,
+            ),
+            (True, True),
+        )
+        self.assertEqual(
+            required_call_result(
+                [{"tool": required, "status": "completed", "result_bytes": None}],
+                subject="hashmarks",
+                required_tool=required,
+            ),
+            (True, None),
+        )
+        self.assertFalse(
+            required_before_native_discovery(
+                [
+                    {"tool": "grep"},
+                    {
+                        "tool": required,
+                        "status": "completed",
+                        "result_bytes": 42,
+                    },
+                ],
+                subject="hashmarks",
+                required_tool=required,
+            )
+        )
+        self.assertTrue(
+            required_before_native_discovery(
+                [
+                    {
+                        "tool": required,
+                        "status": "completed",
+                        "result_bytes": 42,
+                    },
+                    {"tool": "grep"},
+                ],
+                subject="hashmarks",
+                required_tool=required,
+            )
+        )
 
     def test_smoke_gate_requires_three_proven_early_calls(self) -> None:
         row = {"status": "PASS", "required_call_succeeded": True,
