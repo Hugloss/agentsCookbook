@@ -408,6 +408,21 @@ def list_dogfood_runs(root: Path) -> list[dict[str, object]]:
             )
             continue
         start_error = path / "start-error.json"
+        start_reason = None
+        if start_error.is_file():
+            try:
+                start_payload = json.loads(
+                    start_error.read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError) as exc:
+                raise OpenAIRoutingDogfoodError(
+                    f"OpenAI routing run {run_id} has unreadable start error: {exc}"
+                ) from exc
+            if isinstance(start_payload, dict) and isinstance(
+                start_payload.get("error"),
+                str,
+            ):
+                start_reason = start_payload["error"]
         error_files = list((path / "trials").glob("*/error.json")) if (
             path / "trials"
         ).is_dir() else []
@@ -422,6 +437,7 @@ def list_dogfood_runs(root: Path) -> list[dict[str, object]]:
                     else "INTERRUPTED"
                 ),
                 "path": str(path),
+                "reason": start_reason,
                 "hashmarks_first_rate": None,
                 "outcomes": None,
             }
