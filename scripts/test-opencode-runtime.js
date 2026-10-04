@@ -2,6 +2,7 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -97,6 +98,13 @@ function config() {
     provider: { liteLLM: { options: { apiKey: 'must-not-leak' } } },
     mcp: nested ? { servers } : servers,
   };
+  if (
+    process.env.FAKE_CONFIG_DRIFT_AFTER_RUN === '1' &&
+    statePath &&
+    fs.existsSync(statePath + '.config-drift')
+  ) {
+    base.permission = { edit: 'deny-after-run' };
+  }
   const inline = process.env.OPENCODE_CONFIG_CONTENT
     ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : {};
   const resolved = merge(base, inline);
@@ -164,6 +172,23 @@ if (command === 'run') {
     pure: args[0] === '--pure'
   };
   fs.writeFileSync(statePath, JSON.stringify(state));
+  if (process.env.FAKE_CONFIG_DRIFT_AFTER_RUN === '1') {
+    fs.writeFileSync(statePath + '.config-drift', '1');
+  }
+  if (
+    process.env.FAKE_ENOLA_CONFIG_DRIFT_AFTER_RUN === '1' &&
+    process.env.FAKE_ENOLA_CONFIG_PATH
+  ) {
+    const current = JSON.parse(
+      fs.readFileSync(process.env.FAKE_ENOLA_CONFIG_PATH, 'utf8'),
+    );
+    current.output = { dir: '.benchmark-enola-drifted' };
+    fs.writeFileSync(
+      process.env.FAKE_ENOLA_CONFIG_PATH,
+      JSON.stringify(current),
+      'utf8',
+    );
+  }
   process.stdout.write('{"type":"run"}\\n');
   process.exit(0);
 }
@@ -286,6 +311,9 @@ function testExportUsesRegularFileCapture() {
   );
   try {
     const fake = [process.execPath, writeFakeOpenCode(root)];
+    const fakeOpenCodeSha256 = crypto.createHash('sha256')
+      .update(fs.readFileSync(fake[1]))
+      .digest('hex');
     const result = runtime.exportSession({
       opencodeBin: fake,
       repoDir: root,
@@ -636,10 +664,12 @@ async function testSharedLifecycle() {
         exposurePath,
         '--subject-exposure-sha256',
         '0'.repeat(64),
-        '--subject-executable-sha256',
-        admitted.native_subject_identity.executable_sha256,
+        '--subject-runtime-sha256',
+        runtime.runtimeIdentitySha256(admitted.native_subject_identity),
         '--native-config-sha256',
         admitted.inspection.config_sha256,
+        '--opencode-executable-sha256',
+        fakeOpenCodeSha256,
       ],
       {
         encoding: 'utf8',
@@ -669,10 +699,12 @@ async function testSharedLifecycle() {
         exposurePath,
         '--subject-exposure-sha256',
         admitted.overlay_identity.subject_exposure_sha256,
-        '--subject-executable-sha256',
-        admitted.native_subject_identity.executable_sha256,
+        '--subject-runtime-sha256',
+        runtime.runtimeIdentitySha256(admitted.native_subject_identity),
         '--native-config-sha256',
         admitted.inspection.config_sha256,
+        '--opencode-executable-sha256',
+        fakeOpenCodeSha256,
       ],
       {
         encoding: 'utf8',
