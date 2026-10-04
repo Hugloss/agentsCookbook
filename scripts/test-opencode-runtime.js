@@ -670,6 +670,8 @@ async function testSharedLifecycle() {
         exposurePath,
         '--subject-exposure-sha256',
         '0'.repeat(64),
+        '--subject-executable-sha256',
+        admitted.native_subject_identity.executable_sha256,
         '--native-config-sha256',
         admitted.inspection.config_sha256,
       ],
@@ -680,6 +682,48 @@ async function testSharedLifecycle() {
     );
     assert.strictEqual(changedAuthorityRun.status, 0, changedAuthorityRun.stderr);
     assert.strictEqual(JSON.parse(changedAuthorityRun.stdout).run.status, 1);
+
+    fs.appendFileSync(path.join(root, 'hashmarks'), '# replaced-after-admission\n', 'utf8');
+    const replacedExecutableRun = require('child_process').spawnSync(
+      process.execPath,
+      [
+        path.join(__dirname, 'opencode-runtime.js'),
+        'run-export',
+        '--repo',
+        root,
+        '--agent',
+        'build',
+        '--title',
+        'blocked-replaced-executable',
+        '--prompt-file',
+        promptFile,
+        '--benchmark-subject',
+        'hashmarks',
+        '--benchmark-exposure-file',
+        exposurePath,
+        '--subject-exposure-sha256',
+        admitted.overlay_identity.subject_exposure_sha256,
+        '--subject-executable-sha256',
+        admitted.native_subject_identity.executable_sha256,
+        '--native-config-sha256',
+        admitted.inspection.config_sha256,
+      ],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, ...env, OPENCODE_BIN: fake[1] },
+      },
+    );
+    assert.strictEqual(
+      replacedExecutableRun.status,
+      0,
+      replacedExecutableRun.stderr,
+    );
+    const replacedExecutableEnvelope = JSON.parse(replacedExecutableRun.stdout);
+    assert.strictEqual(replacedExecutableEnvelope.run.status, 1);
+    assert.match(
+      replacedExecutableEnvelope.error,
+      /authority changed after admission/,
+    );
 
     const result = await runtime.runSessionAndExport({
       opencodeBin: fake,
