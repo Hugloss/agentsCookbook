@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from typing import Any
 
@@ -13,6 +15,17 @@ TOOL_ROUTER = "tool-router"
 OTHER = "other"
 
 DISCOVERY_CLASSES = frozenset({NATIVE_SEARCH, NATIVE_READ, SHELL})
+
+
+def routing_artifact_sha256(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
 
 _SEARCH_OPERATIONS = frozenset({
     "grep",
@@ -225,8 +238,6 @@ def result_bytes(value: object) -> int | None:
     if isinstance(value, str):
         return len(value.encode("utf-8"))
     if isinstance(value, (dict, list)):
-        import json
-
         return len(json.dumps(value, sort_keys=True).encode("utf-8"))
     if isinstance(value, bytes):
         return len(value)
