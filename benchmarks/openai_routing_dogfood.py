@@ -114,7 +114,7 @@ class OpenAIRoutingSettings:
 
         manifest = Path(
             values.get("OPENAI_ROUTING_MANIFEST")
-            or "benchmarks/dogfood/openai-routing-v1.json"
+            or "benchmarks/dogfood/openai-routing-v2.json"
         ).expanduser().resolve()
         run_root = Path(
             values.get("OPENAI_ROUTING_RUN_ROOT")
@@ -441,6 +441,21 @@ def list_dogfood_runs(root: Path) -> list[dict[str, object]]:
                         if isinstance(aggregate, dict)
                         else None
                     ),
+                    "routing_fit_rate": (
+                        aggregate.get("routing_fit_rate")
+                        if isinstance(aggregate, dict)
+                        else None
+                    ),
+                    "semantic_hashmarks_first_rate": (
+                        aggregate.get("semantic_hashmarks_first_rate")
+                        if isinstance(aggregate, dict)
+                        else None
+                    ),
+                    "known_path_native_read_rate": (
+                        aggregate.get("known_path_native_read_rate")
+                        if isinstance(aggregate, dict)
+                        else None
+                    ),
                     "outcomes": (
                         aggregate.get("outcomes")
                         if isinstance(aggregate, dict)
@@ -481,6 +496,9 @@ def list_dogfood_runs(root: Path) -> list[dict[str, object]]:
                 "path": str(path),
                 "reason": start_reason,
                 "hashmarks_first_rate": None,
+                "routing_fit_rate": None,
+                "semantic_hashmarks_first_rate": None,
+                "known_path_native_read_rate": None,
                 "outcomes": None,
             }
         )
