@@ -38,6 +38,7 @@ from benchmarks.adapters.registry import (
     AdapterConfigurationError,
     build_agent,
 )
+from benchmarks.adapters.runtime import observe_executable
 from benchmarks.config import BenchmarkConfig
 from benchmarks.harness.admission import (
     TrialAdmissionError,
@@ -784,6 +785,47 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertIn('model = "gpt-5.6-sol"', config)
         self.assertIn('model_reasoning_effort = "high"', config)
         self.assertNotIn("oss_provider", config)
+
+    def test_executable_observation_rejects_bytes_changed_during_probe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            control.mkdir()
+            executable = root / "native-tool"
+            executable.write_text("#!/bin/sh\necho v1\n", encoding="utf-8")
+            executable.chmod(0o755)
+            context = TrialContext(
+                workspace,
+                control,
+                {"PATH": str(root)},
+            )
+            process = mock.Mock(
+                executable_missing=False,
+                timed_out=False,
+                return_code=0,
+                stdout_truncated=False,
+                stderr_truncated=False,
+                stdout=b"v1\n",
+                stderr=b"",
+            )
+            process.metrics.return_value = {"return_code": 0}
+
+            def replace_during_probe(**kwargs):
+                executable.write_text("#!/bin/sh\necho v2\n", encoding="utf-8")
+                return process
+
+            with mock.patch(
+                "benchmarks.adapters.runtime.run_bounded",
+                side_effect=replace_during_probe,
+            ):
+                observed = observe_executable(context, "native-tool")
+
+            self.assertFalse(observed.payload["available"])
+            self.assertFalse(observed.payload["executable_stable"])
+            self.assertIsNone(observed.payload["executable_sha256"])
+            self.assertIn("changed", observed.payload["reason"])
 
     def test_opencode_native_adapter_owns_no_model_provider_config(self) -> None:
         suite = load_suite(MATRIX_V2)
