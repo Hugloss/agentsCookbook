@@ -10,6 +10,7 @@ from pathlib import Path
 from benchmarks.__main__ import main as benchmark_main
 from benchmarks.tool_routing import routing_artifact_sha256
 from benchmarks.tool_routing_trace import (
+    CATALOG_CAPTURE_SCHEMA,
     TRACE_SCHEMA,
     exit_code,
     score_trace,
@@ -17,11 +18,14 @@ from benchmarks.tool_routing_trace import (
 
 
 _READY_CATALOG = {
+    "schema": CATALOG_CAPTURE_SCHEMA,
+    "host": "chatgpt",
+    "capture_id": "capture-1",
     "tools": [
         {"name": "mcp__hashmarks__task_evidence"},
         {"name": "mcp__GitHub__search"},
         {"name": "mcp__GitHub__fetch_file"},
-    ]
+    ],
 }
 
 
@@ -30,9 +34,11 @@ def _trace(
     *,
     catalog: object = _READY_CATALOG,
 ) -> dict[str, object]:
+    assert isinstance(catalog, dict)
     return {
         "schema": TRACE_SCHEMA,
-        "host": "chatgpt",
+        "host": str(catalog["host"]),
+        "capture_id": str(catalog["capture_id"]),
         "catalog_sha256": routing_artifact_sha256(catalog),
         "calls": calls,
     }
@@ -98,10 +104,13 @@ class ToolRoutingTraceTests(unittest.TestCase):
 
     def test_missing_hashmarks_catalog_is_environment_blocked_not_fail(self) -> None:
         catalog = {
+            "schema": CATALOG_CAPTURE_SCHEMA,
+            "host": "chatgpt",
+            "capture_id": "blocked-1",
             "tools": [
                 {"name": "mcp__GitHub__search"},
                 {"name": "mcp__GitHub__fetch_file"},
-            ]
+            ],
         }
         score = score_trace(
             catalog_payload=catalog,
@@ -135,12 +144,15 @@ class ToolRoutingTraceTests(unittest.TestCase):
             ]
         )
         current_catalog = {
+            "schema": CATALOG_CAPTURE_SCHEMA,
+            "host": "chatgpt",
+            "capture_id": "capture-1",
             "tools": [
                 {"name": "mcp__hashmarks__task_evidence"},
                 {"name": "mcp__GitHub__search"},
                 {"name": "mcp__GitHub__fetch_file"},
                 {"name": "mcp__GitHub__fetch"},
-            ]
+            ],
         }
         with self.assertRaisesRegex(
             ValueError,
@@ -149,6 +161,27 @@ class ToolRoutingTraceTests(unittest.TestCase):
             score_trace(
                 catalog_payload=current_catalog,
                 trace_payload=stale_trace,
+                subject="hashmarks",
+            )
+
+    def test_trace_rejects_different_capture_session(self) -> None:
+        catalog = dict(_READY_CATALOG)
+        catalog["capture_id"] = "capture-2"
+        with self.assertRaisesRegex(
+            ValueError,
+            "capture_id differ",
+        ):
+            score_trace(
+                catalog_payload=catalog,
+                trace_payload=_trace(
+                    [
+                        {
+                            "tool": "mcp__hashmarks__task_evidence",
+                            "status": "completed",
+                            "result_bytes": 42,
+                        }
+                    ]
+                ),
                 subject="hashmarks",
             )
 
