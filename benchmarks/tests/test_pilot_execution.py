@@ -38,6 +38,7 @@ from benchmarks.adapters.registry import (
     AdapterConfigurationError,
     build_agent,
 )
+from benchmarks.adapters.runtime import observe_executable
 from benchmarks.config import BenchmarkConfig
 from benchmarks.harness.admission import (
     TrialAdmissionError,
@@ -785,6 +786,47 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertIn('model_reasoning_effort = "high"', config)
         self.assertNotIn("oss_provider", config)
 
+    def test_executable_observation_rejects_bytes_changed_during_probe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            control.mkdir()
+            executable = root / "native-tool"
+            executable.write_text("#!/bin/sh\necho v1\n", encoding="utf-8")
+            executable.chmod(0o755)
+            context = TrialContext(
+                workspace,
+                control,
+                {"PATH": str(root)},
+            )
+            process = mock.Mock(
+                executable_missing=False,
+                timed_out=False,
+                return_code=0,
+                stdout_truncated=False,
+                stderr_truncated=False,
+                stdout=b"v1\n",
+                stderr=b"",
+            )
+            process.metrics.return_value = {"return_code": 0}
+
+            def replace_during_probe(**kwargs):
+                executable.write_text("#!/bin/sh\necho v2\n", encoding="utf-8")
+                return process
+
+            with mock.patch(
+                "benchmarks.adapters.runtime.run_bounded",
+                side_effect=replace_during_probe,
+            ):
+                observed = observe_executable(context, "native-tool")
+
+            self.assertFalse(observed.payload["available"])
+            self.assertFalse(observed.payload["executable_stable"])
+            self.assertIsNone(observed.payload["executable_sha256"])
+            self.assertIn("changed", observed.payload["reason"])
+
     def test_opencode_native_adapter_owns_no_model_provider_config(self) -> None:
         suite = load_suite(MATRIX_V2)
         task = suite.tasks["locate-receipt-completion-owner"]
@@ -1506,6 +1548,8 @@ class PilotExecutionTests(unittest.TestCase):
             )
             evidence = {
                 "selected_server": None,
+                "opencode_executable_path": str(Path("/bin/opencode").resolve()),
+                "opencode_executable_sha256": "b" * 64,
                 "native_config_sha256": "a" * 64,
                 "native_mcp_servers": [],
                 "subject_exposure_sha256": None,
@@ -1555,6 +1599,10 @@ class PilotExecutionTests(unittest.TestCase):
                     return_value={"OPENCODE_BIN": "/bin/opencode"},
                 ),
                 mock.patch(
+                    "benchmarks.adapters.opencode_native._sha256_file",
+                    return_value="b" * 64,
+                ),
+                mock.patch(
                     "benchmarks.adapters.opencode_native._runtime_call",
                     return_value=(envelope, runtime_result),
                 ),
@@ -1572,6 +1620,54 @@ class PilotExecutionTests(unittest.TestCase):
                 },
             )
 
+    def test_opencode_run_rejects_replaced_host_executable_before_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            control = root / "control"
+            control.mkdir()
+            context = TrialContext(
+                workspace,
+                control,
+                {"BENCHMARK_OPENCODE_AGENT": "build"},
+            )
+            evidence = {
+                "selected_server": None,
+                "opencode_executable_path": str(Path("/bin/opencode").resolve()),
+                "opencode_executable_sha256": "a" * 64,
+                "native_config_sha256": "c" * 64,
+                "native_mcp_servers": [],
+                "subject_exposure_sha256": None,
+                "model": "test-provider/test-model",
+                "provider": "test-provider",
+                "runtime_contract": "agents-cookbook-opencode-runtime/v3",
+            }
+            (control / "opencode-native-evidence.json").write_text(
+                json.dumps(evidence),
+                encoding="utf-8",
+            )
+            agent = OpenCodeNativeAgent()
+            with (
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._native_environment",
+                    return_value={"OPENCODE_BIN": "/bin/opencode"},
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._sha256_file",
+                    return_value="b" * 64,
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._runtime_call"
+                ) as runtime_call,
+            ):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "OpenCode executable authority changed after admission",
+                ):
+                    agent.run(context, "prompt", None)
+            runtime_call.assert_not_called()
+
     def test_opencode_nonzero_run_reports_status_and_bounded_stderr(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1586,6 +1682,8 @@ class PilotExecutionTests(unittest.TestCase):
             )
             evidence = {
                 "selected_server": None,
+                "opencode_executable_path": str(Path("/bin/opencode").resolve()),
+                "opencode_executable_sha256": "b" * 64,
                 "native_config_sha256": "a" * 64,
                 "native_mcp_servers": [],
                 "subject_exposure_sha256": None,
@@ -1639,6 +1737,10 @@ class PilotExecutionTests(unittest.TestCase):
                     return_value={"OPENCODE_BIN": "/bin/opencode"},
                 ),
                 mock.patch(
+                    "benchmarks.adapters.opencode_native._sha256_file",
+                    return_value="b" * 64,
+                ),
+                mock.patch(
                     "benchmarks.adapters.opencode_native._runtime_call",
                     return_value=(envelope, runtime_result),
                 ),
@@ -1667,6 +1769,8 @@ class PilotExecutionTests(unittest.TestCase):
             )
             evidence = {
                 "selected_server": None,
+                "opencode_executable_path": str(Path("/bin/opencode").resolve()),
+                "opencode_executable_sha256": "b" * 64,
                 "native_config_sha256": "a" * 64,
                 "native_mcp_servers": [],
                 "subject_exposure_sha256": None,
@@ -1708,6 +1812,10 @@ class PilotExecutionTests(unittest.TestCase):
                 mock.patch(
                     "benchmarks.adapters.opencode_native._native_environment",
                     return_value={"OPENCODE_BIN": "/bin/opencode"},
+                ),
+                mock.patch(
+                    "benchmarks.adapters.opencode_native._sha256_file",
+                    return_value="b" * 64,
                 ),
                 mock.patch(
                     "benchmarks.adapters.opencode_native._runtime_call",

@@ -756,6 +756,8 @@ class OpenCodeNativeAgent:
         }
         evidence = {
             "runtime_contract": "agents-cookbook-opencode-runtime/v3",
+            "opencode_executable_path": executable.payload.get("resolved_path"),
+            "opencode_executable_sha256": executable.payload.get("executable_sha256"),
             "native_config_sha256": inspection.get("config_sha256"),
             "model": model,
             "provider": provider,
@@ -769,6 +771,7 @@ class OpenCodeNativeAgent:
             "native_subject_identity": native_subject_identity,
             "subject_exposure_sha256": overlay_identity.get("subject_exposure_sha256"),
             "native_server_shadowed": overlay_identity.get("native_server_shadowed"),
+            "native_server_conflict": overlay_identity.get("native_server_conflict"),
             "overlay_sha256": hashlib.sha256(
                 canonical_json(overlay_identity)
             ).hexdigest(),
@@ -857,6 +860,22 @@ class OpenCodeNativeAgent:
     ) -> Observation:
         evidence = self._load_prepared(context)
         environment = _native_environment(context)
+        current_opencode_path = str(Path(environment["OPENCODE_BIN"]).resolve())
+        admitted_opencode_path = evidence.get("opencode_executable_path")
+        admitted_opencode_sha256 = evidence.get("opencode_executable_sha256")
+        try:
+            current_opencode_sha256 = _sha256_file(Path(current_opencode_path))
+        except OSError as exc:
+            raise ValueError(
+                "OpenCode executable authority cannot be revalidated before inference"
+            ) from exc
+        if (
+            current_opencode_path != admitted_opencode_path
+            or current_opencode_sha256 != admitted_opencode_sha256
+        ):
+            raise ValueError(
+                "OpenCode executable authority changed after admission"
+            )
         title = "agents-cookbook-benchmark:" + context.control_root.parent.name
         prompt_path = context.control_root / "opencode-prompt.txt"
         if self.diagnostic_required_tool is not None:
@@ -885,11 +904,23 @@ class OpenCodeNativeAgent:
             ),
         )
         if evidence.get("selected_server"):
+            native_subject_identity = evidence.get("native_subject_identity")
+            subject_executable_sha256 = (
+                native_subject_identity.get("executable_sha256")
+                if isinstance(native_subject_identity, dict)
+                else None
+            )
+            if not isinstance(subject_executable_sha256, str):
+                raise ValueError(
+                    "benchmark subject executable authority is unavailable"
+                )
             run_args += (
                 "--benchmark-exposure-file",
                 str(context.control_root / "opencode-benchmark-exposure.json"),
                 "--subject-exposure-sha256",
                 str(evidence["subject_exposure_sha256"]),
+                "--subject-executable-sha256",
+                subject_executable_sha256,
             )
         run_args += (
             "--native-config-sha256",

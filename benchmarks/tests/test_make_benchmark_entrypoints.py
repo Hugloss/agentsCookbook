@@ -25,6 +25,7 @@ from benchmarks.harness.suite import load_suite
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
 ENV_EXAMPLE = ROOT / ".env.example"
+BENCHMARK_LAUNCHER = ROOT / "benchmark"
 
 
 class BenchmarkMakeEntrypointTests(unittest.TestCase):
@@ -45,13 +46,23 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             env_example,
         )
 
+    def test_native_launcher_owns_benchmark_module_resolution(self) -> None:
+        launcher = BENCHMARK_LAUNCHER.read_text(encoding="utf-8")
+        self.assertTrue(BENCHMARK_LAUNCHER.stat().st_mode & 0o111)
+        self.assertIn('ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)', launcher)
+        self.assertIn('cd "$ROOT"', launcher)
+        self.assertIn('exec uv run --no-project python -m benchmarks "$@"', launcher)
+
     def test_make_delegates_configuration_to_cli(self) -> None:
         makefile = MAKEFILE.read_text(encoding="utf-8")
         self.assertNotIn("-include .env", makefile)
         self.assertNotIn("awk -F=", makefile)
+        self.assertNotIn("export PYTHONPATH", makefile)
+        self.assertNotIn(".venv/bin/python", makefile)
         for target, command in (
             ("benchmark", "run --auto"),
             ("benchmark-check", "check"),
+            ("benchmark-doctor", "doctor"),
             ("benchmark-check-all", "preflight"),
             ("benchmark-new", "run --new"),
             ("benchmark-resume", "run --resume"),
@@ -62,12 +73,12 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         ):
             with self.subTest(target=target):
                 self.assertIn(
-                    f"{target}:\n\t@uv run --no-project python -m benchmarks {command} --env-file .env",
+                    f"{target}:\n\t@./benchmark {command} --env-file .env",
                     makefile,
                 )
         self.assertIn("benchmark-oracle-review:", makefile)
         self.assertIn(
-            "python -m benchmarks oracle-review \\\n"
+            "./benchmark oracle-review \\\n"
             "\t\t--suite benchmarks/suites/repository-intelligence/heldout-v1 \\\n"
             "\t\t--execute",
             makefile,

@@ -130,8 +130,12 @@ class TraceAndToolProbeTests(unittest.TestCase):
             workspace.mkdir()
             control.mkdir()
             (control / "opencode-native-evidence.json").write_text(json.dumps({
-                "selected_server": "hashmarks", "native_config_sha256": "a" * 64,
+                "selected_server": "hashmarks",
+                "opencode_executable_path": str(Path("/bin/opencode").resolve()),
+                "opencode_executable_sha256": "c" * 64,
+                "native_config_sha256": "a" * 64,
                 "subject_exposure_sha256": "b" * 64,
+                "native_subject_identity": {"executable_sha256": "d" * 64},
                 "native_mcp_servers": [],
             }), encoding="utf-8")
             context = TrialContext(workspace, control, {"BENCHMARK_OPENCODE_AGENT": "build"})
@@ -141,6 +145,9 @@ class TraceAndToolProbeTests(unittest.TestCase):
             agent = OpenCodeNativeAgent(diagnostic_required_tool="hashmarks_task_evidence")
             with mock.patch("benchmarks.adapters.opencode_native._native_environment",
                             return_value={"OPENCODE_BIN": "/bin/opencode"}), mock.patch(
+                "benchmarks.adapters.opencode_native._sha256_file",
+                return_value="c" * 64,
+            ), mock.patch(
                 "benchmarks.adapters.opencode_native._runtime_call", return_value=(None, process)
             ):
                 agent.run(context, "Reviewed task", None)

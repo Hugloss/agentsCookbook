@@ -71,6 +71,8 @@ function merge(base, overlay) {
 }
 
 function config() {
+  const nested = process.env.FAKE_MCP_SHAPE === 'nested';
+  const hashmarksEnabled = process.env.FAKE_HASHMARKS_ENABLED === '1';
   const servers = {
     hashmarks: {
       type: 'local',
@@ -79,16 +81,21 @@ function config() {
         '--workspace', '.', 'mcp'
       ],
       cwd: '.',
-      enabled: true
+      ...(nested
+        ? { disabled: !hashmarksEnabled }
+        : { enabled: hashmarksEnabled })
     },
-    enola: { type: 'local', command: ['enola'], enabled: true },
+    enola: {
+      type: 'local',
+      command: ['enola'],
+      ...(nested ? { disabled: true } : { enabled: false })
+    },
   };
   if (process.env.FAKE_NO_HASHMARKS === '1') delete servers.hashmarks;
   const base = {
     model: 'liteLLM/gemma4',
     provider: { liteLLM: { options: { apiKey: 'must-not-leak' } } },
-    mcp: process.env.FAKE_MCP_SHAPE === 'nested'
-      ? { servers } : servers,
+    mcp: nested ? { servers } : servers,
   };
   const inline = process.env.OPENCODE_CONFIG_CONTENT
     ? JSON.parse(process.env.OPENCODE_CONFIG_CONTENT) : {};
@@ -337,9 +344,9 @@ async function testSharedLifecycle() {
           type: 'local',
           command: ['ambient-hashmarks'],
           cwd: '.',
-          enabled: true,
+          enabled: false,
         },
-        enola: { type: 'local', command: ['enola'], enabled: true },
+        enola: { type: 'local', command: ['enola'], enabled: false },
       },
     };
     const cachedExposure = subjectExposure(root, 'hashmarks');
@@ -379,6 +386,26 @@ async function testSharedLifecycle() {
       /effective benchmark MCP definition changed/,
     );
 
+    const nativeConflict = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      agentName: 'build',
+      env: { ...env, FAKE_HASHMARKS_ENABLED: '1' },
+      selectedSubject: 'hashmarks',
+      subjectExposure: cachedExposure,
+    });
+    assert.strictEqual(nativeConflict.status, 'failed');
+    assert.strictEqual(
+      nativeConflict.failure_stage,
+      'runtime-authority-conflict',
+    );
+    assert.match(nativeConflict.reason, /already enabled/);
+    assert.match(nativeConflict.reason, /disable that native registration/);
+    assert.strictEqual(
+      nativeConflict.overlay_identity.native_server_conflict,
+      true,
+    );
+
     for (const shape of ['flat', 'nested']) {
       const exposure = subjectExposure(root, 'hashmarks');
       const prepared = runtime.prepareBenchmarkConfig({
@@ -405,6 +432,7 @@ async function testSharedLifecycle() {
         'benchmark-subject-exposure',
       );
       assert.strictEqual(prepared.overlay_identity.native_server_shadowed, true);
+      assert.strictEqual(prepared.overlay_identity.native_server_conflict, false);
       assert.match(
         prepared.overlay_identity.subject_exposure_sha256,
         /^[0-9a-f]{64}$/,
@@ -642,6 +670,8 @@ async function testSharedLifecycle() {
         exposurePath,
         '--subject-exposure-sha256',
         '0'.repeat(64),
+        '--subject-executable-sha256',
+        admitted.native_subject_identity.executable_sha256,
         '--native-config-sha256',
         admitted.inspection.config_sha256,
       ],
@@ -652,6 +682,48 @@ async function testSharedLifecycle() {
     );
     assert.strictEqual(changedAuthorityRun.status, 0, changedAuthorityRun.stderr);
     assert.strictEqual(JSON.parse(changedAuthorityRun.stdout).run.status, 1);
+
+    fs.appendFileSync(path.join(root, 'hashmarks'), '# replaced-after-admission\n', 'utf8');
+    const replacedExecutableRun = require('child_process').spawnSync(
+      process.execPath,
+      [
+        path.join(__dirname, 'opencode-runtime.js'),
+        'run-export',
+        '--repo',
+        root,
+        '--agent',
+        'build',
+        '--title',
+        'blocked-replaced-executable',
+        '--prompt-file',
+        promptFile,
+        '--benchmark-subject',
+        'hashmarks',
+        '--benchmark-exposure-file',
+        exposurePath,
+        '--subject-exposure-sha256',
+        admitted.overlay_identity.subject_exposure_sha256,
+        '--subject-executable-sha256',
+        admitted.native_subject_identity.executable_sha256,
+        '--native-config-sha256',
+        admitted.inspection.config_sha256,
+      ],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, ...env, OPENCODE_BIN: fake[1] },
+      },
+    );
+    assert.strictEqual(
+      replacedExecutableRun.status,
+      0,
+      replacedExecutableRun.stderr,
+    );
+    const replacedExecutableEnvelope = JSON.parse(replacedExecutableRun.stdout);
+    assert.strictEqual(replacedExecutableEnvelope.run.status, 1);
+    assert.match(
+      replacedExecutableEnvelope.error,
+      /authority changed after admission/,
+    );
 
     const result = await runtime.runSessionAndExport({
       opencodeBin: fake,

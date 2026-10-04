@@ -54,7 +54,7 @@ Codex, OpenCode, and Enola are normal host-installed tools. The benchmark does n
 
 Hashmarks is intentionally different: it is the locally developed product under test, so `HASHMARKS_BENCH_SOURCE` explicitly selects the clean committed checkout and its exact `.venv/bin/hashmarks`. This prevents an unrelated installed Hashmarks from silently replacing the candidate under test.
 
-For native OpenCode and Codex trials, ambient/global MCP registrations are disabled as subject authority. The selected Hashmarks or Enola subject is injected ephemerally from the adapter-owned exact executable/cwd/args. A global MCP registration can therefore exist for normal development without choosing what the benchmark executes.
+For native OpenCode and Codex trials, ambient/global MCP registrations are not subject authority. The selected Hashmarks or Enola subject is injected ephemerally from the adapter-owned exact executable/cwd/args. For OpenCode, an enabled native registration with the same name as the selected benchmark subject is an admission conflict and fails before model work; the benchmark never silently disables or rewrites the user's native configuration. A disabled registration may remain for normal development because it cannot compete with the injected benchmark runtime.
 
 Participant processes do not inherit arbitrary host environment variables. The harness carries one fixed process-substrate allowlist—`PATH`, locale variables, terminal identity, and equivalent Windows launch variables—so native tools can start. Provider variables must be named explicitly through `BENCHMARK_PASSTHROUGH_ENV_KEYS`. The resulting observed environment is bound into execution identity.
 
@@ -66,7 +66,7 @@ Agent Economics remains a benchmark consumer/suite; shared process semantics rem
 
 AgentsCookbook's benchmark and qualification Python is stdlib-only. The repository pins Python 3.11 in `.python-version` and executes it through uv. Do not call `python` or `python3` directly from repository-owned entrypoints, CI, or benchmark documentation.
 
-There is intentionally no synthetic Python package/dependency layer just to launch these modules: `uv run --no-project` provides the repository-owned interpreter without inventing package ownership.
+There is intentionally no synthetic Python package/dependency layer just to launch these modules. The repository-owned `./benchmark` front door relocates execution to the agentsCookbook root and delegates interpreter ownership to `uv run --no-project`, so callers never select a `.venv/bin/python`, `PYTHONPATH`, or neighboring repository runtime.
 
 ## Recommended campaign workflow
 
@@ -150,6 +150,7 @@ The remaining targets are optional diagnostics or advanced controls:
 
 ```sh
 make benchmark-check       # fast runtime readiness
+make benchmark-doctor      # same model-free runtime authority diagnostics
 make benchmark-oracle-review-check # oracle qualification check
 make benchmark-check-all   # exhaustive model-free preflight
 make benchmark-runs        # list saved run IDs
@@ -168,7 +169,7 @@ OpenCode benchmark trials are deliberately single-turn. The benchmark overlay di
 
 ### Advanced direct CLI
 
-The benchmark CLI remains available for automation and explicit one-off selections. Repository Python is owned by uv: invoke it as `uv run --no-project python -m benchmarks ...`. The CLI does not discover `.env`; it resolves declared suite, campaign, agent, and harness settings from the selected file when flags are omitted. The snippets below show optional CLI overrides. Direct `--agent` accepts repeated values or a comma-separated list.
+The repository-owned `./benchmark` launcher is the canonical CLI for automation and explicit one-off selections. It resolves the harness root before delegating to uv, so invocation is independent of the caller's current Python environment. The CLI does not discover `.env`; it resolves declared suite, campaign, agent, and harness settings from the selected file when flags are omitted. The snippets below show optional CLI overrides. Direct `--agent` accepts repeated values or a comma-separated list.
 
 ```bash
 suite=benchmarks/suites/repository-intelligence/heldout-v1
@@ -179,7 +180,7 @@ agents=opencode-native  # or codex-native,opencode-native
 Fast runtime readiness:
 
 ```bash
-uv run --no-project python -m benchmarks check \
+./benchmark check \
   --env-file .env \
   --suite "$suite"
 ```
@@ -189,11 +190,11 @@ This command uses no campaign root, harness root, or agent selection and creates
 For advanced workflows that deliberately separate preparation from execution, create a saved run explicitly before preflight:
 
 ```bash
-uv run --no-project python -m benchmarks prepare --new --env-file .env
+./benchmark prepare --new --env-file .env
 ```
 
 ```bash
-uv run --no-project python -m benchmarks preflight \
+./benchmark preflight \
   --env-file .env \
   --suite "$suite" \
   --root "$root" \
@@ -208,7 +209,7 @@ Selecting `--subject hashmarks` selects only Hashmarks conditions. If a paired b
 Then run the exact same explicit selection:
 
 ```bash
-uv run --no-project python -m benchmarks run \
+./benchmark run \
   --resume \
   --env-file .env \
   --suite "$suite" \
@@ -222,14 +223,14 @@ uv run --no-project python -m benchmarks run \
 Status and report do not execute participants, so they need only the suite, campaign results, and the same explicit selection:
 
 ```bash
-uv run --no-project python -m benchmarks status \
+./benchmark status \
   --suite "$suite" \
   --root "$root" \
   --agent "$agents" \
   --subject hashmarks \
   --subject none
 
-uv run --no-project python -m benchmarks report \
+./benchmark report \
   --suite "$suite" \
   --root "$root" \
   --agent "$agents" \
@@ -250,7 +251,7 @@ Existing callers may pass `--cache` and `--work` without `--results` for a diagn
 Then run the exact same selection:
 
 ```bash
-uv run --no-project python -m benchmarks run \
+./benchmark run \
   --resume \
   --suite "$suite" \
   --root "$root" \
@@ -259,12 +260,12 @@ uv run --no-project python -m benchmarks run \
   --subject enola
 ```
 
-The runner reuses valid existing receipts. If the process died during one definition, its prior launch and available event bytes are preserved as numbered `INTERRUPTED` evidence; only that unfinished definition starts a new attempt. Run `benchmarks runs` to list saved IDs and pass `--run-id` to inspect or resume an older one. Status exposes separate integrity, completeness, and qualification checks. Live stderr shows processed definitions separately from verified receipts.
+The runner reuses valid existing receipts. If the process died during one definition, its prior launch and available event bytes are preserved as numbered `INTERRUPTED` evidence; only that unfinished definition starts a new attempt. Run `./benchmark runs --env-file .env` to list saved IDs and pass `--run-id` to inspect or resume an older one. Status exposes separate integrity, completeness, and qualification checks. Live stderr shows processed definitions separately from verified receipts.
 
 Inspect resumability without invoking any agent:
 
 ```bash
-uv run --no-project python -m benchmarks status \
+./benchmark status \
   --suite "$suite" \
   --root "$root" \
   --agent "$agents" \
@@ -279,7 +280,7 @@ Each complete status row includes the receipt's diagnostic stage and reason code
 Finally:
 
 ```bash
-uv run --no-project python -m benchmarks report \
+./benchmark report \
   --suite "$suite" \
   --root "$root" \
   --agent "$agents" \

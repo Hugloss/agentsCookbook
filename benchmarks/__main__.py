@@ -133,7 +133,7 @@ def _add_execution_inputs(command: argparse.ArgumentParser) -> None:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="uv run --no-project python -m benchmarks")
+    parser = argparse.ArgumentParser(prog="./benchmark")
     sub = parser.add_subparsers(dest="command", required=True)
 
     validate = sub.add_parser("validate-suite")
@@ -177,7 +177,11 @@ def _parser() -> argparse.ArgumentParser:
     review.add_argument("--execute", action="store_true")
     review.add_argument("--cache", type=Path)
 
-    check = sub.add_parser("check")
+    check = sub.add_parser(
+        "check",
+        aliases=("doctor",),
+        help="model-free runtime authority and native host diagnostics",
+    )
     check.add_argument("--suite", type=Path)
     check.add_argument(
         "--agent",
@@ -286,7 +290,7 @@ def _resolve_config(args: argparse.Namespace) -> BenchmarkConfig:
             args.root = config.path("BENCHMARK_CAMPAIGN_ROOT")
         if hasattr(args, "harness_root") and args.harness_root is None:
             args.harness_root = config.path("BENCHMARK_HARNESS_REPO_ROOT")
-        if hasattr(args, "agent") and not args.agent and args.command != "check":
+        if hasattr(args, "agent") and not args.agent and args.command not in {"check", "doctor"}:
             args.agent = list(config.agents())
         if args.command == "score":
             args.score_script = args.score_script or config.path(
@@ -782,7 +786,7 @@ def main(argv: list[str] | None = None) -> int:
         ).returncode
     suite = (
         load_runtime_suite(args.suite)
-        if args.command == "check"
+        if args.command in {"check", "doctor"}
         else load_suite(args.suite)
     )
 
@@ -803,7 +807,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    if args.command == "check":
+    if args.command in {"check", "doctor"}:
         unknown_agents = sorted(set(args.agent) - set(suite.agents))
         if unknown_agents:
             raise SystemExit("unknown benchmark agent(s): " + ", ".join(unknown_agents))

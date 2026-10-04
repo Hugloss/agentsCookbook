@@ -43,6 +43,13 @@ def observe_executable(
         command,
         environment=environment,
     )
+    path = Path(resolved) if resolved else None
+    before_sha256 = None
+    if path is not None and path.is_file():
+        try:
+            before_sha256 = _sha256_file(path)
+        except OSError:
+            before_sha256 = None
     result = run_bounded(
         repository_root=context.workspace,
         argv=(command, *version_args),
@@ -56,15 +63,19 @@ def observe_executable(
         ),
         inherit_environment=False,
     )
-    path = Path(resolved) if resolved else None
-    executable_sha256 = None
+    after_sha256 = None
     if path is not None and path.is_file():
         try:
-            executable_sha256 = _sha256_file(path)
+            after_sha256 = _sha256_file(path)
         except OSError:
-            executable_sha256 = None
+            after_sha256 = None
+    executable_stable = (
+        before_sha256 is not None and before_sha256 == after_sha256
+    )
+    executable_sha256 = after_sha256 if executable_stable else None
     available = (
         resolved is not None
+        and executable_stable
         and not result.executable_missing
         and not result.timed_out
         and result.return_code == 0
@@ -75,6 +86,13 @@ def observe_executable(
         {
             "available": available,
             "command": command,
+            "resolved_path": resolved,
+            "executable_stable": executable_stable,
+            "reason": (
+                None
+                if executable_stable
+                else "executable changed or became unreadable during identity probe"
+            ),
             "version": result.stdout.decode(
                 "utf-8",
                 errors="replace",
