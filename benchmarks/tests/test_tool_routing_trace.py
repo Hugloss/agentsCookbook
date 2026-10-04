@@ -279,6 +279,29 @@ class ToolRoutingTraceTests(unittest.TestCase):
             score["routing_evaluation"]["required_call_succeeded"]
         )
 
+    def test_trace_rejects_unbounded_nested_router_depth(self) -> None:
+        call: dict[str, object] = {
+            "tool": "mcp__hashmarks__task_evidence",
+            "status": "completed",
+            "result_bytes": 42,
+        }
+        for _ in range(18):
+            call = {
+                "tool": "functions.exec",
+                "status": "completed",
+                "nested_calls": [call],
+            }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "exceeds maximum nested tool depth",
+        ):
+            score_trace(
+                catalog_payload=_READY_CATALOG,
+                trace_payload=_trace([call]),
+                subject="hashmarks",
+            )
+
     def test_capture_cannot_supply_derived_routing_authority(self) -> None:
         with self.assertRaisesRegex(
             ValueError,
