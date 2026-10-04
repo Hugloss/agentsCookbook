@@ -82,6 +82,19 @@ def _operation_candidates(tokens: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(candidates))
 
 
+def matches_subject_operation(
+    name: object,
+    *,
+    subject: object,
+    operation: str,
+) -> bool:
+    if not is_subject_tool(name, subject):
+        return False
+    tokens = tool_tokens(name)
+    normalized = operation.strip().lower().replace("-", "_")
+    return normalized in _operation_candidates(tokens)
+
+
 def classify_tool(name: object, *, subject: object = None) -> str:
     """Map host-specific tool names into one routing-scoring vocabulary."""
     if is_subject_tool(name, subject):
