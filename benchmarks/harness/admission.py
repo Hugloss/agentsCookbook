@@ -159,24 +159,55 @@ def _git_value(root: Path, argv: tuple[str, ...]) -> str:
 def harness_identity(root: Path) -> dict[str, Any]:
     root = root.resolve()
     commit = _git_value(root, ("git", "rev-parse", "HEAD"))
-    tree = _git_value(root, ("git", "rev-parse", "HEAD^{tree}"))
-    diff = _git_bytes(root, ("git", "diff", "--binary", "HEAD"))
-    untracked = [
-        path
-        for path in _git_bytes(
-            root, ("git", "ls-files", "--others", "--exclude-standard", "-z")
-        ).split(b"\0")
-        if path
-    ]
+    tree = _git_value(root, ("git", "rev-parse", f"{commit}^{{tree}}"))
+    diff = _git_bytes(root, ("git", "diff", "--binary", commit))
+    untracked_raw = _git_bytes(
+        root,
+        ("git", "ls-files", "--others", "--exclude-standard", "-z"),
+    )
+    untracked = [path for path in untracked_raw.split(b"\0") if path]
+    untracked_payloads: list[tuple[bytes, bytes]] = []
     fingerprint = hashlib.sha256(diff)
     try:
         for path in untracked:
+            payload = (root / os.fsdecode(path)).read_bytes()
+            untracked_payloads.append((path, payload))
             fingerprint.update(path)
-            fingerprint.update((root / os.fsdecode(path)).read_bytes())
+            fingerprint.update(payload)
     except OSError as exc:
         raise TrialAdmissionError(
             "cannot fingerprint untracked benchmark files"
         ) from exc
+
+    if _git_value(root, ("git", "rev-parse", "HEAD")) != commit:
+        raise TrialAdmissionError(
+            "harness git authority changed during identity observation"
+        )
+    if _git_bytes(root, ("git", "diff", "--binary", commit)) != diff:
+        raise TrialAdmissionError(
+            "harness git authority changed during identity observation"
+        )
+    if (
+        _git_bytes(
+            root,
+            ("git", "ls-files", "--others", "--exclude-standard", "-z"),
+        )
+        != untracked_raw
+    ):
+        raise TrialAdmissionError(
+            "harness git authority changed during identity observation"
+        )
+    try:
+        for path, payload in untracked_payloads:
+            if (root / os.fsdecode(path)).read_bytes() != payload:
+                raise TrialAdmissionError(
+                    "harness git authority changed during identity observation"
+                )
+    except OSError as exc:
+        raise TrialAdmissionError(
+            "harness git authority changed during identity observation"
+        ) from exc
+
     return {
         "repository": "Hugloss/agentsCookbook",
         "commit": commit,
@@ -185,7 +216,6 @@ def harness_identity(root: Path) -> dict[str, Any]:
         "working_copy_clean": not diff and not untracked,
         "contract": "generic-benchmark-runner-v1",
     }
-
 
 def runtime_environment_identity(
     environment: dict[str, str],
