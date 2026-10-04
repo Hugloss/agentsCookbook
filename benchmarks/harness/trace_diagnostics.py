@@ -8,6 +8,16 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from benchmarks.tool_routing import (
+    NATIVE_READ,
+    NATIVE_SEARCH,
+    TOOL_ROUTER,
+    classify_call,
+    classify_tool,
+    is_subject_tool,
+    matches_subject_operation,
+)
+
 from .bundle import verify_bundle
 
 
@@ -51,17 +61,6 @@ def _tool_failure(status: Any, output: Any) -> str | None:
     if "file not found" in rendered:
         return "path-not-found"
     return "tool-error"
-
-
-def _is_subject_call(name: Any, subject: Any) -> bool:
-    return bool(
-        isinstance(name, str)
-        and isinstance(subject, str)
-        and subject != "none"
-        and any(name.startswith(prefix) for prefix in (
-            subject + "_", subject + ".", "tools." + subject + "."
-        ))
-    )
 
 
 def _hashmarks_evidence(output: Any, expected: dict[str, str] | None) -> dict[str, Any]:
@@ -125,29 +124,51 @@ def _opencode_calls(trace: dict[str, Any], receipt: dict[str, Any]) -> list[dict
             inputs = inputs if isinstance(inputs, dict) else {}
             status = state.get("status")
             output = state.get("error") or state.get("output")
-            subject_call = _is_subject_call(name, subject)
+            subject_call = is_subject_tool(name, subject)
+            tool_class = classify_call(
+                name,
+                inputs,
+                subject=subject,
+            )
             row: dict[str, Any] = {
                 "ordinal": len(calls) + 1,
                 "tool": name,
+                "tool_class": tool_class,
                 "status": status,
                 "failure": _tool_failure(status, output),
                 "subject_call": subject_call,
                 "input_sha256": _sha256(inputs),
                 "input_fields": sorted(inputs),
             }
-            if name in {"read", "grep", "glob"}:
+            if tool_class in {NATIVE_READ, NATIVE_SEARCH}:
                 row["path_attempted"] = _relative_path(
                     inputs.get("filePath") or inputs.get("path"), workspace
                 )
             if subject_call:
                 row["result_bytes"] = _result_bytes(output)
-                if name == "hashmarks_task_evidence" and status == "completed":
+                if (
+                    status == "completed"
+                    and matches_subject_operation(
+                        name,
+                        subject="hashmarks",
+                        operation="task_evidence",
+                    )
+                ):
                     row["hashmarks_evidence"] = _hashmarks_evidence(output, expected)
-            calls.append(row)
-            if name == "execute":
+            if tool_class == TOOL_ROUTER:
                 metadata = state.get("metadata")
-                nested = metadata.get("toolCalls") if isinstance(metadata, dict) else None
-                if isinstance(nested, list):
+                nested = (
+                    metadata.get("toolCalls")
+                    if isinstance(metadata, dict)
+                    else None
+                )
+                row["routing_observability"] = (
+                    "expanded" if isinstance(nested, list) else "opaque"
+                )
+            else:
+                nested = None
+            calls.append(row)
+            if name == "execute" and isinstance(nested, list):
                     for call in nested:
                         if not isinstance(call, dict):
                             continue
@@ -157,9 +178,16 @@ def _opencode_calls(trace: dict[str, Any], receipt: dict[str, Any]) -> list[dict
                         calls.append({
                             "ordinal": len(calls) + 1,
                             "tool": nested_name,
+                            "tool_class": classify_tool(
+                                nested_name,
+                                subject=subject,
+                            ),
                             "status": nested_status,
                             "failure": _tool_failure(nested_status, nested_result),
-                            "subject_call": _is_subject_call(nested_name, subject),
+                            "subject_call": is_subject_tool(
+                                nested_name,
+                                subject,
+                            ),
                             "input_sha256": None,
                             "input_fields": [],
                             "observability": "execute-metadata",
@@ -260,12 +288,17 @@ def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
             ):
                 target_absences[str(row["task_id"])] += 1
     return {
-        "schema": "agents-cookbook-trace-diagnostics.v1",
+        "schema": "agents-cookbook-trace-diagnostics.v2",
         "authority": {"derived_only": True, "source": "verified-result-bundles"},
         "trials": rows,
         "summary": {
             "trials": len(rows),
             "trace_states": dict(sorted(Counter(row["trace_state"] for row in rows).items())),
+            "tool_classes": dict(sorted(Counter(
+                call["tool_class"]
+                for row in rows
+                for call in (row["calls"] or [])
+            ).items())),
             "subject_calls": dict(sorted(subject_calls.items())),
             "tool_failures": dict(sorted(tool_failures.items())),
             "hashmarks_expected_target_absent_from_returned_candidates": dict(sorted(target_absences.items())),

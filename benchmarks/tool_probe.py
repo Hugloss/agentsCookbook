@@ -1,4 +1,4 @@
-"""Prepare separate, tool-required OpenCode diagnostic suites."""
+"""Prepare separate, tool-routing diagnostic suites."""
 
 from __future__ import annotations
 
@@ -70,11 +70,11 @@ def prepare_tool_probe_suite(
         "tasks": {task_id: source_reviews["tasks"][task_id] for task_id in task_ids},
     }
     agent = json.loads(json.dumps(suite.agents["opencode-native"]))
-    agent["identity"]["version"] += "-required-tool-probe-v2"
+    agent["identity"]["version"] += "-required-tool-probe-v3"
     agent["configuration"]["diagnostic_required_tool"] = required_tool
     experiment = {
-        "id": f"repository-intelligence-{subject}-required-tool-probe-v2",
-        "version": 2,
+        "id": f"repository-intelligence-{subject}-required-tool-probe-v3",
+        "version": 3,
         "suite": "repository-intelligence-tool-probe",
         "oracle_reviews": "qualification/oracle-reviews.json",
         "tasks": list(task_ids),
@@ -87,12 +87,16 @@ def prepare_tool_probe_suite(
         }],
         "scoring": {
             "id": "repository-intelligence-tool-probe-score",
-            "version": 2,
-            "metrics": ["task_success", "subject_tool_invoked", "subject_mcp_calls"],
+            "version": 3,
+            "metrics": [
+                "task_success",
+                "subject_tool_invoked",
+                "subject_before_native_discovery",
+            ],
         },
     }
     provenance = {
-        "schema": "agents-cookbook-tool-probe-source.v2",
+        "schema": "agents-cookbook-tool-probe-source.v3",
         "purpose": "diagnostic-only; excluded from heldout score",
         "source_suite": str(suite.root),
         "source_experiment_sha256": digest(suite.experiment),

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+from benchmarks.__main__ import main as benchmark_main
 from benchmarks.adapters.opencode_native import OpenCodeNativeAgent
 from benchmarks.adapters.registry import build_agent
 from benchmarks.harness.identity import digest
@@ -20,8 +23,22 @@ from benchmarks.harness.trace_diagnostics import (
 )
 from benchmarks.tool_probe import prepare_tool_probe_suite
 from benchmarks.tool_probe_score import (
-    _matches_required, _required_call_result, _required_before_search,
-    smoke_gate, main as tool_probe_score_main,
+    _matches_required,
+    _required_before_native_discovery,
+    _required_call_result,
+    smoke_gate,
+    main as tool_probe_score_main,
+)
+from benchmarks.tool_routing import (
+    NATIVE_READ,
+    NATIVE_SEARCH,
+    OTHER,
+    SHELL,
+    SUBJECT_REPOSITORY_INTELLIGENCE,
+    TOOL_ROUTER,
+    catalog_admission,
+    classify_call,
+    classify_tool,
 )
 
 
@@ -165,6 +182,238 @@ class TraceAndToolProbeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported diagnostic required tool"):
             build_agent(agent, budgets={"timeout_seconds": 600})
 
+    def test_host_neutral_tool_classes_cover_opencode_and_chatgpt_names(self) -> None:
+        self.assertEqual(
+            classify_tool("hashmarks_task_evidence", subject="hashmarks"),
+            SUBJECT_REPOSITORY_INTELLIGENCE,
+        )
+        self.assertEqual(
+            classify_tool("mcp__hashmarks__task_evidence", subject="hashmarks"),
+            SUBJECT_REPOSITORY_INTELLIGENCE,
+        )
+        self.assertEqual(
+            classify_tool("grep", subject="hashmarks"),
+            NATIVE_SEARCH,
+        )
+        self.assertEqual(
+            classify_tool("mcp__GitHub__search", subject="hashmarks"),
+            NATIVE_SEARCH,
+        )
+        self.assertEqual(
+            classify_tool("mcp__GitHub__fetch_file", subject="hashmarks"),
+            NATIVE_READ,
+        )
+        self.assertEqual(
+            classify_tool("functions.exec", subject="hashmarks"),
+            TOOL_ROUTER,
+        )
+        self.assertEqual(
+            classify_tool("container.exec", subject="hashmarks"),
+            SHELL,
+        )
+        self.assertEqual(
+            classify_tool("image_gen", subject="hashmarks"),
+            OTHER,
+        )
+
+    def test_chatgpt_style_hashmarks_call_must_precede_native_repository_discovery(
+        self,
+    ) -> None:
+        required = "hashmarks_task_evidence"
+        self.assertTrue(
+            _required_before_native_discovery(
+                [
+                    {
+                        "tool": "mcp__hashmarks__task_evidence",
+                        "status": "completed",
+                        "result_bytes": 42,
+                    },
+                    {"tool": "mcp__GitHub__search", "status": "completed"},
+                    {"tool": "mcp__GitHub__fetch_file", "status": "completed"},
+                ],
+                "hashmarks",
+                required,
+            )
+        )
+        self.assertFalse(
+            _required_before_native_discovery(
+                [
+                    {"tool": "mcp__GitHub__search", "status": "completed"},
+                    {
+                        "tool": "mcp__hashmarks__task_evidence",
+                        "status": "completed",
+                        "result_bytes": 42,
+                    },
+                ],
+                "hashmarks",
+                required,
+            )
+        )
+
+    def test_generic_repository_api_fetch_uses_call_inputs_for_routing_class(
+        self,
+    ) -> None:
+        self.assertEqual(
+            classify_call(
+                "mcp__GitHub__fetch",
+                {
+                    "url": (
+                        "https://api.github.com/repos/acme/repo/"
+                        "git/trees/abc123?recursive=1"
+                    )
+                },
+                subject="hashmarks",
+            ),
+            NATIVE_SEARCH,
+        )
+        self.assertEqual(
+            classify_call(
+                "mcp__GitHub__fetch",
+                {
+                    "url": (
+                        "https://api.github.com/repos/acme/repo/"
+                        "contents/src/owner.py"
+                    )
+                },
+                subject="hashmarks",
+            ),
+            NATIVE_READ,
+        )
+
+    def test_opaque_router_before_hashmarks_makes_order_unknown(self) -> None:
+        required = "hashmarks_task_evidence"
+        self.assertIsNone(
+            _required_before_native_discovery(
+                [
+                    {
+                        "tool": "functions.exec",
+                        "tool_class": TOOL_ROUTER,
+                        "routing_observability": "opaque",
+                    },
+                    {
+                        "tool": "mcp__hashmarks__task_evidence",
+                        "status": "completed",
+                        "result_bytes": 42,
+                    },
+                    {
+                        "tool": "mcp__GitHub__search",
+                        "status": "completed",
+                    },
+                ],
+                "hashmarks",
+                required,
+            )
+        )
+        self.assertTrue(
+            _required_before_native_discovery(
+                [
+                    {
+                        "tool": "functions.exec",
+                        "tool_class": TOOL_ROUTER,
+                        "routing_observability": "expanded",
+                    },
+                    {
+                        "tool": "mcp__hashmarks__task_evidence",
+                        "status": "completed",
+                        "result_bytes": 42,
+                    },
+                    {
+                        "tool": "mcp__GitHub__search",
+                        "status": "completed",
+                    },
+                ],
+                "hashmarks",
+                required,
+            )
+        )
+
+    def test_catalog_admission_distinguishes_missing_hashmarks_from_routing_failure(
+        self,
+    ) -> None:
+        blocked = catalog_admission(
+            ["mcp__GitHub__search", "mcp__GitHub__fetch_file"],
+            subject="hashmarks",
+            required_tool="hashmarks_task_evidence",
+        )
+        self.assertEqual(blocked["status"], "ENVIRONMENT_BLOCKED")
+        self.assertEqual(
+            blocked["reason_codes"],
+            ["required-subject-tool-missing"],
+        )
+        self.assertEqual(
+            blocked["native_discovery_classes"],
+            [NATIVE_READ, NATIVE_SEARCH],
+        )
+
+        ready = catalog_admission(
+            [
+                "mcp__hashmarks__task_evidence",
+                "mcp__GitHub__search",
+                "mcp__GitHub__fetch_file",
+            ],
+            subject="hashmarks",
+            required_tool="hashmarks_task_evidence",
+        )
+        self.assertEqual(ready["status"], "READY")
+        self.assertTrue(ready["required_tool_visible"])
+        self.assertEqual(ready["reason_codes"], [])
+
+    def test_tool_routing_catalog_cli_is_model_free_admission(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            blocked_catalog = root / "blocked.json"
+            blocked_catalog.write_text(
+                json.dumps(
+                    {
+                        "tools": [
+                            {"name": "mcp__GitHub__search"},
+                            {"name": "mcp__GitHub__fetch_file"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = benchmark_main(
+                    [
+                        "tool-routing-catalog",
+                        "--catalog",
+                        str(blocked_catalog),
+                        "--subject",
+                        "hashmarks",
+                    ]
+                )
+            self.assertEqual(code, 2)
+            self.assertEqual(
+                json.loads(stdout.getvalue())["reason_codes"],
+                ["required-subject-tool-missing"],
+            )
+
+            ready_catalog = root / "ready.json"
+            ready_catalog.write_text(
+                json.dumps(
+                    [
+                        "mcp__hashmarks__task_evidence",
+                        "mcp__GitHub__search",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                code = benchmark_main(
+                    [
+                        "tool-routing-catalog",
+                        "--catalog",
+                        str(ready_catalog),
+                        "--subject",
+                        "hashmarks",
+                    ]
+                )
+            self.assertEqual(code, 0)
+            self.assertEqual(json.loads(stdout.getvalue())["status"], "READY")
+
     def test_required_tool_name_forms(self) -> None:
         self.assertTrue(_matches_required(
             "tools.enola.explore", "enola", "enola_explore"
@@ -186,25 +435,25 @@ class TraceAndToolProbeTests(unittest.TestCase):
         self.assertEqual(_required_call_result([
             {"tool": required, "status": "completed", "result_bytes": None},
         ], "hashmarks", required), (True, None))
-        self.assertFalse(_required_before_search([
+        self.assertFalse(_required_before_native_discovery([
             {"tool": "grep"},
             {"tool": required, "status": "completed", "result_bytes": 42},
         ], "hashmarks", required))
-        self.assertTrue(_required_before_search([
+        self.assertTrue(_required_before_native_discovery([
             {"tool": required, "status": "completed", "result_bytes": 42},
             {"tool": "grep"},
         ], "hashmarks", required))
 
     def test_smoke_gate_requires_three_proven_early_calls(self) -> None:
         row = {"status": "PASS", "required_call_succeeded": True,
-               "required_before_file_search": True}
-        score = {"schema": "agents-cookbook-tool-probe-score.v2",
+               "required_before_native_discovery": True}
+        score = {"schema": "agents-cookbook-tool-probe-score.v3",
                  "subject": "hashmarks", "required_tool": "hashmarks_task_evidence",
                  "expected_trials": 3, "observed_trials": 3,
                  "required_tool_results": [dict(row, trial_id=f"trial-{n}", task_id="task")
                                            for n in range(3)]}
         smoke_gate(score, subject="hashmarks")
-        score["required_tool_results"][1]["required_before_file_search"] = None
+        score["required_tool_results"][1]["required_before_native_discovery"] = None
         with self.assertRaises(ValueError):
             smoke_gate(score, subject="hashmarks")
 
@@ -236,13 +485,13 @@ class TraceAndToolProbeTests(unittest.TestCase):
             ):
                 self.assertEqual(tool_probe_score_main(destination), 0)
             score = json.loads(output.read_text(encoding="utf-8"))
-            self.assertEqual(score["schema"], "agents-cookbook-tool-probe-score.v2")
+            self.assertEqual(score["schema"], "agents-cookbook-tool-probe-score.v3")
             self.assertEqual(score["required_call_successes"], 0)
             self.assertEqual(score["required_call_failures"], 1)
             self.assertEqual(score["required_call_unknown"], 1)
             self.assertTrue(score["required_tool_results"][0]["required_call_attempted"])
-            self.assertEqual(score["required_before_file_search_failures"], 1)
-            self.assertEqual(score["required_before_file_search_unknown"], 1)
+            self.assertEqual(score["required_before_native_discovery_failures"], 1)
+            self.assertEqual(score["required_before_native_discovery_unknown"], 1)
 
 
 if __name__ == "__main__":
