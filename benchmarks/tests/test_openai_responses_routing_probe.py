@@ -324,6 +324,59 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
             self.assertNotIn("openai-secret", rendered)
             self.assertNotIn("control-secret", rendered)
 
+    def test_missing_hashmarks_catalog_scores_environment_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = _workspace(root / "repo")
+            hashmarks = _fake_hashmarks(root)
+            handoff = _handoff(root / "handoff.json", workspace, hashmarks)
+            tunnel_client = _fake_tunnel_client(root)
+
+            def requester(payload, *, api_key):
+                self.assertEqual(api_key, "openai-secret")
+                return {
+                    "id": "resp_no_hashmarks",
+                    "status": "completed",
+                    "output": [
+                        {
+                            "type": "mcp_list_tools",
+                            "server_label": "hashmarks",
+                            "tools": [],
+                        },
+                        {
+                            "type": "message",
+                            "content": [
+                                {
+                                    "type": "output_text",
+                                    "text": "Unable to inspect repository.",
+                                }
+                            ],
+                        },
+                    ],
+                }
+
+            with mock.patch(
+                "benchmarks.openai_responses_routing_probe._running_tunnel",
+                _fake_tunnel,
+            ):
+                receipt = run_probe(
+                    workspace=workspace,
+                    handoff_path=handoff,
+                    tunnel_client=tunnel_client,
+                    tunnel_id="tunnel_" + "6" * 32,
+                    model="gpt-test",
+                    prompt="Locate the implementation owner.",
+                    openai_api_key="openai-secret",
+                    control_plane_api_key="control-secret",
+                    requester=requester,
+                )
+
+            self.assertEqual(receipt["score"]["outcome"], "ENVIRONMENT_BLOCKED")
+            self.assertEqual(
+                receipt["score"]["catalog_admission"]["reason_codes"],
+                ["required-subject-tool-missing"],
+            )
+
     def test_native_grep_first_then_hashmarks_scores_fail_and_replays_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
