@@ -33,6 +33,7 @@ from benchmarks.tool_routing import (
     SUBJECT_REPOSITORY_INTELLIGENCE,
     TOOL_ROUTER,
     catalog_admission,
+    classify_call,
     classify_tool,
 )
 
@@ -234,6 +235,83 @@ class TraceAndToolProbeTests(unittest.TestCase):
                         "tool": "mcp__hashmarks__task_evidence",
                         "status": "completed",
                         "result_bytes": 42,
+                    },
+                ],
+                "hashmarks",
+                required,
+            )
+        )
+
+    def test_generic_repository_api_fetch_uses_call_inputs_for_routing_class(
+        self,
+    ) -> None:
+        self.assertEqual(
+            classify_call(
+                "mcp__GitHub__fetch",
+                {
+                    "url": (
+                        "https://api.github.com/repos/acme/repo/"
+                        "git/trees/abc123?recursive=1"
+                    )
+                },
+                subject="hashmarks",
+            ),
+            NATIVE_SEARCH,
+        )
+        self.assertEqual(
+            classify_call(
+                "mcp__GitHub__fetch",
+                {
+                    "url": (
+                        "https://api.github.com/repos/acme/repo/"
+                        "contents/src/owner.py"
+                    )
+                },
+                subject="hashmarks",
+            ),
+            NATIVE_READ,
+        )
+
+    def test_opaque_router_before_hashmarks_makes_order_unknown(self) -> None:
+        required = "hashmarks_task_evidence"
+        self.assertIsNone(
+            _required_before_native_discovery(
+                [
+                    {
+                        "tool": "functions.exec",
+                        "tool_class": TOOL_ROUTER,
+                        "routing_observability": "opaque",
+                    },
+                    {
+                        "tool": "mcp__hashmarks__task_evidence",
+                        "status": "completed",
+                        "result_bytes": 42,
+                    },
+                    {
+                        "tool": "mcp__GitHub__search",
+                        "status": "completed",
+                    },
+                ],
+                "hashmarks",
+                required,
+            )
+        )
+        self.assertTrue(
+            _required_before_native_discovery(
+                [
+                    {
+                        "tool": "functions.exec",
+                        "tool_class": TOOL_ROUTER,
+                        "routing_observability": "expanded",
+                    },
+                    {
+                        "tool": "mcp__hashmarks__task_evidence",
+                        "status": "completed",
+                        "result_bytes": 42,
+                    },
+                    {
+                        "tool": "mcp__GitHub__search",
+                        "status": "completed",
                     },
                 ],
                 "hashmarks",
