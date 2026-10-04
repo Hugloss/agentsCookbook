@@ -311,6 +311,25 @@ class PilotExecutionTests(unittest.TestCase):
                 changed_untracked["working_copy_sha256"],
             )
 
+    def test_harness_identity_rejects_head_change_during_observation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with (
+                mock.patch(
+                    "benchmarks.harness.admission._git_value",
+                    side_effect=("a" * 40, "b" * 40, "c" * 40),
+                ),
+                mock.patch(
+                    "benchmarks.harness.admission._git_bytes",
+                    side_effect=(b"", b""),
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    TrialAdmissionError,
+                    "harness git authority changed during identity observation",
+                ):
+                    harness_identity(root)
+
     def test_native_codex_injects_exact_subject_and_disables_ambient_mcp(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
