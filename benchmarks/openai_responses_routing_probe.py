@@ -7,6 +7,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -190,6 +191,89 @@ def _load_handoff(path: Path, workspace: Path) -> dict[str, Any]:
     return payload
 
 
+def _hashmarks_runtime_identity(handoff: dict[str, Any]) -> dict[str, object]:
+    implementation = handoff.get("hashmarks")
+    if not isinstance(implementation, dict):
+        raise OpenAIRoutingProbeError(
+            "Hashmarks tunnel handoff implementation identity is unavailable"
+        )
+    executable_value = implementation.get("executable")
+    expected_sha256 = implementation.get("executable_sha256")
+    expected_version = implementation.get("version")
+    if (
+        not isinstance(executable_value, str)
+        or not isinstance(expected_sha256, str)
+        or not isinstance(expected_version, str)
+    ):
+        raise OpenAIRoutingProbeError(
+            "Hashmarks tunnel handoff implementation identity is incomplete"
+        )
+    executable = Path(executable_value).resolve()
+    if not executable.is_file():
+        raise OpenAIRoutingProbeError(
+            f"Hashmarks handoff executable no longer exists: {executable}"
+        )
+    observed_sha256 = _sha256_file(executable)
+    if observed_sha256 != expected_sha256:
+        raise OpenAIRoutingProbeError(
+            "Hashmarks executable changed after tunnel handoff qualification"
+        )
+    observed_version = _run([str(executable), "--version"]).stdout.strip()
+    if observed_version != expected_version:
+        raise OpenAIRoutingProbeError(
+            "Hashmarks version changed after tunnel handoff qualification"
+        )
+
+    source = handoff.get("source")
+    source_identity: str | None = None
+    if source is not None:
+        if not isinstance(source, dict):
+            raise OpenAIRoutingProbeError(
+                "Hashmarks handoff source identity is malformed"
+            )
+        root_value = source.get("root")
+        expected_source = source.get("repository_content_identity")
+        if not isinstance(root_value, str) or not isinstance(expected_source, str):
+            raise OpenAIRoutingProbeError(
+                "Hashmarks handoff source identity is incomplete"
+            )
+        source_root = Path(root_value).resolve()
+        python = executable.parent / (
+            "python.exe" if os.name == "nt" else "python"
+        )
+        if not python.is_file():
+            raise OpenAIRoutingProbeError(
+                "source-bound Hashmarks handoff has no adjacent Python interpreter"
+            )
+        code = (
+            "from pathlib import Path; "
+            "from hashmarks.test_shards import repository_content_identity; "
+            "import sys; root=Path(sys.argv[1]).resolve(); "
+            "print(repository_content_identity("
+            "root, excluded_paths=(root / 'dist',)))"
+        )
+        source_identity = _run(
+            [str(python), "-I", "-c", code, str(source_root)],
+            cwd=source_root,
+            timeout=120.0,
+        ).stdout.strip()
+        if source_identity != expected_source:
+            raise OpenAIRoutingProbeError(
+                "Hashmarks source changed after tunnel handoff qualification"
+            )
+    argv = handoff.get("mcp_command_argv")
+    if not isinstance(argv, list) or not argv or str(argv[0]) != str(executable):
+        raise OpenAIRoutingProbeError(
+            "Hashmarks handoff command no longer matches its executable authority"
+        )
+    return {
+        "executable": str(executable),
+        "executable_sha256": observed_sha256,
+        "version": observed_version,
+        "source_identity": source_identity,
+    }
+
+
 def _native_tools() -> list[dict[str, Any]]:
     return [
         {
@@ -259,24 +343,34 @@ class _NativeRepository:
     def __init__(self, workspace: Path, tracked: list[str]) -> None:
         self.workspace = workspace.resolve()
         self.tracked = frozenset(tracked)
+        self.files: dict[str, bytes] = {}
+        total = 0
+        for relative in sorted(self.tracked):
+            path = (self.workspace / relative).resolve()
+            try:
+                path.relative_to(self.workspace)
+            except ValueError as exc:
+                raise OpenAIRoutingProbeError(
+                    f"tracked path escapes workspace: {relative}"
+                ) from exc
+            if not path.is_file():
+                raise OpenAIRoutingProbeError(
+                    f"tracked path is not a file: {relative}"
+                )
+            payload = path.read_bytes()
+            total += len(payload)
+            if total > _MAX_SEARCH_TOTAL_BYTES:
+                raise OpenAIRoutingProbeError(
+                    "tracked repository bytes exceed the native probe bound"
+                )
+            self.files[relative] = payload
 
-    def _path(self, relative: str) -> Path:
+    def _payload(self, relative: str) -> bytes:
         if relative not in self.tracked:
             raise OpenAIRoutingProbeError(
                 f"native read path is not tracked: {relative}"
             )
-        path = (self.workspace / relative).resolve()
-        try:
-            path.relative_to(self.workspace)
-        except ValueError as exc:
-            raise OpenAIRoutingProbeError(
-                f"native read path escapes workspace: {relative}"
-            ) from exc
-        if not path.is_file():
-            raise OpenAIRoutingProbeError(
-                f"native read path is not a file: {relative}"
-            )
-        return path
+        return self.files[relative]
 
     def grep(self, query: str) -> dict[str, Any]:
         query = query.strip()
@@ -286,16 +380,11 @@ class _NativeRepository:
         matches: list[dict[str, object]] = []
         scanned_bytes = 0
         truncated = False
-        for relative in sorted(self.tracked):
-            path = self._path(relative)
-            size = path.stat().st_size
+        for relative, payload in sorted(self.files.items()):
+            size = len(payload)
             if size > _MAX_SEARCH_FILE_BYTES:
                 continue
             scanned_bytes += size
-            if scanned_bytes > _MAX_SEARCH_TOTAL_BYTES:
-                truncated = True
-                break
-            payload = path.read_bytes()
             if b"\0" in payload:
                 continue
             text = payload.decode("utf-8", errors="replace")
@@ -334,8 +423,7 @@ class _NativeRepository:
             raise OpenAIRoutingProbeError(
                 f"native read exceeds {_MAX_READ_LINES} lines"
             )
-        path = self._path(relative)
-        payload = path.read_bytes()
+        payload = self._payload(relative)
         if b"\0" in payload:
             raise OpenAIRoutingProbeError("native read refuses binary files")
         text = payload.decode("utf-8", errors="replace")
@@ -375,7 +463,6 @@ class _NativeRepository:
                 )
             return self.read(relative, start, end)
         raise OpenAIRoutingProbeError(f"unexpected native tool: {name}")
-
 
 def _responses_create(
     payload: dict[str, Any],
@@ -805,8 +892,10 @@ def run_probe(
         raise OpenAIRoutingProbeError(
             f"workspace does not exist: {workspace}"
         )
-    if not tunnel_id.startswith("tunnel_"):
-        raise OpenAIRoutingProbeError("tunnel ID must start with tunnel_")
+    if re.fullmatch(r"tunnel_[0-9a-f]{32}", tunnel_id) is None:
+        raise OpenAIRoutingProbeError(
+            "tunnel ID must be tunnel_ followed by 32 lowercase hex digits"
+        )
     if not model.strip():
         raise OpenAIRoutingProbeError("OpenAI model must not be empty")
     if not prompt.strip():
@@ -817,10 +906,12 @@ def run_probe(
         )
 
     handoff = _load_handoff(handoff_path, workspace)
+    hashmarks_before = _hashmarks_runtime_identity(handoff)
     before = _workspace_identity(workspace)
     tracked = before["tracked_paths"]
     assert isinstance(tracked, list)
     repository = _NativeRepository(workspace, tracked)
+    _stable_workspace(workspace, before)
 
     with _tunnel_lock(tunnel_id):
         with _running_tunnel(
@@ -841,6 +932,11 @@ def run_probe(
             )
 
     _stable_workspace(workspace, before)
+    hashmarks_after = _hashmarks_runtime_identity(handoff)
+    if hashmarks_after != hashmarks_before:
+        raise OpenAIRoutingProbeError(
+            "Hashmarks implementation changed during OpenAI routing probe"
+        )
     capture_id = str(result["capture_id"])
     catalog = {
         "schema": CATALOG_CAPTURE_SCHEMA,
@@ -885,6 +981,7 @@ def run_probe(
             if key != "tracked_paths"
         },
         "hashmarks_handoff_sha256": handoff["_receipt_sha256"],
+        "hashmarks_runtime": hashmarks_before,
         "tunnel": {
             "id_sha256": _sha256_bytes(tunnel_id.encode("utf-8")),
             "client": tunnel,
