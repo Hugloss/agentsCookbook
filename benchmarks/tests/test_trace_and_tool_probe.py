@@ -23,9 +23,6 @@ from benchmarks.harness.trace_diagnostics import (
 )
 from benchmarks.tool_probe import prepare_tool_probe_suite
 from benchmarks.tool_probe_score import (
-    _matches_required,
-    _required_before_native_discovery,
-    _required_call_result,
     smoke_gate,
     main as tool_probe_score_main,
 )
