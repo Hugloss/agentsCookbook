@@ -185,6 +185,41 @@ A captured host catalog can be checked without invoking a model:
 
 The catalog file may be a JSON list of tool names or an object with a `tools` list containing names or `{"name": "..."}` entries. Exit 0 means `READY`; exit 2 means `ENVIRONMENT_BLOCKED`.
 
+The ordered tool trace is a separate authority. Normalize an external host run into this small capture shape rather than pretending it is an OpenCode campaign:
+
+```json
+{
+  "schema": "agents-cookbook-tool-routing-trace.v1",
+  "host": "chatgpt",
+  "calls": [
+    {
+      "tool": "mcp__hashmarks__task_evidence",
+      "status": "completed",
+      "result_bytes": 1200
+    },
+    {
+      "tool": "mcp__GitHub__search",
+      "status": "completed",
+      "input": {"query": "checkout discount owner"}
+    }
+  ]
+}
+```
+
+The capture owns only observed tool name/order/status/input/result evidence. It must not supply derived fields such as `tool_class`, `ordinal`, or router observability. A wrapper call may include observable `nested_calls`; without them an orchestration router is treated as opaque and cannot produce a false Hashmarks-first PASS.
+
+Score a READY catalog and its matching trace without executing a model:
+
+```bash
+./benchmark tool-routing-trace \
+  --catalog host-tools.json \
+  --trace host-trace.json \
+  --subject hashmarks \
+  --output routing-score.json
+```
+
+Outcomes are `PASS` when the required subject call completed with an observable nonempty result before native discovery, `FAIL` when observable native discovery won first, `UNKNOWN` when ordering/result evidence is insufficient, and `ENVIRONMENT_BLOCKED` when the host catalog was not admissible. Exit codes are respectively 0, 1, 3, and 2. The score records canonical hashes of both input artifacts and recomputes all semantic classifications itself.
+
 ### Advanced direct CLI
 
 The repository-owned `./benchmark` launcher is the canonical CLI for automation and explicit one-off selections. It resolves the harness root before delegating to uv, so invocation is independent of the caller's current Python environment. The CLI does not discover `.env`; it resolves declared suite, campaign, agent, and harness settings from the selected file when flags are omitted. The snippets below show optional CLI overrides. Direct `--agent` accepts repeated values or a comma-separated list.
