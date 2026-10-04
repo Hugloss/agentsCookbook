@@ -128,3 +128,40 @@ def first_discovery_index(calls: list[dict[str, Any]]) -> int:
         ),
         len(calls),
     )
+
+
+def catalog_admission(
+    tool_names: list[str] | tuple[str, ...],
+    *,
+    subject: str,
+    required_tool: str,
+) -> dict[str, object]:
+    """Classify whether one host catalog can measure subject-first routing."""
+    operation = required_tool.removeprefix(subject + "_")
+    required_visible = any(
+        matches_subject_operation(
+            name,
+            subject=subject,
+            operation=operation,
+        )
+        for name in tool_names
+    )
+    native_classes = sorted({
+        classify_tool(name, subject=subject)
+        for name in tool_names
+        if classify_tool(name, subject=subject) in DISCOVERY_CLASSES
+    })
+    reasons: list[str] = []
+    if not required_visible:
+        reasons.append("required-subject-tool-missing")
+    if not native_classes:
+        reasons.append("native-discovery-tools-missing")
+    return {
+        "schema": "agents-cookbook-tool-routing-catalog.v1",
+        "status": "READY" if not reasons else "ENVIRONMENT_BLOCKED",
+        "subject": subject,
+        "required_tool": required_tool,
+        "required_tool_visible": required_visible,
+        "native_discovery_classes": native_classes,
+        "reason_codes": reasons,
+    }
