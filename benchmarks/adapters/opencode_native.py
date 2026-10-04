@@ -99,6 +99,21 @@ def _observe_opencode_executable(
     return observed
 
 
+def _subject_source_identity_sha256(
+    subject: SubjectAdapter | None,
+    context: TrialContext,
+) -> tuple[str | None, str | None]:
+    observer = getattr(subject, "source_identity", None)
+    if observer is None or not callable(observer):
+        return None, None
+    identity, error = observer(context)
+    if error:
+        return None, str(error)
+    if not isinstance(identity, dict):
+        return None, "benchmark subject source identity is unavailable"
+    return hashlib.sha256(canonical_json(identity)).hexdigest(), None
+
+
 def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
     value = json.loads(raw.strip())
     if not isinstance(value, dict):
@@ -624,6 +639,17 @@ class OpenCodeNativeAgent:
                 },
                 "",
             )
+        subject_source_identity_sha256, source_identity_error = (
+            _subject_source_identity_sha256(exposed_subject, context)
+        )
+        if source_identity_error is not None:
+            return Observation(
+                {
+                    "available": False,
+                    "reason": source_identity_error,
+                },
+                "",
+            )
         resolved, executable = self._resolve_native(
             context,
             selected_subject,
@@ -711,6 +737,7 @@ class OpenCodeNativeAgent:
             "workspace_binding": workspace_binding_identity,
             "native_subject_identity": native_subject_identity,
             "native_subject_identity_sha256": native_subject_identity_sha256,
+            "subject_source_identity_sha256": subject_source_identity_sha256,
             "subject_exposure_sha256": overlay_identity.get("subject_exposure_sha256"),
             "native_server_shadowed": overlay_identity.get("native_server_shadowed"),
             "native_server_conflict": overlay_identity.get("native_server_conflict"),
@@ -800,6 +827,18 @@ class OpenCodeNativeAgent:
     ) -> Observation:
         evidence = self._load_prepared(context)
         environment = _native_environment(context)
+        admitted_source_identity_sha256 = evidence.get(
+            "subject_source_identity_sha256"
+        )
+        current_source_identity_sha256, source_identity_error = (
+            _subject_source_identity_sha256(exposed_subject, context)
+        )
+        if source_identity_error is not None:
+            raise ValueError(source_identity_error)
+        if current_source_identity_sha256 != admitted_source_identity_sha256:
+            raise ValueError(
+                "benchmark subject source authority changed after admission"
+            )
         current_opencode_path = str(Path(environment["OPENCODE_BIN"]).resolve())
         admitted_opencode_path = evidence.get("opencode_executable_path")
         admitted_opencode_sha256 = evidence.get("opencode_executable_sha256")
@@ -872,6 +911,17 @@ class OpenCodeNativeAgent:
             timeout_seconds=self.timeout_seconds + 120,
             max_stdout_bytes=self.max_output_bytes,
         )
+        post_source_identity_sha256, post_source_identity_error = (
+            _subject_source_identity_sha256(exposed_subject, context)
+        )
+        source_authority_error = (
+            post_source_identity_error
+            or (
+                "benchmark subject source authority changed during inference"
+                if post_source_identity_sha256 != admitted_source_identity_sha256
+                else None
+            )
+        )
 
         exported: dict[str, Any] = {}
         export_raw = ""
@@ -916,6 +966,8 @@ class OpenCodeNativeAgent:
             parse_error = envelope.get("export_parse_error")
             if isinstance(parse_error, str) and parse_error:
                 export_error = parse_error
+        if source_authority_error is not None:
+            export_error = source_authority_error
 
         selected = evidence.get("selected_server")
         server_names = tuple(evidence.get("native_mcp_servers", []))
