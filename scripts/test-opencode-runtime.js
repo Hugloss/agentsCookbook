@@ -79,9 +79,15 @@ function config() {
         '--workspace', '.', 'mcp'
       ],
       cwd: '.',
-      enabled: true
+      enabled: process.env.FAKE_HASHMARKS_ENABLED === '1',
+      disabled: process.env.FAKE_HASHMARKS_ENABLED !== '1'
     },
-    enola: { type: 'local', command: ['enola'], enabled: true },
+    enola: {
+      type: 'local',
+      command: ['enola'],
+      enabled: false,
+      disabled: true
+    },
   };
   if (process.env.FAKE_NO_HASHMARKS === '1') delete servers.hashmarks;
   const base = {
@@ -337,7 +343,8 @@ async function testSharedLifecycle() {
           type: 'local',
           command: ['ambient-hashmarks'],
           cwd: '.',
-          enabled: true,
+          enabled: false,
+          disabled: true,
         },
         enola: { type: 'local', command: ['enola'], enabled: true },
       },
@@ -379,6 +386,26 @@ async function testSharedLifecycle() {
       /effective benchmark MCP definition changed/,
     );
 
+    const nativeConflict = runtime.prepareBenchmarkConfig({
+      opencodeBin: fake,
+      repoDir: root,
+      agentName: 'build',
+      env: { ...env, FAKE_HASHMARKS_ENABLED: '1' },
+      selectedSubject: 'hashmarks',
+      subjectExposure: cachedExposure,
+    });
+    assert.strictEqual(nativeConflict.status, 'failed');
+    assert.strictEqual(
+      nativeConflict.failure_stage,
+      'runtime-authority-conflict',
+    );
+    assert.match(nativeConflict.reason, /already enabled/);
+    assert.match(nativeConflict.reason, /disable that native registration/);
+    assert.strictEqual(
+      nativeConflict.overlay_identity.native_server_conflict,
+      true,
+    );
+
     for (const shape of ['flat', 'nested']) {
       const exposure = subjectExposure(root, 'hashmarks');
       const prepared = runtime.prepareBenchmarkConfig({
@@ -405,6 +432,7 @@ async function testSharedLifecycle() {
         'benchmark-subject-exposure',
       );
       assert.strictEqual(prepared.overlay_identity.native_server_shadowed, true);
+      assert.strictEqual(prepared.overlay_identity.native_server_conflict, false);
       assert.match(
         prepared.overlay_identity.subject_exposure_sha256,
         /^[0-9a-f]{64}$/,
