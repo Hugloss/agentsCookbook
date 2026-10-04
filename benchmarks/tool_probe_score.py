@@ -11,6 +11,7 @@ from benchmarks.harness.suite import load_suite
 from benchmarks.harness.trace_diagnostics import build_trace_diagnostics
 from benchmarks.tool_probe import REQUIRED_TOOLS
 from benchmarks.tool_routing import (
+    classify_call,
     classify_tool,
     first_discovery_index,
     matches_subject_operation,
@@ -29,7 +30,11 @@ def _call_class(call: dict[str, object], subject: str) -> str:
     value = call.get("tool_class")
     if isinstance(value, str):
         return value
-    return classify_tool(call.get("tool"), subject=subject)
+    return classify_call(
+        call.get("tool"),
+        call.get("inputs") or call.get("input"),
+        subject=subject,
+    )
 
 
 def _required_call_result(
