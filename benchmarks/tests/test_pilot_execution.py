@@ -1506,7 +1506,7 @@ class PilotExecutionTests(unittest.TestCase):
             )
             evidence = {
                 "selected_server": None,
-                "opencode_executable_path": "/bin/opencode",
+                "opencode_executable_path": str(Path("/bin/opencode").resolve()),
                 "opencode_executable_sha256": "b" * 64,
                 "native_config_sha256": "a" * 64,
                 "native_mcp_servers": [],
@@ -1592,7 +1592,7 @@ class PilotExecutionTests(unittest.TestCase):
             )
             evidence = {
                 "selected_server": None,
-                "opencode_executable_path": "/bin/opencode",
+                "opencode_executable_path": str(Path("/bin/opencode").resolve()),
                 "opencode_executable_sha256": "a" * 64,
                 "native_config_sha256": "c" * 64,
                 "native_mcp_servers": [],
@@ -1640,7 +1640,7 @@ class PilotExecutionTests(unittest.TestCase):
             )
             evidence = {
                 "selected_server": None,
-                "opencode_executable_path": "/bin/opencode",
+                "opencode_executable_path": str(Path("/bin/opencode").resolve()),
                 "opencode_executable_sha256": "b" * 64,
                 "native_config_sha256": "a" * 64,
                 "native_mcp_servers": [],
@@ -1727,7 +1727,7 @@ class PilotExecutionTests(unittest.TestCase):
             )
             evidence = {
                 "selected_server": None,
-                "opencode_executable_path": "/bin/opencode",
+                "opencode_executable_path": str(Path("/bin/opencode").resolve()),
                 "opencode_executable_sha256": "b" * 64,
                 "native_config_sha256": "a" * 64,
                 "native_mcp_servers": [],
