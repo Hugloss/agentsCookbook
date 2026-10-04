@@ -390,12 +390,23 @@ function benchmarkOverlay(config, subjectExposure, agentName) {
     tools[`${selectedSubject}_*`] = true;
   }
 
+  const nativeDefinition =
+    selectedSubject !== null && Object.hasOwn(source, selectedSubject)
+      ? source[selectedSubject]
+      : null;
+  const nativeServerShadowed = nativeDefinition !== null;
+  const nativeServerConflict =
+    nativeServerShadowed &&
+    nativeDefinition &&
+    nativeDefinition.enabled !== false &&
+    nativeDefinition.disabled !== true;
+
   return {
     selected: selectedSubject,
     shape: inspected.shape,
     selected_definition: selectedDefinition,
-    native_server_shadowed:
-      selectedSubject !== null && Object.hasOwn(source, selectedSubject),
+    native_server_shadowed: nativeServerShadowed,
+    native_server_conflict: Boolean(nativeServerConflict),
     subject_exposure_sha256: subjectExposure
       ? sha256Text(canonicalJson(subjectExposure))
       : null,
@@ -1073,6 +1084,26 @@ function prepareBenchmarkConfig({
       throw new Error('bare benchmark must not expose a subject');
     }
     const overlay = benchmarkOverlay(base.config, subjectExposure, agentName);
+    if (overlay.native_server_conflict) {
+      return {
+        status: 'failed',
+        reason:
+          `native OpenCode MCP server ${selectedSubject} is already enabled; ` +
+          'disable that native registration before running the benchmark so ' +
+          'there is one admitted subject runtime authority',
+        failure_stage: 'runtime-authority-conflict',
+        inspection: base.inspection,
+        base_config_source: baseConfigSource,
+        selected_server: selectedSubject,
+        overlay_identity: {
+          shape: overlay.shape,
+          selected_subject: selectedSubject,
+          native_server_shadowed: true,
+          native_server_conflict: true,
+          subject_exposure_sha256: overlay.subject_exposure_sha256,
+        },
+      };
+    }
     const content = mergeObjects(inlineConfig(env), overlay.config);
     const commandEnv = {
       ...env,
@@ -1148,6 +1179,7 @@ function prepareBenchmarkConfig({
         subject_definition_source:
           selectedSubject ? 'benchmark-subject-exposure' : null,
         native_server_shadowed: overlay.native_server_shadowed,
+        native_server_conflict: overlay.native_server_conflict,
         subject_exposure_sha256: overlay.subject_exposure_sha256,
       },
       environment: commandEnv,
