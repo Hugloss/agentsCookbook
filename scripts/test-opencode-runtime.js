@@ -311,9 +311,6 @@ function testExportUsesRegularFileCapture() {
   );
   try {
     const fake = [process.execPath, writeFakeOpenCode(root)];
-    const fakeOpenCodeSha256 = crypto.createHash('sha256')
-      .update(fs.readFileSync(fake[1]))
-      .digest('hex');
     const result = runtime.exportSession({
       opencodeBin: fake,
       repoDir: root,
@@ -340,6 +337,9 @@ async function testSharedLifecycle() {
   );
   try {
     const fake = [process.execPath, writeFakeOpenCode(root)];
+    const fakeOpenCodeSha256 = crypto.createHash('sha256')
+      .update(fs.readFileSync(fake[1]))
+      .digest('hex');
     for (const name of ['hashmarks', 'enola']) {
       const executable = path.join(root, name);
       fs.writeFileSync(executable, '#!/bin/sh\nexit 0\n', 'utf8');
