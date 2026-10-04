@@ -18,6 +18,8 @@ from benchmarks.diagnostic import DiagnosticError, prepare_diagnostic_suite
 from benchmarks.tool_probe import REQUIRED_TOOLS, ToolProbeError, prepare_tool_probe_suite
 from benchmarks.tool_probe_score import smoke_gate
 from benchmarks.tool_routing import catalog_admission, catalog_tool_names
+from benchmarks.tool_routing_trace import exit_code as tool_routing_exit_code
+from benchmarks.tool_routing_trace import score_trace as score_tool_routing_trace
 from benchmarks.hashmarks_retrieval_probe import (
     HashmarksRetrievalProbeError,
     run_hashmarks_retrieval_probe,
@@ -169,6 +171,16 @@ def _parser() -> argparse.ArgumentParser:
         choices=tuple(sorted(REQUIRED_TOOLS)),
         required=True,
     )
+
+    routing_trace = sub.add_parser("tool-routing-trace")
+    routing_trace.add_argument("--catalog", type=Path, required=True)
+    routing_trace.add_argument("--trace", type=Path, required=True)
+    routing_trace.add_argument(
+        "--subject",
+        choices=tuple(sorted(REQUIRED_TOOLS)),
+        required=True,
+    )
+    routing_trace.add_argument("--output", type=Path)
 
     retrieval_probe = sub.add_parser("hashmarks-retrieval-probe")
     retrieval_probe.add_argument("--results", type=Path, required=True)
@@ -761,6 +773,25 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"tool routing catalog unavailable: {exc}") from exc
         print(json.dumps(evidence, indent=2, sort_keys=True))
         return 0 if evidence["status"] == "READY" else 2
+    if args.command == "tool-routing-trace":
+        try:
+            catalog_payload = json.loads(args.catalog.read_text(encoding="utf-8"))
+            trace_payload = json.loads(args.trace.read_text(encoding="utf-8"))
+            evidence = score_tool_routing_trace(
+                catalog_payload=catalog_payload,
+                trace_payload=trace_payload,
+                subject=args.subject,
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"tool routing trace unavailable: {exc}") from exc
+        rendered = json.dumps(evidence, indent=2, sort_keys=True)
+        if args.output is None:
+            print(rendered)
+        else:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(rendered + "\n", encoding="utf-8")
+            print(str(args.output))
+        return tool_routing_exit_code(evidence)
     if args.command == "hashmarks-retrieval-probe":
         try:
             evidence = run_hashmarks_retrieval_probe(
