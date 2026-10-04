@@ -578,6 +578,10 @@ def _response_items(
             name = item.get("name")
             if not isinstance(name, str):
                 raise OpenAIRoutingProbeError("MCP call has no tool name")
+            if name != "task_evidence":
+                raise OpenAIRoutingProbeError(
+                    f"Responses invoked an MCP tool outside the admitted contract: {name}"
+                )
             arguments = _parse_arguments(item.get("arguments", "{}"))
             error = item.get("error")
             output = item.get("output")
@@ -865,11 +869,6 @@ def _run_responses_loop(
 
     if capture_id is None:
         raise OpenAIRoutingProbeError("OpenAI routing probe produced no response")
-    if "mcp__hashmarks__task_evidence" not in set(imported):
-        raise OpenAIRoutingProbeError(
-            "Responses API did not import Hashmarks task_evidence through the tunnel"
-        )
-
     return {
         "capture_id": capture_id,
         "trace_calls": trace_calls,
