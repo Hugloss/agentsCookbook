@@ -11,6 +11,7 @@ from typing import Any
 from benchmarks.tool_routing import (
     NATIVE_READ,
     NATIVE_SEARCH,
+    TOOL_ROUTER,
     classify_call,
     classify_tool,
     is_subject_tool,
@@ -154,11 +155,20 @@ def _opencode_calls(trace: dict[str, Any], receipt: dict[str, Any]) -> list[dict
                     )
                 ):
                     row["hashmarks_evidence"] = _hashmarks_evidence(output, expected)
-            calls.append(row)
-            if name == "execute":
+            if tool_class == TOOL_ROUTER:
                 metadata = state.get("metadata")
-                nested = metadata.get("toolCalls") if isinstance(metadata, dict) else None
-                if isinstance(nested, list):
+                nested = (
+                    metadata.get("toolCalls")
+                    if isinstance(metadata, dict)
+                    else None
+                )
+                row["routing_observability"] = (
+                    "expanded" if isinstance(nested, list) else "opaque"
+                )
+            else:
+                nested = None
+            calls.append(row)
+            if name == "execute" and isinstance(nested, list):
                     for call in nested:
                         if not isinstance(call, dict):
                             continue
