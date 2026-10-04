@@ -41,6 +41,7 @@ from benchmarks.openai_routing_dogfood import (
     campaign_exit_code as openai_dogfood_exit_code,
     list_dogfood_runs,
     preflight_campaign as preflight_openai_dogfood,
+    routing_run_root,
     run_campaign as run_openai_dogfood,
     run_saved_campaign as run_saved_openai_dogfood,
     select_dogfood_run,
@@ -900,13 +901,20 @@ def main(argv: list[str] | None = None) -> int:
         "openai-routing-status",
     }:
         try:
-            settings = OpenAIRoutingSettings.load(args.env_file)
+            if args.command in {
+                "openai-routing-runs",
+                "openai-routing-status",
+            }:
+                run_root = routing_run_root(args.env_file)
+            else:
+                settings = OpenAIRoutingSettings.load(args.env_file)
+
             if args.command == "openai-routing-runs":
                 print(
                     json.dumps(
                         {
                             "schema": "agents-cookbook-openai-routing-runs.v1",
-                            "runs": list_dogfood_runs(settings.run_root),
+                            "runs": list_dogfood_runs(run_root),
                         },
                         indent=2,
                         sort_keys=True,
@@ -915,7 +923,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             if args.command == "openai-routing-status":
                 selected = select_dogfood_run(
-                    settings.run_root,
+                    run_root,
                     args.run_id,
                 )
                 summary_path = Path(str(selected["path"])) / "summary.json"
