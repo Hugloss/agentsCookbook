@@ -365,20 +365,38 @@ def required_before_native_discovery(
 ) -> bool | None:
     if calls is None:
         return None
-    discovery_index = first_discovery_index(calls)
+    projected = []
+    for call in calls:
+        row = dict(call)
+        if not isinstance(row.get("tool_class"), str):
+            row["tool_class"] = classify_call(
+                row.get("tool"),
+                row.get("inputs") or row.get("input"),
+                subject=subject,
+            )
+        if (
+            row.get("tool_class") == TOOL_ROUTER
+            and row.get("routing_observability") not in {"expanded", "opaque"}
+        ):
+            row["routing_observability"] = (
+                "expanded" if isinstance(row.get("nested_calls"), list) else "opaque"
+            )
+        projected.append(row)
+
+    discovery_index = first_discovery_index(projected)
     required_index = required_success_index(
-        calls,
+        projected,
         subject=subject,
         required_tool=required_tool,
     )
     opaque_router_indexes = [
         index
-        for index, call in enumerate(calls)
+        for index, call in enumerate(projected)
         if call.get("tool_class") == TOOL_ROUTER
         and call.get("routing_observability") != "expanded"
     ]
 
-    prior = calls[:discovery_index]
+    prior = projected[:discovery_index]
     _, succeeded = required_call_result(
         prior,
         subject=subject,
