@@ -37,9 +37,13 @@ from benchmarks.openai_responses_routing_probe import (
 )
 from benchmarks.openai_routing_dogfood import (
     OpenAIRoutingDogfoodError,
+    OpenAIRoutingSettings,
     campaign_exit_code as openai_dogfood_exit_code,
+    list_dogfood_runs,
     preflight_campaign as preflight_openai_dogfood,
     run_campaign as run_openai_dogfood,
+    run_saved_campaign as run_saved_openai_dogfood,
+    select_dogfood_run,
 )
 from benchmarks.harness.campaign import (
     CampaignError,
@@ -237,6 +241,35 @@ def _parser() -> argparse.ArgumentParser:
     openai_dogfood.add_argument("--manifest", type=Path, required=True)
     openai_dogfood.add_argument("--repeats", type=int, default=1)
     openai_dogfood.add_argument("--output-dir", type=Path, required=True)
+
+    openai_easy_check = sub.add_parser("openai-routing-check")
+    openai_easy_check.add_argument(
+        "--env-file",
+        type=Path,
+        default=Path(".env"),
+    )
+
+    openai_easy_new = sub.add_parser("openai-routing-new")
+    openai_easy_new.add_argument(
+        "--env-file",
+        type=Path,
+        default=Path(".env"),
+    )
+
+    openai_easy_runs = sub.add_parser("openai-routing-runs")
+    openai_easy_runs.add_argument(
+        "--env-file",
+        type=Path,
+        default=Path(".env"),
+    )
+
+    openai_easy_status = sub.add_parser("openai-routing-status")
+    openai_easy_status.add_argument(
+        "--env-file",
+        type=Path,
+        default=Path(".env"),
+    )
+    openai_easy_status.add_argument("--run-id")
 
     reviews = sub.add_parser("oracle-review-check")
     reviews.add_argument("--suite", type=Path, required=True)
@@ -860,6 +893,87 @@ def main(argv: list[str] | None = None) -> int:
             args.output.write_text(rendered + "\n", encoding="utf-8")
             print(str(args.output))
         return tool_routing_exit_code(evidence)
+    if args.command in {
+        "openai-routing-check",
+        "openai-routing-new",
+        "openai-routing-runs",
+        "openai-routing-status",
+    }:
+        try:
+            settings = OpenAIRoutingSettings.load(args.env_file)
+            if args.command == "openai-routing-runs":
+                print(
+                    json.dumps(
+                        {
+                            "schema": "agents-cookbook-openai-routing-runs.v1",
+                            "runs": list_dogfood_runs(settings.run_root),
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    )
+                )
+                return 0
+            if args.command == "openai-routing-status":
+                selected = select_dogfood_run(
+                    settings.run_root,
+                    args.run_id,
+                )
+                summary_path = Path(str(selected["path"])) / "summary.json"
+                payload = dict(selected)
+                if summary_path.is_file():
+                    summary = json.loads(
+                        summary_path.read_text(encoding="utf-8")
+                    )
+                    if isinstance(summary, dict):
+                        payload["summary"] = summary
+                print(json.dumps(payload, indent=2, sort_keys=True))
+                return 0
+
+            openai_api_key = os.environ.get("OPENAI_API_KEY", "")
+            control_plane_api_key = os.environ.get(
+                "CONTROL_PLANE_API_KEY",
+                "",
+            )
+            if args.command == "openai-routing-check":
+                evidence = preflight_openai_dogfood(
+                    manifest_path=settings.manifest,
+                    workspace=settings.workspace,
+                    handoff_path=settings.handoff,
+                    tunnel_client=settings.tunnel_client,
+                    tunnel_id=settings.tunnel_id,
+                    model=settings.model,
+                    openai_api_key=openai_api_key,
+                    control_plane_api_key=control_plane_api_key,
+                )
+                print(json.dumps(evidence, indent=2, sort_keys=True))
+                return 0
+
+            run_id, output_dir, summary = run_saved_openai_dogfood(
+                settings=settings,
+                openai_api_key=openai_api_key,
+                control_plane_api_key=control_plane_api_key,
+            )
+            print(
+                json.dumps(
+                    {
+                        "run_id": run_id,
+                        "run_root": str(output_dir),
+                        "summary": str(output_dir / "summary.json"),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return openai_dogfood_exit_code(summary)
+        except (
+            OSError,
+            json.JSONDecodeError,
+            OpenAIRoutingProbeError,
+            OpenAIRoutingDogfoodError,
+            ValueError,
+        ) as exc:
+            raise SystemExit(f"OpenAI routing benchmark unavailable: {exc}") from exc
+
     if args.command == "openai-routing-preflight":
         try:
             openai_api_key = os.environ.get("OPENAI_API_KEY", "")
