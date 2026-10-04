@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import shutil
 import time
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from benchmarks.config import BenchmarkConfigError, load_env_values
 from benchmarks.openai_responses_routing_probe import (
     OpenAIRoutingProbeError,
     preflight_probe,
@@ -27,6 +31,116 @@ _FORBIDDEN_PROMPT_TERMS = (
     "mcp__",
     "grep",
 )
+
+_ROUTING_CONFIG_KEYS = frozenset(
+    {
+        "OPENAI_ROUTING_WORKSPACE",
+        "OPENAI_ROUTING_HANDOFF",
+        "OPENAI_ROUTING_TUNNEL_CLIENT",
+        "OPENAI_ROUTING_TUNNEL_ID",
+        "OPENAI_ROUTING_MODEL",
+        "OPENAI_ROUTING_MANIFEST",
+        "OPENAI_ROUTING_REPEATS",
+        "OPENAI_ROUTING_RUN_ROOT",
+    }
+)
+
+
+@dataclass(frozen=True)
+class OpenAIRoutingSettings:
+    workspace: Path
+    handoff: Path
+    tunnel_client: Path
+    tunnel_id: str
+    model: str
+    manifest: Path
+    repeats: int
+    run_root: Path
+
+    @classmethod
+    def load(
+        cls,
+        env_file: Path,
+        *,
+        host: Mapping[str, str] | None = None,
+    ) -> "OpenAIRoutingSettings":
+        try:
+            values = load_env_values(
+                env_file,
+                allowed_keys=_ROUTING_CONFIG_KEYS,
+            )
+        except BenchmarkConfigError as exc:
+            raise OpenAIRoutingDogfoodError(str(exc)) from exc
+        host_values = dict(os.environ if host is None else host)
+
+        workspace = Path(
+            values.get("OPENAI_ROUTING_WORKSPACE", ".")
+        ).expanduser().resolve()
+        handoff = Path(
+            values.get(
+                "OPENAI_ROUTING_HANDOFF",
+                "../Hashmarks/dist/chatgpt-secure-mcp-tunnel-handoff.json",
+            )
+        ).expanduser().resolve()
+        tunnel_value = values.get("OPENAI_ROUTING_TUNNEL_CLIENT")
+        if tunnel_value:
+            tunnel_client = Path(tunnel_value).expanduser().resolve()
+        else:
+            discovered = shutil.which(
+                "tunnel-client",
+                path=host_values.get("PATH"),
+            )
+            if discovered is None:
+                raise OpenAIRoutingDogfoodError(
+                    "OPENAI_ROUTING_TUNNEL_CLIENT is not configured and "
+                    "tunnel-client is not on PATH"
+                )
+            tunnel_client = Path(discovered).resolve()
+
+        tunnel_id = values.get("OPENAI_ROUTING_TUNNEL_ID", "").strip()
+        model = values.get("OPENAI_ROUTING_MODEL", "").strip()
+        if not tunnel_id:
+            raise OpenAIRoutingDogfoodError(
+                "set OPENAI_ROUTING_TUNNEL_ID in .env"
+            )
+        if not model:
+            raise OpenAIRoutingDogfoodError(
+                "set OPENAI_ROUTING_MODEL in .env"
+            )
+
+        manifest = Path(
+            values.get(
+                "OPENAI_ROUTING_MANIFEST",
+                "benchmarks/dogfood/openai-routing-v1.json",
+            )
+        ).expanduser().resolve()
+        run_root = Path(
+            values.get(
+                "OPENAI_ROUTING_RUN_ROOT",
+                ".benchmark-runs/openai-routing",
+            )
+        ).expanduser().resolve()
+        repeats_raw = values.get("OPENAI_ROUTING_REPEATS", "1")
+        try:
+            repeats = int(repeats_raw)
+        except ValueError as exc:
+            raise OpenAIRoutingDogfoodError(
+                "OPENAI_ROUTING_REPEATS must be an integer"
+            ) from exc
+        if not 1 <= repeats <= _MAX_REPEATS:
+            raise OpenAIRoutingDogfoodError(
+                f"OPENAI_ROUTING_REPEATS must be between 1 and {_MAX_REPEATS}"
+            )
+        return cls(
+            workspace=workspace,
+            handoff=handoff,
+            tunnel_client=tunnel_client,
+            tunnel_id=tunnel_id,
+            model=model,
+            manifest=manifest,
+            repeats=repeats,
+            run_root=run_root,
+        )
 
 
 class OpenAIRoutingDogfoodError(RuntimeError):
@@ -206,6 +320,120 @@ def _answer_path_match(
     return any(path.casefold() in lowered for path in expected_paths)
 
 
+def _run_directories(root: Path) -> list[tuple[str, Path]]:
+    runs = root.resolve() / "runs"
+    if not runs.exists():
+        return []
+    if runs.is_symlink() or not runs.is_dir():
+        raise OpenAIRoutingDogfoodError(
+            f"invalid OpenAI routing runs directory: {runs}"
+        )
+    found: list[tuple[str, Path]] = []
+    for path in runs.iterdir():
+        name = path.name
+        if (
+            path.is_symlink()
+            or not path.is_dir()
+            or not name.isascii()
+            or not name.isdecimal()
+            or name != f"{int(name):06d}"
+        ):
+            raise OpenAIRoutingDogfoodError(
+                f"unexpected OpenAI routing run entry: {path}"
+            )
+        found.append((name, path))
+    found.sort(key=lambda item: int(item[0]))
+    return found
+
+
+def allocate_run_directory(root: Path) -> tuple[str, Path]:
+    root = root.resolve()
+    runs = root / "runs"
+    runs.mkdir(parents=True, exist_ok=True)
+    existing = _run_directories(root)
+    candidate = (
+        max((int(run_id) for run_id, _ in existing), default=0) + 1
+    )
+    while True:
+        run_id = f"{candidate:06d}"
+        path = runs / run_id
+        try:
+            path.mkdir()
+        except FileExistsError:
+            candidate += 1
+            continue
+        return run_id, path
+
+
+def list_dogfood_runs(root: Path) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for run_id, path in _run_directories(root):
+        summary_path = path / "summary.json"
+        if summary_path.is_file():
+            try:
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise OpenAIRoutingDogfoodError(
+                    f"OpenAI routing run {run_id} has unreadable summary: {exc}"
+                ) from exc
+            if not isinstance(summary, dict):
+                raise OpenAIRoutingDogfoodError(
+                    f"OpenAI routing run {run_id} summary must be an object"
+                )
+            aggregate = summary.get("aggregate")
+            rows.append(
+                {
+                    "run_id": run_id,
+                    "status": summary.get("status", "UNKNOWN"),
+                    "path": str(path),
+                    "hashmarks_first_rate": (
+                        aggregate.get("hashmarks_first_rate")
+                        if isinstance(aggregate, dict)
+                        else None
+                    ),
+                    "outcomes": (
+                        aggregate.get("outcomes")
+                        if isinstance(aggregate, dict)
+                        else None
+                    ),
+                }
+            )
+            continue
+        error_files = list((path / "trials").glob("*/error.json")) if (
+            path / "trials"
+        ).is_dir() else []
+        rows.append(
+            {
+                "run_id": run_id,
+                "status": "INCOMPLETE" if error_files else "INTERRUPTED",
+                "path": str(path),
+                "hashmarks_first_rate": None,
+                "outcomes": None,
+            }
+        )
+    return rows
+
+
+def select_dogfood_run(
+    root: Path,
+    run_id: str | None = None,
+) -> dict[str, object]:
+    rows = list_dogfood_runs(root)
+    if not rows:
+        raise OpenAIRoutingDogfoodError(
+            f"no OpenAI routing dogfood runs in {root}; "
+            "use make benchmark-openai-routing"
+        )
+    if run_id is None:
+        return rows[-1]
+    for row in rows:
+        if row["run_id"] == run_id:
+            return row
+    raise OpenAIRoutingDogfoodError(
+        f"unknown OpenAI routing dogfood run {run_id!r}"
+    )
+
+
 def _write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -227,13 +455,20 @@ def run_campaign(
     openai_api_key: str,
     control_plane_api_key: str,
     probe_runner: Callable[..., dict[str, Any]] = run_probe,
+    prepared_output_dir: bool = False,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     if not 1 <= repeats <= _MAX_REPEATS:
         raise OpenAIRoutingDogfoodError(
             f"repeats must be between 1 and {_MAX_REPEATS}"
         )
     output_dir = output_dir.resolve()
-    if output_dir.exists():
+    if prepared_output_dir:
+        if not output_dir.is_dir() or any(output_dir.iterdir()):
+            raise OpenAIRoutingDogfoodError(
+                f"prepared dogfood output directory is not empty: {output_dir}"
+            )
+    elif output_dir.exists():
         raise OpenAIRoutingDogfoodError(
             f"dogfood output directory already exists: {output_dir}"
         )
@@ -257,7 +492,8 @@ def run_campaign(
         manifest=manifest,
         probe=probe_preflight,
     )
-    output_dir.mkdir(parents=True, exist_ok=False)
+    if not prepared_output_dir:
+        output_dir.mkdir(parents=True, exist_ok=False)
     _write_json(output_dir / "preflight.json", preflight)
     _write_json(
         output_dir / "manifest.json",
@@ -372,6 +608,7 @@ def run_campaign(
     scoreable = pass_count + fail_count
     summary = {
         "schema": _SUMMARY_SCHEMA,
+        "run_id": run_id,
         "status": (
             "COMPLETE"
             if outcome_counts["INCOMPLETE"] == 0
@@ -413,6 +650,35 @@ def run_campaign(
     }
     _write_json(output_dir / "summary.json", summary)
     return summary
+
+
+def run_saved_campaign(
+    *,
+    settings: OpenAIRoutingSettings,
+    openai_api_key: str,
+    control_plane_api_key: str,
+    probe_runner: Callable[..., dict[str, Any]] = run_probe,
+) -> tuple[str, Path, dict[str, Any]]:
+    run_id, output_dir = allocate_run_directory(settings.run_root)
+    try:
+        summary = run_campaign(
+            manifest_path=settings.manifest,
+            workspace=settings.workspace,
+            handoff_path=settings.handoff,
+            tunnel_client=settings.tunnel_client,
+            tunnel_id=settings.tunnel_id,
+            model=settings.model,
+            repeats=settings.repeats,
+            output_dir=output_dir,
+            openai_api_key=openai_api_key,
+            control_plane_api_key=control_plane_api_key,
+            probe_runner=probe_runner,
+            prepared_output_dir=True,
+            run_id=run_id,
+        )
+    except Exception:
+        raise
+    return run_id, output_dir, summary
 
 
 def campaign_exit_code(summary: dict[str, Any]) -> int:
