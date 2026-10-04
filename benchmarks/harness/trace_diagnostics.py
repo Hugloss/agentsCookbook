@@ -16,6 +16,7 @@ from benchmarks.tool_routing import (
     classify_tool,
     is_subject_tool,
     matches_subject_operation,
+    result_bytes,
 )
 
 from .bundle import verify_bundle
@@ -29,14 +30,6 @@ def _sha256(value: Any) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest()
-
-
-def _result_bytes(value: Any) -> int | None:
-    if isinstance(value, str):
-        return len(value.encode("utf-8"))
-    if isinstance(value, (dict, list)):
-        return len(json.dumps(value, sort_keys=True).encode("utf-8"))
-    return None
 
 
 def _relative_path(value: Any, workspace: str) -> str | None:
@@ -145,7 +138,7 @@ def _opencode_calls(trace: dict[str, Any], receipt: dict[str, Any]) -> list[dict
                     inputs.get("filePath") or inputs.get("path"), workspace
                 )
             if subject_call:
-                row["result_bytes"] = _result_bytes(output)
+                row["result_bytes"] = result_bytes(output)
                 if (
                     status == "completed"
                     and matches_subject_operation(
