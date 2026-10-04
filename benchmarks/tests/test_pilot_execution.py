@@ -1042,6 +1042,20 @@ class PilotExecutionTests(unittest.TestCase):
             runtime_result.stderr = b""
             runtime_result.stdout = b"{}"
             with (
+                mock.patch.object(
+                    HashmarksSubject,
+                    "source_identity",
+                    return_value=(
+                        {
+                            "root": "/work/Hashmarks",
+                            "commit": "a" * 40,
+                            "tree": "b" * 40,
+                            "working_copy_sha256": "c" * 64,
+                            "working_copy_clean": True,
+                        },
+                        None,
+                    ),
+                ),
                 mock.patch(
                     "benchmarks.adapters.opencode_native.observe_executable",
                     return_value=executable,
@@ -1125,6 +1139,20 @@ class PilotExecutionTests(unittest.TestCase):
             subject = HashmarksSubject()
             exposure_path = control / "opencode-benchmark-exposure.json"
             with (
+                mock.patch.object(
+                    HashmarksSubject,
+                    "source_identity",
+                    return_value=(
+                        {
+                            "root": "/work/Hashmarks",
+                            "commit": "a" * 40,
+                            "tree": "b" * 40,
+                            "working_copy_sha256": "c" * 64,
+                            "working_copy_clean": True,
+                        },
+                        None,
+                    ),
+                ),
                 mock.patch(
                     "benchmarks.adapters.opencode_native.observe_executable",
                     return_value=executable,
@@ -1237,6 +1265,20 @@ class PilotExecutionTests(unittest.TestCase):
                 'stderr="Hashmarks MCP support requires the optional extra"'
             )
             with (
+                mock.patch.object(
+                    HashmarksSubject,
+                    "source_identity",
+                    return_value=(
+                        {
+                            "root": "/work/Hashmarks",
+                            "commit": "a" * 40,
+                            "tree": "b" * 40,
+                            "working_copy_sha256": "c" * 64,
+                            "working_copy_clean": True,
+                        },
+                        None,
+                    ),
+                ),
                 mock.patch(
                     "benchmarks.adapters.opencode_native.observe_executable",
                     return_value=executable,
@@ -1315,6 +1357,20 @@ class PilotExecutionTests(unittest.TestCase):
             runtime_result.stderr = b""
             runtime_result.stdout = b"{}"
             with (
+                mock.patch.object(
+                    HashmarksSubject,
+                    "source_identity",
+                    return_value=(
+                        {
+                            "root": "/work/Hashmarks",
+                            "commit": "a" * 40,
+                            "tree": "b" * 40,
+                            "working_copy_sha256": "c" * 64,
+                            "working_copy_clean": True,
+                        },
+                        None,
+                    ),
+                ),
                 mock.patch(
                     "benchmarks.adapters.opencode_native.observe_executable",
                     return_value=executable,
