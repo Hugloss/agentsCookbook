@@ -769,6 +769,7 @@ class OpenCodeNativeAgent:
             "native_subject_identity": native_subject_identity,
             "subject_exposure_sha256": overlay_identity.get("subject_exposure_sha256"),
             "native_server_shadowed": overlay_identity.get("native_server_shadowed"),
+            "native_server_conflict": overlay_identity.get("native_server_conflict"),
             "overlay_sha256": hashlib.sha256(
                 canonical_json(overlay_identity)
             ).hexdigest(),
