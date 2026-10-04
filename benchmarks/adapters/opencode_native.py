@@ -676,6 +676,11 @@ class OpenCodeNativeAgent:
         native_subject_identity = resolved.get("native_subject_identity")
         if not isinstance(native_subject_identity, dict):
             native_subject_identity = None
+        native_subject_identity_sha256 = (
+            hashlib.sha256(canonical_json(native_subject_identity)).hexdigest()
+            if native_subject_identity is not None
+            else None
+        )
         native_identity_verified = selected is None or (
             isinstance(native_subject_identity, dict)
             and native_subject_identity.get("verified") is True
@@ -705,6 +710,7 @@ class OpenCodeNativeAgent:
             "selected_server": selected,
             "workspace_binding": workspace_binding_identity,
             "native_subject_identity": native_subject_identity,
+            "native_subject_identity_sha256": native_subject_identity_sha256,
             "subject_exposure_sha256": overlay_identity.get("subject_exposure_sha256"),
             "native_server_shadowed": overlay_identity.get("native_server_shadowed"),
             "native_server_conflict": overlay_identity.get("native_server_conflict"),
@@ -848,6 +854,13 @@ class OpenCodeNativeAgent:
                 raise ValueError(
                     "benchmark subject executable authority is unavailable"
                 )
+            subject_runtime_sha256 = evidence.get(
+                "native_subject_identity_sha256"
+            )
+            if not isinstance(subject_runtime_sha256, str):
+                raise ValueError(
+                    "benchmark subject runtime authority is unavailable"
+                )
             run_args += (
                 "--benchmark-exposure-file",
                 str(context.control_root / "opencode-benchmark-exposure.json"),
@@ -855,10 +868,14 @@ class OpenCodeNativeAgent:
                 str(evidence["subject_exposure_sha256"]),
                 "--subject-executable-sha256",
                 subject_executable_sha256,
+                "--subject-runtime-sha256",
+                subject_runtime_sha256,
             )
         run_args += (
             "--native-config-sha256",
             evidence["native_config_sha256"],
+            "--opencode-executable-sha256",
+            str(evidence["opencode_executable_sha256"]),
         )
         envelope, result = _runtime_call(
             context,
