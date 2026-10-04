@@ -8,6 +8,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from benchmarks.__main__ import main as benchmark_main
+from benchmarks.tool_routing import routing_artifact_sha256
 from benchmarks.tool_routing_trace import (
     TRACE_SCHEMA,
     exit_code,
@@ -24,10 +25,15 @@ _READY_CATALOG = {
 }
 
 
-def _trace(calls: list[dict[str, object]]) -> dict[str, object]:
+def _trace(
+    calls: list[dict[str, object]],
+    *,
+    catalog: object = _READY_CATALOG,
+) -> dict[str, object]:
     return {
         "schema": TRACE_SCHEMA,
         "host": "chatgpt",
+        "catalog_sha256": routing_artifact_sha256(catalog),
         "calls": calls,
     }
 
@@ -91,20 +97,22 @@ class ToolRoutingTraceTests(unittest.TestCase):
         self.assertEqual(exit_code(score), 1)
 
     def test_missing_hashmarks_catalog_is_environment_blocked_not_fail(self) -> None:
+        catalog = {
+            "tools": [
+                {"name": "mcp__GitHub__search"},
+                {"name": "mcp__GitHub__fetch_file"},
+            ]
+        }
         score = score_trace(
-            catalog_payload={
-                "tools": [
-                    {"name": "mcp__GitHub__search"},
-                    {"name": "mcp__GitHub__fetch_file"},
-                ]
-            },
+            catalog_payload=catalog,
             trace_payload=_trace(
                 [
                     {
                         "tool": "mcp__GitHub__search",
                         "status": "completed",
                     }
-                ]
+                ],
+                catalog=catalog,
             ),
             subject="hashmarks",
         )
@@ -115,6 +123,34 @@ class ToolRoutingTraceTests(unittest.TestCase):
             ["required-subject-tool-missing"],
         )
         self.assertEqual(exit_code(score), 2)
+
+    def test_trace_rejects_different_catalog_generation(self) -> None:
+        stale_trace = _trace(
+            [
+                {
+                    "tool": "mcp__hashmarks__task_evidence",
+                    "status": "completed",
+                    "result_bytes": 42,
+                }
+            ]
+        )
+        current_catalog = {
+            "tools": [
+                {"name": "mcp__hashmarks__task_evidence"},
+                {"name": "mcp__GitHub__search"},
+                {"name": "mcp__GitHub__fetch_file"},
+                {"name": "mcp__GitHub__fetch"},
+            ]
+        }
+        with self.assertRaisesRegex(
+            ValueError,
+            "catalog_sha256 does not match",
+        ):
+            score_trace(
+                catalog_payload=current_catalog,
+                trace_payload=stale_trace,
+                subject="hashmarks",
+            )
 
     def test_opaque_router_before_hashmarks_is_unknown(self) -> None:
         score = score_trace(
