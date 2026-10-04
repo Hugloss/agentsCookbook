@@ -27,7 +27,6 @@ from benchmarks.adapters.enola import EnolaSubject
 from benchmarks.adapters.hashmarks import HashmarksSubject
 from benchmarks.adapters.opencode_native import (
     OpenCodeNativeAgent,
-    _BASE_CONFIG_CACHE,
     _EXECUTABLE_OBSERVATION_CACHE,
     _metrics as opencode_metrics,
     _native_environment as opencode_native_environment,
@@ -931,7 +930,7 @@ class PilotExecutionTests(unittest.TestCase):
             self.assertEqual(changed.payload["version"], "opencode 2")
             self.assertNotIn("cache_hit", changed.payload)
 
-    def test_opencode_reuses_base_config_only_within_exact_admission_scope(
+    def test_opencode_never_reuses_native_config_authority_across_admissions(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -951,10 +950,6 @@ class PilotExecutionTests(unittest.TestCase):
                 "mcp_shape": "flat",
                 "mcp_servers": [],
             }
-            base_config = {
-                "model": "liteLLM/gemma4",
-                "mcp": {},
-            }
             runtime_result = mock.Mock()
             runtime_result.metrics.return_value = {"return_code": 0}
             runtime_result.stderr = b""
@@ -963,18 +958,8 @@ class PilotExecutionTests(unittest.TestCase):
 
             def runtime_call(context, *, args, **kwargs):
                 calls.append(args)
-                if "--base-config-file" in args:
-                    base_path = Path(args[args.index("--base-config-file") + 1])
-                    self.assertEqual(
-                        json.loads(base_path.read_text(encoding="utf-8")),
-                        base_config,
-                    )
-                    source = "task-cache"
-                    payload = {}
-                else:
-                    self.assertIn("--emit-base-config", args)
-                    source = "fresh"
-                    payload = {"base_config_snapshot": base_config}
+                self.assertNotIn("--base-config-file", args)
+                self.assertNotIn("--emit-base-config", args)
                 return (
                     {
                         "status": "completed",
@@ -984,8 +969,7 @@ class PilotExecutionTests(unittest.TestCase):
                         "workspace_binding": {"verified": True},
                         "native_subject_identity": None,
                         "overlay_identity": {"shape": "flat"},
-                        "base_config_source": source,
-                        **payload,
+                        "base_config_source": "fresh",
                     },
                     runtime_result,
                 )
@@ -1001,7 +985,6 @@ class PilotExecutionTests(unittest.TestCase):
                     admission_scope=scope,
                 )
 
-            _BASE_CONFIG_CACHE.clear()
             agent = OpenCodeNativeAgent()
             with (
                 mock.patch(
@@ -1018,14 +1001,12 @@ class PilotExecutionTests(unittest.TestCase):
                 third = agent.prepare(context("third", "different-task"), None)
 
             self.assertEqual(first.payload["base_config_source"], "fresh")
-            self.assertEqual(second.payload["base_config_source"], "task-cache")
+            self.assertEqual(second.payload["base_config_source"], "fresh")
             self.assertEqual(third.payload["base_config_source"], "fresh")
             self.assertFalse(first.measurements["base_config_reused"])
-            self.assertTrue(second.measurements["base_config_reused"])
+            self.assertFalse(second.measurements["base_config_reused"])
             self.assertFalse(third.measurements["base_config_reused"])
-            self.assertNotIn("--base-config-file", calls[0])
-            self.assertIn("--base-config-file", calls[1])
-            self.assertNotIn("--base-config-file", calls[2])
+            self.assertEqual(len(calls), 3)
 
     def test_opencode_prepare_uses_shared_runtime_inspection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
