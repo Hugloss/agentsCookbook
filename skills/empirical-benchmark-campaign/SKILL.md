@@ -36,6 +36,7 @@ Preflight must prove, for every selected definition:
 - subject preparation succeeds;
 - agent/runtime preparation succeeds;
 - native tool/workspace binding is positively verified where required;
+- an enabled native MCP registration with the selected benchmark subject name is rejected as competing runtime authority rather than silently shadowed or auto-disabled;
 - the independent oracle healthcheck succeeds;
 - preparation does not contaminate the workspace beyond frozen allowances.
 
