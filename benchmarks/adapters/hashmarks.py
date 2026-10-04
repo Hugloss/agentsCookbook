@@ -43,37 +43,52 @@ class HashmarksSubject:
         expected = Path(self._executable(context))
         if not expected.is_file():
             return None, f"Hashmarks benchmark executable does not exist: {expected}"
+
+        def git(*args: str) -> bytes | None:
+            result = subprocess.run(
+                ("git", "-C", str(root), *args),
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+            return result.stdout if result.returncode == 0 else None
+
         try:
-            values = []
-            for args in (
-                ("rev-parse", "HEAD"),
-                ("rev-parse", "HEAD^{tree}"),
-                ("diff", "--binary", "HEAD"),
-                ("ls-files", "--others", "--exclude-standard", "-z"),
+            start_head_raw = git("rev-parse", "HEAD")
+            if start_head_raw is None:
+                return None, "cannot establish Hashmarks source identity"
+            start_head = start_head_raw.decode().strip()
+
+            tree_raw = git("rev-parse", f"{start_head}^{{tree}}")
+            diff = git("diff", "--binary", start_head)
+            untracked_raw = git("ls-files", "--others", "--exclude-standard", "-z")
+            if tree_raw is None or diff is None or untracked_raw is None:
+                return None, "cannot establish Hashmarks source identity"
+
+            untracked = [path for path in untracked_raw.split(b"\0") if path]
+            if diff or untracked:
+                return None, "Hashmarks benchmark source must be a clean committed checkout"
+
+            end_head_raw = git("rev-parse", "HEAD")
+            if end_head_raw is None or end_head_raw.decode().strip() != start_head:
+                return None, "Hashmarks benchmark source changed during identity observation"
+            final_diff = git("diff", "--binary", start_head)
+            final_untracked = git("ls-files", "--others", "--exclude-standard", "-z")
+            if (
+                final_diff is None
+                or final_untracked is None
+                or final_diff != diff
+                or final_untracked != untracked_raw
             ):
-                result = subprocess.run(
-                    ("git", "-C", str(root), *args),
-                    capture_output=True,
-                    timeout=30,
-                    check=False,
-                )
-                if result.returncode != 0:
-                    return None, "cannot establish Hashmarks source identity"
-                values.append(result.stdout)
-            fingerprint = hashlib.sha256(values[2])
-            untracked = [path for path in values[3].split(b"\0") if path]
-            for path in untracked:
-                fingerprint.update(path)
-                fingerprint.update((root / os.fsdecode(path)).read_bytes())
-        except (OSError, subprocess.TimeoutExpired):
+                return None, "Hashmarks benchmark source changed during identity observation"
+        except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
             return None, "cannot fingerprint Hashmarks source checkout"
-        working_copy_clean = not values[2] and not untracked
-        if not working_copy_clean:
-            return None, "Hashmarks benchmark source must be a clean committed checkout"
+
+        fingerprint = hashlib.sha256(diff)
         return {
             "root": str(root),
-            "commit": values[0].decode().strip(),
-            "tree": values[1].decode().strip(),
+            "commit": start_head,
+            "tree": tree_raw.decode().strip(),
             "working_copy_sha256": fingerprint.hexdigest(),
             "working_copy_clean": True,
         }, None
