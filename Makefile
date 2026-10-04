@@ -1,4 +1,4 @@
-.PHONY: benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing-check benchmark-openai-routing-dogfood
+.PHONY: benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood
 
 PROBE_DIR = .benchmark-runs/tool-probes/$(PROBE_SUBJECT)/v2
 PROBE_SUITE = $(PROBE_DIR)/suite
@@ -6,41 +6,23 @@ PROBE_ENV = $(PROBE_SUITE)/.env
 PROBE_RUNS = $(PROBE_DIR)/runs
 PROBE_SMOKE = $(PROBE_DIR)/smoke
 
-OPENAI_ROUTING_WORKSPACE ?= $(CURDIR)
-OPENAI_ROUTING_HANDOFF ?= ../Hashmarks/dist/chatgpt-secure-mcp-tunnel-handoff.json
-OPENAI_ROUTING_TUNNEL_CLIENT ?= $(shell command -v tunnel-client 2>/dev/null)
-OPENAI_ROUTING_TUNNEL_ID ?=
-OPENAI_ROUTING_MODEL ?=
-OPENAI_ROUTING_MANIFEST ?= benchmarks/dogfood/openai-routing-v1.json
-OPENAI_ROUTING_REPEATS ?= 1
-OPENAI_ROUTING_RUN_ROOT ?= .benchmark-runs/openai-routing
+OPENAI_ROUTING_ENV ?= .env
+
+benchmark-openai-routing: benchmark-openai-routing-new
+
+benchmark-openai-routing-new:
+	@./benchmark openai-routing-new --env-file "$(OPENAI_ROUTING_ENV)"
 
 benchmark-openai-routing-check:
-	@if [ -z "$(OPENAI_ROUTING_TUNNEL_CLIENT)" ]; then echo 'Set OPENAI_ROUTING_TUNNEL_CLIENT or install tunnel-client' >&2; exit 2; fi
-	@if [ -z "$(OPENAI_ROUTING_TUNNEL_ID)" ]; then echo 'Set OPENAI_ROUTING_TUNNEL_ID=tunnel_<32 hex>' >&2; exit 2; fi
-	@if [ -z "$(OPENAI_ROUTING_MODEL)" ]; then echo 'Set OPENAI_ROUTING_MODEL to an explicit tool-capable Responses model' >&2; exit 2; fi
-	@mkdir -p "$(OPENAI_ROUTING_RUN_ROOT)"
-	@./benchmark openai-routing-preflight \
-		--workspace "$(OPENAI_ROUTING_WORKSPACE)" \
-		--handoff "$(OPENAI_ROUTING_HANDOFF)" \
-		--tunnel-client "$(OPENAI_ROUTING_TUNNEL_CLIENT)" \
-		--tunnel-id "$(OPENAI_ROUTING_TUNNEL_ID)" \
-		--model "$(OPENAI_ROUTING_MODEL)" \
-		--manifest "$(OPENAI_ROUTING_MANIFEST)" \
-		--output "$(OPENAI_ROUTING_RUN_ROOT)/preflight.json"
+	@./benchmark openai-routing-check --env-file "$(OPENAI_ROUTING_ENV)"
 
-benchmark-openai-routing-dogfood: benchmark-openai-routing-check
-	@run_root="$(OPENAI_ROUTING_RUN_ROOT)/run-$(date -u +%Y%m%dT%H%M%SZ)-$$"; \
-		echo "OpenAI routing dogfood run: $run_root"; \
-		./benchmark openai-routing-dogfood \
-			--workspace "$(OPENAI_ROUTING_WORKSPACE)" \
-			--handoff "$(OPENAI_ROUTING_HANDOFF)" \
-			--tunnel-client "$(OPENAI_ROUTING_TUNNEL_CLIENT)" \
-			--tunnel-id "$(OPENAI_ROUTING_TUNNEL_ID)" \
-			--model "$(OPENAI_ROUTING_MODEL)" \
-			--manifest "$(OPENAI_ROUTING_MANIFEST)" \
-			--repeats "$(OPENAI_ROUTING_REPEATS)" \
-			--output-dir "$run_root"
+benchmark-openai-routing-runs:
+	@./benchmark openai-routing-runs --env-file "$(OPENAI_ROUTING_ENV)"
+
+benchmark-openai-routing-status:
+	@./benchmark openai-routing-status --env-file "$(OPENAI_ROUTING_ENV)"
+
+benchmark-openai-routing-dogfood: benchmark-openai-routing-new
 
 benchmark-tool-probe-prepare:
 	@if [ "$(PROBE_SUBJECT)" != hashmarks ] && [ "$(PROBE_SUBJECT)" != enola ]; then \

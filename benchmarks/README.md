@@ -303,18 +303,22 @@ make mcp-chatgpt-handoff \
   CHATGPT_MCP_WORKSPACE=/absolute/path/to/agentsCookbook
 ```
 
-Then in agentsCookbook export runtime credentials and the non-secret routing authorities:
+Then configure the two non-secret routing choices **once** in agentsCookbook's `.env`:
+
+```dotenv
+OPENAI_ROUTING_TUNNEL_ID=tunnel_0123456789abcdef0123456789abcdef
+OPENAI_ROUTING_MODEL=<tool-capable-responses-model>
+```
+
+The checked-in `.env.example` contains the optional path/repeat/run-root overrides. Empty optional values keep the repository defaults. API credentials are deliberately not read from `.env`; export them only in the shell that will spend model calls:
 
 ```bash
 cd ../agentsCookbook
-
 export OPENAI_API_KEY='...'
 export CONTROL_PLANE_API_KEY='...'
-export OPENAI_ROUTING_TUNNEL_ID='tunnel_0123456789abcdef0123456789abcdef'
-export OPENAI_ROUTING_MODEL='<tool-capable-responses-model>'
 ```
 
-Run the model-free admission first:
+Run the model-free admission whenever you want to verify the environment without starting a model:
 
 ```bash
 make benchmark-openai-routing-check
@@ -322,28 +326,38 @@ make benchmark-openai-routing-check
 
 The check verifies the neutral manifest, clean workspace, Hashmarks handoff/executable/source identity, native repository snapshot bounds, tunnel-client identity, local tunnel-ID lock, model selection, and presence of both runtime keys. It does not start the tunnel or call a model.
 
-Then run one repeat of all five tasks:
+The normal start-and-leave path is intentionally one command:
 
 ```bash
-make benchmark-openai-routing-dogfood
+make benchmark-openai-routing
 ```
 
-For a stronger dogfood sample:
+Every invocation starts a **new numbered immutable run**. The explicit spelling is equivalent:
 
 ```bash
-make benchmark-openai-routing-dogfood OPENAI_ROUTING_REPEATS=3
+make benchmark-openai-routing-new
 ```
+
+Inspect without model calls:
+
+```bash
+make benchmark-openai-routing-runs
+make benchmark-openai-routing-status
+```
+
+To change repeat count persistently, set `OPENAI_ROUTING_REPEATS=3` in `.env`. The old `make benchmark-openai-routing-dogfood` target remains an alias for starting a new run, but the shorter `make benchmark-openai-routing` is the canonical operator path.
 
 Each trial starts from fresh Responses state and runs sequentially. There is no automatic retry. An infrastructure error writes one `error.json`, marks the campaign incomplete, and aborts all remaining trials so a broken external dependency cannot repeatedly spend model calls.
 
-Each run is written under a unique timestamp/PID directory in `.benchmark-runs/openai-routing/`:
+Each run is allocated atomically under `.benchmark-runs/openai-routing/runs/`:
 
 ```text
-run-<utc>-<pid>/
-├── preflight.json
-├── manifest.json
-├── summary.json
-└── trials/
+runs/
+└── 000001/
+    ├── preflight.json
+    ├── manifest.json
+    ├── summary.json
+    └── trials/
     └── <task>-rNN/
         ├── catalog.json
         ├── trace.json
@@ -357,7 +371,7 @@ The checked-in agentsCookbook repository is intentionally small enough for the c
 
 ### Advanced direct CLI
 
-The repository-owned `./benchmark` launcher is the canonical CLI for automation and explicit one-off selections. It resolves the harness root before delegating to uv, so invocation is independent of the caller's current Python environment. The CLI does not discover `.env`; it resolves declared suite, campaign, agent, and harness settings from the selected file when flags are omitted. The snippets below show optional CLI overrides. Direct `--agent` accepts repeated values or a comma-separated list.
+The repository-owned `./benchmark` launcher is the canonical CLI for automation and explicit one-off selections. It resolves the harness root before delegating to uv, so invocation is independent of the caller's current Python environment. Core benchmark commands do not discover `.env`; they use the explicitly selected file. The convenience `openai-routing-check/new/runs/status` commands are the narrow exception and default their `--env-file` to `.env` so the one-command dogfood workflow stays simple. The snippets below show optional CLI overrides. Direct `--agent` accepts repeated values or a comma-separated list.
 
 ```bash
 suite=benchmarks/suites/repository-intelligence/heldout-v1
