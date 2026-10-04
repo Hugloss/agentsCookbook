@@ -57,6 +57,8 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         makefile = MAKEFILE.read_text(encoding="utf-8")
         self.assertNotIn("-include .env", makefile)
         self.assertNotIn("awk -F=", makefile)
+        self.assertNotIn("export PYTHONPATH", makefile)
+        self.assertNotIn(".venv/bin/python", makefile)
         for target, command in (
             ("benchmark", "run --auto"),
             ("benchmark-check", "check"),
