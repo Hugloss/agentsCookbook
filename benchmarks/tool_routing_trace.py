@@ -25,6 +25,30 @@ _DERIVED_CALL_FIELDS = frozenset({
 })
 
 
+def build_catalog_capture(
+    payload: object,
+    *,
+    host: str,
+    capture_id: str,
+) -> dict[str, object]:
+    if not isinstance(host, str) or not host.strip():
+        raise ValueError("tool-routing catalog capture host must be a nonempty string")
+    if not isinstance(capture_id, str) or not capture_id.strip():
+        raise ValueError(
+            "tool-routing catalog capture capture_id must be a nonempty string"
+        )
+    catalog_tool_names(payload)
+    raw_tools = payload.get("tools") if isinstance(payload, dict) else payload
+    assert isinstance(raw_tools, list)
+    capture = {
+        "schema": CATALOG_CAPTURE_SCHEMA,
+        "host": host.strip(),
+        "capture_id": capture_id.strip(),
+        "tools": list(raw_tools),
+    }
+    return validate_catalog_capture(capture)
+
+
 def validate_catalog_capture(payload: object) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise ValueError("tool-routing catalog capture must be a JSON object")
