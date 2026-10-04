@@ -431,11 +431,27 @@ def list_dogfood_runs(root: Path) -> list[dict[str, object]]:
                     f"OpenAI routing run {run_id} summary must be an object"
                 )
             aggregate = summary.get("aggregate")
+            candidate = summary.get("candidate")
+            runtime = (
+                candidate.get("hashmarks_runtime")
+                if isinstance(candidate, dict)
+                else None
+            )
             rows.append(
                 {
                     "run_id": run_id,
                     "status": summary.get("status", "UNKNOWN"),
                     "path": str(path),
+                    "hashmarks_version": (
+                        runtime.get("version")
+                        if isinstance(runtime, dict)
+                        else None
+                    ),
+                    "hashmarks_executable_sha256": (
+                        runtime.get("executable_sha256")
+                        if isinstance(runtime, dict)
+                        else None
+                    ),
                     "hashmarks_first_rate": (
                         aggregate.get("hashmarks_first_rate")
                         if isinstance(aggregate, dict)
@@ -495,6 +511,8 @@ def list_dogfood_runs(root: Path) -> list[dict[str, object]]:
                 ),
                 "path": str(path),
                 "reason": start_reason,
+                "hashmarks_version": None,
+                "hashmarks_executable_sha256": None,
                 "hashmarks_first_rate": None,
                 "routing_fit_rate": None,
                 "semantic_hashmarks_first_rate": None,
@@ -738,6 +756,13 @@ def run_campaign(
             "task_count": len(manifest["tasks"]),
             "repeats": repeats,
         },
+        "candidate": {
+            "hashmarks_handoff_sha256": probe_preflight.get(
+                "hashmarks_handoff_sha256"
+            ),
+            "hashmarks_runtime": probe_preflight.get("hashmarks_runtime"),
+        },
+        "openai": probe_preflight.get("openai"),
         "authority": {
             "diagnostic_only": True,
             "heldout_comparable": False,
