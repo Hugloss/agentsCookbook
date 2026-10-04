@@ -485,6 +485,38 @@ function sha256File(filePath) {
     .digest('hex');
 }
 
+function normalizedSubjectConfigurationSha256(
+  server,
+  selectedSubject,
+  effectiveCwd,
+  repoDir,
+) {
+  if (
+    selectedSubject !== 'enola' ||
+    !Array.isArray(server.command) ||
+    server.command.length !== 2 ||
+    typeof server.command[1] !== 'string'
+  ) {
+    return null;
+  }
+  try {
+    const configPath = path.resolve(effectiveCwd, server.command[1]);
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      return null;
+    }
+    const workspace = canonicalPath(repoDir);
+    const repo = canonicalPath(config.repo);
+    const normalized = {
+      ...config,
+      repo: repo === workspace ? '<trial-workspace>' : repo,
+    };
+    return sha256Text(canonicalJson(normalized));
+  } catch {
+    return null;
+  }
+}
+
 function resolveExecutable(command, cwd, env) {
   if (typeof command !== 'string' || !command) return null;
   const hasSeparator = command.includes('/') || command.includes('\\');
@@ -526,6 +558,7 @@ function nativeSubjectExecutableIdentity(
       command: null,
       executable_path: null,
       executable_sha256: null,
+      configuration_sha256: null,
       reason_code: 'benchmark-subject-executable-unresolved',
     };
   }
@@ -544,6 +577,7 @@ function nativeSubjectExecutableIdentity(
       command: path.basename(String(server.command[0])),
       executable_path: null,
       executable_sha256: null,
+      configuration_sha256: null,
       reason_code: 'benchmark-subject-executable-unresolved',
     };
   }
@@ -553,6 +587,12 @@ function nativeSubjectExecutableIdentity(
     command: path.basename(resolved),
     executable_path: resolved,
     executable_sha256: sha256File(resolved),
+    configuration_sha256: normalizedSubjectConfigurationSha256(
+      server,
+      selectedSubject,
+      effectiveCwd,
+      repoDir,
+    ),
     reason_code: null,
   };
 }
