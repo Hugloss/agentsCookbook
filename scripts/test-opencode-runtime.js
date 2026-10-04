@@ -346,7 +346,12 @@ async function testSharedLifecycle() {
           enabled: false,
           disabled: true,
         },
-        enola: { type: 'local', command: ['enola'], enabled: true },
+        enola: {
+          type: 'local',
+          command: ['enola'],
+          enabled: false,
+          disabled: true,
+        },
       },
     };
     const cachedExposure = subjectExposure(root, 'hashmarks');
