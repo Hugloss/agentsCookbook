@@ -61,6 +61,16 @@ def _fake_hashmarks(root: Path) -> Path:
     return executable
 
 
+def _fake_tunnel_client(root: Path) -> Path:
+    executable = root / "tunnel-client"
+    executable.write_text(
+        "#!/bin/sh\necho 'tunnel-client 1.2.3'\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    return executable
+
+
 def _handoff(
     path: Path,
     workspace: Path,
@@ -242,8 +252,7 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
             workspace = _workspace(root / "repo")
             hashmarks = _fake_hashmarks(root)
             handoff = _handoff(root / "handoff.json", workspace, hashmarks)
-            tunnel_client = root / "tunnel-client"
-            tunnel_client.write_bytes(b"binary")
+            tunnel_client = _fake_tunnel_client(root)
 
             def requester(payload, *, api_key):
                 self.assertEqual(api_key, "openai-secret")
@@ -321,8 +330,7 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
             workspace = _workspace(root / "repo")
             hashmarks = _fake_hashmarks(root)
             handoff = _handoff(root / "handoff.json", workspace, hashmarks)
-            tunnel_client = root / "tunnel-client"
-            tunnel_client.write_bytes(b"binary")
+            tunnel_client = _fake_tunnel_client(root)
             calls = 0
 
             def requester(payload, *, api_key):
@@ -422,8 +430,7 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
                 encoding="utf-8",
             )
             hashmarks.chmod(0o755)
-            tunnel_client = root / "tunnel-client"
-            tunnel_client.write_bytes(b"binary")
+            tunnel_client = _fake_tunnel_client(root)
 
             with (
                 mock.patch(
@@ -455,8 +462,7 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
             hashmarks = _fake_hashmarks(root)
             handoff = _handoff(root / "handoff.json", workspace, hashmarks)
             (workspace / "owner.py").write_text("changed\n", encoding="utf-8")
-            tunnel_client = root / "tunnel-client"
-            tunnel_client.write_bytes(b"binary")
+            tunnel_client = _fake_tunnel_client(root)
 
             with (
                 mock.patch(
@@ -488,8 +494,7 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
             workspace.mkdir()
             handoff = root / "handoff.json"
             handoff.write_text("{}", encoding="utf-8")
-            tunnel_client = root / "tunnel-client"
-            tunnel_client.write_bytes(b"binary")
+            tunnel_client = _fake_tunnel_client(root)
             prompt = root / "prompt.txt"
             prompt.write_text("Locate owner.\n", encoding="utf-8")
             output = root / "out"
@@ -558,8 +563,7 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
             other.mkdir()
             hashmarks = _fake_hashmarks(root)
             handoff = _handoff(root / "handoff.json", other, hashmarks)
-            tunnel_client = root / "tunnel-client"
-            tunnel_client.write_bytes(b"binary")
+            tunnel_client = _fake_tunnel_client(root)
 
             with self.assertRaisesRegex(
                 OpenAIRoutingProbeError,
