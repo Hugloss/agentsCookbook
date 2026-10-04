@@ -7,9 +7,12 @@ import os
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest import mock
 
+from benchmarks.__main__ import main as benchmark_main
 from benchmarks.openai_responses_routing_probe import (
     OpenAIRoutingProbeError,
     _NativeRepository,
@@ -477,6 +480,75 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
                 )
 
             tunnel.assert_not_called()
+
+    def test_cli_writes_canonical_artifacts_and_returns_routing_outcome(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "repo"
+            workspace.mkdir()
+            handoff = root / "handoff.json"
+            handoff.write_text("{}", encoding="utf-8")
+            tunnel_client = root / "tunnel-client"
+            tunnel_client.write_bytes(b"binary")
+            prompt = root / "prompt.txt"
+            prompt.write_text("Locate owner.\n", encoding="utf-8")
+            output = root / "out"
+            receipt = {
+                "catalog": {"schema": "catalog"},
+                "trace": {"schema": "trace"},
+                "score": {"outcome": "FAIL"},
+                "schema": "receipt",
+            }
+
+            stdout = StringIO()
+            with (
+                mock.patch(
+                    "benchmarks.__main__.run_openai_routing_probe",
+                    return_value=receipt,
+                ) as runner,
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        "OPENAI_API_KEY": "openai-secret",
+                        "CONTROL_PLANE_API_KEY": "control-secret",
+                    },
+                    clear=False,
+                ),
+                redirect_stdout(stdout),
+            ):
+                code = benchmark_main(
+                    [
+                        "openai-routing-probe",
+                        "--workspace",
+                        str(workspace),
+                        "--handoff",
+                        str(handoff),
+                        "--tunnel-client",
+                        str(tunnel_client),
+                        "--tunnel-id",
+                        "tunnel_" + "5" * 32,
+                        "--model",
+                        "gpt-test",
+                        "--prompt-file",
+                        str(prompt),
+                        "--output-dir",
+                        str(output),
+                    ]
+                )
+
+            self.assertEqual(code, 1)
+            kwargs = runner.call_args.kwargs
+            self.assertEqual(kwargs["openai_api_key"], "openai-secret")
+            self.assertEqual(kwargs["control_plane_api_key"], "control-secret")
+            self.assertEqual(kwargs["prompt"], "Locate owner.\n")
+            self.assertEqual(
+                json.loads((output / "score.json").read_text(encoding="utf-8")),
+                {"outcome": "FAIL"},
+            )
+            self.assertEqual(
+                stdout.getvalue().strip(),
+                str(output / "receipt.json"),
+            )
 
     def test_handoff_bound_to_other_workspace_fails_before_work(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
