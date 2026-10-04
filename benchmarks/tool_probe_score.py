@@ -98,13 +98,15 @@ def _required_before_native_discovery(
         and call.get("routing_observability") != "expanded"
     ]
 
-    if required_index is not None and required_index < discovery_index:
+    prior = normalized[:discovery_index]
+    _, succeeded = _required_call_result(prior, subject, required)
+    if succeeded is True and required_index is not None:
         if any(index < required_index for index in opaque_router_indexes):
             return None
         return True
     if any(index < discovery_index for index in opaque_router_indexes):
         return None
-    return False
+    return succeeded
 
 
 def _first_native_discovery(
