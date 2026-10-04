@@ -75,6 +75,7 @@ def observe_executable(
         {
             "available": available,
             "command": command,
+            "resolved_path": resolved,
             "version": result.stdout.decode(
                 "utf-8",
                 errors="replace",
