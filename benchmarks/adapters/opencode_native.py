@@ -505,7 +505,7 @@ class OpenCodeNativeAgent:
                 "configuration": "native-opencode",
                 "model_provider": "native-opencode",
                 "runtime_overlay": "benchmark-subject-exposure+tool-gating-only",
-                "surface": "shared-opencode-runtime-v3",
+                "surface": "shared-opencode-runtime-v4",
             },
         )
 
@@ -722,7 +722,7 @@ class OpenCodeNativeAgent:
             "reason_code": workspace_binding.get("reason_code"),
         }
         evidence = {
-            "runtime_contract": "agents-cookbook-opencode-runtime/v3",
+            "runtime_contract": "agents-cookbook-opencode-runtime/v4",
             "opencode_executable_path": executable.payload.get("resolved_path"),
             "opencode_executable_sha256": executable.payload.get("executable_sha256"),
             "native_config_sha256": inspection.get("config_sha256"),
