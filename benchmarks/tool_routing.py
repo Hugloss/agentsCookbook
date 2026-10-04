@@ -196,6 +196,21 @@ def catalog_tool_names(payload: object) -> list[str]:
     return names
 
 
+def catalog_discovery_classes(
+    name: object,
+    *,
+    subject: str,
+) -> frozenset[str]:
+    base = classify_tool(name, subject=subject)
+    if base in DISCOVERY_CLASSES:
+        return frozenset({base})
+
+    tokens = tool_tokens(name)
+    if tokens and tokens[-1] == "fetch" and "github" in tokens:
+        return frozenset({NATIVE_READ, NATIVE_SEARCH})
+    return frozenset()
+
+
 def catalog_admission(
     tool_names: list[str] | tuple[str, ...],
     *,
@@ -213,9 +228,12 @@ def catalog_admission(
         for name in tool_names
     )
     native_classes = sorted({
-        classify_tool(name, subject=subject)
+        tool_class
         for name in tool_names
-        if classify_tool(name, subject=subject) in DISCOVERY_CLASSES
+        for tool_class in catalog_discovery_classes(
+            name,
+            subject=subject,
+        )
     })
     reasons: list[str] = []
     if not required_visible:
