@@ -578,6 +578,10 @@ def _response_items(
             name = item.get("name")
             if not isinstance(name, str):
                 raise OpenAIRoutingProbeError("MCP call has no tool name")
+            if name != "task_evidence":
+                raise OpenAIRoutingProbeError(
+                    f"Responses invoked an MCP tool outside the admitted contract: {name}"
+                )
             arguments = _parse_arguments(item.get("arguments", "{}"))
             error = item.get("error")
             output = item.get("output")
@@ -865,11 +869,6 @@ def _run_responses_loop(
 
     if capture_id is None:
         raise OpenAIRoutingProbeError("OpenAI routing probe produced no response")
-    if "mcp__hashmarks__task_evidence" not in set(imported):
-        raise OpenAIRoutingProbeError(
-            "Responses API did not import Hashmarks task_evidence through the tunnel"
-        )
-
     return {
         "capture_id": capture_id,
         "trace_calls": trace_calls,
@@ -881,6 +880,82 @@ def _run_responses_loop(
         "response_ids": response_ids,
         "usage": usage,
         "final_text": final_text,
+    }
+
+
+def preflight_probe(
+    *,
+    workspace: Path,
+    handoff_path: Path,
+    tunnel_client: Path,
+    tunnel_id: str,
+    model: str,
+    openai_api_key: str,
+    control_plane_api_key: str,
+) -> dict[str, Any]:
+    workspace = workspace.resolve()
+    if not workspace.is_dir():
+        raise OpenAIRoutingProbeError(
+            f"workspace does not exist: {workspace}"
+        )
+    if re.fullmatch(r"tunnel_[0-9a-f]{32}", tunnel_id) is None:
+        raise OpenAIRoutingProbeError(
+            "tunnel ID must be tunnel_ followed by 32 lowercase hex digits"
+        )
+    if not model.strip():
+        raise OpenAIRoutingProbeError("OpenAI model must not be empty")
+    if not openai_api_key or not control_plane_api_key:
+        raise OpenAIRoutingProbeError(
+            "OPENAI_API_KEY and CONTROL_PLANE_API_KEY are required"
+        )
+    tunnel_client = tunnel_client.resolve()
+    if not tunnel_client.is_file():
+        raise OpenAIRoutingProbeError(
+            f"tunnel-client executable does not exist: {tunnel_client}"
+        )
+
+    handoff = _load_handoff(handoff_path, workspace)
+    hashmarks = _hashmarks_runtime_identity(handoff)
+    workspace_identity = _workspace_identity(workspace)
+    tracked = workspace_identity["tracked_paths"]
+    assert isinstance(tracked, list)
+    _NativeRepository(workspace, tracked)
+    _stable_workspace(workspace, workspace_identity)
+
+    tunnel_version = _run([str(tunnel_client), "--version"]).stdout.strip()
+    tunnel_sha256 = _sha256_file(tunnel_client)
+
+    with _tunnel_lock(tunnel_id):
+        pass
+
+    return {
+        "schema": "agents-cookbook-openai-responses-routing-preflight.v1",
+        "status": "READY",
+        "authority": {
+            "model_free": True,
+            "credentials_observed": {
+                "OPENAI_API_KEY": True,
+                "CONTROL_PLANE_API_KEY": True,
+            },
+            "credentials_persisted": False,
+            "tunnel_lock": "local-nonblocking",
+            "cross_host_tunnel_exclusivity": "external",
+        },
+        "workspace": {
+            key: value
+            for key, value in workspace_identity.items()
+            if key != "tracked_paths"
+        },
+        "hashmarks_handoff_sha256": handoff["_receipt_sha256"],
+        "hashmarks_runtime": hashmarks,
+        "tunnel": {
+            "id_sha256": _sha256_bytes(tunnel_id.encode("utf-8")),
+            "client_version": tunnel_version,
+            "client_executable_sha256": tunnel_sha256,
+        },
+        "openai": {
+            "model": model,
+        },
     }
 
 
@@ -896,26 +971,20 @@ def run_probe(
     control_plane_api_key: str,
     requester: Callable[..., dict[str, Any]] = _responses_create,
 ) -> dict[str, Any]:
-    workspace = workspace.resolve()
-    if not workspace.is_dir():
-        raise OpenAIRoutingProbeError(
-            f"workspace does not exist: {workspace}"
-        )
-    if re.fullmatch(r"tunnel_[0-9a-f]{32}", tunnel_id) is None:
-        raise OpenAIRoutingProbeError(
-            "tunnel ID must be tunnel_ followed by 32 lowercase hex digits"
-        )
-    if not model.strip():
-        raise OpenAIRoutingProbeError("OpenAI model must not be empty")
     if not prompt.strip():
         raise OpenAIRoutingProbeError("probe prompt must not be empty")
-    if not openai_api_key or not control_plane_api_key:
-        raise OpenAIRoutingProbeError(
-            "OPENAI_API_KEY and CONTROL_PLANE_API_KEY are required"
-        )
-
+    preflight = preflight_probe(
+        workspace=workspace,
+        handoff_path=handoff_path,
+        tunnel_client=tunnel_client,
+        tunnel_id=tunnel_id,
+        model=model,
+        openai_api_key=openai_api_key,
+        control_plane_api_key=control_plane_api_key,
+    )
+    workspace = workspace.resolve()
     handoff = _load_handoff(handoff_path, workspace)
-    hashmarks_before = _hashmarks_runtime_identity(handoff)
+    hashmarks_before = dict(preflight["hashmarks_runtime"])
     before = _workspace_identity(workspace)
     tracked = before["tracked_paths"]
     assert isinstance(tracked, list)
@@ -971,6 +1040,7 @@ def run_probe(
     receipt = {
         "schema": _RECEIPT_SCHEMA,
         "status": "COMPLETE",
+        "preflight": preflight,
         "authority": {
             "diagnostic_only": True,
             "heldout_comparable": False,

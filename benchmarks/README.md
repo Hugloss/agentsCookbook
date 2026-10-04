@@ -291,6 +291,70 @@ The shell exit code is the routing outcome: 0 PASS, 1 FAIL, 2 ENVIRONMENT_BLOCKE
 
 This diagnostic deliberately remains `heldout_comparable=false`. It proves model-visible routing under one exact local run, but it cannot prove that no second `tunnel-client` with the same tunnel ID is active on another host. OpenAI documents multiple active stdio clients sharing one tunnel ID as unsupported. Use a dedicated tunnel ID and operator discipline for dogfood runs; promotion to held-out authority requires a separately provable exclusive tunnel lease.
 
+### Multi-task OpenAI routing dogfood campaign
+
+For a real dogfood pass, use the frozen neutral task manifest at `benchmarks/dogfood/openai-routing-v1.json`. It currently contains five repository-localization tasks against agentsCookbook and intentionally does not name Hashmarks, `task_evidence`, MCP, or native grep. Expected owner paths are used only after the model returns as a lightweight answer-sanity signal.
+
+First create a fresh Hashmarks handoff bound to the agentsCookbook checkout from the sibling Hashmarks repository:
+
+```bash
+cd ../Hashmarks
+make mcp-chatgpt-handoff \
+  CHATGPT_MCP_WORKSPACE=/absolute/path/to/agentsCookbook
+```
+
+Then in agentsCookbook export runtime credentials and the non-secret routing authorities:
+
+```bash
+cd ../agentsCookbook
+
+export OPENAI_API_KEY='...'
+export CONTROL_PLANE_API_KEY='...'
+export OPENAI_ROUTING_TUNNEL_ID='tunnel_0123456789abcdef0123456789abcdef'
+export OPENAI_ROUTING_MODEL='<tool-capable-responses-model>'
+```
+
+Run the model-free admission first:
+
+```bash
+make benchmark-openai-routing-check
+```
+
+The check verifies the neutral manifest, clean workspace, Hashmarks handoff/executable/source identity, native repository snapshot bounds, tunnel-client identity, local tunnel-ID lock, model selection, and presence of both runtime keys. It does not start the tunnel or call a model.
+
+Then run one repeat of all five tasks:
+
+```bash
+make benchmark-openai-routing-dogfood
+```
+
+For a stronger dogfood sample:
+
+```bash
+make benchmark-openai-routing-dogfood OPENAI_ROUTING_REPEATS=3
+```
+
+Each trial starts from fresh Responses state and runs sequentially. There is no automatic retry. An infrastructure error writes one `error.json`, marks the campaign incomplete, and aborts all remaining trials so a broken external dependency cannot repeatedly spend model calls.
+
+Each run is written under a unique timestamp/PID directory in `.benchmark-runs/openai-routing/`:
+
+```text
+run-<utc>-<pid>/
+├── preflight.json
+├── manifest.json
+├── summary.json
+└── trials/
+    └── <task>-rNN/
+        ├── catalog.json
+        ├── trace.json
+        ├── score.json
+        └── receipt.json
+```
+
+`summary.json` reports routing outcome counts, Hashmarks-first rate over PASS/FAIL trials, exact expected-path mention rate, first-tool counts, total reported tokens, and elapsed time. The expected-path signal is diagnostic only and does not change the routing outcome.
+
+The checked-in agentsCookbook repository is intentionally small enough for the current native comparison snapshot bound; preflight still rechecks the actual local checkout before any model work.
+
 ### Advanced direct CLI
 
 The repository-owned `./benchmark` launcher is the canonical CLI for automation and explicit one-off selections. It resolves the harness root before delegating to uv, so invocation is independent of the caller's current Python environment. The CLI does not discover `.env`; it resolves declared suite, campaign, agent, and harness settings from the selected file when flags are omitted. The snippets below show optional CLI overrides. Direct `--agent` accepts repeated values or a comma-separated list.

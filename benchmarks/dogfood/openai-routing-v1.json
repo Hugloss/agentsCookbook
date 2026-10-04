@@ -1,0 +1,31 @@
+{
+  "schema": "agents-cookbook-openai-routing-dogfood-manifest.v1",
+  "name": "agentscookbook-routing-dogfood-v1",
+  "tasks": [
+    {
+      "id": "semantic-tool-classifier-owner",
+      "prompt": "Locate the implementation that maps host-specific repository tool names into semantic routing classes. Report the owning path and primary function.",
+      "expected_paths": ["benchmarks/tool_routing.py"]
+    },
+    {
+      "id": "capture-session-binding-owner",
+      "prompt": "Locate the implementation that rejects an ordered tool-call trace when its bound tool catalog belongs to a different capture session. Report the owning path and primary function.",
+      "expected_paths": ["benchmarks/tool_routing_trace.py"]
+    },
+    {
+      "id": "external-responses-probe-owner",
+      "prompt": "Locate the implementation that runs the external OpenAI Responses repository-routing diagnostic and owns its bounded local repository comparison surface. Report the owning path and primary entry point.",
+      "expected_paths": ["benchmarks/openai_responses_routing_probe.py"]
+    },
+    {
+      "id": "repository-cache-lock-owner",
+      "prompt": "Locate the implementation that prevents two commands from concurrently mutating the same cached repository mirror during materialization. Report the owning path and lock owner.",
+      "expected_paths": ["benchmarks/harness/source.py"]
+    },
+    {
+      "id": "stale-session-rejection-owner",
+      "prompt": "Locate the implementation that prevents an older OpenCode session from being adopted by a newer benchmark operation. Report the owning path and the matching rule.",
+      "expected_paths": ["benchmarks/adapters/opencode_native.py"]
+    }
+  ]
+}
