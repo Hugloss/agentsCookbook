@@ -108,6 +108,11 @@ def classify_tool(name: object, *, subject: object = None) -> str:
 
     tokens = tool_tokens(name)
     candidates = _operation_candidates(tokens)
+    if (
+        "container" in tokens
+        and any(candidate == "exec" for candidate in candidates)
+    ):
+        return SHELL
     if any(candidate in _SEARCH_OPERATIONS for candidate in candidates):
         return NATIVE_SEARCH
     if any(candidate in _READ_OPERATIONS for candidate in candidates):
