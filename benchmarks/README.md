@@ -191,6 +191,7 @@ The ordered tool trace is a separate authority. Normalize an external host run i
 {
   "schema": "agents-cookbook-tool-routing-trace.v1",
   "host": "chatgpt",
+  "catalog_sha256": "sha256:<digest printed by tool-routing-catalog>",
   "calls": [
     {
       "tool": "mcp__hashmarks__task_evidence",
@@ -206,7 +207,7 @@ The ordered tool trace is a separate authority. Normalize an external host run i
 }
 ```
 
-The capture owns only observed tool name/order/status/input/result evidence. It must not supply derived fields such as `tool_class`, `ordinal`, or router observability. A wrapper call may include observable `nested_calls`; without them an orchestration router is treated as opaque and cannot produce a false Hashmarks-first PASS.
+The capture owns only observed tool name/order/status/input/result evidence. It must carry the exact `catalog_sha256` emitted by `tool-routing-catalog`; a catalog/trace generation mismatch is rejected before scoring. It must not supply derived fields such as `tool_class`, `ordinal`, or router observability. A wrapper call may include observable `nested_calls`; without them an orchestration router is treated as opaque and cannot produce a false Hashmarks-first PASS.
 
 Score a READY catalog and its matching trace without executing a model:
 
