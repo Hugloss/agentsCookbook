@@ -21,8 +21,8 @@ from benchmarks.openai_responses_routing_probe import (
     run_probe,
 )
 
-_MANIFEST_SCHEMA = "agents-cookbook-openai-routing-dogfood-manifest.v1"
-_SUMMARY_SCHEMA = "agents-cookbook-openai-routing-dogfood-summary.v1"
+_MANIFEST_SCHEMA = "agents-cookbook-openai-routing-dogfood-manifest.v2"
+_SUMMARY_SCHEMA = "agents-cookbook-openai-routing-dogfood-summary.v2"
 _MAX_TASKS = 32
 _MAX_REPEATS = 5
 _FORBIDDEN_PROMPT_TERMS = (
@@ -30,6 +30,12 @@ _FORBIDDEN_PROMPT_TERMS = (
     "task_evidence",
     "mcp__",
     "grep",
+)
+_ROUTING_EXPECTATIONS = frozenset(
+    {
+        "hashmarks-first",
+        "native-read-first",
+    }
 )
 
 _ROUTING_CONFIG_KEYS = frozenset(
@@ -108,7 +114,7 @@ class OpenAIRoutingSettings:
 
         manifest = Path(
             values.get("OPENAI_ROUTING_MANIFEST")
-            or "benchmarks/dogfood/openai-routing-v1.json"
+            or "benchmarks/dogfood/openai-routing-v2.json"
         ).expanduser().resolve()
         run_root = Path(
             values.get("OPENAI_ROUTING_RUN_ROOT")
@@ -190,6 +196,7 @@ def load_manifest(path: Path, *, workspace: Path) -> dict[str, Any]:
             raise OpenAIRoutingDogfoodError(f"tasks[{index}] must be an object")
         task_id = raw_task.get("id")
         prompt = raw_task.get("prompt")
+        routing_expectation = raw_task.get("routing_expectation")
         expected_paths = raw_task.get("expected_paths")
         if not isinstance(task_id, str) or re.fullmatch(
             r"[a-z0-9][a-z0-9-]{0,79}",
@@ -210,6 +217,11 @@ def load_manifest(path: Path, *, workspace: Path) -> dict[str, Any]:
         if len(prompt) > 2_000:
             raise OpenAIRoutingDogfoodError(
                 f"tasks[{index}].prompt exceeds 2000 characters"
+            )
+        if routing_expectation not in _ROUTING_EXPECTATIONS:
+            raise OpenAIRoutingDogfoodError(
+                f"tasks[{index}].routing_expectation must be one of: "
+                + ", ".join(sorted(_ROUTING_EXPECTATIONS))
             )
         lowered = prompt.casefold()
         forbidden = [
@@ -247,6 +259,7 @@ def load_manifest(path: Path, *, workspace: Path) -> dict[str, Any]:
         normalized.append(
             {
                 "id": task_id,
+                "routing_expectation": routing_expectation,
                 "prompt": prompt.strip(),
                 "expected_paths": paths,
             }
@@ -271,6 +284,14 @@ def _preflight_evidence(
             "name": manifest["name"],
             "sha256": manifest["manifest_sha256"],
             "task_count": len(manifest["tasks"]),
+            "routing_expectations": dict(
+                sorted(
+                    Counter(
+                        task["routing_expectation"]
+                        for task in manifest["tasks"]
+                    ).items()
+                )
+            ),
         },
         "probe": probe,
     }
@@ -316,6 +337,27 @@ def _usage_total(receipt: dict[str, Any]) -> int:
             if isinstance(value, int) and not isinstance(value, bool):
                 total += value
     return total
+
+
+def _routing_fit(
+    *,
+    routing_expectation: str,
+    raw_outcome: str,
+    first_tool: str | None,
+) -> str:
+    if raw_outcome in {"ENVIRONMENT_BLOCKED", "UNKNOWN"}:
+        return raw_outcome
+    if raw_outcome not in {"PASS", "FAIL"}:
+        return "UNKNOWN"
+    if routing_expectation == "hashmarks-first":
+        return raw_outcome
+    if routing_expectation == "native-read-first":
+        if first_tool is None:
+            return "UNKNOWN"
+        return "PASS" if first_tool == "read" else "FAIL"
+    raise OpenAIRoutingDogfoodError(
+        f"unsupported routing expectation: {routing_expectation}"
+    )
 
 
 def _answer_path_match(
@@ -389,13 +431,44 @@ def list_dogfood_runs(root: Path) -> list[dict[str, object]]:
                     f"OpenAI routing run {run_id} summary must be an object"
                 )
             aggregate = summary.get("aggregate")
+            candidate = summary.get("candidate")
+            runtime = (
+                candidate.get("hashmarks_runtime")
+                if isinstance(candidate, dict)
+                else None
+            )
             rows.append(
                 {
                     "run_id": run_id,
                     "status": summary.get("status", "UNKNOWN"),
                     "path": str(path),
+                    "hashmarks_version": (
+                        runtime.get("version")
+                        if isinstance(runtime, dict)
+                        else None
+                    ),
+                    "hashmarks_executable_sha256": (
+                        runtime.get("executable_sha256")
+                        if isinstance(runtime, dict)
+                        else None
+                    ),
                     "hashmarks_first_rate": (
                         aggregate.get("hashmarks_first_rate")
+                        if isinstance(aggregate, dict)
+                        else None
+                    ),
+                    "routing_fit_rate": (
+                        aggregate.get("routing_fit_rate")
+                        if isinstance(aggregate, dict)
+                        else None
+                    ),
+                    "semantic_hashmarks_first_rate": (
+                        aggregate.get("semantic_hashmarks_first_rate")
+                        if isinstance(aggregate, dict)
+                        else None
+                    ),
+                    "known_path_native_read_rate": (
+                        aggregate.get("known_path_native_read_rate")
                         if isinstance(aggregate, dict)
                         else None
                     ),
@@ -438,7 +511,12 @@ def list_dogfood_runs(root: Path) -> list[dict[str, object]]:
                 ),
                 "path": str(path),
                 "reason": start_reason,
+                "hashmarks_version": None,
+                "hashmarks_executable_sha256": None,
                 "hashmarks_first_rate": None,
+                "routing_fit_rate": None,
+                "semantic_hashmarks_first_rate": None,
+                "known_path_native_read_rate": None,
                 "outcomes": None,
             }
         )
@@ -538,6 +616,7 @@ def run_campaign(
 
     rows: list[dict[str, Any]] = []
     outcome_counts: Counter[str] = Counter()
+    routing_fit_counts: Counter[str] = Counter()
     first_tool_counts: Counter[str] = Counter()
     total_tokens = 0
 
@@ -576,7 +655,9 @@ def run_campaign(
                         "trial_id": trial_id,
                         "task_id": task["id"],
                         "repeat": repeat + 1,
+                        "routing_expectation": task["routing_expectation"],
                         "outcome": "INCOMPLETE",
+                        "routing_fit": "INCOMPLETE",
                         "answer_path_match": False,
                         "elapsed_ms": elapsed_ms,
                         "tokens": 0,
@@ -584,6 +665,7 @@ def run_campaign(
                     }
                 )
                 outcome_counts["INCOMPLETE"] += 1
+                routing_fit_counts["INCOMPLETE"] += 1
                 aborted = True
                 break
 
@@ -605,6 +687,11 @@ def run_campaign(
                 if isinstance(value, str):
                     first_tool = value
                     first_tool_counts[value] += 1
+            routing_fit = _routing_fit(
+                routing_expectation=task["routing_expectation"],
+                raw_outcome=outcome,
+                first_tool=first_tool,
+            )
             path_match = _answer_path_match(
                 receipt.get("final_text"),
                 task["expected_paths"],
@@ -612,6 +699,7 @@ def run_campaign(
             tokens = _usage_total(receipt)
             total_tokens += tokens
             outcome_counts[outcome] += 1
+            routing_fit_counts[routing_fit] += 1
 
             for filename in ("catalog", "trace", "score"):
                 payload = receipt.get(filename)
@@ -626,7 +714,9 @@ def run_campaign(
                     "trial_id": trial_id,
                     "task_id": task["id"],
                     "repeat": repeat + 1,
+                    "routing_expectation": task["routing_expectation"],
                     "outcome": outcome,
+                    "routing_fit": routing_fit,
                     "answer_path_match": path_match,
                     "elapsed_ms": elapsed_ms,
                     "tokens": tokens,
@@ -637,6 +727,21 @@ def run_campaign(
     pass_count = outcome_counts["PASS"]
     fail_count = outcome_counts["FAIL"]
     scoreable = pass_count + fail_count
+    fit_pass = routing_fit_counts["PASS"]
+    fit_fail = routing_fit_counts["FAIL"]
+    fit_scoreable = fit_pass + fit_fail
+    semantic_rows = [
+        row
+        for row in rows
+        if row.get("routing_expectation") == "hashmarks-first"
+        and row.get("routing_fit") in {"PASS", "FAIL"}
+    ]
+    native_read_rows = [
+        row
+        for row in rows
+        if row.get("routing_expectation") == "native-read-first"
+        and row.get("routing_fit") in {"PASS", "FAIL"}
+    ]
     summary = {
         "schema": _SUMMARY_SCHEMA,
         "run_id": run_id,
@@ -651,6 +756,13 @@ def run_campaign(
             "task_count": len(manifest["tasks"]),
             "repeats": repeats,
         },
+        "candidate": {
+            "hashmarks_handoff_sha256": probe_preflight.get(
+                "hashmarks_handoff_sha256"
+            ),
+            "hashmarks_runtime": probe_preflight.get("hashmarks_runtime"),
+        },
+        "openai": probe_preflight.get("openai"),
         "authority": {
             "diagnostic_only": True,
             "heldout_comparable": False,
@@ -662,9 +774,26 @@ def run_campaign(
         "aggregate": {
             "total_trials": len(rows),
             "outcomes": dict(sorted(outcome_counts.items())),
+            "routing_fit_counts": dict(sorted(routing_fit_counts.items())),
             "scoreable_trials": scoreable,
             "hashmarks_first_rate": (
                 pass_count / scoreable if scoreable else None
+            ),
+            "routing_fit_scoreable_trials": fit_scoreable,
+            "routing_fit_rate": (
+                fit_pass / fit_scoreable if fit_scoreable else None
+            ),
+            "semantic_hashmarks_first_rate": (
+                sum(row["routing_fit"] == "PASS" for row in semantic_rows)
+                / len(semantic_rows)
+                if semantic_rows
+                else None
+            ),
+            "known_path_native_read_rate": (
+                sum(row["routing_fit"] == "PASS" for row in native_read_rows)
+                / len(native_read_rows)
+                if native_read_rows
+                else None
             ),
             "answer_path_matches": sum(
                 row["answer_path_match"] is True for row in rows
@@ -727,15 +856,19 @@ def run_saved_campaign(
 
 def campaign_exit_code(summary: dict[str, Any]) -> int:
     aggregate = summary.get("aggregate")
-    outcomes = aggregate.get("outcomes") if isinstance(aggregate, dict) else None
-    if not isinstance(outcomes, dict):
-        raise OpenAIRoutingDogfoodError("dogfood summary outcomes are unavailable")
-    if int(outcomes.get("INCOMPLETE", 0)) > 0:
+    if not isinstance(aggregate, dict):
+        raise OpenAIRoutingDogfoodError("dogfood summary aggregate is unavailable")
+    routing_fit = aggregate.get("routing_fit_counts")
+    if not isinstance(routing_fit, dict):
+        raise OpenAIRoutingDogfoodError(
+            "dogfood summary routing-fit outcomes are unavailable"
+        )
+    if int(routing_fit.get("INCOMPLETE", 0)) > 0:
         return 3
-    if int(outcomes.get("ENVIRONMENT_BLOCKED", 0)) > 0:
+    if int(routing_fit.get("ENVIRONMENT_BLOCKED", 0)) > 0:
         return 2
-    if int(outcomes.get("UNKNOWN", 0)) > 0:
+    if int(routing_fit.get("UNKNOWN", 0)) > 0:
         return 3
-    if int(outcomes.get("FAIL", 0)) > 0:
+    if int(routing_fit.get("FAIL", 0)) > 0:
         return 1
     return 0
