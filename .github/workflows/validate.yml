@@ -51,6 +51,7 @@ jobs:
 
       - name: Shell syntax
         run: |
+          bash -n benchmark
           for script in scripts/*.sh; do
             bash -n "$script"
           done
