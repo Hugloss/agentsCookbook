@@ -175,22 +175,36 @@ This lets OpenCode names such as `grep`/`read` and ChatGPT-style names such as `
 
 A host catalog is admissible only when both the required subject tool and at least one native discovery class are visible. Missing Hashmarks is `ENVIRONMENT_BLOCKED`, not a routing failure; only a READY catalog can answer whether the host selected Hashmarks before native repository discovery.
 
-A captured host catalog can be checked without invoking a model:
+A raw host catalog can be checked without invoking a model:
 
 ```bash
 ./benchmark tool-routing-catalog \
-  --catalog host-tools.json \
+  --catalog host-tools-raw.json \
   --subject hashmarks
 ```
 
-The catalog file may be a JSON list of tool names or an object with a `tools` list containing names or `{"name": "..."}` entries. Exit 0 means `READY`; exit 2 means `ENVIRONMENT_BLOCKED`.
+The raw catalog may be a JSON list of tool names or an object with a `tools` list containing names or `{"name": "..."}` entries. Exit 0 means `READY`; exit 2 means `ENVIRONMENT_BLOCKED`.
 
-The ordered tool trace is a separate authority. Normalize an external host run into this small capture shape rather than pretending it is an OpenCode campaign:
+For an ordered trace, materialize a canonical catalog capture first so catalog and trace belong to one explicit observation session:
+
+```bash
+./benchmark tool-routing-catalog \
+  --catalog host-tools-raw.json \
+  --subject hashmarks \
+  --host chatgpt \
+  --capture-id chatgpt-routing-001 \
+  --output-capture host-tools.json
+```
+
+The command prints the canonical `catalog_sha256` and writes `agents-cookbook-tool-routing-catalog-capture.v1`. `--host`, `--capture-id`, and `--output-capture` are all-or-nothing so the scorer never receives a partially bound catalog artifact.
+
+The ordered tool trace is a separate authority. Normalize the matching external host run into this small capture shape rather than pretending it is an OpenCode campaign:
 
 ```json
 {
   "schema": "agents-cookbook-tool-routing-trace.v1",
   "host": "chatgpt",
+  "capture_id": "chatgpt-routing-001",
   "catalog_sha256": "sha256:<digest printed by tool-routing-catalog>",
   "calls": [
     {
@@ -207,7 +221,7 @@ The ordered tool trace is a separate authority. Normalize an external host run i
 }
 ```
 
-The capture owns only observed tool name/order/status/input/result evidence. It must carry the exact `catalog_sha256` emitted by `tool-routing-catalog`; a catalog/trace generation mismatch is rejected before scoring. It must not supply derived fields such as `tool_class`, `ordinal`, or router observability. A wrapper call may include observable `nested_calls`; without them an orchestration router is treated as opaque and cannot produce a false Hashmarks-first PASS.
+The capture owns only observed tool name/order/status/input/result evidence. It must carry the same `host` and `capture_id` as the canonical catalog capture plus that capture's exact `catalog_sha256`. Host/session/catalog mismatches are rejected before scoring. It must not supply derived fields such as `tool_class`, `ordinal`, or router observability. A wrapper call may include observable `nested_calls`; without them an orchestration router is treated as opaque and cannot produce a false Hashmarks-first PASS.
 
 Score a READY catalog and its matching trace without executing a model:
 
