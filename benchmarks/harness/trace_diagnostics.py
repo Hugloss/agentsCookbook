@@ -11,6 +11,7 @@ from typing import Any
 from benchmarks.tool_routing import (
     NATIVE_READ,
     NATIVE_SEARCH,
+    classify_call,
     classify_tool,
     is_subject_tool,
     matches_subject_operation,
@@ -123,7 +124,11 @@ def _opencode_calls(trace: dict[str, Any], receipt: dict[str, Any]) -> list[dict
             status = state.get("status")
             output = state.get("error") or state.get("output")
             subject_call = is_subject_tool(name, subject)
-            tool_class = classify_tool(name, subject=subject)
+            tool_class = classify_call(
+                name,
+                inputs,
+                subject=subject,
+            )
             row: dict[str, Any] = {
                 "ordinal": len(calls) + 1,
                 "tool": name,
