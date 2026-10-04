@@ -367,6 +367,8 @@ runs/
 
 `summary.json` preserves the raw host-neutral Hashmarks-first outcomes and separately reports task-semantic routing fit. The two primary rates are `semantic_hashmarks_first_rate` for unknown-path behavior localization and `known_path_native_read_rate` for exact-path controls, plus overall `routing_fit_rate`, expected-path mention rate, first-tool counts, token totals, and elapsed time. A strong Hashmarks routing change should raise or preserve the semantic rate **without lowering the known-path native-read control rate**.
 
+For routing changes, use numbered runs as an A/B sequence: first run the balanced campaign against the current Hashmarks main and keep that run as the baseline; then change/merge the Hashmarks candidate, regenerate the handoff, and start another numbered run. `summary.json` records the admitted Hashmarks handoff SHA plus runtime version/executable identity, so the two results remain attributable without inspecting individual trial receipts.
+
 The checked-in agentsCookbook repository is intentionally small enough for the current native comparison snapshot bound; preflight still rechecks the actual local checkout before any model work.
 
 ### Advanced direct CLI
