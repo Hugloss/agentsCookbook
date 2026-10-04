@@ -725,6 +725,32 @@ async function testSharedLifecycle() {
       /authority changed after admission/,
     );
 
+    const staleStartedAt = Date.now();
+    fs.writeFileSync(
+      statePath,
+      JSON.stringify({
+        id: 'ses_stale',
+        title: 'stale-operation',
+        directory: root,
+        updated: staleStartedAt - 10_000,
+      }),
+      'utf8',
+    );
+    const staleSession = await runtime.findSessionId({
+      opencodeBin: fake,
+      repoDir: root,
+      title: 'stale-operation',
+      startedAt: staleStartedAt,
+      env,
+      attempts: 1,
+      delayMs: 0,
+    });
+    assert.strictEqual(
+      staleSession,
+      '',
+      'session discovery must reject an older matching session',
+    );
+
     const result = await runtime.runSessionAndExport({
       opencodeBin: fake,
       repoDir: root,
@@ -734,6 +760,15 @@ async function testSharedLifecycle() {
       deleteAfterExport: true,
     });
     assert.strictEqual(result.schema, 'agents-cookbook-opencode-runtime/v2');
+    assert.match(
+      result.operation_id,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    const operationState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    assert.strictEqual(
+      operationState.title,
+      `runtime-test:${result.operation_id}`,
+    );
     assert.strictEqual(result.run.status, 0);
     assert.strictEqual(result.session_id, 'ses_test');
     assert.strictEqual(result.export.status, 0);
