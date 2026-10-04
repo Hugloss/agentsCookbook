@@ -12,7 +12,6 @@ from benchmarks.harness.trace_diagnostics import build_trace_diagnostics
 from benchmarks.tool_probe import REQUIRED_TOOLS
 from benchmarks.tool_routing import (
     classify_call,
-    classify_tool,
     first_discovery_index,
     matches_subject_operation,
 )
