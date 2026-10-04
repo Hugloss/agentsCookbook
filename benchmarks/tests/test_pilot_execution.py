@@ -75,9 +75,9 @@ from benchmarks.harness.runtime_authority import (
     transport_runtime_authority,
 )
 from benchmarks.harness.selection import SelectionError, select_definitions
-from benchmarks.harness.source import materialize_repository
+from benchmarks.harness.source import _source_cache_lock, materialize_repository
 from benchmarks.harness.suite import SuiteDefinition, SuiteError, load_suite
-from benchmarks.harness.workspace import isolated_environment
+from benchmarks.harness.workspace import WorkspaceError, isolated_environment
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
@@ -2307,6 +2307,34 @@ class PilotExecutionTests(unittest.TestCase):
         )
         self.assertTrue(result["contaminated"])
         self.assertEqual(result["unexpected"]["added"], ["unexpected.txt"])
+
+    def test_competing_repository_cache_generation_fails_before_git_work(
+        self,
+    ) -> None:
+        repository = {
+            "url": "https://example.invalid/repository.git",
+            "commit": "a" * 40,
+            "tree": "b" * 40,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cache = root / "cache"
+            with (
+                _source_cache_lock(cache, repository["url"]),
+                mock.patch("benchmarks.harness.source._run_git") as run_git,
+                mock.patch("benchmarks.harness.source.materialize_git") as materialize,
+            ):
+                with self.assertRaisesRegex(
+                    WorkspaceError,
+                    "source cache is already in use",
+                ):
+                    materialize_repository(
+                        repository=repository,
+                        destination=root / "workspace",
+                        cache_root=cache,
+                    )
+            run_git.assert_not_called()
+            materialize.assert_not_called()
 
     def test_cycle_fixture_mutation_accounts_for_new_files(self) -> None:
         suite = load_suite(CYCLE)
