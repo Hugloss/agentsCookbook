@@ -20,8 +20,19 @@ from benchmarks.harness.trace_diagnostics import (
 )
 from benchmarks.tool_probe import prepare_tool_probe_suite
 from benchmarks.tool_probe_score import (
-    _matches_required, _required_call_result, _required_before_search,
-    smoke_gate, main as tool_probe_score_main,
+    _matches_required,
+    _required_before_native_discovery,
+    _required_call_result,
+    smoke_gate,
+    main as tool_probe_score_main,
+)
+from benchmarks.tool_routing import (
+    NATIVE_READ,
+    NATIVE_SEARCH,
+    OTHER,
+    SUBJECT_REPOSITORY_INTELLIGENCE,
+    TOOL_ROUTER,
+    classify_tool,
 )
 
 
@@ -165,6 +176,70 @@ class TraceAndToolProbeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported diagnostic required tool"):
             build_agent(agent, budgets={"timeout_seconds": 600})
 
+    def test_host_neutral_tool_classes_cover_opencode_and_chatgpt_names(self) -> None:
+        self.assertEqual(
+            classify_tool("hashmarks_task_evidence", subject="hashmarks"),
+            SUBJECT_REPOSITORY_INTELLIGENCE,
+        )
+        self.assertEqual(
+            classify_tool("mcp__hashmarks__task_evidence", subject="hashmarks"),
+            SUBJECT_REPOSITORY_INTELLIGENCE,
+        )
+        self.assertEqual(
+            classify_tool("grep", subject="hashmarks"),
+            NATIVE_SEARCH,
+        )
+        self.assertEqual(
+            classify_tool("mcp__GitHub__search", subject="hashmarks"),
+            NATIVE_SEARCH,
+        )
+        self.assertEqual(
+            classify_tool("mcp__GitHub__fetch_file", subject="hashmarks"),
+            NATIVE_READ,
+        )
+        self.assertEqual(
+            classify_tool("functions.exec", subject="hashmarks"),
+            TOOL_ROUTER,
+        )
+        self.assertEqual(
+            classify_tool("image_gen", subject="hashmarks"),
+            OTHER,
+        )
+
+    def test_chatgpt_style_hashmarks_call_must_precede_native_repository_discovery(
+        self,
+    ) -> None:
+        required = "hashmarks_task_evidence"
+        self.assertTrue(
+            _required_before_native_discovery(
+                [
+                    {
+                        "tool": "mcp__hashmarks__task_evidence",
+                        "status": "completed",
+                        "result_bytes": 42,
+                    },
+                    {"tool": "mcp__GitHub__search", "status": "completed"},
+                    {"tool": "mcp__GitHub__fetch_file", "status": "completed"},
+                ],
+                "hashmarks",
+                required,
+            )
+        )
+        self.assertFalse(
+            _required_before_native_discovery(
+                [
+                    {"tool": "mcp__GitHub__search", "status": "completed"},
+                    {
+                        "tool": "mcp__hashmarks__task_evidence",
+                        "status": "completed",
+                        "result_bytes": 42,
+                    },
+                ],
+                "hashmarks",
+                required,
+            )
+        )
+
     def test_required_tool_name_forms(self) -> None:
         self.assertTrue(_matches_required(
             "tools.enola.explore", "enola", "enola_explore"
@@ -186,25 +261,25 @@ class TraceAndToolProbeTests(unittest.TestCase):
         self.assertEqual(_required_call_result([
             {"tool": required, "status": "completed", "result_bytes": None},
         ], "hashmarks", required), (True, None))
-        self.assertFalse(_required_before_search([
+        self.assertFalse(_required_before_native_discovery([
             {"tool": "grep"},
             {"tool": required, "status": "completed", "result_bytes": 42},
         ], "hashmarks", required))
-        self.assertTrue(_required_before_search([
+        self.assertTrue(_required_before_native_discovery([
             {"tool": required, "status": "completed", "result_bytes": 42},
             {"tool": "grep"},
         ], "hashmarks", required))
 
     def test_smoke_gate_requires_three_proven_early_calls(self) -> None:
         row = {"status": "PASS", "required_call_succeeded": True,
-               "required_before_file_search": True}
-        score = {"schema": "agents-cookbook-tool-probe-score.v2",
+               "required_before_native_discovery": True}
+        score = {"schema": "agents-cookbook-tool-probe-score.v3",
                  "subject": "hashmarks", "required_tool": "hashmarks_task_evidence",
                  "expected_trials": 3, "observed_trials": 3,
                  "required_tool_results": [dict(row, trial_id=f"trial-{n}", task_id="task")
                                            for n in range(3)]}
         smoke_gate(score, subject="hashmarks")
-        score["required_tool_results"][1]["required_before_file_search"] = None
+        score["required_tool_results"][1]["required_before_native_discovery"] = None
         with self.assertRaises(ValueError):
             smoke_gate(score, subject="hashmarks")
 
@@ -236,13 +311,13 @@ class TraceAndToolProbeTests(unittest.TestCase):
             ):
                 self.assertEqual(tool_probe_score_main(destination), 0)
             score = json.loads(output.read_text(encoding="utf-8"))
-            self.assertEqual(score["schema"], "agents-cookbook-tool-probe-score.v2")
+            self.assertEqual(score["schema"], "agents-cookbook-tool-probe-score.v3")
             self.assertEqual(score["required_call_successes"], 0)
             self.assertEqual(score["required_call_failures"], 1)
             self.assertEqual(score["required_call_unknown"], 1)
             self.assertTrue(score["required_tool_results"][0]["required_call_attempted"])
-            self.assertEqual(score["required_before_file_search_failures"], 1)
-            self.assertEqual(score["required_before_file_search_unknown"], 1)
+            self.assertEqual(score["required_before_native_discovery_failures"], 1)
+            self.assertEqual(score["required_before_native_discovery_unknown"], 1)
 
 
 if __name__ == "__main__":
