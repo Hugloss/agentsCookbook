@@ -13,6 +13,7 @@ from typing import Any
 from benchmarks.config import BenchmarkConfig
 from benchmarks.harness.identity import canonical_json, digest
 from benchmarks.harness.oracle_reviews import oracle_review_path, validate_oracle_reviews
+from benchmarks.harness.subject_exposure import exposure_probe_required_tool
 from benchmarks.harness.suite import load_suite
 
 
@@ -25,33 +26,6 @@ DEFAULT_TASKS = (
     "locate-directory-pruning",
     "locate-resource-invalidation",
 )
-
-
-def exposure_probe_required_tool(
-    suite,
-    subject: str,
-) -> str:
-    definition = suite.subjects.get(subject)
-    if not isinstance(definition, dict):
-        raise ToolProbeError(f"unknown tool-probe subject: {subject}")
-    if definition.get("kind") == "control":
-        raise ToolProbeError("control subjects do not have exposure probes")
-    probe = definition.get("exposure_probe")
-    if not isinstance(probe, dict):
-        raise ToolProbeError(
-            f"subject {subject} has no exposure_probe contract"
-        )
-    required_tool = probe.get("required_tool")
-    if not isinstance(required_tool, str) or not required_tool:
-        raise ToolProbeError(
-            f"subject {subject} exposure_probe.required_tool is invalid"
-        )
-    if not required_tool.startswith(subject + "_"):
-        raise ToolProbeError(
-            f"subject {subject} exposure probe tool must use the "
-            f"{subject}_ prefix"
-        )
-    return required_tool
 
 
 def _task_file(suite_root: Path, task_id: str) -> Path:
