@@ -163,6 +163,11 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertEqual(len(summary), 1)
         self.assertEqual(summary[0]["subject_id"], "hashmarks")
         self.assertEqual(
+            summary[0]["comparison_scope"],
+            "subject-configured-condition-vs-bare",
+        )
+        self.assertTrue(summary[0]["attribution_requires_observed_subject_use"])
+        self.assertEqual(
             summary[0]["transitions"],
             {
                 "gain": 1,
