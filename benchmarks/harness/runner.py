@@ -40,7 +40,7 @@ from benchmarks.harness.schema_validation import (
     SchemaValidationError,
     validate_instance,
 )
-from benchmarks.harness.suite import SuiteDefinition
+from benchmarks.harness.suite import SuiteDefinition, effective_prompt
 from benchmarks.harness.workspace import snapshot
 
 
@@ -482,6 +482,7 @@ def run_trial(
                 raise TrialRunnerError(f"pre-model admission failed: {reason}")
 
             if status is None:
+                resolved_prompt = effective_prompt(task, expanded_condition)
                 if campaign is not None:
                     launch_attempt = claim_launch(
                         results_root=results_root,
@@ -502,6 +503,10 @@ def run_trial(
                             agent_prepare.payload.get("mcp_exposure") is not None
                         ),
                         "mode": task["mode"],
+                        "prompt_sha256": hashlib.sha256(
+                            resolved_prompt.encode("utf-8")
+                        ).hexdigest(),
+                        "prompt_context": expanded_condition.get("context"),
                         **(
                             {"attempt": launch_attempt}
                             if launch_attempt is not None
@@ -511,7 +516,7 @@ def run_trial(
                 )
                 emit_stage("agent-execution")
                 try:
-                    agent_observation = agent.run(context, task["prompt"], subject)
+                    agent_observation = agent.run(context, resolved_prompt, subject)
                 except Exception as exc:
                     agent_exception_traceback = traceback.format_exc()
                     agent_observation = Observation(
