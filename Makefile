@@ -92,8 +92,8 @@ benchmark-openai-routing-status:
 benchmark-openai-routing-dogfood: benchmark-openai-routing-new
 
 benchmark-tool-probe-prepare:
-	@if [ "$(PROBE_SUBJECT)" != hashmarks ] && [ "$(PROBE_SUBJECT)" != enola ]; then \
-		echo 'Set PROBE_SUBJECT=hashmarks or PROBE_SUBJECT=enola' >&2; exit 2; fi
+	@if [ -z "$(PROBE_SUBJECT)" ]; then \
+		echo 'Set PROBE_SUBJECT to a non-control subject id from the selected suite' >&2; exit 2; fi
 	@./benchmark tool-probe-prepare \
 		--suite benchmarks/suites/repository-intelligence/heldout-v1 \
 		--subject $(PROBE_SUBJECT) --output-suite $(PROBE_SUITE) \
