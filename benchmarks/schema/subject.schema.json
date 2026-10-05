@@ -53,6 +53,40 @@
     "configuration": {
       "type": "object",
       "additionalProperties": true
+    },
+    "exposure_probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_tool"
+      ],
+      "properties": {
+        "required_tool": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "minLength": 1
+        }
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "control"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {},
+      "else": {
+        "required": [
+          "exposure_probe"
+        ]
+      }
+    }
+  ]
 }
