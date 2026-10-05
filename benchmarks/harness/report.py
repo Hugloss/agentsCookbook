@@ -19,6 +19,7 @@ from benchmarks.harness.campaign_authority import (
     read_launch_claims,
     read_campaign,
 )
+from benchmarks.harness.subject_exposure import subject_exposure_qualification
 from benchmarks.harness.suite import SuiteDefinition
 from benchmarks.harness.identity import digest, execution_task_contract
 
@@ -1934,7 +1935,16 @@ def build_report(
         if status not in _VALID_OUTCOMES
     )
     campaign_complete = not missing
-    campaign_qualified = campaign_complete and invalid_outcomes == 0
+    exposure_qualification = subject_exposure_qualification(
+        suite=suite,
+        expected_rows=expected.values(),
+        receipts=receipts,
+    )
+    campaign_qualified = (
+        campaign_complete
+        and invalid_outcomes == 0
+        and exposure_qualification["qualified"]
+    )
     paired_assistance = _paired_assistance(receipts)
     stability = _stability(receipts, expected=expected, suite=suite)
     context_invariance = _counterfactual_context(receipts)
@@ -2015,6 +2025,7 @@ def build_report(
             "invalid_outcomes": invalid_outcomes,
             "mixed_execution_authority": False,
             "mixed_localization_scoring_policy": False,
+            "subject_exposure": exposure_qualification,
         },
         "authority": {
             "overall_winner": None,
@@ -2023,6 +2034,9 @@ def build_report(
             "invalid_outcomes_excluded_from_success_rates": True,
             "economics_include_invalid_and_incomplete_trials": True,
             "paired_assistance_scope": "valid-outcomes-only",
+            "subject_exposure_qualification": (
+                "mandatory-for-selected-non-control-conditions"
+            ),
             "replicate_identity_field": (
                 "execution.replicate_id"
                 if any("replicate_id" in row["execution"] for row in receipts)
