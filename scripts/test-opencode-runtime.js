@@ -219,7 +219,10 @@ if (command === 'export') {
         providerID: 'liteLLM',
         modelID: 'gemma4'
       },
-      parts: delayedFinal ? [] : [{ type: 'text', text }]
+      parts:
+        delayedFinal || process.env.FAKE_EXPORT_NO_FINAL === '1'
+          ? []
+          : [{ type: 'text', text }]
     }]
   });
   const stdoutIsRegularFile = fs.fstatSync(1).isFile();
@@ -889,6 +892,7 @@ async function testSharedLifecycle() {
     assert.strictEqual(result.export_attempts, 1);
     assert.strictEqual(result.final_text, 'done');
     assert.strictEqual(result.export_parse_error, null);
+    assert.strictEqual(result.export_diagnostic, null);
     assert.strictEqual(result.delete.status, 0);
 
     const exportCountPath = statePath + '.exports';
@@ -909,6 +913,24 @@ async function testSharedLifecycle() {
     assert.strictEqual(delayed.export_attempts, 2);
     assert.strictEqual(delayed.final_text, 'done');
     assert.strictEqual(delayed.export_parse_error, null);
+    assert.strictEqual(delayed.export_diagnostic, null);
+
+    const missingFinal = await runtime.runSessionAndExport({
+      opencodeBin: fake,
+      repoDir: root,
+      title: 'runtime-missing-final',
+      prompt: 'hello',
+      env: { ...env, FAKE_EXPORT_NO_FINAL: '1' },
+      deleteAfterExport: true,
+      exportAttempts: 1,
+      exportDelayMs: 1,
+    });
+    assert.strictEqual(missingFinal.run.status, 0);
+    assert.strictEqual(missingFinal.final_text, null);
+    assert.match(missingFinal.export_parse_error, /no final text/);
+    assert.match(missingFinal.export_diagnostic, /Error: opencode export:/);
+    assert.match(missingFinal.export_diagnostic, /at extractFinalAnswer/);
+
     assert.strictEqual(
       fs.readFileSync(exportCountPath, 'utf8'),
       '2',
