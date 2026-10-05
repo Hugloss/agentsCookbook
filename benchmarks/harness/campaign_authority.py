@@ -178,6 +178,7 @@ def _read_manifest(directory: Path) -> dict[str, Any]:
         "benchmark-campaign-authority.v1",
         "benchmark-campaign-authority.v2",
         "benchmark-campaign-authority.v3",
+        "benchmark-campaign-authority.v4",
     }:
         raise CampaignAuthorityError("unsupported campaign authority contract")
     identity = value.get("campaign_id")
