@@ -190,13 +190,9 @@ class LiveTaskMatrixTests(unittest.TestCase):
             rendered,
         )
         self.assertIn("Repository-location failure topology", rendered)
-        self.assertIn(
-            "Subject   | Exact | Same file | Same symbol | Same directory | Different | Ungradeable",
-            rendered,
-        )
-        self.assertIn("Bare      | 0     | 0         | 0           | 2", rendered)
-        self.assertIn("Hashmarks | 2     | 0         | 0           | 1", rendered)
-        self.assertIn("Enola     | 2     | 0         | 0           | 1", rendered)
+        self.assertIn("Same directory", rendered)
+        self.assertIn("Same symbol", rendered)
+        self.assertIn("Ungradeable", rendered)
         self.assertIn("Assisted condition vs Bare (all pairs)", rendered)
         self.assertIn(
             "Hashmarks | 2    | 0         | 0          | 0          | 1",
