@@ -21,7 +21,7 @@ from benchmarks.harness.trace_diagnostics import (
     _opencode_calls,
     build_trace_diagnostics,
 )
-from benchmarks.tool_probe import prepare_tool_probe_suite
+from benchmarks.tool_probe import exposure_probe_required_tool, prepare_tool_probe_suite
 from benchmarks.tool_probe_score import (
     smoke_gate,
     main as tool_probe_score_main,
@@ -176,11 +176,33 @@ class TraceAndToolProbeTests(unittest.TestCase):
             self.assertIn("call hashmarks_task_evidence", prompt)
             self.assertTrue(prompt.endswith("Reviewed task"))
 
-    def test_agent_definition_rejects_unknown_diagnostic_tool(self) -> None:
+    def test_agent_definition_accepts_generic_diagnostic_tool(self) -> None:
         agent = dict(load_suite(SUITE).agents["opencode-native"])
-        agent["configuration"] = {"diagnostic_required_tool": "random_tool"}
-        with self.assertRaisesRegex(ValueError, "unsupported diagnostic required tool"):
+        agent["configuration"] = {"diagnostic_required_tool": "futuremcp_context"}
+        built = build_agent(agent, budgets={"timeout_seconds": 600})
+        self.assertEqual(built.diagnostic_required_tool, "futuremcp_context")
+
+    def test_agent_definition_rejects_invalid_diagnostic_tool(self) -> None:
+        agent = dict(load_suite(SUITE).agents["opencode-native"])
+        agent["configuration"] = {"diagnostic_required_tool": " futuremcp_context "}
+        with self.assertRaisesRegex(ValueError, "canonical tool name"):
             build_agent(agent, budgets={"timeout_seconds": 600})
+
+    def test_exposure_probe_contract_is_subject_data_not_product_code(self) -> None:
+        suite = load_suite(SUITE)
+        suite.subjects["futuremcp"] = {
+            "id": "futuremcp",
+            "kind": "repository_intelligence",
+            "adapter": "future-adapter",
+            "identity": {"id": "futuremcp", "version": "1"},
+            "capabilities": ["search"],
+            "configuration": {},
+            "exposure_probe": {"required_tool": "futuremcp_context"},
+        }
+        self.assertEqual(
+            exposure_probe_required_tool(suite, "futuremcp"),
+            "futuremcp_context",
+        )
 
     def test_host_neutral_tool_classes_cover_opencode_and_chatgpt_names(self) -> None:
         self.assertEqual(
@@ -396,6 +418,8 @@ class TraceAndToolProbeTests(unittest.TestCase):
                         str(blocked_catalog),
                         "--subject",
                         "hashmarks",
+                        "--required-tool",
+                        "hashmarks_task_evidence",
                     ]
                 )
             self.assertEqual(code, 2)
