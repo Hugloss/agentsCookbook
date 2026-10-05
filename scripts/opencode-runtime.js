@@ -1319,6 +1319,7 @@ async function runSessionAndExport({
   let deleted = null;
   let finalText = null;
   let exportParseError = null;
+  let exportDiagnostic = null;
   let exportAttemptsUsed = 0;
   if (sessionId) {
     const attempts = run.status === 0 ? Math.max(1, exportAttempts) : 1;
@@ -1333,11 +1334,15 @@ async function runSessionAndExport({
       });
       finalText = null;
       exportParseError = null;
+      exportDiagnostic = null;
       if (exported.status === 0) {
         try {
           finalText = extractFinalAnswer(exported.stdout).text;
         } catch (error) {
           exportParseError = String(error.message || error);
+          exportDiagnostic = String(
+            error.stack || error.message || error,
+          );
         }
       }
       if (finalText || attempt === attempts - 1) {
@@ -1365,6 +1370,7 @@ async function runSessionAndExport({
     export_attempts: exportAttemptsUsed,
     final_text: finalText,
     export_parse_error: exportParseError,
+    export_diagnostic: exportDiagnostic,
     delete: deleted,
   };
 }

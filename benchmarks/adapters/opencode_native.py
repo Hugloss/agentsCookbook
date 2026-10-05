@@ -134,6 +134,40 @@ def _run_failure_reason(
     return None
 
 
+def _run_failure_diagnostic(
+    run_evidence: dict[str, Any] | None,
+    *,
+    export_diagnostic: str | None,
+    runtime_stderr: str | None,
+) -> str | None:
+    details: list[str] = []
+
+    export = _bounded_diagnostic(export_diagnostic)
+    if export:
+        details.append(f"OpenCode export diagnostic:\n{export}")
+
+    if isinstance(run_evidence, dict):
+        stderr = _bounded_diagnostic(run_evidence.get("stderr"))
+        if stderr:
+            details.append(f"OpenCode run stderr:\n{stderr}")
+        error = _bounded_diagnostic(run_evidence.get("error"))
+        if error:
+            details.append(f"OpenCode run error:\n{error}")
+        if run_evidence.get("status") not in (None, 0) and not stderr and not error:
+            stdout_tail = _bounded_tail_diagnostic(run_evidence.get("stdout"))
+            if stdout_tail:
+                details.append(f"OpenCode run stdout tail:\n{stdout_tail}")
+        signal = run_evidence.get("signal")
+        if isinstance(signal, str) and signal:
+            details.append(f"OpenCode run signal: {signal}")
+
+    runtime = _bounded_diagnostic(runtime_stderr)
+    if runtime:
+        details.append(f"Shared OpenCode runtime stderr:\n{runtime}")
+
+    return "\n\n".join(details) or None
+
+
 def _native_environment(context: TrialContext) -> dict[str, str]:
     required = (
         "BENCHMARK_NATIVE_HOME",
@@ -879,6 +913,7 @@ class OpenCodeNativeAgent:
         exported: dict[str, Any] = {}
         export_raw = ""
         export_error: str | None = None
+        export_diagnostic: str | None = None
         session_id: str | None = None
         operation_id: str | None = None
         authority_revalidation: dict[str, Any] | None = None
@@ -919,6 +954,9 @@ class OpenCodeNativeAgent:
             parse_error = envelope.get("export_parse_error")
             if isinstance(parse_error, str) and parse_error:
                 export_error = parse_error
+            diagnostic = envelope.get("export_diagnostic")
+            if isinstance(diagnostic, str) and diagnostic:
+                export_diagnostic = diagnostic
         if source_authority_error is not None:
             export_error = source_authority_error
 
@@ -973,6 +1011,19 @@ class OpenCodeNativeAgent:
             export_error=export_error,
             final_text=final_text,
         )
+        runtime_stderr = result.stderr.decode(
+            "utf-8",
+            errors="replace",
+        )
+        failure_diagnostic = (
+            _run_failure_diagnostic(
+                run_evidence,
+                export_diagnostic=export_diagnostic,
+                runtime_stderr=runtime_stderr,
+            )
+            if failure_reason is not None
+            else None
+        )
         complete = envelope is not None and failure_reason is None
         terminal = (
             {"type": "turn.completed"}
@@ -1016,10 +1067,8 @@ class OpenCodeNativeAgent:
                 ),
                 "process": result.metrics(),
                 "runtime_run": run_evidence,
-                "stderr": result.stderr.decode(
-                    "utf-8",
-                    errors="replace",
-                ),
+                "failure_diagnostic": failure_diagnostic,
+                "stderr": runtime_stderr,
             },
             export_raw,
             metrics,
