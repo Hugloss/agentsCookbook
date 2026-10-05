@@ -330,6 +330,31 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         self.assertNotIn("private-suite", result.stdout)
         self.assertNotIn("codex-native", result.stdout)
 
+    def test_benchmark_new_spacing_typo_fails_before_recipe_expansion(self) -> None:
+        result = subprocess.run(
+            ("make", "-f", str(MAKEFILE), "benchmark", "-new"),
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("make benchmark-new", result.stderr)
+        self.assertNotIn("./benchmark run --auto", result.stdout)
+
+    def test_unknown_benchmark_target_fails_before_work(self) -> None:
+        result = subprocess.run(
+            ("make", "-f", str(MAKEFILE), "benchmark-neww"),
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unknown benchmark target 'benchmark-neww'", result.stderr)
+        self.assertIn("BENCHMARK_TARGETS", result.stderr)
+        self.assertNotIn("./benchmark", result.stdout)
+
     def test_missing_env_file_fails_before_work(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             file = Path(tmp) / ".env"
