@@ -33,6 +33,8 @@ benchmark-context-invariance-qualify-status:
 		--task locate-prefix-path-enumerator \
 		--subject none --subject hashmarks \
 		--require-qualified
+	@./benchmark score --env-file "$(CONTEXT_INVARIANCE_ENV)" \
+		--require-analysis-evidence
 
 benchmark-context-invariance-new:
 	@./benchmark run --new --env-file "$(CONTEXT_INVARIANCE_ENV)"
