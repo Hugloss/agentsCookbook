@@ -361,6 +361,7 @@ class LiveTaskMatrix:
 
                 lines.extend(["", "Subject tool use"])
                 usage_rows: list[list[str]] = []
+                exposure_notes: list[str] = []
                 for condition_id in assisted_conditions:
                     usage = [
                         _subject_tool_use(receipt)
@@ -400,6 +401,12 @@ class LiveTaskMatrix:
                             ",".join(observability) or "unknown",
                         ]
                     )
+                    if usage and invoked == 0 and unknown == 0:
+                        exposure_notes.append(
+                            f"{label(condition_id)}: configured condition, "
+                            f"0/{len(usage)} subject invocations; outcomes are "
+                            "not attributable to the subject tool"
+                        )
                 lines.extend(
                     _render_table(
                         [
@@ -414,6 +421,14 @@ class LiveTaskMatrix:
                         usage_rows,
                     )
                 )
+                if exposure_notes:
+                    lines.extend(
+                        [
+                            "",
+                            "Exposure note",
+                            *exposure_notes,
+                        ]
+                    )
 
                 lines.extend(["", "Subject use by replicate"])
                 adoption_headers = [
