@@ -21,7 +21,8 @@ from benchmarks.harness.trace_diagnostics import (
     _opencode_calls,
     build_trace_diagnostics,
 )
-from benchmarks.tool_probe import exposure_probe_required_tool, prepare_tool_probe_suite
+from benchmarks.harness.subject_exposure import exposure_probe_required_tool
+from benchmarks.tool_probe import prepare_tool_probe_suite
 from benchmarks.tool_probe_score import (
     smoke_gate,
     main as tool_probe_score_main,
