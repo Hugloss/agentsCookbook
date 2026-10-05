@@ -1,6 +1,6 @@
 {
   "id": "repository-intelligence-heldout-outcomes-v1",
-  "version": 2,
+  "version": 3,
   "suite": "repository-intelligence",
   "oracle_reviews": "qualification/oracle-reviews.json",
   "tasks": [
@@ -104,5 +104,8 @@
       "duration_ms",
       "contamination"
     ]
+  },
+  "subject_exposure_contract": {
+    "require_probe_contract": true
   }
 }
