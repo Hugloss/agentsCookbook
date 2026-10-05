@@ -334,11 +334,11 @@ def _parser() -> argparse.ArgumentParser:
     mode.add_argument("--new", action="store_true")
     mode.add_argument("--resume", action="store_true")
     run.add_argument(
-        "--json-results",
+        "--no-json-results",
         action="store_true",
         help=(
-            "also emit the raw per-trial result list to stdout; "
-            "durable JSON reports are saved under the run reports directory"
+            "suppress the raw per-trial JSON list on stdout; "
+            "durable JSON reports remain saved under the run reports directory"
         ),
     )
 
@@ -1975,7 +1975,7 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
             file=sys.stderr,
             flush=True,
         )
-        _emit_run_results(results, enabled=args.json_results)
+        _emit_run_results(results, enabled=not getattr(args, "no_json_results", False))
         return 2
     print(
         f"RUN SUMMARY processed {len(results)}/{len(rows)} | "
@@ -2002,7 +2002,7 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
             file=sys.stderr,
             flush=True,
         )
-        _emit_run_results(results, enabled=args.json_results)
+        _emit_run_results(results, enabled=not getattr(args, "no_json_results", False))
         return 2
     print(
         "REPORTS saved | "
@@ -2055,7 +2055,7 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
     blocker_summary = render_run_blockers(blocking_failures)
     if blocker_summary is not None:
         print(blocker_summary, file=sys.stderr, flush=True)
-    _emit_run_results(results, enabled=args.json_results)
+    _emit_run_results(results, enabled=not getattr(args, "no_json_results", False))
     return 0
 
 
