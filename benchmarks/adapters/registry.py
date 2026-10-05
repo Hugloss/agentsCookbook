@@ -108,10 +108,14 @@ def build_agent(definition: dict[str, Any], *, budgets: dict[str, Any]):
                 + ", ".join(sorted(forbidden))
             )
         diagnostic_required_tool = config.get("diagnostic_required_tool")
-        if diagnostic_required_tool is not None and diagnostic_required_tool not in {
-            "hashmarks_task_evidence", "enola_explore"
-        }:
-            raise AdapterConfigurationError("unsupported diagnostic required tool")
+        if diagnostic_required_tool is not None and (
+            not isinstance(diagnostic_required_tool, str)
+            or not diagnostic_required_tool.strip()
+            or diagnostic_required_tool != diagnostic_required_tool.strip()
+        ):
+            raise AdapterConfigurationError(
+                "diagnostic required tool must be a nonempty canonical tool name"
+            )
         return OpenCodeNativeAgent(
             timeout_seconds=timeout_seconds,
             max_output_bytes=max_output_bytes,
