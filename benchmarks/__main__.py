@@ -517,7 +517,7 @@ def _write_derived_json(run_root: Path, filename: str, payload: object) -> Path:
 
 
 def _emit_run_results(results: list[dict[str, object]], *, enabled: bool) -> None:
-    """Emit raw per-trial JSON only when explicitly requested."""
+    """Emit raw per-trial JSON when the selected caller keeps that channel enabled."""
     if enabled:
         print(json.dumps(results, indent=2, sort_keys=True))
 
