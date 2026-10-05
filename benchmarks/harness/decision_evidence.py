@@ -184,6 +184,12 @@ def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
         for row in subject_adoption
         if isinstance(row.get("state"), str)
     ]
+    campaign_qualification = report.get("campaign_qualification", {})
+    subject_exposure = (
+        campaign_qualification.get("subject_exposure", {})
+        if isinstance(campaign_qualification, dict)
+        else {}
+    )
 
     source_read_observability = sorted(
         {
@@ -244,6 +250,8 @@ def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
         evidence_signals.append("strict-format-saturation-observed")
     if "configured-never-invoked" in adoption_states:
         evidence_signals.append("configured-subject-never-invoked")
+    if isinstance(subject_exposure, dict) and subject_exposure.get("status") == "FAIL":
+        evidence_signals.append("mandatory-subject-exposure-failed")
     if task_signals:
         evidence_signals.extend(sorted(set(task_signals)))
     if any(
@@ -325,6 +333,7 @@ def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
                 "conditions": condition_formats,
             },
             "assistance": {
+                "subject_exposure_qualification": subject_exposure,
                 "subject_adoption": subject_adoption,
                 "paired_summary": report.get("paired_assistance_summary", []),
                 "usage_summary": usage_summary,

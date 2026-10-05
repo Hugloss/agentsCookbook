@@ -16,7 +16,7 @@ from typing import Any, Callable
 from benchmarks.harness.report import (
     ReportError,
     classify_assistance_pair,
-    repository_location_failure_topology,
+    repository_location_outcome_topology,
 )
 from benchmarks.harness.runner import TrialRunResult
 
@@ -196,7 +196,7 @@ class LiveTaskMatrix:
                 for _row, observed_condition, receipt in outcomes
                 if observed_condition == condition_id
                 and (
-                    topology := repository_location_failure_topology(receipt)
+                    topology := repository_location_outcome_topology(receipt)
                 )
                 is not None
             )
@@ -214,7 +214,7 @@ class LiveTaskMatrix:
                 ]
             )
         if topology_rows:
-            lines.extend(["", "Repository-location failure topology"])
+            lines.extend(["", "Repository-location outcome topology"])
             lines.extend(
                 _render_table(
                     [
@@ -245,7 +245,7 @@ class LiveTaskMatrix:
                 item for item in conditions if self._conditions[item]["subject"] != "none"
             ]
             if assisted_conditions:
-                lines.extend(["", "Assisted condition vs Bare (all pairs)"])
+                lines.extend(["", "Subject-configured condition vs Bare (all pairs)"])
                 transition_rows: list[list[str]] = []
                 for condition_id in assisted_conditions:
                     assisted = {
@@ -361,6 +361,7 @@ class LiveTaskMatrix:
 
                 lines.extend(["", "Subject tool use"])
                 usage_rows: list[list[str]] = []
+                exposure_notes: list[str] = []
                 for condition_id in assisted_conditions:
                     usage = [
                         _subject_tool_use(receipt)
@@ -400,6 +401,12 @@ class LiveTaskMatrix:
                             ",".join(observability) or "unknown",
                         ]
                     )
+                    if usage and invoked == 0 and unknown == 0:
+                        exposure_notes.append(
+                            f"{label(condition_id)}: configured condition, "
+                            f"0/{len(usage)} subject invocations; outcomes are "
+                            "not attributable to the subject tool"
+                        )
                 lines.extend(
                     _render_table(
                         [
@@ -414,6 +421,14 @@ class LiveTaskMatrix:
                         usage_rows,
                     )
                 )
+                if exposure_notes:
+                    lines.extend(
+                        [
+                            "",
+                            "Exposure note",
+                            *exposure_notes,
+                        ]
+                    )
 
                 lines.extend(["", "Subject use by replicate"])
                 adoption_headers = [

@@ -190,11 +190,11 @@ class LiveTaskMatrixTests(unittest.TestCase):
             "6203         | INCOMPLETE | FAIL      | PASS ",
             rendered,
         )
-        self.assertIn("Repository-location failure topology", rendered)
+        self.assertIn("Repository-location outcome topology", rendered)
         self.assertIn("Same directory", rendered)
         self.assertIn("Same symbol", rendered)
         self.assertIn("Ungradeable", rendered)
-        self.assertIn("Assisted condition vs Bare (all pairs)", rendered)
+        self.assertIn("Subject-configured condition vs Bare (all pairs)", rendered)
         self.assertIn(
             "Hashmarks | 2    | 0         | 0          | 0          | 1",
             rendered,
@@ -225,6 +225,57 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn("6201", rendered)
         self.assertIn("used find,task_evidence calls=1 [complete]", rendered)
         self.assertIn("not-used calls=0 [complete]", rendered)
+
+    def test_zero_subject_exposure_is_explicit(self) -> None:
+        suite, rows = self._prefix_opencode_rows()
+        projection = LiveTaskMatrix(suite, rows)
+
+        rendered = None
+        for row in rows:
+            condition = row["condition_id"]
+            value = projection.record(
+                row,
+                self._receipt(
+                    suite,
+                    row,
+                    "PASS",
+                    invoked=(
+                        True
+                        if condition == "hashmarks-opencode-native"
+                        else False
+                        if condition == "enola-opencode-native"
+                        else None
+                    ),
+                    subject_mcp_calls=(
+                        1 if condition == "hashmarks-opencode-native" else 0
+                    ),
+                    tool_names=(
+                        ["task_evidence"]
+                        if condition == "hashmarks-opencode-native"
+                        else []
+                    ),
+                    tool_observability=(
+                        "complete"
+                        if condition.endswith("opencode-native")
+                        and condition != "none-opencode-native"
+                        else None
+                    ),
+                ),
+            )
+            if value is not None:
+                rendered = value
+
+        assert rendered is not None
+        self.assertIn(
+            "Subject-configured condition vs Bare (all pairs)",
+            rendered,
+        )
+        self.assertIn("Exposure note", rendered)
+        self.assertIn(
+            "Enola: configured condition, 0/3 subject invocations; outcomes are "
+            "not attributable to the subject tool",
+            rendered,
+        )
 
     def test_campaign_admission_renderer_exposes_model_free_step_progress(self) -> None:
         line = render_campaign_admission(

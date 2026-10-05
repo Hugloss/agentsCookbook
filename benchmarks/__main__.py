@@ -2041,6 +2041,28 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
             )
             if final_status.get(key)
         )
+        exposure = final_status.get("subject_exposure_qualification")
+        if isinstance(exposure, dict) and exposure.get("qualified") is False:
+            failures = [
+                row
+                for row in exposure.get("conditions", [])
+                if isinstance(row, dict) and row.get("status") == "FAIL"
+            ]
+            blockers.append(
+                "subject exposure "
+                + (
+                    "; ".join(
+                        f"{row.get('condition_id')}="
+                        + ",".join(
+                            str(reason)
+                            for reason in row.get("reason_codes", [])
+                        )
+                        for row in failures
+                    )
+                    if failures
+                    else str(exposure.get("status", "failed"))
+                )
+            )
         print(
             "NOT QUALIFIED: "
             + (", ".join(blockers) if blockers else "inspect campaign status"),

@@ -19,6 +19,7 @@ from benchmarks.harness.campaign_authority import (
     read_launch_claims,
     read_campaign,
 )
+from benchmarks.harness.subject_exposure import subject_exposure_qualification
 from benchmarks.harness.suite import SuiteDefinition
 from benchmarks.harness.identity import digest, execution_task_contract
 
@@ -760,7 +761,7 @@ def _attribution_interpretation(subject_use_state: str) -> str:
     return "invocation-unknown"
 
 
-def repository_location_failure_topology(
+def repository_location_outcome_topology(
     receipt: dict[str, Any],
 ) -> str | None:
     """Classify repository-location outcomes without changing oracle truth."""
@@ -901,8 +902,8 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 int(receipt["status"] == "PASS") - int(baseline["status"] == "PASS")
             ),
             "assistance_transition": transition,
-            "bare_failure_topology": repository_location_failure_topology(baseline),
-            "assisted_failure_topology": repository_location_failure_topology(receipt),
+            "bare_location_topology": repository_location_outcome_topology(baseline),
+            "assisted_location_topology": repository_location_outcome_topology(receipt),
         }
         invoked = (
             receipt.get("measurements", {})
@@ -971,6 +972,8 @@ def _paired_assistance_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any
         {
             "agent_id": key[0],
             "subject_id": key[1],
+            "comparison_scope": "subject-configured-condition-vs-bare",
+            "attribution_requires_observed_subject_use": True,
             "total_pairs": sum(counts.values()),
             "transitions": {
                 name: counts.get(name, 0)
@@ -1360,13 +1363,13 @@ def _stability(
                 "gradeable_outcomes": len(gradeable),
                 "semantic_correct": correct,
                 "semantic_incorrect": len(gradeable) - correct,
-                "failure_topologies": dict(
+                "location_topologies": dict(
                     sorted(
                         Counter(
                             topology
                             for row in valid
                             if (
-                                topology := repository_location_failure_topology(row)
+                                topology := repository_location_outcome_topology(row)
                             )
                             is not None
                         ).items()
@@ -1690,7 +1693,7 @@ def _diagnostic(receipt: dict[str, Any]) -> dict[str, Any]:
         "stage": stage,
         "reason_code": reason_code,
         "reason": _bounded_report_reason(raw_reason),
-        "failure_topology": repository_location_failure_topology(receipt),
+        "location_topology": repository_location_outcome_topology(receipt),
         "diagnostic_source": "receipt" if source is not None else "legacy-inferred",
     }
 
@@ -1932,7 +1935,16 @@ def build_report(
         if status not in _VALID_OUTCOMES
     )
     campaign_complete = not missing
-    campaign_qualified = campaign_complete and invalid_outcomes == 0
+    exposure_qualification = subject_exposure_qualification(
+        suite=suite,
+        expected_rows=expected.values(),
+        receipts=receipts,
+    )
+    campaign_qualified = (
+        campaign_complete
+        and invalid_outcomes == 0
+        and exposure_qualification["qualified"]
+    )
     paired_assistance = _paired_assistance(receipts)
     stability = _stability(receipts, expected=expected, suite=suite)
     context_invariance = _counterfactual_context(receipts)
@@ -1950,7 +1962,7 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 15,
+            "version": 16,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
@@ -2013,6 +2025,7 @@ def build_report(
             "invalid_outcomes": invalid_outcomes,
             "mixed_execution_authority": False,
             "mixed_localization_scoring_policy": False,
+            "subject_exposure": exposure_qualification,
         },
         "authority": {
             "overall_winner": None,
@@ -2021,6 +2034,9 @@ def build_report(
             "invalid_outcomes_excluded_from_success_rates": True,
             "economics_include_invalid_and_incomplete_trials": True,
             "paired_assistance_scope": "valid-outcomes-only",
+            "subject_exposure_qualification": (
+                "mandatory-for-selected-non-control-conditions"
+            ),
             "replicate_identity_field": (
                 "execution.replicate_id"
                 if any("replicate_id" in row["execution"] for row in receipts)

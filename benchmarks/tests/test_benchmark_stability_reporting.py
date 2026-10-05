@@ -150,7 +150,7 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         ):
             report = build_report(suite=suite, results_root=Path("/unused"))
 
-        self.assertEqual(report["schema"]["version"], 15)
+        self.assertEqual(report["schema"]["version"], 16)
         stability = {row["subject_id"]: row for row in report["stability"]}
         self.assertEqual(stability["none"]["state"], "unstable")
         self.assertEqual(stability["none"]["semantic_correct"], 2)
@@ -162,6 +162,11 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         summary = report["paired_assistance_summary"]
         self.assertEqual(len(summary), 1)
         self.assertEqual(summary[0]["subject_id"], "hashmarks")
+        self.assertEqual(
+            summary[0]["comparison_scope"],
+            "subject-configured-condition-vs-bare",
+        )
+        self.assertTrue(summary[0]["attribution_requires_observed_subject_use"])
         self.assertEqual(
             summary[0]["transitions"],
             {
@@ -297,6 +302,18 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
                 "median": 200,
             },
         )
+        exposure = report["campaign_qualification"]["subject_exposure"]
+        self.assertEqual(exposure["status"], "FAIL")
+        self.assertFalse(exposure["qualified"])
+        self.assertEqual(exposure["failed_conditions"], 1)
+        self.assertEqual(
+            exposure["conditions"][0]["reason_codes"],
+            ["subject-never-invoked"],
+        )
+        self.assertEqual(
+            report["campaign_qualification"]["status"],
+            "NOT_QUALIFIED",
+        )
 
     def test_task_assistance_evidence_preserves_invoked_tool_names_and_effect(self) -> None:
         suite = _suite()
@@ -371,6 +388,69 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
                 row["attribution_interpretation"]
                 == "not-attributable-to-subject-tool"
                 for row in paired[1:]
+            )
+        )
+        exposure = report["campaign_qualification"]["subject_exposure"]
+        self.assertEqual(exposure["status"], "PASS")
+        self.assertTrue(exposure["qualified"])
+        self.assertEqual(exposure["conditions"][0]["invoked_trials"], 1)
+        self.assertEqual(report["campaign_qualification"]["status"], "QUALIFIED")
+
+    def test_campaign_status_blocks_never_invoked_non_control_subject(self) -> None:
+        suite = _suite()
+        rows = suite.trial_definitions()
+        receipts = []
+        for index, row in enumerate(rows):
+            receipt = _receipt(
+                suite,
+                row,
+                "PASS",
+                f"{index + 1:064x}",
+            )
+            if row["condition_id"] == "hashmarks":
+                receipt["authority"]["subject"]["available"] = True
+                receipt["measurements"]["agent"] = {
+                    "subject_tool_configured": True,
+                    "subject_tool_invoked": False,
+                    "subject_mcp_calls": 0,
+                    "subject_tool_names": [],
+                }
+            receipts.append(receipt)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for receipt in receipts:
+                directory = root / str(receipt["trial_id"])
+                directory.mkdir()
+                (directory / "result.json").write_text(
+                    json.dumps(receipt),
+                    encoding="utf-8",
+                )
+            with mock.patch(
+                "benchmarks.harness.campaign.verify_bundle",
+                return_value=(True, None),
+            ):
+                status = campaign_status(
+                    suite=suite,
+                    results_root=root,
+                    selected_definitions={
+                        str(row["definition_id"])
+                        for row in rows
+                    },
+                )
+
+        self.assertFalse(status["qualified"])
+        exposure = status["subject_exposure_qualification"]
+        self.assertEqual(exposure["status"], "FAIL")
+        self.assertEqual(exposure["failed_conditions"], 1)
+        self.assertEqual(
+            exposure["conditions"][0]["reason_codes"],
+            ["subject-never-invoked"],
+        )
+        self.assertTrue(
+            any(
+                "subject-never-invoked" in issue
+                for issue in status["health"]["issues"]
             )
         )
 
