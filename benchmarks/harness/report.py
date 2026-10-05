@@ -1702,18 +1702,21 @@ def _cross_agent_observations(
     receipts: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     grouped: dict[
-        tuple[str, str, int, int],
+        tuple[str, str, int, int, str | None, str | None],
         dict[str, dict[str, Any]],
     ] = defaultdict(dict)
     for receipt in receipts:
         if receipt.get("status") not in _VALID_OUTCOMES:
             continue
         execution = receipt["execution"]
+        context_group, context_variant = _receipt_context_key(receipt)
         key = (
             _task_id(receipt),
             _subject_id(receipt),
             int(execution["trial_index"]),
             _replicate_id(receipt),
+            context_group,
+            context_variant,
         )
         agent = _agent_id(receipt)
         if agent in grouped[key]:
@@ -1744,9 +1747,16 @@ def _cross_agent_observations(
             "subject_id": key[1],
             "trial_index": key[2],
             "replicate_id": key[3],
+            "context_group": key[4],
+            "context_variant": key[5],
             "agents": dict(sorted(agents.items())),
         }
-        for key, agents in sorted(grouped.items())
+        for key, agents in sorted(
+            grouped.items(),
+            key=lambda item: tuple(
+                "" if value is None else str(value) for value in item[0]
+            ),
+        )
         if len(agents) > 1
     ]
 
