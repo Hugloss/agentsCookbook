@@ -1036,6 +1036,7 @@ def run_probe(
         catalog_payload=catalog,
         trace_payload=trace,
         subject="hashmarks",
+        required_tool="hashmarks_task_evidence",
     )
     receipt = {
         "schema": _RECEIPT_SCHEMA,
