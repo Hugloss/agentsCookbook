@@ -447,6 +447,8 @@ class TraceAndToolProbeTests(unittest.TestCase):
                         str(ready_catalog),
                         "--subject",
                         "hashmarks",
+                        "--required-tool",
+                        "hashmarks_task_evidence",
                     ]
                 )
             self.assertEqual(code, 0)
