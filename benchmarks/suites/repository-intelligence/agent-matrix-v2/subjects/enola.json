@@ -15,8 +15,5 @@
   ],
   "configuration": {
     "timeout_seconds": 240
-  },
-  "exposure_probe": {
-    "required_tool": "enola_explore"
   }
 }
