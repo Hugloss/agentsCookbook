@@ -760,7 +760,7 @@ def _attribution_interpretation(subject_use_state: str) -> str:
     return "invocation-unknown"
 
 
-def repository_location_failure_topology(
+def repository_location_outcome_topology(
     receipt: dict[str, Any],
 ) -> str | None:
     """Classify repository-location outcomes without changing oracle truth."""
@@ -901,8 +901,8 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 int(receipt["status"] == "PASS") - int(baseline["status"] == "PASS")
             ),
             "assistance_transition": transition,
-            "bare_failure_topology": repository_location_failure_topology(baseline),
-            "assisted_failure_topology": repository_location_failure_topology(receipt),
+            "bare_location_topology": repository_location_outcome_topology(baseline),
+            "assisted_location_topology": repository_location_outcome_topology(receipt),
         }
         invoked = (
             receipt.get("measurements", {})
@@ -971,6 +971,8 @@ def _paired_assistance_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any
         {
             "agent_id": key[0],
             "subject_id": key[1],
+            "comparison_scope": "subject-configured-condition-vs-bare",
+            "attribution_requires_observed_subject_use": True,
             "total_pairs": sum(counts.values()),
             "transitions": {
                 name: counts.get(name, 0)
@@ -1360,13 +1362,13 @@ def _stability(
                 "gradeable_outcomes": len(gradeable),
                 "semantic_correct": correct,
                 "semantic_incorrect": len(gradeable) - correct,
-                "failure_topologies": dict(
+                "location_topologies": dict(
                     sorted(
                         Counter(
                             topology
                             for row in valid
                             if (
-                                topology := repository_location_failure_topology(row)
+                                topology := repository_location_outcome_topology(row)
                             )
                             is not None
                         ).items()
@@ -1690,7 +1692,7 @@ def _diagnostic(receipt: dict[str, Any]) -> dict[str, Any]:
         "stage": stage,
         "reason_code": reason_code,
         "reason": _bounded_report_reason(raw_reason),
-        "failure_topology": repository_location_failure_topology(receipt),
+        "location_topology": repository_location_outcome_topology(receipt),
         "diagnostic_source": "receipt" if source is not None else "legacy-inferred",
     }
 
