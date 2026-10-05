@@ -15,8 +15,5 @@
   ],
   "configuration": {
     "timeout_seconds": 180
-  },
-  "exposure_probe": {
-    "required_tool": "hashmarks_task_evidence"
   }
 }
