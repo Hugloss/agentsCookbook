@@ -27,7 +27,6 @@ class ScoreContractTests(unittest.TestCase):
             with self.subTest(script=script.parent.name):
                 _validate_score_cli(script, os.environ)
 
-
     def test_analysis_evidence_gate_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             score = Path(temporary) / "score.json"
