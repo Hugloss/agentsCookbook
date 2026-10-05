@@ -1,4 +1,4 @@
-.PHONY: benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood
+.PHONY: benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood benchmark-context-invariance benchmark-context-invariance-check benchmark-context-invariance-check-all benchmark-context-invariance-new benchmark-context-invariance-resume benchmark-context-invariance-runs benchmark-context-invariance-status benchmark-context-invariance-reports
 
 PROBE_DIR = .benchmark-runs/tool-probes/$(PROBE_SUBJECT)/v2
 PROBE_SUITE = $(PROBE_DIR)/suite
@@ -7,6 +7,31 @@ PROBE_RUNS = $(PROBE_DIR)/runs
 PROBE_SMOKE = $(PROBE_DIR)/smoke
 
 OPENAI_ROUTING_ENV ?= .env
+CONTEXT_INVARIANCE_ENV ?= .env.context-invariance
+
+benchmark-context-invariance:
+	@./benchmark run --auto --env-file "$(CONTEXT_INVARIANCE_ENV)"
+
+benchmark-context-invariance-check:
+	@./benchmark check --env-file "$(CONTEXT_INVARIANCE_ENV)"
+
+benchmark-context-invariance-check-all:
+	@./benchmark preflight --env-file "$(CONTEXT_INVARIANCE_ENV)"
+
+benchmark-context-invariance-new:
+	@./benchmark run --new --env-file "$(CONTEXT_INVARIANCE_ENV)"
+
+benchmark-context-invariance-resume:
+	@./benchmark run --resume --env-file "$(CONTEXT_INVARIANCE_ENV)"
+
+benchmark-context-invariance-runs:
+	@./benchmark runs --env-file "$(CONTEXT_INVARIANCE_ENV)"
+
+benchmark-context-invariance-status:
+	@./benchmark status --env-file "$(CONTEXT_INVARIANCE_ENV)"
+
+benchmark-context-invariance-reports:
+	@./benchmark reports --env-file "$(CONTEXT_INVARIANCE_ENV)"
 
 benchmark-openai-routing: benchmark-openai-routing-new
 

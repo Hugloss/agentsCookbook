@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 GENERIC_SCORE_SCRIPTS = (
     ROOT / "suites/repository-intelligence/heldout-v1/score.py",
     ROOT / "suites/repository-intelligence/headroom-v1/score.py",
+    ROOT / "suites/repository-intelligence/context-invariance-v1/score.py",
     ROOT / "suites/repository-intelligence/behavioral-v3/score.py",
     ROOT / "suites/repository-intelligence/behavioral-v4/score.py",
     ROOT / "suites/repository-intelligence/multidomain-v2/score.py",
