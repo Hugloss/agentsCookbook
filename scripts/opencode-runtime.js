@@ -1102,26 +1102,6 @@ function prepareBenchmarkConfig({
       throw new Error('bare benchmark must not expose a subject');
     }
     const overlay = benchmarkOverlay(base.config, subjectExposure, agentName);
-    if (overlay.native_server_conflict) {
-      return {
-        status: 'failed',
-        reason:
-          `native OpenCode MCP server ${selectedSubject} is already enabled; ` +
-          'disable that native registration before running the benchmark so ' +
-          'there is one admitted subject runtime authority',
-        failure_stage: 'runtime-authority-conflict',
-        inspection: base.inspection,
-        base_config_source: 'fresh',
-        selected_server: selectedSubject,
-        overlay_identity: {
-          shape: overlay.shape,
-          selected_subject: selectedSubject,
-          native_server_shadowed: true,
-          native_server_conflict: true,
-          subject_exposure_sha256: overlay.subject_exposure_sha256,
-        },
-      };
-    }
     const content = mergeObjects(inlineConfig(env), overlay.config);
     const commandEnv = {
       ...env,
