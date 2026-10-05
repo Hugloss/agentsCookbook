@@ -61,5 +61,52 @@ A changed route with preserved semantics is evidence of behavioral sensitivity, 
 itself a defect. The deterministic repository-location oracle grades the final semantic
 answer; it does not judge reasoning quality.
 
-Use the normal benchmark workflow with this suite's `experiment.json` and
-`score.py`. Keep campaign roots separate from heldout and behavioral suites.
+## Run
+
+Keep this suite on its own configuration and campaign root. Do not rewrite the
+heldout-v1 `.env` to switch suites:
+
+```bash
+cp benchmarks/suites/repository-intelligence/context-invariance-v1/.env.example \
+  .env.context-invariance
+$EDITOR .env.context-invariance
+```
+
+First prove runtime wiring without model calls:
+
+```bash
+make benchmark-context-invariance-check
+```
+
+The exhaustive model-free admission is optional:
+
+```bash
+make benchmark-context-invariance-check-all
+```
+
+The canonical start-and-leave path is:
+
+```bash
+make benchmark-context-invariance
+```
+
+It reuses the ordinary benchmark `--auto` semantics: a new compatible run is
+created when no unfinished run exists; an unfinished matching run is never guessed.
+Choose explicitly when needed:
+
+```bash
+make benchmark-context-invariance-new
+make benchmark-context-invariance-resume
+```
+
+Inspect or refresh evidence without invoking a model:
+
+```bash
+make benchmark-context-invariance-runs
+make benchmark-context-invariance-status
+make benchmark-context-invariance-reports
+```
+
+Set `CONTEXT_INVARIANCE_ENV=/path/to/file` to use a different explicit config file.
+All commands still flow through the generic benchmark CLI and its single config,
+campaign, admission, and scoring authorities.
