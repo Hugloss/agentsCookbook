@@ -195,6 +195,10 @@ def _validate_context_conditions(experiment: dict[str, Any]) -> None:
         groups.setdefault(key, []).append(condition)
 
     for key, conditions in groups.items():
+        if len(conditions) < 2:
+            raise SuiteError(
+                f"context group {key[0]} / {key[1]} / {key[2]} requires a counterfactual arm"
+            )
         variants = [str(row["context"]["variant"]) for row in conditions]
         if len(set(variants)) != len(variants):
             raise SuiteError(
