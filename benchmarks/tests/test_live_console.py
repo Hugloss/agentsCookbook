@@ -189,11 +189,11 @@ class LiveTaskMatrixTests(unittest.TestCase):
             "6203         | INCOMPLETE | FAIL      | PASS ",
             rendered,
         )
-        self.assertIn("Repository-location failure topology", rendered)
+        self.assertIn("Repository-location outcome topology", rendered)
         self.assertIn("Same directory", rendered)
         self.assertIn("Same symbol", rendered)
         self.assertIn("Ungradeable", rendered)
-        self.assertIn("Assisted condition vs Bare (all pairs)", rendered)
+        self.assertIn("Subject-configured condition vs Bare (all pairs)", rendered)
         self.assertIn(
             "Hashmarks | 2    | 0         | 0          | 0          | 1",
             rendered,
