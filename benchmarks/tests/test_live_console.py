@@ -74,6 +74,21 @@ class LiveTaskMatrixTests(unittest.TestCase):
                         if not gradeable
                         else None
                     ),
+                    "expected": suite.tasks[row["task_id"]]["oracle"]["configuration"][
+                        "expected"
+                    ],
+                    "normalized_actual": (
+                        suite.tasks[row["task_id"]]["oracle"]["configuration"][
+                            "expected"
+                        ]
+                        if gradeable and status == "PASS"
+                        else {
+                            "path": "hashmarks/codemap/repository_file_discovery.py",
+                            "symbol": "_iter_admitted_repository_files",
+                        }
+                        if gradeable
+                        else None
+                    ),
                 }
             },
             "measurements": {
@@ -174,6 +189,10 @@ class LiveTaskMatrixTests(unittest.TestCase):
             "6203         | INCOMPLETE | FAIL      | PASS ",
             rendered,
         )
+        self.assertIn("Repository-location failure topology", rendered)
+        self.assertIn("Same directory", rendered)
+        self.assertIn("Same symbol", rendered)
+        self.assertIn("Ungradeable", rendered)
         self.assertIn("Assisted condition vs Bare (all pairs)", rendered)
         self.assertIn(
             "Hashmarks | 2    | 0         | 0          | 0          | 1",

@@ -13,7 +13,11 @@ from threading import Event, Lock, Thread
 from time import monotonic
 from typing import Any, Callable
 
-from benchmarks.harness.report import ReportError, classify_assistance_pair
+from benchmarks.harness.report import (
+    ReportError,
+    classify_assistance_pair,
+    repository_location_failure_topology,
+)
 from benchmarks.harness.runner import TrialRunResult
 
 from benchmarks.harness.suite import SuiteDefinition
@@ -184,6 +188,47 @@ class LiveTaskMatrix:
             "",
             *_render_table(headers, table_rows),
         ]
+
+        topology_rows: list[list[str]] = []
+        for condition_id in conditions:
+            topologies = Counter(
+                topology
+                for _row, observed_condition, receipt in outcomes
+                if observed_condition == condition_id
+                and (
+                    topology := repository_location_failure_topology(receipt)
+                )
+                is not None
+            )
+            if not topologies:
+                continue
+            topology_rows.append(
+                [
+                    label(condition_id),
+                    str(topologies["exact"]),
+                    str(topologies["same-file-wrong-symbol"]),
+                    str(topologies["same-symbol-wrong-file"]),
+                    str(topologies["same-directory-location-mismatch"]),
+                    str(topologies["different-location"]),
+                    str(topologies["ungradeable"]),
+                ]
+            )
+        if topology_rows:
+            lines.extend(["", "Repository-location failure topology"])
+            lines.extend(
+                _render_table(
+                    [
+                        "Subject",
+                        "Exact",
+                        "Same file",
+                        "Same symbol",
+                        "Same directory",
+                        "Different",
+                        "Ungradeable",
+                    ],
+                    topology_rows,
+                )
+            )
 
         if "none" in subjects:
             controls: dict[object, dict[str, Any]] = {}
