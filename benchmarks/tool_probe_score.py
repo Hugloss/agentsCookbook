@@ -9,7 +9,7 @@ from pathlib import Path
 from benchmarks.harness.report import build_report
 from benchmarks.harness.suite import load_suite
 from benchmarks.harness.trace_diagnostics import build_trace_diagnostics
-from benchmarks.tool_probe import exposure_probe_required_tool
+from benchmarks.harness.subject_exposure import exposure_probe_required_tool
 from benchmarks.tool_routing import (
     first_native_discovery,
     required_before_native_discovery,
