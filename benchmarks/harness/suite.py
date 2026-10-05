@@ -28,7 +28,7 @@ def effective_prompt(task: dict[str, Any], condition: dict[str, Any]) -> str:
     suffix = str(context.get("prompt_suffix", "")).strip()
     if not suffix:
         return prompt
-    return f"Declared evaluation context:\\n{suffix}\\n\\n{prompt}"
+    return f"Declared evaluation context:\n{suffix}\n\n{prompt}"
 
 
 def _load_json(path: Path) -> dict[str, Any]:
