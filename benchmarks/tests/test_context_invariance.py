@@ -11,6 +11,7 @@ from benchmarks.harness.suite import (
     SuiteError,
     _validate_context_conditions,
     effective_prompt,
+    load_suite,
 )
 
 
@@ -167,6 +168,24 @@ class ContextInvarianceTests(unittest.TestCase):
         experiment["conditions"][0]["context"]["kind"] = "placebo"
         with self.assertRaisesRegex(SuiteError, "requires one neutral arm"):
             _validate_context_conditions(experiment)
+
+    def test_checked_in_suite_freezes_expected_population(self) -> None:
+        root = (
+            Path(__file__).resolve().parents[1]
+            / "suites"
+            / "repository-intelligence"
+            / "context-invariance-v1"
+        )
+        suite = load_suite(root)
+        self.assertEqual(len(suite.trial_definitions()), 96)
+        self.assertEqual(len(suite.experiment["conditions"]), 16)
+        self.assertEqual(
+            {
+                condition["context"]["variant"]
+                for condition in suite.experiment["conditions"]
+            },
+            {"neutral", "placebo", "authority-claim", "misleading-hint"},
+        )
 
     def test_report_preserves_context_pairs_and_flip_rates(self) -> None:
         suite = _suite()
