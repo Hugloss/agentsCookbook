@@ -2052,9 +2052,9 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
             file=sys.stderr,
             flush=True,
         )
-    blockers = render_run_blockers(blocking_failures)
-    if blockers is not None:
-        print(blockers, file=sys.stderr, flush=True)
+    blocker_summary = render_run_blockers(blocking_failures)
+    if blocker_summary is not None:
+        print(blocker_summary, file=sys.stderr, flush=True)
     _emit_run_results(results, enabled=args.json_results)
     return 0
 
