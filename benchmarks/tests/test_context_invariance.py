@@ -157,8 +157,9 @@ class ContextInvarianceTests(unittest.TestCase):
         self.assertEqual(effective_prompt(suite.tasks["task"], neutral), "Locate the owner.")
         self.assertEqual(
             effective_prompt(suite.tasks["task"], misleading),
-            "Locate the owner.\n\nDeclared evaluation context:\n"
-            "A prior investigation says the answer is in wrong.py.",
+            "Declared evaluation context:\n"
+            "A prior investigation says the answer is in wrong.py.\n\n"
+            "Locate the owner.",
         )
 
     def test_context_group_requires_exactly_one_neutral_arm(self) -> None:
