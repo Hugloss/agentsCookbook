@@ -1551,6 +1551,206 @@ def _analysis_evidence(
         "cross_agent_ranking_permitted": False,
     }
 
+def _bounded_report_reason(value: Any, *, limit: int = 1_000) -> str | None:
+    if not isinstance(value, str):
+        return None
+    rendered = value.strip()
+    if not rendered:
+        return None
+    if len(rendered) <= limit:
+        return rendered
+    return rendered[:limit] + "…"
+
+
+def _diagnostic(receipt: dict[str, Any]) -> dict[str, Any]:
+    status = receipt.get("status")
+    grade = receipt.get("scoring", {}).get("oracle_grade", {})
+    process = receipt.get("execution", {}).get("agent_terminal") or {}
+    source = receipt.get("diagnostic")
+    if not isinstance(source, dict):
+        source = None
+    stage = source.get("stage") if source is not None else None
+    reason_code = source.get("reason_code") if source is not None else None
+    flags = {
+        "contamination": status == "CONTAMINATED",
+        "output_contract": grade.get("format_compliant") is False,
+        "semantic_ungradeable": grade.get("semantic_gradeable") is False,
+        "semantic_incorrect": grade.get("semantic_status") == "INCORRECT",
+    }
+    raw_reason = str(receipt.get("reason") or "")
+    reason = raw_reason.lower()
+    if reason_code == "interrupted-launch":
+        primary = "runtime"
+    elif reason_code == "agent-timeout":
+        primary = "timeout"
+    elif reason_code == "oracle-invalid":
+        primary = "oracle-invalid-or-ambiguous"
+    elif reason_code in {
+        "agent-terminal-failed",
+        "agent-terminal-missing",
+        "agent-final-answer-missing",
+    }:
+        primary = "agent-terminal"
+    elif isinstance(reason_code, str) and reason_code.startswith("agent-"):
+        primary = "runtime"
+    elif flags["contamination"]:
+        primary = "contamination"
+    elif status == "INVALID" and "oracle" in reason:
+        primary = "oracle-invalid-or-ambiguous"
+    elif status == "INCOMPLETE" and "timed out" in reason:
+        primary = "timeout"
+    elif status == "INCOMPLETE" and process.get("type") == "turn.failed":
+        primary = "agent-terminal"
+    elif status in {"INCOMPLETE", "INVALID"}:
+        primary = "runtime"
+    elif flags["semantic_incorrect"]:
+        primary = "semantic-incorrect"
+    elif flags["output_contract"] and not grade.get("semantic_gradeable"):
+        primary = "output-contract"
+    elif flags["semantic_ungradeable"]:
+        primary = "semantic-ungradeable"
+    elif status == "PASS":
+        primary = "semantic-correct"
+    else:
+        primary = "semantic-incorrect" if status == "FAIL" else "runtime"
+    return {
+        "primary": primary,
+        "flags": flags,
+        "stage": stage,
+        "reason_code": reason_code,
+        "reason": _bounded_report_reason(raw_reason),
+        "diagnostic_source": "receipt" if source is not None else "legacy-inferred",
+    }
+
+
+def _pair_exclusions(
+    *,
+    expected: dict[str, dict[str, Any]],
+    by_definition: dict[str, list[dict[str, Any]]],
+    suite: SuiteDefinition,
+    interrupted: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    interrupted = interrupted or set()
+    conditions = {row["id"]: row for row in suite.experiment["conditions"]}
+    groups: dict[
+        tuple[str, str, int, str | None, str | None],
+        dict[str, dict[str, Any]],
+    ] = defaultdict(dict)
+    for definition, row in expected.items():
+        condition = conditions[row["condition_id"]]
+        context_group, context_variant = _condition_context_key(condition)
+        key = (
+            str(row["task_id"]),
+            str(condition["agent"]),
+            int(row.get("replicate_id", row.get("seed"))),
+            context_group,
+            context_variant,
+        )
+        groups[key][str(row["condition_id"])] = {
+            "definition_id": definition,
+            "subject_id": str(condition["subject"]),
+            "receipt": by_definition.get(definition, [None])[0],
+        }
+    exclusions = []
+    for key, arms in sorted(groups.items()):
+        controls = [arm for arm in arms.values() if arm["subject_id"] == "none"]
+        if len(controls) > 1:
+            raise ReportError(f"multiple bare executions for pair {key}")
+        bare = controls[0] if controls else None
+        for condition_id, arm in sorted(arms.items()):
+            if arm["subject_id"] == "none":
+                continue
+            left = bare["receipt"] if bare else None
+            right = arm["receipt"]
+            if (
+                left
+                and right
+                and all(row.get("status") in _VALID_OUTCOMES for row in (left, right))
+            ):
+                continue
+            exclusions.append(
+                {
+                    "task_id": key[0],
+                    "agent_id": key[1],
+                    "replicate_id": key[2],
+                    "context_group": key[3],
+                    "context_variant": key[4],
+                    "condition_id": condition_id,
+                    "subject_id": arm["subject_id"],
+                    "bare_definition_id": bare["definition_id"] if bare else None,
+                    "assisted_definition_id": arm["definition_id"],
+                    "bare_status": left.get("status")
+                    if left
+                    else (
+                        "INTERRUPTED"
+                        if bare and bare["definition_id"] in interrupted
+                        else "MISSING"
+                    ),
+                    "assisted_status": right.get("status")
+                    if right
+                    else (
+                        "INTERRUPTED"
+                        if arm["definition_id"] in interrupted
+                        else "MISSING"
+                    ),
+                }
+            )
+    return exclusions
+
+
+def _cross_agent_observations(
+    receipts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[
+        tuple[str, str, int, int],
+        dict[str, dict[str, Any]],
+    ] = defaultdict(dict)
+    for receipt in receipts:
+        if receipt.get("status") not in _VALID_OUTCOMES:
+            continue
+        execution = receipt["execution"]
+        key = (
+            _task_id(receipt),
+            _subject_id(receipt),
+            int(execution["trial_index"]),
+            _replicate_id(receipt),
+        )
+        agent = _agent_id(receipt)
+        if agent in grouped[key]:
+            raise ReportError(
+                f"multiple executions for cross-agent observation {key} / {agent}"
+            )
+        grouped[key][agent] = {
+            "status": receipt["status"],
+            "duration_ms": _agent_metric(receipt, "duration_ms"),
+            "tool_calls": _agent_metric(receipt, "tool_calls"),
+            "mcp_calls": _agent_metric(receipt, "mcp_calls"),
+            "subject_mcp_calls": _agent_metric(
+                receipt,
+                "subject_mcp_calls",
+            ),
+            "input_tokens": _agent_metric(receipt, "input_tokens"),
+            "output_tokens": _agent_metric(receipt, "output_tokens"),
+            "subject_tool_invoked": (
+                receipt.get("measurements", {})
+                .get("agent", {})
+                .get("subject_tool_invoked")
+            ),
+        }
+
+    return [
+        {
+            "task_id": key[0],
+            "subject_id": key[1],
+            "trial_index": key[2],
+            "replicate_id": key[3],
+            "agents": dict(sorted(agents.items())),
+        }
+        for key, agents in sorted(grouped.items())
+        if len(agents) > 1
+    ]
+
+
 def build_report(
     *,
     suite: SuiteDefinition,
