@@ -18,6 +18,10 @@ from .campaign_authority import (
 from .identity import definition_id, execution_id
 from .receipt import is_complete_receipt
 from .report import ReportError, validate_comparability
+from .subject_exposure import (
+    subject_exposure_issues,
+    subject_exposure_qualification,
+)
 from .suite import SuiteDefinition
 
 
@@ -293,9 +297,17 @@ def campaign_status(
         and campaign_error is None
     )
     completeness_ok = state_counts["COMPLETE"] == len(definitions)
+    exposure_qualification = subject_exposure_qualification(
+        suite=suite,
+        expected_rows=definitions.values(),
+        receipts=completed_receipts,
+    )
     qualification_ok = (
-        integrity_ok and completeness_ok and unresolved_outcomes == 0
+        integrity_ok
+        and completeness_ok
+        and unresolved_outcomes == 0
         and comparability_error is None
+        and exposure_qualification["qualified"]
     )
 
     return {
@@ -318,6 +330,7 @@ def campaign_status(
         ),
         "qualified": qualification_ok,
         "unresolved_outcome_trials": unresolved_outcomes,
+        "subject_exposure_qualification": exposure_qualification,
         "recovered_interruption_attempts": sum(
             len(values)
             for definition, values in interrupted_attempts.items()
@@ -333,6 +346,7 @@ def campaign_status(
                 *[f"foreign bundle: {item['directory']}" for item in foreign],
                 *[f"conflicting receipts: {item['definition_id']}" for item in rows if item["state"] == "CONFLICT"],
                 *([comparability_error] if comparability_error else []),
+                *subject_exposure_issues(exposure_qualification),
             ],
         },
         "comparability_error": comparability_error,
