@@ -1393,8 +1393,10 @@ def _counterfactual_context(
             variants[variant] = row
             if context.get("kind") == "neutral":
                 neutral.append(row)
-        if len(neutral) != 1:
-            raise ReportError(f"context comparison {key} requires one neutral execution")
+        if len(neutral) > 1:
+            raise ReportError(f"context comparison {key} has multiple neutral executions")
+        if not neutral:
+            continue
         baseline = neutral[0]
         baseline_variant = str(baseline["condition"]["context"]["variant"])
         for variant_name, variant in sorted(variants.items()):
