@@ -37,7 +37,7 @@ from benchmarks.harness.report import (
     _aggregate_condition,
     _check_localization_grades,
     build_report,
-    repository_location_failure_topology,
+    repository_location_outcome_topology,
 )
 from benchmarks.harness.suite import SuiteDefinition, load_suite
 
@@ -225,7 +225,7 @@ class RepositoryLocationOracleTests(unittest.TestCase):
         )
         return bundle
 
-    def test_repository_location_failure_topology_is_descriptive_only(self) -> None:
+    def test_repository_location_outcome_topology_is_descriptive_only(self) -> None:
         base = {
             "status": "FAIL",
             "task": {"oracle": {"adapter": "repository-location-json"}},
@@ -243,7 +243,7 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             "symbol": "other_symbol",
         }
         self.assertEqual(
-            repository_location_failure_topology(same_file),
+            repository_location_outcome_topology(same_file),
             "same-file-wrong-symbol",
         )
 
@@ -253,7 +253,7 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             "symbol": EXPECTED["symbol"],
         }
         self.assertEqual(
-            repository_location_failure_topology(same_symbol),
+            repository_location_outcome_topology(same_symbol),
             "same-symbol-wrong-file",
         )
 
@@ -263,7 +263,7 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             "symbol": "_iter_admitted_repository_files",
         }
         self.assertEqual(
-            repository_location_failure_topology(sibling),
+            repository_location_outcome_topology(sibling),
             "same-directory-location-mismatch",
         )
 
@@ -273,7 +273,7 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             "symbol": "other",
         }
         self.assertEqual(
-            repository_location_failure_topology(distant),
+            repository_location_outcome_topology(distant),
             "different-location",
         )
 
@@ -281,13 +281,13 @@ class RepositoryLocationOracleTests(unittest.TestCase):
         ungradeable["scoring"]["oracle_grade"]["semantic_gradeable"] = False
         ungradeable["scoring"]["oracle_grade"]["normalized_actual"] = None
         self.assertEqual(
-            repository_location_failure_topology(ungradeable),
+            repository_location_outcome_topology(ungradeable),
             "ungradeable",
         )
 
         incomplete = copy.deepcopy(sibling)
         incomplete["status"] = "INCOMPLETE"
-        self.assertIsNone(repository_location_failure_topology(incomplete))
+        self.assertIsNone(repository_location_outcome_topology(incomplete))
 
     def test_registry_builds_repository_location_oracle(self) -> None:
         oracle = build_oracle(
