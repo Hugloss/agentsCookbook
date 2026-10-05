@@ -302,6 +302,18 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
                 "median": 200,
             },
         )
+        exposure = report["campaign_qualification"]["subject_exposure"]
+        self.assertEqual(exposure["status"], "FAIL")
+        self.assertFalse(exposure["qualified"])
+        self.assertEqual(exposure["failed_conditions"], 1)
+        self.assertEqual(
+            exposure["conditions"][0]["reason_codes"],
+            ["subject-never-invoked"],
+        )
+        self.assertEqual(
+            report["campaign_qualification"]["status"],
+            "NOT_QUALIFIED",
+        )
 
     def test_task_assistance_evidence_preserves_invoked_tool_names_and_effect(self) -> None:
         suite = _suite()
@@ -378,6 +390,11 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
                 for row in paired[1:]
             )
         )
+        exposure = report["campaign_qualification"]["subject_exposure"]
+        self.assertEqual(exposure["status"], "PASS")
+        self.assertTrue(exposure["qualified"])
+        self.assertEqual(exposure["conditions"][0]["invoked_trials"], 1)
+        self.assertEqual(report["campaign_qualification"]["status"], "QUALIFIED")
 
     def test_report_summarizes_native_tool_strategy_without_raw_sequence(self) -> None:
         suite = _suite()
