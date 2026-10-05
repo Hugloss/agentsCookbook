@@ -8,6 +8,75 @@ from typing import Any, Iterable
 from benchmarks.harness.suite import SuiteDefinition
 
 
+def exposure_probe_required_tool(
+    suite: SuiteDefinition,
+    subject_id: str,
+) -> str:
+    """Return the frozen required-tool contract for one non-control subject."""
+    definition = suite.subjects.get(subject_id)
+    if not isinstance(definition, dict):
+        raise ValueError(f"unknown benchmark subject: {subject_id}")
+    if definition.get("kind") == "control":
+        raise ValueError("control subjects do not have exposure probes")
+    probe = definition.get("exposure_probe")
+    if not isinstance(probe, dict):
+        raise ValueError(
+            f"subject {subject_id} has no exposure_probe contract"
+        )
+    required_tool = probe.get("required_tool")
+    if not isinstance(required_tool, str) or not required_tool:
+        raise ValueError(
+            f"subject {subject_id} exposure_probe.required_tool is invalid"
+        )
+    if not required_tool.startswith(subject_id + "_"):
+        raise ValueError(
+            f"subject {subject_id} exposure probe tool must use the "
+            f"{subject_id}_ prefix"
+        )
+    return required_tool
+
+
+def validate_subject_exposure_admission_contract(
+    *,
+    suite: SuiteDefinition,
+    expected_rows: Iterable[dict[str, Any]],
+) -> list[dict[str, str]]:
+    """Fail before campaign work when the frozen suite requires probe contracts."""
+    contract = suite.experiment.get("subject_exposure_contract")
+    if not isinstance(contract, dict) or contract.get("require_probe_contract") is not True:
+        return []
+
+    conditions = {
+        str(condition["id"]): condition
+        for condition in suite.experiment["conditions"]
+    }
+    selected_condition_ids = {
+        str(row["condition_id"])
+        for row in expected_rows
+    }
+    result: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for condition_id in sorted(selected_condition_ids):
+        condition = conditions.get(condition_id)
+        if not isinstance(condition, dict):
+            raise ValueError(f"unknown benchmark condition: {condition_id}")
+        subject_id = str(condition["subject"])
+        subject = suite.subjects.get(subject_id)
+        if not isinstance(subject, dict):
+            raise ValueError(f"unknown benchmark subject: {subject_id}")
+        if subject.get("kind") == "control" or subject_id in seen:
+            continue
+        required_tool = exposure_probe_required_tool(suite, subject_id)
+        result.append(
+            {
+                "subject_id": subject_id,
+                "required_tool": required_tool,
+            }
+        )
+        seen.add(subject_id)
+    return result
+
+
 def subject_exposure_qualification(
     *,
     suite: SuiteDefinition,
