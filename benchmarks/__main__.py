@@ -94,6 +94,7 @@ from benchmarks.harness.live_console import (
     LiveTaskMatrix,
     TrialHeartbeat,
     render_campaign_admission,
+    render_run_blockers,
     render_trial_failure,
 )
 from benchmarks.harness.selection import (
@@ -332,6 +333,14 @@ def _parser() -> argparse.ArgumentParser:
     mode.add_argument("--auto", action="store_true")
     mode.add_argument("--new", action="store_true")
     mode.add_argument("--resume", action="store_true")
+    run.add_argument(
+        "--no-json-results",
+        action="store_true",
+        help=(
+            "suppress the raw per-trial JSON list on stdout; "
+            "durable JSON reports remain saved under the run reports directory"
+        ),
+    )
 
     runs = sub.add_parser("runs")
     runs.add_argument("--env-file", type=Path)
@@ -505,6 +514,12 @@ def _write_derived_json(run_root: Path, filename: str, payload: object) -> Path:
     finally:
         Path(temporary).unlink(missing_ok=True)
     return destination
+
+
+def _emit_run_results(results: list[dict[str, object]], *, enabled: bool) -> None:
+    """Emit raw per-trial JSON when the selected caller keeps that channel enabled."""
+    if enabled:
+        print(json.dumps(results, indent=2, sort_keys=True))
 
 
 def _score_environment(runtime_source) -> dict[str, str]:
@@ -1772,6 +1787,7 @@ def _persist_completed_run_reports(
 
 def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> int:
     results = []
+    blocking_failures: list[str] = []
     assert paths.results is not None
     live_matrix = LiveTaskMatrix(suite, rows)
     run_started = time.monotonic()
@@ -1933,6 +1949,8 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
         )
         if failure is not None:
             print(failure, file=sys.stderr, flush=True)
+            if result.status not in {"PASS", "FAIL", "NO_QUALIFYING_DEFECT"}:
+                blocking_failures.append(failure)
         print(
             live_progress.finish_line(
                 result,
@@ -1957,7 +1975,7 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
             file=sys.stderr,
             flush=True,
         )
-        print(json.dumps(results, indent=2, sort_keys=True))
+        _emit_run_results(results, enabled=not getattr(args, "no_json_results", False))
         return 2
     print(
         f"RUN SUMMARY processed {len(results)}/{len(rows)} | "
@@ -1984,7 +2002,7 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
             file=sys.stderr,
             flush=True,
         )
-        print(json.dumps(results, indent=2, sort_keys=True))
+        _emit_run_results(results, enabled=not getattr(args, "no_json_results", False))
         return 2
     print(
         "REPORTS saved | "
@@ -2034,7 +2052,10 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
             file=sys.stderr,
             flush=True,
         )
-    print(json.dumps(results, indent=2, sort_keys=True))
+    blocker_summary = render_run_blockers(blocking_failures)
+    if blocker_summary is not None:
+        print(blocker_summary, file=sys.stderr, flush=True)
+    _emit_run_results(results, enabled=not getattr(args, "no_json_results", False))
     return 0
 
 

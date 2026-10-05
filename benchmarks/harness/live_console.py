@@ -829,3 +829,28 @@ def render_trial_failure(
     if result.diagnostic:
         lines.extend(["", "--- diagnostic ---", result.diagnostic])
     return "\n".join(lines)
+
+
+
+def render_run_blockers(failures: list[str]) -> str | None:
+    """Repeat qualification-blocking failures at the end of a long run."""
+    if not failures:
+        return None
+    label = "failure" if len(failures) == 1 else "failures"
+    lines = [
+        "",
+        f"RUN BLOCKERS {len(failures)} operational {label}",
+        (
+            "Repeated at end of run so the actionable diagnostic remains visible; "
+            "durable machine-readable detail is in the reports directory."
+        ),
+    ]
+    for index, failure in enumerate(failures, start=1):
+        lines.extend(
+            [
+                "",
+                f"--- blocker {index}/{len(failures)} ---",
+                failure.lstrip(),
+            ]
+        )
+    return "\n".join(lines)
