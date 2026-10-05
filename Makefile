@@ -139,7 +139,7 @@ benchmark:
 	@./benchmark run --auto --env-file .env
 
 benchmark-new:
-	@./benchmark run --new --env-file .env
+	@./benchmark run --new --env-file .env --no-json-results
 
 benchmark-resume:
 	@./benchmark run --resume --env-file .env
