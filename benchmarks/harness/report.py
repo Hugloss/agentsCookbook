@@ -769,7 +769,10 @@ def repository_location_failure_topology(
 
     task = receipt.get("task", {})
     oracle = task.get("oracle", {}) if isinstance(task, dict) else {}
-    if not isinstance(oracle, dict) or oracle.get("adapter") != "repository-location-json":
+    if (
+        not isinstance(oracle, dict)
+        or oracle.get("adapter") != "repository-location-json"
+    ):
         return None
 
     grade = receipt.get("scoring", {}).get("oracle_grade", {})
