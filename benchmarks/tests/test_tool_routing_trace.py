@@ -165,7 +165,7 @@ class ToolRoutingTraceTests(unittest.TestCase):
                 catalog_payload=current_catalog,
                 trace_payload=stale_trace,
                 subject="hashmarks",
-            required_tool="hashmarks_task_evidence",
+                required_tool="hashmarks_task_evidence",
             )
 
     def test_trace_rejects_different_capture_session(self) -> None:
@@ -403,6 +403,8 @@ class ToolRoutingTraceTests(unittest.TestCase):
                         str(raw),
                         "--subject",
                         "hashmarks",
+                        "--required-tool",
+                        "hashmarks_task_evidence",
                         "--host",
                         "chatgpt",
                     ]
