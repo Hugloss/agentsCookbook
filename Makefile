@@ -1,4 +1,23 @@
-.PHONY: benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood benchmark-context-invariance benchmark-context-invariance-check benchmark-context-invariance-check-all benchmark-context-invariance-qualify-check benchmark-context-invariance-qualify benchmark-context-invariance-qualify-resume benchmark-context-invariance-qualify-status benchmark-context-invariance-new benchmark-context-invariance-resume benchmark-context-invariance-runs benchmark-context-invariance-status benchmark-context-invariance-reports
+BENCHMARK_TARGETS := benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood benchmark-context-invariance benchmark-context-invariance-check benchmark-context-invariance-check-all benchmark-context-invariance-qualify-check benchmark-context-invariance-qualify benchmark-context-invariance-qualify-resume benchmark-context-invariance-qualify-status benchmark-context-invariance-new benchmark-context-invariance-resume benchmark-context-invariance-runs benchmark-context-invariance-status benchmark-context-invariance-reports
+.PHONY: $(BENCHMARK_TARGETS)
+
+BENCHMARK_REQUESTED_GOALS := $(filter benchmark benchmark-%,$(MAKECMDGOALS))
+BENCHMARK_UNKNOWN_GOALS := $(filter-out $(BENCHMARK_TARGETS),$(BENCHMARK_REQUESTED_GOALS))
+BENCHMARK_MAKE_SHORT_FLAGS := $(firstword $(MAKEFLAGS))
+
+ifneq ($(strip $(BENCHMARK_UNKNOWN_GOALS)),)
+$(error unknown benchmark target '$(firstword $(BENCHMARK_UNKNOWN_GOALS))'; did you mean one of the declared BENCHMARK_TARGETS?)
+endif
+
+ifneq ($(strip $(BENCHMARK_REQUESTED_GOALS)),)
+ifneq ($(findstring n,$(BENCHMARK_MAKE_SHORT_FLAGS)),)
+ifneq ($(findstring e,$(BENCHMARK_MAKE_SHORT_FLAGS)),)
+ifneq ($(findstring w,$(BENCHMARK_MAKE_SHORT_FLAGS)),)
+$(error benchmark targets refuse suspicious Make flags '-n -e -w'; if you meant 'make benchmark-new', remove the space)
+endif
+endif
+endif
+endif
 
 PROBE_DIR = .benchmark-runs/tool-probes/$(PROBE_SUBJECT)/v2
 PROBE_SUITE = $(PROBE_DIR)/suite
