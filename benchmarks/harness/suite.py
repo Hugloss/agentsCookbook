@@ -19,6 +19,18 @@ class SuiteError(ValueError):
     pass
 
 
+def effective_prompt(task: dict[str, Any], condition: dict[str, Any]) -> str:
+    """Resolve the exact prompt from frozen task + declared context once."""
+    prompt = str(task["prompt"])
+    context = condition.get("context")
+    if not isinstance(context, dict):
+        return prompt
+    suffix = str(context.get("prompt_suffix", "")).strip()
+    if not suffix:
+        return prompt
+    return f"{prompt}\\n\\nDeclared evaluation context:\\n{suffix}"
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -160,6 +172,67 @@ def _validate_participant_references(
         grouped[agent] = ids
 
 
+def _condition_replicates(condition: dict[str, Any]) -> tuple[int, ...]:
+    if "replicate_ids" in condition:
+        return tuple(int(value) for value in condition["replicate_ids"])
+    seed = int(condition["seed"])
+    return tuple(seed + index for index in range(int(condition["trials"])))
+
+
+def _validate_context_conditions(experiment: dict[str, Any]) -> None:
+    groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for condition in experiment.get("conditions", []):
+        context = condition.get("context")
+        if context is None:
+            continue
+        if not isinstance(context, dict):
+            raise SuiteError(f"condition {condition.get('id')} has invalid context")
+        key = (
+            str(context["group"]),
+            str(condition["agent"]),
+            str(condition["subject"]),
+        )
+        groups.setdefault(key, []).append(condition)
+
+    for key, conditions in groups.items():
+        variants = [str(row["context"]["variant"]) for row in conditions]
+        if len(set(variants)) != len(variants):
+            raise SuiteError(
+                f"context group {key[0]} / {key[1]} / {key[2]} has duplicate variants"
+            )
+        neutral = [row for row in conditions if row["context"]["kind"] == "neutral"]
+        if len(neutral) != 1:
+            raise SuiteError(
+                f"context group {key[0]} / {key[1]} / {key[2]} requires one neutral arm"
+            )
+        baseline = neutral[0]
+        baseline_replicates = _condition_replicates(baseline)
+        for condition in conditions:
+            if int(condition["trials"]) != int(baseline["trials"]):
+                raise SuiteError(
+                    f"context group {key[0]} / {key[1]} / {key[2]} has unpaired trials"
+                )
+            if _condition_replicates(condition) != baseline_replicates:
+                raise SuiteError(
+                    f"context group {key[0]} / {key[1]} / {key[2]} has unpaired replicate ids"
+                )
+
+    analysis = experiment.get("analysis_contract")
+    if analysis is not None:
+        if analysis.get("cross_agent_ranking") is not False:
+            raise SuiteError("analysis_contract must keep cross_agent_ranking false")
+        minimum = int(analysis["minimum_replicates"])
+        contextual = [
+            condition
+            for condition in experiment.get("conditions", [])
+            if isinstance(condition.get("context"), dict)
+        ]
+        if contextual and any(int(row["trials"]) < minimum for row in contextual):
+            raise SuiteError(
+                "context condition has fewer trials than analysis_contract minimum_replicates"
+            )
+
+
 def load_runtime_suite(root: Path) -> SuiteDefinition:
     """Load only experiment participant authority for runtime readiness."""
     root = root.resolve()
@@ -169,6 +242,7 @@ def load_runtime_suite(root: Path) -> SuiteDefinition:
     if not subjects or not agents:
         raise SuiteError("runtime suite requires subjects and agents")
     _validate_participant_references(experiment, subjects, agents)
+    _validate_context_conditions(experiment)
     return SuiteDefinition(
         root=root,
         experiment=experiment,
