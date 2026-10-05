@@ -187,7 +187,7 @@ class ToolRoutingTraceTests(unittest.TestCase):
                     ]
                 ),
                 subject="hashmarks",
-            required_tool="hashmarks_task_evidence",
+                required_tool="hashmarks_task_evidence",
             )
 
     def test_opaque_router_before_hashmarks_is_unknown(self) -> None:
