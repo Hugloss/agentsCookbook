@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter, defaultdict
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from statistics import mean, median
 from typing import Any
 
@@ -739,6 +739,67 @@ def _pair_key(
     )
 
 
+def _subject_use_state(receipt: dict[str, Any]) -> str:
+    value = (
+        receipt.get("measurements", {})
+        .get("agent", {})
+        .get("subject_tool_invoked")
+    )
+    if value is True:
+        return "invoked"
+    if value is False:
+        return "not-invoked"
+    return "unknown"
+
+
+def _attribution_interpretation(subject_use_state: str) -> str:
+    if subject_use_state == "invoked":
+        return "subject-use-observed"
+    if subject_use_state == "not-invoked":
+        return "not-attributable-to-subject-tool"
+    return "invocation-unknown"
+
+
+def repository_location_failure_topology(
+    receipt: dict[str, Any],
+) -> str | None:
+    """Classify repository-location outcomes without changing oracle truth."""
+    task = receipt.get("task", {})
+    oracle = task.get("oracle", {}) if isinstance(task, dict) else {}
+    if not isinstance(oracle, dict) or oracle.get("adapter") != "repository-location-json":
+        return None
+
+    grade = receipt.get("scoring", {}).get("oracle_grade", {})
+    if not isinstance(grade, dict):
+        return None
+    if grade.get("semantic_gradeable") is not True:
+        return "ungradeable"
+
+    expected = grade.get("expected")
+    actual = grade.get("normalized_actual")
+    if not isinstance(expected, dict) or not isinstance(actual, dict):
+        return None
+    expected_path = expected.get("path")
+    expected_symbol = expected.get("symbol")
+    actual_path = actual.get("path")
+    actual_symbol = actual.get("symbol")
+    if not all(
+        isinstance(value, str) and value
+        for value in (expected_path, expected_symbol, actual_path, actual_symbol)
+    ):
+        return None
+
+    if actual_path == expected_path and actual_symbol == expected_symbol:
+        return "exact"
+    if actual_path == expected_path:
+        return "same-file-wrong-symbol"
+    if actual_symbol == expected_symbol:
+        return "same-symbol-wrong-file"
+    if PurePosixPath(actual_path).parent == PurePosixPath(expected_path).parent:
+        return "same-directory-location-mismatch"
+    return "different-location"
+
+
 def _assistance_transition(
     baseline: dict[str, Any],
     assisted: dict[str, Any],
@@ -834,6 +895,8 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 int(receipt["status"] == "PASS") - int(baseline["status"] == "PASS")
             ),
             "assistance_transition": transition,
+            "bare_failure_topology": repository_location_failure_topology(baseline),
+            "assisted_failure_topology": repository_location_failure_topology(receipt),
         }
         invoked = (
             receipt.get("measurements", {})
@@ -841,6 +904,10 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             .get("subject_tool_invoked")
         )
         row["subject_tool_invoked"] = invoked if isinstance(invoked, bool) else None
+        row["subject_use_state"] = _subject_use_state(receipt)
+        row["attribution_interpretation"] = _attribution_interpretation(
+            row["subject_use_state"]
+        )
         configured = (
             receipt.get("measurements", {})
             .get("agent", {})
@@ -913,14 +980,7 @@ def _paired_assistance_usage_summary(
 ) -> list[dict[str, Any]]:
     grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
-        invoked = row.get("subject_tool_invoked")
-        state = (
-            "invoked"
-            if invoked is True
-            else "not-invoked"
-            if invoked is False
-            else "unknown"
-        )
+        state = str(row.get("subject_use_state") or "unknown")
         grouped[
             (str(row["agent_id"]), str(row["subject_id"]), state)
         ].append(row)
@@ -1022,14 +1082,7 @@ def _task_assistance_evidence(
             "unknown": [],
         }
         for row in pairs:
-            invoked = row.get("subject_tool_invoked")
-            state = (
-                "invoked"
-                if invoked is True
-                else "not-invoked"
-                if invoked is False
-                else "unknown"
-            )
+            state = str(row.get("subject_use_state") or "unknown")
             by_invocation[state].append(row)
 
         transition_by_invocation = {}
@@ -1301,6 +1354,18 @@ def _stability(
                 "gradeable_outcomes": len(gradeable),
                 "semantic_correct": correct,
                 "semantic_incorrect": len(gradeable) - correct,
+                "failure_topologies": dict(
+                    sorted(
+                        Counter(
+                            topology
+                            for row in valid
+                            if (
+                                topology := repository_location_failure_topology(row)
+                            )
+                            is not None
+                        ).items()
+                    )
+                ),
                 "format_compliant": sum(
                     _oracle_bool(row, "format_compliant") is True for row in valid
                 ),
@@ -1619,6 +1684,7 @@ def _diagnostic(receipt: dict[str, Any]) -> dict[str, Any]:
         "stage": stage,
         "reason_code": reason_code,
         "reason": _bounded_report_reason(raw_reason),
+        "failure_topology": repository_location_failure_topology(receipt),
         "diagnostic_source": "receipt" if source is not None else "legacy-inferred",
     }
 
@@ -1878,7 +1944,7 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 14,
+            "version": 15,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
