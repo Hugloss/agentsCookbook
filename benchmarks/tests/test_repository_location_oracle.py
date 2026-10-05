@@ -37,6 +37,7 @@ from benchmarks.harness.report import (
     _aggregate_condition,
     _check_localization_grades,
     build_report,
+    repository_location_failure_topology,
 )
 from benchmarks.harness.suite import SuiteDefinition, load_suite
 
@@ -223,6 +224,70 @@ class RepositoryLocationOracleTests(unittest.TestCase):
             },
         )
         return bundle
+
+    def test_repository_location_failure_topology_is_descriptive_only(self) -> None:
+        base = {
+            "status": "FAIL",
+            "task": {"oracle": {"adapter": "repository-location-json"}},
+            "scoring": {
+                "oracle_grade": {
+                    "semantic_gradeable": True,
+                    "expected": EXPECTED,
+                }
+            },
+        }
+
+        same_file = copy.deepcopy(base)
+        same_file["scoring"]["oracle_grade"]["normalized_actual"] = {
+            "path": EXPECTED["path"],
+            "symbol": "other_symbol",
+        }
+        self.assertEqual(
+            repository_location_failure_topology(same_file),
+            "same-file-wrong-symbol",
+        )
+
+        same_symbol = copy.deepcopy(base)
+        same_symbol["scoring"]["oracle_grade"]["normalized_actual"] = {
+            "path": "hashmarks/codemap/other.py",
+            "symbol": EXPECTED["symbol"],
+        }
+        self.assertEqual(
+            repository_location_failure_topology(same_symbol),
+            "same-symbol-wrong-file",
+        )
+
+        sibling = copy.deepcopy(base)
+        sibling["scoring"]["oracle_grade"]["normalized_actual"] = {
+            "path": "hashmarks/codemap/repository_file_discovery.py",
+            "symbol": "_iter_admitted_repository_files",
+        }
+        self.assertEqual(
+            repository_location_failure_topology(sibling),
+            "same-directory-location-mismatch",
+        )
+
+        distant = copy.deepcopy(base)
+        distant["scoring"]["oracle_grade"]["normalized_actual"] = {
+            "path": "hashmarks/other.py",
+            "symbol": "other",
+        }
+        self.assertEqual(
+            repository_location_failure_topology(distant),
+            "different-location",
+        )
+
+        ungradeable = copy.deepcopy(base)
+        ungradeable["scoring"]["oracle_grade"]["semantic_gradeable"] = False
+        ungradeable["scoring"]["oracle_grade"]["normalized_actual"] = None
+        self.assertEqual(
+            repository_location_failure_topology(ungradeable),
+            "ungradeable",
+        )
+
+        incomplete = copy.deepcopy(sibling)
+        incomplete["status"] = "INCOMPLETE"
+        self.assertIsNone(repository_location_failure_topology(incomplete))
 
     def test_registry_builds_repository_location_oracle(self) -> None:
         oracle = build_oracle(
