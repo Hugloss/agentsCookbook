@@ -62,6 +62,7 @@ class ToolRoutingTraceTests(unittest.TestCase):
                 ]
             ),
             subject="hashmarks",
+            required_tool="hashmarks_task_evidence",
         )
 
         self.assertEqual(score["outcome"], "PASS")
@@ -94,6 +95,7 @@ class ToolRoutingTraceTests(unittest.TestCase):
                 ]
             ),
             subject="hashmarks",
+            required_tool="hashmarks_task_evidence",
         )
 
         self.assertEqual(score["outcome"], "FAIL")
@@ -124,6 +126,7 @@ class ToolRoutingTraceTests(unittest.TestCase):
                 catalog=catalog,
             ),
             subject="hashmarks",
+            required_tool="hashmarks_task_evidence",
         )
 
         self.assertEqual(score["outcome"], "ENVIRONMENT_BLOCKED")
@@ -162,6 +165,7 @@ class ToolRoutingTraceTests(unittest.TestCase):
                 catalog_payload=current_catalog,
                 trace_payload=stale_trace,
                 subject="hashmarks",
+            required_tool="hashmarks_task_evidence",
             )
 
     def test_trace_rejects_different_capture_session(self) -> None:
@@ -183,6 +187,7 @@ class ToolRoutingTraceTests(unittest.TestCase):
                     ]
                 ),
                 subject="hashmarks",
+            required_tool="hashmarks_task_evidence",
             )
 
     def test_opaque_router_before_hashmarks_is_unknown(self) -> None:
@@ -203,6 +208,7 @@ class ToolRoutingTraceTests(unittest.TestCase):
                 ]
             ),
             subject="hashmarks",
+            required_tool="hashmarks_task_evidence",
         )
 
         self.assertEqual(score["outcome"], "UNKNOWN")
@@ -240,6 +246,7 @@ class ToolRoutingTraceTests(unittest.TestCase):
                 ]
             ),
             subject="hashmarks",
+            required_tool="hashmarks_task_evidence",
         )
 
         self.assertEqual(score["outcome"], "PASS")
@@ -269,6 +276,7 @@ class ToolRoutingTraceTests(unittest.TestCase):
                 ]
             ),
             subject="hashmarks",
+            required_tool="hashmarks_task_evidence",
         )
 
         self.assertEqual(score["outcome"], "UNKNOWN")
@@ -300,6 +308,7 @@ class ToolRoutingTraceTests(unittest.TestCase):
                 catalog_payload=_READY_CATALOG,
                 trace_payload=_trace([call]),
                 subject="hashmarks",
+            required_tool="hashmarks_task_evidence",
             )
 
     def test_capture_cannot_supply_derived_routing_authority(self) -> None:
@@ -319,6 +328,7 @@ class ToolRoutingTraceTests(unittest.TestCase):
                     ]
                 ),
                 subject="hashmarks",
+            required_tool="hashmarks_task_evidence",
             )
 
     def test_catalog_cli_materializes_bound_capture(self) -> None:
@@ -345,6 +355,8 @@ class ToolRoutingTraceTests(unittest.TestCase):
                         str(raw),
                         "--subject",
                         "hashmarks",
+                        "--required-tool",
+                        "hashmarks_task_evidence",
                         "--host",
                         "chatgpt",
                         "--capture-id",
@@ -436,6 +448,8 @@ class ToolRoutingTraceTests(unittest.TestCase):
                         str(trace),
                         "--subject",
                         "hashmarks",
+                        "--required-tool",
+                        "hashmarks_task_evidence",
                         "--output",
                         str(output),
                     ]
