@@ -7,6 +7,7 @@ from unittest import mock
 
 from benchmarks.config import BenchmarkConfig
 from benchmarks.harness.report import build_report
+from benchmarks.harness.selection import select_definitions
 from benchmarks.harness.suite import (
     SuiteDefinition,
     SuiteError,
@@ -211,6 +212,51 @@ class ContextInvarianceTests(unittest.TestCase):
             },
             {"neutral", "placebo", "authority-claim", "misleading-hint"},
         )
+
+    def test_qualification_selection_meets_frozen_minimum_evidence(self) -> None:
+        root = (
+            Path(__file__).resolve().parents[1]
+            / "suites"
+            / "repository-intelligence"
+            / "context-invariance-v1"
+        )
+        suite = load_suite(root)
+        for agent in ("codex-native", "opencode-native"):
+            with self.subTest(agent=agent):
+                rows = select_definitions(
+                    suite,
+                    tasks=("locate-prefix-path-enumerator",),
+                    agents=(agent,),
+                    subjects=("none", "hashmarks"),
+                )
+                self.assertEqual(len(rows), 24)
+                conditions = {
+                    condition["id"]: condition
+                    for condition in suite.experiment["conditions"]
+                }
+                by_subject: dict[str, list[dict[str, object]]] = {
+                    "none": [],
+                    "hashmarks": [],
+                }
+                for row in rows:
+                    condition = conditions[str(row["condition_id"])]
+                    by_subject[str(condition["subject"])].append(row)
+                self.assertEqual(
+                    {subject: len(values) for subject, values in by_subject.items()},
+                    {"none": 12, "hashmarks": 12},
+                )
+                comparable_pairs = sum(
+                    1
+                    for values in by_subject.values()
+                    for row in values
+                    if conditions[str(row["condition_id"])]["context"]["kind"]
+                    != "neutral"
+                )
+                self.assertEqual(comparable_pairs, 18)
+                self.assertEqual(
+                    comparable_pairs,
+                    suite.experiment["analysis_contract"]["minimum_pairs"],
+                )
 
     def test_report_preserves_context_pairs_and_flip_rates(self) -> None:
         suite = _suite()

@@ -118,6 +118,18 @@ jobs:
             --suite benchmarks/suites/repository-intelligence/enola-cycle-reproduction-v1 \
             > "$RUNNER_TEMP/repository-intelligence-enola-cycle-plan.json"
 
+          ./benchmark validate-suite \
+            --suite benchmarks/suites/repository-intelligence/context-invariance-v1
+          ./benchmark plan \
+            --suite benchmarks/suites/repository-intelligence/context-invariance-v1 \
+            > "$RUNNER_TEMP/repository-intelligence-context-invariance-plan.json"
+          ./benchmark plan \
+            --suite benchmarks/suites/repository-intelligence/context-invariance-v1 \
+            --agent opencode-native \
+            --task locate-prefix-path-enumerator \
+            --subject none --subject hashmarks \
+            > "$RUNNER_TEMP/repository-intelligence-context-invariance-qualification-plan.json"
+
           uv run --no-project python - <<'PY'
           import json
           import os
@@ -129,6 +141,8 @@ jobs:
               "repository-intelligence-agent-matrix-v2-plan.json": 18,
               "repository-intelligence-native-matrix-v3-plan.json": 18,
               "repository-intelligence-enola-cycle-plan.json": 18,
+              "repository-intelligence-context-invariance-plan.json": 96,
+              "repository-intelligence-context-invariance-qualification-plan.json": 24,
           }
           for filename, expected_count in expected.items():
               plan = json.loads(

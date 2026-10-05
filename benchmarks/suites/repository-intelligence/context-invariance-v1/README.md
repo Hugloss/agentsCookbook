@@ -84,6 +84,29 @@ The exhaustive model-free admission is optional:
 make benchmark-context-invariance-check-all
 ```
 
+Before the 96-trial full population, run the frozen qualification lane:
+
+```bash
+make benchmark-context-invariance-qualify-check
+make benchmark-context-invariance-qualify
+# If interrupted, preserve the exact frozen qualification selection:
+make benchmark-context-invariance-qualify-resume
+make benchmark-context-invariance-qualify-status
+```
+
+The qualification selection is one frozen task, bare + Hashmarks, all four contexts,
+and all three replicate IDs. That is **24 executions per selected agent** and exactly
+**18 neutral↔variant comparisons per selected agent**, matching the frozen
+`minimum_pairs=18` contract without changing the suite.
+
+`qualify-check` performs the exact 24-trial-per-agent admission without model work.
+`qualify` starts a new immutable campaign with those selectors.
+`qualify-status` is a two-part fail-closed gate: the saved campaign must first be
+execution-qualified, then its canonical score must report
+`analysis_evidence.evidence_state=minimum-evidence-observed`. A campaign where every
+process finished but too much semantic evidence is ungradeable therefore does **not**
+qualify.
+
 The canonical start-and-leave path is:
 
 ```bash
