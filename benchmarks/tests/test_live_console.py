@@ -9,6 +9,7 @@ from benchmarks.harness.live_console import (
     LiveTaskMatrix,
     TrialHeartbeat,
     render_campaign_admission,
+    render_run_blockers,
     render_trial_failure,
 )
 from benchmarks.harness.runner import TrialRunResult
@@ -449,6 +450,27 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn("interrupted 0", recovered)
         self.assertIn("avg 1m30s/execution", recovered)
         self.assertIn("execution ETA 10m30s", recovered)
+
+    def test_run_blockers_repeat_operational_diagnostic_at_end(self) -> None:
+        failure = (
+            "\nFAILURE locate-prefix-path-enumerator\n"
+            "Status: INCOMPLETE\n"
+            "Stage: agent-execution\n"
+            "Reason code: agent-terminal-failed\n"
+            "Evidence: /tmp/evidence\n\n"
+            "--- diagnostic ---\n"
+            "Traceback (most recent call last):\nValueError: boom"
+        )
+
+        rendered = render_run_blockers([failure])
+
+        assert rendered is not None
+        self.assertIn("RUN BLOCKERS 1 operational failure", rendered)
+        self.assertIn("Repeated at end of run", rendered)
+        self.assertIn("--- blocker 1/1 ---", rendered)
+        self.assertIn("Status: INCOMPLETE", rendered)
+        self.assertIn("Evidence: /tmp/evidence", rendered)
+        self.assertTrue(rendered.endswith("ValueError: boom"))
 
     def test_failure_envelope_is_agent_readable_and_preserves_diagnostic(self) -> None:
         suite, rows = self._prefix_opencode_rows()
