@@ -913,6 +913,7 @@ class OpenCodeNativeAgent:
         exported: dict[str, Any] = {}
         export_raw = ""
         export_error: str | None = None
+        export_diagnostic: str | None = None
         session_id: str | None = None
         operation_id: str | None = None
         authority_revalidation: dict[str, Any] | None = None
