@@ -302,7 +302,7 @@ class ContextInvarianceTests(unittest.TestCase):
         with mock.patch("benchmarks.harness.report._receipts", return_value=receipts):
             report = build_report(suite=suite, results_root=Path("/unused"))
 
-        self.assertEqual(report["schema"]["version"], 14)
+        self.assertEqual(report["schema"]["version"], 15)
         self.assertEqual(report["paired_assistance"], [])
         stability = {row["context_variant"]: row for row in report["stability"]}
         self.assertEqual(stability["neutral"]["answer_flip_rate"], 0.0)
