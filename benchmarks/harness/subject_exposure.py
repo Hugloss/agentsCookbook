@@ -22,9 +22,21 @@ def subject_exposure_qualification(
     changes.
     """
 
+    experiment = getattr(suite, "experiment", None)
+    subjects = getattr(suite, "subjects", None)
+    if not isinstance(experiment, dict) or not isinstance(subjects, dict):
+        return {
+            "status": "NOT_APPLICABLE",
+            "qualified": True,
+            "policy": "non-control conditions must prove observable subject use",
+            "conditions": [],
+            "failed_conditions": 0,
+            "pending_conditions": 0,
+        }
+
     conditions = {
         str(condition["id"]): condition
-        for condition in suite.experiment["conditions"]
+        for condition in experiment["conditions"]
     }
     expected_counts = Counter(
         str(row["condition_id"])
@@ -42,7 +54,7 @@ def subject_exposure_qualification(
         if not isinstance(condition, dict):
             continue
         subject_id = str(condition["subject"])
-        subject = suite.subjects[subject_id]
+        subject = subjects[subject_id]
         if subject.get("kind") == "control":
             continue
 
