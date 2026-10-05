@@ -288,6 +288,25 @@ def _bounded_diagnostic(value: str | None, *, limit: int = 8_000) -> str | None:
     return rendered[:limit] + "…"
 
 
+def _agent_failure_diagnostic(
+    observation: Observation,
+    *,
+    reason: str,
+    exception_traceback: str | None = None,
+) -> str | None:
+    """Prefer preserved adapter/runtime evidence over the one-line reason."""
+    candidates = (
+        exception_traceback,
+        observation.payload.get("failure_diagnostic"),
+        reason,
+    )
+    for candidate in candidates:
+        diagnostic = _bounded_diagnostic(candidate)
+        if diagnostic is not None:
+            return diagnostic
+    return None
+
+
 def run_trial(
     *,
     suite: SuiteDefinition,
@@ -556,8 +575,10 @@ def run_trial(
                         status = TrialStatus.INCOMPLETE
                         reason_code, reason = agent_failure
                         stage = "agent-execution"
-                        diagnostic_detail = _bounded_diagnostic(
-                            agent_exception_traceback or reason
+                        diagnostic_detail = _agent_failure_diagnostic(
+                            agent_observation,
+                            reason=reason,
+                            exception_traceback=agent_exception_traceback,
                         )
                     else:
                         grade = (
