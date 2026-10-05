@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -140,6 +141,52 @@ class TraceAndToolProbeTests(unittest.TestCase):
             self.assertEqual(prepare_tool_probe_suite(
                 source_suite=SUITE, destination=destination, subject="hashmarks", reuse=True
             ), evidence)
+
+    def test_tool_probe_generator_accepts_future_subject_contract_without_code_map(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            shutil.copytree(SUITE, source)
+            (source / "subjects/futuremcp.json").write_text(
+                json.dumps(
+                    {
+                        "id": "futuremcp",
+                        "kind": "repository_intelligence",
+                        "adapter": "future-adapter",
+                        "identity": {"id": "futuremcp", "version": "1"},
+                        "capabilities": ["search"],
+                        "configuration": {},
+                        "exposure_probe": {
+                            "required_tool": "futuremcp_context",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            destination = root / "futuremcp-probe"
+
+            evidence = prepare_tool_probe_suite(
+                source_suite=source,
+                destination=destination,
+                subject="futuremcp",
+                task_ids=("locate-prefix-path-enumerator",),
+            )
+
+            generated = load_suite(destination)
+            self.assertEqual(evidence["subject"], "futuremcp")
+            self.assertEqual(evidence["required_tool"], "futuremcp_context")
+            self.assertEqual(
+                generated.agents["opencode-native"]["configuration"][
+                    "diagnostic_required_tool"
+                ],
+                "futuremcp_context",
+            )
+            self.assertEqual(
+                generated.subjects["futuremcp"]["exposure_probe"],
+                {"required_tool": "futuremcp_context"},
+            )
 
     def test_diagnostic_agent_adds_required_instruction_only_when_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
