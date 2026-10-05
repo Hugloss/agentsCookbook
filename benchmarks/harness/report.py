@@ -764,6 +764,9 @@ def repository_location_failure_topology(
     receipt: dict[str, Any],
 ) -> str | None:
     """Classify repository-location outcomes without changing oracle truth."""
+    if receipt.get("status") not in _VALID_OUTCOMES:
+        return None
+
     task = receipt.get("task", {})
     oracle = task.get("oracle", {}) if isinstance(task, dict) else {}
     if not isinstance(oracle, dict) or oracle.get("adapter") != "repository-location-json":
