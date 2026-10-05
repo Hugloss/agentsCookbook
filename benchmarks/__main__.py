@@ -370,6 +370,14 @@ def _parser() -> argparse.ArgumentParser:
     score.add_argument("--score-script", type=Path)
     score.add_argument("--output", type=Path)
     score.add_argument("--run-id")
+    score.add_argument(
+        "--require-analysis-evidence",
+        action="store_true",
+        help=(
+            "fail unless the canonical score reports "
+            "analysis_evidence.evidence_state=minimum-evidence-observed"
+        ),
+    )
 
     regrade_score = sub.add_parser("regrade-score")
     regrade_score.add_argument("--suite", type=Path, required=True)
@@ -558,6 +566,24 @@ def _validate_reporting_contract(config: BenchmarkConfig, suite, runtime_source)
     script, output = _score_contract(config, suite)
     _validate_score_cli(script, runtime_source)
     return script, output
+
+
+def _require_analysis_evidence(score_path: Path) -> None:
+    try:
+        payload = json.loads(score_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReportError(f"cannot read benchmark score for analysis gate: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ReportError("benchmark score for analysis gate must be one JSON object")
+    analysis = payload.get("analysis_evidence")
+    if not isinstance(analysis, dict):
+        raise ReportError("benchmark score has no analysis_evidence contract")
+    state = analysis.get("evidence_state")
+    if state != "minimum-evidence-observed":
+        raise ReportError(
+            "benchmark analysis evidence is below the frozen minimum"
+            + (f": {state}" if isinstance(state, str) else "")
+        )
 
 
 def _canonical_campaign_persistence_gap(
@@ -1223,11 +1249,21 @@ def main(argv: list[str] | None = None) -> int:
                     str(value) for value in manifest["selected_definitions"]
                 ):
                     invocation.extend(("--definition-id", definition_id))
-                return subprocess.run(
+                completed = subprocess.run(
                     invocation,
                     env=_score_environment(runtime_source),
                     check=False,
-                ).returncode
+                )
+                if completed.returncode != 0:
+                    return completed.returncode
+                if args.require_analysis_evidence:
+                    try:
+                        _require_analysis_evidence(args.output)
+                    except ReportError as exc:
+                        raise SystemExit(
+                            f"benchmark analysis evidence gate failed: {exc}"
+                        ) from exc
+                return 0
         except (RunStoreError, CampaignAuthorityError) as exc:
             raise SystemExit(str(exc)) from exc
     suite = (
