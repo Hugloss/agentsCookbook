@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from benchmarks.config import BenchmarkConfig
 from benchmarks.harness.report import build_report
 from benchmarks.harness.suite import (
     SuiteDefinition,
@@ -168,6 +169,30 @@ class ContextInvarianceTests(unittest.TestCase):
         experiment["conditions"][0]["context"]["kind"] = "placebo"
         with self.assertRaisesRegex(SuiteError, "requires one neutral arm"):
             _validate_context_conditions(experiment)
+
+    def test_checked_in_env_example_owns_context_suite_paths(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        env_file = (
+            root
+            / "suites"
+            / "repository-intelligence"
+            / "context-invariance-v1"
+            / ".env.example"
+        )
+        config = BenchmarkConfig.load(env_file, host={})
+        self.assertEqual(
+            config.values["BENCHMARK_SUITE_PATH"],
+            "benchmarks/suites/repository-intelligence/context-invariance-v1",
+        )
+        self.assertEqual(
+            config.values["BENCHMARK_CAMPAIGN_ROOT"],
+            ".benchmark-runs/context-invariance-v1",
+        )
+        self.assertEqual(
+            config.values["BENCHMARK_SCORE_SCRIPT_PATH"],
+            "benchmarks/suites/repository-intelligence/context-invariance-v1/score.py",
+        )
+        self.assertEqual(config.values["BENCHMARK_SCORE_OUTPUT_PATH"], "score.json")
 
     def test_checked_in_suite_freezes_expected_population(self) -> None:
         root = (
