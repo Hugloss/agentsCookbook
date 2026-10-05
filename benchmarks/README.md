@@ -20,6 +20,12 @@ adds eight repository-intelligence dimensions and reports ordered lexigram grade
 authority, resolution, evidence preservation, and paired assistance. It is an explicit
 research suite and is not a release gate.
 
+The [context-invariance v1 suite](suites/repository-intelligence/context-invariance-v1/README.md)
+holds repository/task/oracle/runtime authority fixed while varying only declared prompt
+context. It has its own example config and `make benchmark-context-invariance*`
+operator flow so running it never requires rewriting heldout-v1 configuration. Its
+neutral↔variant evidence is descriptive-only and never performs cross-agent ranking.
+
 ## Model
 
 `suite -> experiment -> condition -> trial definition -> observed execution`
