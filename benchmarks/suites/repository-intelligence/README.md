@@ -73,6 +73,19 @@ by Hashmarks release or ordinary test workflows. See its README for exact comman
 
 `native-matrix-v3/` is the current native Codex/OpenCode comparison, with one paired smoke task by default from Hashmarks. It pins a source revision without checked-in answers. `enola-cycle-reproduction-v1/` adapts the published TypeScript cycle example and reports functional success and cycle introduction separately. Both are development-only experiments in agentsCookbook; neither enters the installed Hashmarks product.
 
+## context-invariance-v1
+
+`context-invariance-v1/` is a research-only matched-context suite. It holds
+repository bytes, task, oracle, subject, agent, budgets, and replicate identity
+constant while varying only declared prompt context across neutral, placebo,
+authority-claim, and misleading-hint arms. Reports expose paired semantic
+transitions plus answer, semantic, route, and subject-authority-use flip rates.
+The suite is descriptive-only, performs no cross-agent ranking, and has no release
+authority.
+
+See `context-invariance-v1/README.md` for the frozen population and analysis
+contract.
+
 ## headroom-v1
 
 `headroom-v1/` is a diagnostic-only repeated paired suite created after heldout-v1

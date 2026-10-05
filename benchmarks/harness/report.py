@@ -707,14 +707,35 @@ def _check_comparable_evidence(receipts: list[dict[str, Any]]) -> None:
         subjects[subject] = comparable_observed
 
 
-def _pair_key(receipt: dict[str, Any]) -> tuple[str, str, int, int]:
+def _condition_context_key(condition: dict[str, Any]) -> tuple[str | None, str | None]:
+    context = condition.get("context")
+    if not isinstance(context, dict):
+        return None, None
+    group = context.get("group")
+    variant = context.get("variant")
+    return (
+        group if isinstance(group, str) else None,
+        variant if isinstance(variant, str) else None,
+    )
+
+
+def _receipt_context_key(receipt: dict[str, Any]) -> tuple[str | None, str | None]:
+    return _condition_context_key(receipt.get("condition", {}))
+
+
+def _pair_key(
+    receipt: dict[str, Any],
+) -> tuple[str, str, int, int, str | None, str | None]:
     execution = receipt["execution"]
     agent_id = _agent_id(receipt)
+    context_group, context_variant = _receipt_context_key(receipt)
     return (
         _task_id(receipt),
         agent_id,
         int(execution["trial_index"]),
         _replicate_id(receipt),
+        context_group,
+        context_variant,
     )
 
 
@@ -748,6 +769,7 @@ def _pair_input_id(receipt: dict[str, Any]) -> str:
             "mutation": authority.get("mutation"),
             "admitted_state": receipt.get("execution", {}).get("admitted_state_sha256"),
             "replicate_id": _replicate_id(receipt),
+            "prompt_context": receipt.get("condition", {}).get("context"),
         }
     )
 
@@ -767,7 +789,9 @@ def classify_assistance_pair(
 
 
 def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    bare: dict[tuple[str, str, int, int], dict[str, Any]] = {}
+    bare: dict[
+        tuple[str, str, int, int, str | None, str | None], dict[str, Any]
+    ] = {}
     assisted: list[dict[str, Any]] = []
     for receipt in receipts:
         if receipt.get("status") not in _VALID_OUTCOMES:
@@ -796,6 +820,8 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "agent_id": key[1],
             "trial_index": key[2],
             "replicate_id": key[3],
+            "context_group": key[4],
+            "context_variant": key[5],
             **({"seed": key[3]} if "seed" in receipt["execution"] else {}),
             "condition_id": _condition_id(receipt),
             "bare_trial_id": baseline["trial_id"],
@@ -1144,26 +1170,81 @@ def _task_assistance_evidence(
     return output
 
 
+def _pairwise_disagreement_rate(values: list[Any]) -> float | None:
+    if len(values) < 2:
+        return None
+    rendered = [
+        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        for value in values
+    ]
+    pairs = 0
+    disagreements = 0
+    for index, left in enumerate(rendered):
+        for right in rendered[index + 1 :]:
+            pairs += 1
+            disagreements += left != right
+    return disagreements / pairs if pairs else None
+
+
+def _route_observation(receipt: dict[str, Any]) -> list[str] | None:
+    sequence = receipt.get("measurements", {}).get("agent", {}).get("tool_sequence")
+    if not isinstance(sequence, list) or not all(isinstance(item, str) for item in sequence):
+        return None
+    return list(sequence)
+
+
+def _authority_use_observation(receipt: dict[str, Any]) -> bool | None:
+    if _subject_id(receipt) == "none":
+        return None
+    value = (
+        receipt.get("measurements", {})
+        .get("agent", {})
+        .get("subject_tool_invoked")
+    )
+    return value if isinstance(value, bool) else None
+
+
 def _stability(
     receipts: list[dict[str, Any]],
     *,
     expected: dict[str, dict[str, Any]],
     suite: SuiteDefinition,
 ) -> list[dict[str, Any]]:
-    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
-    expected_ids: dict[tuple[str, str, str], list[int]] = defaultdict(list)
+    grouped: dict[
+        tuple[str, str, str, str | None, str | None], list[dict[str, Any]]
+    ] = defaultdict(list)
+    expected_ids: dict[
+        tuple[str, str, str, str | None, str | None], list[int]
+    ] = defaultdict(list)
     conditions = {row["id"]: row for row in suite.experiment["conditions"]}
     for row in expected.values():
         condition = conditions[row["condition_id"]]
-        key = (str(row["task_id"]), str(condition["agent"]), str(condition["subject"]))
+        context_group, context_variant = _condition_context_key(condition)
+        key = (
+            str(row["task_id"]),
+            str(condition["agent"]),
+            str(condition["subject"]),
+            context_group,
+            context_variant,
+        )
         expected_ids[key].append(int(row.get("replicate_id", row.get("seed"))))
     for receipt in receipts:
-        grouped[(_task_id(receipt), _agent_id(receipt), _subject_id(receipt))].append(
-            receipt
-        )
+        context_group, context_variant = _receipt_context_key(receipt)
+        grouped[
+            (
+                _task_id(receipt),
+                _agent_id(receipt),
+                _subject_id(receipt),
+                context_group,
+                context_variant,
+            )
+        ].append(receipt)
 
     rows: list[dict[str, Any]] = []
-    for key, identifiers in sorted(expected_ids.items()):
+    for key, identifiers in sorted(
+        expected_ids.items(),
+        key=lambda item: tuple("" if value is None else str(value) for value in item[0]),
+    ):
         group = grouped.get(key, [])
         valid = [row for row in group if row.get("status") in _VALID_OUTCOMES]
         gradeable = [row for row in valid if _semantic_gradeable(row)]
@@ -1175,6 +1256,26 @@ def _stability(
             )
             for row in gradeable
         )
+        raw_answers = [
+            value
+            for row in valid
+            if isinstance((value := row.get("execution", {}).get("agent_answer")), str)
+        ]
+        semantic_values = [
+            value
+            for row in gradeable
+            if isinstance((value := _semantic_success(row)), bool)
+        ]
+        route_values = [
+            value
+            for row in valid
+            if (value := _route_observation(row)) is not None
+        ]
+        authority_values = [
+            value
+            for row in valid
+            if (value := _authority_use_observation(row)) is not None
+        ]
         if len(valid) != len(identifiers):
             state = "execution-unstable"
         elif len(gradeable) != len(valid):
@@ -1190,6 +1291,8 @@ def _stability(
                 "task_id": key[0],
                 "agent_id": key[1],
                 "subject_id": key[2],
+                "context_group": key[3],
+                "context_variant": key[4],
                 "replicates": len(identifiers),
                 "observed_replicates": len(group),
                 "replicate_ids": sorted(identifiers),
@@ -1202,11 +1305,251 @@ def _stability(
                     _oracle_bool(row, "format_compliant") is True for row in valid
                 ),
                 "answer_distribution": dict(sorted(answer_counts.items())),
+                "answer_flip_rate": _pairwise_disagreement_rate(raw_answers),
+                "answer_flip_observations": len(raw_answers),
+                "semantic_flip_rate": _pairwise_disagreement_rate(semantic_values),
+                "semantic_flip_observations": len(semantic_values),
+                "route_flip_rate": _pairwise_disagreement_rate(route_values),
+                "route_flip_observations": len(route_values),
+                "authority_flip_rate": _pairwise_disagreement_rate(authority_values),
+                "authority_flip_observations": len(authority_values),
+                "flip_rate_policy": "pairwise-disagreement-among-observed-replicates",
                 "state": state,
             }
         )
     return rows
 
+
+def _context_semantic_transition(
+    baseline: dict[str, Any], variant: dict[str, Any]
+) -> str | None:
+    if not all(row.get("status") in _VALID_OUTCOMES for row in (baseline, variant)):
+        return None
+    if not _semantic_gradeable(baseline) or not _semantic_gradeable(variant):
+        return None
+    left = _semantic_success(baseline)
+    right = _semantic_success(variant)
+    if left is True and right is True:
+        return "preserved-correct"
+    if left is True and right is False:
+        return "regressed"
+    if left is False and right is True:
+        return "recovered"
+    return "preserved-incorrect"
+
+
+def _counterfactual_pair_id(
+    baseline: dict[str, Any], variant: dict[str, Any], *, group: str
+) -> str:
+    authority = baseline.get("authority", {})
+    context = variant.get("condition", {}).get("context", {})
+    return digest(
+        {
+            "contract": "benchmark-counterfactual-pair.v1",
+            "group": group,
+            "variant": context.get("variant"),
+            "task": execution_task_contract(baseline["task"]),
+            "oracle": baseline["task"].get("oracle"),
+            "agent": _comparison_identity(baseline),
+            "subject": baseline["condition"].get("subject_definition"),
+            "harness": authority.get("harness"),
+            "environment": authority.get("environment"),
+            "mutation": authority.get("mutation"),
+            "admitted_state": baseline.get("execution", {}).get("admitted_state_sha256"),
+            "replicate_id": _replicate_id(baseline),
+        }
+    )
+
+
+def _counterfactual_context(
+    receipts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[
+        tuple[str, str, str, str, int], list[dict[str, Any]]
+    ] = defaultdict(list)
+    for receipt in receipts:
+        context = receipt.get("condition", {}).get("context")
+        if not isinstance(context, dict):
+            continue
+        grouped[
+            (
+                str(context["group"]),
+                _task_id(receipt),
+                _agent_id(receipt),
+                _subject_id(receipt),
+                _replicate_id(receipt),
+            )
+        ].append(receipt)
+
+    comparisons: list[dict[str, Any]] = []
+    for key, rows in sorted(grouped.items()):
+        variants: dict[str, dict[str, Any]] = {}
+        neutral: list[dict[str, Any]] = []
+        for row in rows:
+            context = row["condition"]["context"]
+            variant = str(context["variant"])
+            if variant in variants:
+                raise ReportError(f"duplicate context execution for {key} / {variant}")
+            variants[variant] = row
+            if context.get("kind") == "neutral":
+                neutral.append(row)
+        if len(neutral) > 1:
+            raise ReportError(f"context comparison {key} has multiple neutral executions")
+        if not neutral:
+            continue
+        baseline = neutral[0]
+        baseline_variant = str(baseline["condition"]["context"]["variant"])
+        for variant_name, variant in sorted(variants.items()):
+            if variant_name == baseline_variant:
+                continue
+            transition = _context_semantic_transition(baseline, variant)
+            left_answer = baseline.get("execution", {}).get("agent_answer")
+            right_answer = variant.get("execution", {}).get("agent_answer")
+            left_grade = baseline.get("scoring", {}).get("oracle_grade", {})
+            right_grade = variant.get("scoring", {}).get("oracle_grade", {})
+            normalized_observed = (
+                "normalized_actual" in left_grade and "normalized_actual" in right_grade
+            )
+            left_route = _route_observation(baseline)
+            right_route = _route_observation(variant)
+            left_authority = _authority_use_observation(baseline)
+            right_authority = _authority_use_observation(variant)
+            comparisons.append(
+                {
+                    "pair_id": _counterfactual_pair_id(
+                        baseline, variant, group=key[0]
+                    ),
+                    "context_group": key[0],
+                    "task_id": key[1],
+                    "agent_id": key[2],
+                    "subject_id": key[3],
+                    "replicate_id": key[4],
+                    "baseline_variant": baseline_variant,
+                    "variant": variant_name,
+                    "variant_kind": variant["condition"]["context"]["kind"],
+                    "baseline_trial_id": baseline["trial_id"],
+                    "variant_trial_id": variant["trial_id"],
+                    "baseline_status": baseline["status"],
+                    "variant_status": variant["status"],
+                    "comparison_state": (
+                        "comparable" if transition is not None else "uncomparable"
+                    ),
+                    "semantic_transition": transition,
+                    "answer_changed": (
+                        left_answer != right_answer
+                        if isinstance(left_answer, str) and isinstance(right_answer, str)
+                        else None
+                    ),
+                    "normalized_answer_changed": (
+                        left_grade.get("normalized_actual")
+                        != right_grade.get("normalized_actual")
+                        if normalized_observed
+                        else None
+                    ),
+                    "route_changed": (
+                        left_route != right_route
+                        if left_route is not None and right_route is not None
+                        else None
+                    ),
+                    "authority_use_changed": (
+                        left_authority != right_authority
+                        if left_authority is not None and right_authority is not None
+                        else None
+                    ),
+                }
+            )
+    return comparisons
+
+
+def _counterfactual_context_summary(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[
+            (
+                str(row["context_group"]),
+                str(row["variant"]),
+                str(row["agent_id"]),
+                str(row["subject_id"]),
+            )
+        ].append(row)
+    summaries = []
+    for key, group in sorted(grouped.items()):
+        transitions = Counter(
+            str(row["semantic_transition"])
+            for row in group
+            if isinstance(row.get("semantic_transition"), str)
+        )
+        summary: dict[str, Any] = {
+            "context_group": key[0],
+            "variant": key[1],
+            "agent_id": key[2],
+            "subject_id": key[3],
+            "pairs": len(group),
+            "comparable_pairs": sum(
+                row["comparison_state"] == "comparable" for row in group
+            ),
+            "semantic_transitions": dict(sorted(transitions.items())),
+        }
+        for field in (
+            "answer_changed",
+            "normalized_answer_changed",
+            "route_changed",
+            "authority_use_changed",
+        ):
+            values = [row[field] for row in group if isinstance(row.get(field), bool)]
+            summary[field] = {
+                "observations": len(values),
+                "changed": sum(values),
+                "rate": sum(values) / len(values) if values else None,
+            }
+        summaries.append(summary)
+    return summaries
+
+
+def _analysis_evidence(
+    *,
+    suite: SuiteDefinition,
+    comparisons: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    contract = suite.experiment.get("analysis_contract")
+    if not isinstance(contract, dict):
+        return None
+    comparable = [row for row in comparisons if row["comparison_state"] == "comparable"]
+    arms: dict[tuple[str, str, str, str, str], set[int]] = defaultdict(set)
+    for row in comparable:
+        arms[
+            (
+                str(row["context_group"]),
+                str(row["task_id"]),
+                str(row["agent_id"]),
+                str(row["subject_id"]),
+                str(row["variant"]),
+            )
+        ].add(int(row["replicate_id"]))
+    minimum_observed_replicates = min(
+        (len(values) for values in arms.values()),
+        default=0,
+    )
+    pairs_met = len(comparable) >= int(contract["minimum_pairs"])
+    replicates_met = (
+        minimum_observed_replicates >= int(contract["minimum_replicates"])
+    )
+    return {
+        "contract": dict(contract),
+        "observed_comparable_pairs": len(comparable),
+        "minimum_observed_replicates_per_variant_arm": minimum_observed_replicates,
+        "minimum_pairs_met": pairs_met,
+        "minimum_replicates_met": replicates_met,
+        "evidence_state": (
+            "minimum-evidence-observed"
+            if pairs_met and replicates_met
+            else "below-minimum"
+        ),
+        "claim_scope": "descriptive-only",
+        "cross_agent_ranking_permitted": False,
+    }
 
 def _bounded_report_reason(value: Any, *, limit: int = 1_000) -> str | None:
     if not isinstance(value, str):
@@ -1289,13 +1632,19 @@ def _pair_exclusions(
 ) -> list[dict[str, Any]]:
     interrupted = interrupted or set()
     conditions = {row["id"]: row for row in suite.experiment["conditions"]}
-    groups: dict[tuple[str, str, int], dict[str, dict[str, Any]]] = defaultdict(dict)
+    groups: dict[
+        tuple[str, str, int, str | None, str | None],
+        dict[str, dict[str, Any]],
+    ] = defaultdict(dict)
     for definition, row in expected.items():
         condition = conditions[row["condition_id"]]
+        context_group, context_variant = _condition_context_key(condition)
         key = (
             str(row["task_id"]),
             str(condition["agent"]),
             int(row.get("replicate_id", row.get("seed"))),
+            context_group,
+            context_variant,
         )
         groups[key][str(row["condition_id"])] = {
             "definition_id": definition,
@@ -1324,6 +1673,8 @@ def _pair_exclusions(
                     "task_id": key[0],
                     "agent_id": key[1],
                     "replicate_id": key[2],
+                    "context_group": key[3],
+                    "context_variant": key[4],
                     "condition_id": condition_id,
                     "subject_id": arm["subject_id"],
                     "bare_definition_id": bare["definition_id"] if bare else None,
@@ -1351,18 +1702,21 @@ def _cross_agent_observations(
     receipts: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     grouped: dict[
-        tuple[str, str, int, int],
+        tuple[str, str, int, int, str | None, str | None],
         dict[str, dict[str, Any]],
     ] = defaultdict(dict)
     for receipt in receipts:
         if receipt.get("status") not in _VALID_OUTCOMES:
             continue
         execution = receipt["execution"]
+        context_group, context_variant = _receipt_context_key(receipt)
         key = (
             _task_id(receipt),
             _subject_id(receipt),
             int(execution["trial_index"]),
             _replicate_id(receipt),
+            context_group,
+            context_variant,
         )
         agent = _agent_id(receipt)
         if agent in grouped[key]:
@@ -1393,9 +1747,16 @@ def _cross_agent_observations(
             "subject_id": key[1],
             "trial_index": key[2],
             "replicate_id": key[3],
+            "context_group": key[4],
+            "context_variant": key[5],
             "agents": dict(sorted(agents.items())),
         }
-        for key, agents in sorted(grouped.items())
+        for key, agents in sorted(
+            grouped.items(),
+            key=lambda item: tuple(
+                "" if value is None else str(value) for value in item[0]
+            ),
+        )
         if len(agents) > 1
     ]
 
@@ -1502,6 +1863,12 @@ def build_report(
     campaign_qualified = campaign_complete and invalid_outcomes == 0
     paired_assistance = _paired_assistance(receipts)
     stability = _stability(receipts, expected=expected, suite=suite)
+    context_invariance = _counterfactual_context(receipts)
+    context_invariance_summary = _counterfactual_context_summary(context_invariance)
+    analysis_evidence = _analysis_evidence(
+        suite=suite,
+        comparisons=context_invariance,
+    )
     pair_exclusions = _pair_exclusions(
         expected=expected,
         by_definition=by_definition,
@@ -1511,7 +1878,7 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 13,
+            "version": 14,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
@@ -1547,6 +1914,9 @@ def build_report(
             pair_exclusions,
         ),
         "stability": stability,
+        "context_invariance": context_invariance,
+        "context_invariance_summary": context_invariance_summary,
+        "analysis_evidence": analysis_evidence,
         "task_agent_authority": _task_agent_authority(receipts),
         "subject_adoption": _subject_adoption_summary(receipts),
         "diagnostics": [
@@ -1586,5 +1956,6 @@ def build_report(
             ),
             "replicate_identity_is_provider_sampling_seed": False,
             "cross_agent_rows_are_descriptive": True,
+            "context_comparison": "within-agent-subject-paired-replicates",
         },
     }
