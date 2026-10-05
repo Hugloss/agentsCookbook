@@ -89,6 +89,8 @@ Before the 96-trial full population, run the frozen qualification lane:
 ```bash
 make benchmark-context-invariance-qualify-check
 make benchmark-context-invariance-qualify
+# If interrupted, preserve the exact frozen qualification selection:
+make benchmark-context-invariance-qualify-resume
 make benchmark-context-invariance-qualify-status
 ```
 
