@@ -607,7 +607,7 @@ def audit_campaign(
         )
 
     payload = {
-        "contract": "benchmark-campaign-authority.v3",
+        "contract": "benchmark-campaign-authority.v4",
         "selected_definitions": selected,
         "task_conditions": observed,
         "agents": agents,
