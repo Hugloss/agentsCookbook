@@ -150,7 +150,7 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         ):
             report = build_report(suite=suite, results_root=Path("/unused"))
 
-        self.assertEqual(report["schema"]["version"], 14)
+        self.assertEqual(report["schema"]["version"], 15)
         stability = {row["subject_id"]: row for row in report["stability"]}
         self.assertEqual(stability["none"]["state"], "unstable")
         self.assertEqual(stability["none"]["semantic_correct"], 2)
@@ -174,6 +174,13 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertEqual(
             [row["assistance_transition"] for row in report["paired_assistance"]],
             ["preserved", "gain", "preserved"],
+        )
+        self.assertTrue(
+            all(
+                row["subject_use_state"] == "unknown"
+                and row["attribution_interpretation"] == "invocation-unknown"
+                for row in report["paired_assistance"]
+            )
         )
         self.assertTrue(
             all(
@@ -264,6 +271,14 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertEqual(evidence["subject_use"]["not_invoked_pairs"], 3)
         self.assertEqual(evidence["subject_use"]["subject_mcp_calls"], 0)
         self.assertEqual(evidence["subject_use"]["subject_tool_names"], [])
+        self.assertTrue(
+            all(
+                row["subject_use_state"] == "not-invoked"
+                and row["attribution_interpretation"]
+                == "not-attributable-to-subject-tool"
+                for row in report["paired_assistance"]
+            )
+        )
         self.assertIn("bare-headroom-observed", evidence["evidence_signals"])
         self.assertIn("subject-not-invoked", evidence["evidence_signals"])
         self.assertIn(
@@ -345,6 +360,19 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertIn("subject-invocation-observed", evidence["evidence_signals"])
         self.assertIn("invoked-gain-observed", evidence["evidence_signals"])
         self.assertNotIn("invoked-no-gain-observed", evidence["evidence_signals"])
+        paired = report["paired_assistance"]
+        self.assertEqual(paired[0]["subject_use_state"], "invoked")
+        self.assertEqual(
+            paired[0]["attribution_interpretation"],
+            "subject-use-observed",
+        )
+        self.assertTrue(
+            all(
+                row["attribution_interpretation"]
+                == "not-attributable-to-subject-tool"
+                for row in paired[1:]
+            )
+        )
 
     def test_report_summarizes_native_tool_strategy_without_raw_sequence(self) -> None:
         suite = _suite()
