@@ -380,7 +380,7 @@ async function testSharedLifecycle() {
       /native OpenCode config could not be resolved/,
     );
 
-    const nativeConflict = runtime.prepareBenchmarkConfig({
+    const enabledNativeRegistration = runtime.prepareBenchmarkConfig({
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
@@ -388,15 +388,22 @@ async function testSharedLifecycle() {
       selectedSubject: 'hashmarks',
       subjectExposure: cachedExposure,
     });
-    assert.strictEqual(nativeConflict.status, 'failed');
     assert.strictEqual(
-      nativeConflict.failure_stage,
-      'runtime-authority-conflict',
+      enabledNativeRegistration.status,
+      'completed',
+      enabledNativeRegistration.reason,
     );
-    assert.match(nativeConflict.reason, /already enabled/);
-    assert.match(nativeConflict.reason, /disable that native registration/);
     assert.strictEqual(
-      nativeConflict.overlay_identity.native_server_conflict,
+      enabledNativeRegistration.overlay_identity.native_server_conflict,
+      true,
+    );
+    assert.deepStrictEqual(
+      JSON.parse(enabledNativeRegistration.environment.OPENCODE_CONFIG_CONTENT)
+        .mcp.hashmarks.command,
+      cachedExposure.command,
+    );
+    assert.strictEqual(
+      enabledNativeRegistration.native_subject_identity.verified,
       true,
     );
 
@@ -610,7 +617,11 @@ async function testSharedLifecycle() {
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
-      env: { ...env, FAKE_EFFECTIVE_MCP_DRIFT: '1' },
+      env: {
+        ...env,
+        FAKE_HASHMARKS_ENABLED: '1',
+        FAKE_EFFECTIVE_MCP_DRIFT: '1',
+      },
       selectedSubject: 'hashmarks',
       subjectExposure: exposure,
     });
