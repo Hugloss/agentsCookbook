@@ -396,6 +396,64 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertEqual(exposure["conditions"][0]["invoked_trials"], 1)
         self.assertEqual(report["campaign_qualification"]["status"], "QUALIFIED")
 
+    def test_campaign_status_blocks_never_invoked_non_control_subject(self) -> None:
+        suite = _suite()
+        rows = suite.trial_definitions()
+        receipts = []
+        for index, row in enumerate(rows):
+            receipt = _receipt(
+                suite,
+                row,
+                "PASS",
+                f"{index + 1:064x}",
+            )
+            if row["condition_id"] == "hashmarks":
+                receipt["authority"]["subject"]["available"] = True
+                receipt["measurements"]["agent"] = {
+                    "subject_tool_configured": True,
+                    "subject_tool_invoked": False,
+                    "subject_mcp_calls": 0,
+                    "subject_tool_names": [],
+                }
+            receipts.append(receipt)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for receipt in receipts:
+                directory = root / str(receipt["trial_id"])
+                directory.mkdir()
+                (directory / "result.json").write_text(
+                    json.dumps(receipt),
+                    encoding="utf-8",
+                )
+            with mock.patch(
+                "benchmarks.harness.campaign.verify_bundle",
+                return_value=(True, None),
+            ):
+                status = campaign_status(
+                    suite=suite,
+                    results_root=root,
+                    selected_definitions={
+                        str(row["definition_id"])
+                        for row in rows
+                    },
+                )
+
+        self.assertFalse(status["qualified"])
+        exposure = status["subject_exposure_qualification"]
+        self.assertEqual(exposure["status"], "FAIL")
+        self.assertEqual(exposure["failed_conditions"], 1)
+        self.assertEqual(
+            exposure["conditions"][0]["reason_codes"],
+            ["subject-never-invoked"],
+        )
+        self.assertTrue(
+            any(
+                "subject-never-invoked" in issue
+                for issue in status["health"]["issues"]
+            )
+        )
+
     def test_report_summarizes_native_tool_strategy_without_raw_sequence(self) -> None:
         suite = _suite()
         rows = {
