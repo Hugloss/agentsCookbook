@@ -21,6 +21,7 @@ from benchmarks.harness.model import (
     SubjectLifecycleMode,
     TrialContext,
 )
+from benchmarks.tool_routing import subject_routing_timing
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
@@ -149,6 +150,7 @@ def _metrics(
                     separators=(",", ":"),
                 ).encode()
             )
+    subject_invoked = bool(subject_calls)
     return {
         "event_count": len(events),
         "command_calls": len(commands),
@@ -157,7 +159,7 @@ def _metrics(
         "mcp_calls": len(mcp_calls),
         "subject_mcp_calls": len(subject_calls),
         "subject_tool_configured": subject_server is not None,
-        "subject_tool_invoked": bool(subject_calls),
+        "subject_tool_invoked": subject_invoked,
         "subject_tool_names": subject_tool_names,
         "mcp_result_bytes": result_bytes,
         "input_tokens": int(usage.get("input_tokens", 0) or 0),
@@ -170,6 +172,13 @@ def _metrics(
         "subject_tool_call_ordinals": subject_ordinals,
         "subject_first_tool_call_ordinal": (
             subject_ordinals[0] if subject_ordinals else None
+        ),
+        "subject_routing_timing": subject_routing_timing(
+            tool_sequence,
+            subject_ordinals,
+            configured=subject_server is not None,
+            invocation_observed=subject_invoked,
+            order_complete=True,
         ),
     }
 
