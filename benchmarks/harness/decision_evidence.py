@@ -139,6 +139,20 @@ def build_decision_evidence(
         if isinstance(trace_summary, dict)
         else {}
     )
+    repository_intelligence_search_efficiency = (
+        trace_summary.get("repository_intelligence_search_efficiency", {})
+        if isinstance(trace_summary, dict)
+        else {}
+    )
+    if not isinstance(repository_intelligence_search_efficiency, dict):
+        repository_intelligence_search_efficiency = {}
+    if not repository_intelligence_search_efficiency:
+        repository_intelligence_search_efficiency = {
+            "state": "not-projected",
+            "claim_scope": "descriptive-behavioral-only",
+            "correctness_joined": False,
+            "subjects": [],
+        }
     if not isinstance(repository_intelligence_quality, dict):
         repository_intelligence_quality = {}
     if not repository_intelligence_quality:
@@ -308,9 +322,11 @@ def build_decision_evidence(
         evidence_signals.append("native-tool-strategy-partially-observed")
     if repository_intelligence_quality.get("state") == "observed":
         evidence_signals.append("repository-intelligence-quality-observed")
+    if repository_intelligence_search_efficiency.get("state") == "observed":
+        evidence_signals.append("repository-intelligence-search-efficiency-observed")
 
     return {
-        "schema": "agents-cookbook-benchmark-decision-evidence.v4",
+        "schema": "agents-cookbook-benchmark-decision-evidence.v5",
         "authority": {
             "derived_only": True,
             "ranking_performed": False,
@@ -330,6 +346,9 @@ def build_decision_evidence(
         },
         "decision_summary": report.get("decision_summary", {}),
         "repository_intelligence_quality": repository_intelligence_quality,
+        "repository_intelligence_search_efficiency": (
+            repository_intelligence_search_efficiency
+        ),
         "surfaces": {
             "runtime": {
                 "trials": len(runtime_rows),
@@ -404,6 +423,9 @@ def build_decision_evidence(
             "tool_strategy_partial_trials": partial_tool_strategy_trials,
             "repository_intelligence_quality_state": (
                 repository_intelligence_quality.get("state")
+            ),
+            "repository_intelligence_search_efficiency_state": (
+                repository_intelligence_search_efficiency.get("state")
             ),
         },
         "evidence_signals": sorted(set(evidence_signals)),

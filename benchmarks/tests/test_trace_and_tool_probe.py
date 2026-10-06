@@ -21,6 +21,8 @@ from benchmarks.harness.trace_diagnostics import (
     _last_assistant_text_present,
     _opencode_calls,
     _repository_intelligence_quality,
+    _repository_intelligence_search_efficiency,
+    _trial_search_efficiency,
     build_trace_diagnostics,
 )
 from benchmarks.harness.subject_exposure import exposure_probe_required_tool
@@ -150,6 +152,182 @@ class TraceAndToolProbeTests(unittest.TestCase):
         self.assertEqual(evidence["expected_target_rank"], 1)
         self.assertEqual(evidence["expected_target_observability"], "observed")
         self.assertEqual(evidence["ownership_status"], "ambiguous")
+
+    def test_trial_search_efficiency_keeps_search_read_and_repeats_separate(self) -> None:
+        calls = [
+            {
+                "ordinal": 1,
+                "tool": "grep",
+                "tool_class": NATIVE_SEARCH,
+                "subject_call": False,
+                "input_sha256": "search-a",
+            },
+            {
+                "ordinal": 2,
+                "tool": "hashmarks_task_evidence",
+                "tool_class": SUBJECT_REPOSITORY_INTELLIGENCE,
+                "subject_call": True,
+                "status": "completed",
+                "result_bytes": 1200,
+                "input_sha256": "subject",
+            },
+            {
+                "ordinal": 3,
+                "tool": "grep",
+                "tool_class": NATIVE_SEARCH,
+                "subject_call": False,
+                "input_sha256": "search-a",
+            },
+            {
+                "ordinal": 4,
+                "tool": "read",
+                "tool_class": NATIVE_READ,
+                "subject_call": False,
+                "input_sha256": "read-a",
+            },
+            {
+                "ordinal": 5,
+                "tool": "bash",
+                "tool_class": SHELL,
+                "subject_call": False,
+                "input_sha256": "shell-a",
+            },
+        ]
+
+        metrics = _trial_search_efficiency(calls)
+        self.assertIsNotNone(metrics)
+        assert metrics is not None
+        self.assertEqual(metrics["pre_subject_native_search_calls"], 1)
+        self.assertEqual(metrics["post_subject_native_search_calls"], 1)
+        self.assertEqual(metrics["post_subject_native_read_calls"], 1)
+        self.assertEqual(metrics["post_subject_native_navigation_calls"], 2)
+        self.assertEqual(metrics["post_subject_shell_calls"], 1)
+        self.assertFalse(metrics["no_native_search_after_subject"])
+        self.assertFalse(metrics["no_native_navigation_after_subject"])
+        self.assertEqual(metrics["exact_repeat_native_navigation_calls"], 1)
+        self.assertEqual(
+            metrics["post_subject_exact_repeat_native_navigation_calls"],
+            1,
+        )
+        self.assertEqual(metrics["subject_result_observed_calls"], 1)
+
+    def test_search_efficiency_compares_only_observed_subject_evidence_to_bare(self) -> None:
+        def row(
+            *,
+            subject_id: str,
+            invoked: bool | None,
+            calls: list[dict[str, object]],
+        ) -> dict[str, object]:
+            return {
+                "task_id": "task",
+                "agent_id": "agent",
+                "trial_index": 0,
+                "replicate_id": 10,
+                "context_group": None,
+                "context_variant": None,
+                "subject_id": subject_id,
+                "subject_invocation_observed": invoked,
+                "search_efficiency": _trial_search_efficiency(calls),
+            }
+
+        bare = row(
+            subject_id="none",
+            invoked=None,
+            calls=[
+                {
+                    "ordinal": 1,
+                    "tool": "grep",
+                    "tool_class": NATIVE_SEARCH,
+                    "subject_call": False,
+                    "input_sha256": "a",
+                },
+                {
+                    "ordinal": 2,
+                    "tool": "grep",
+                    "tool_class": NATIVE_SEARCH,
+                    "subject_call": False,
+                    "input_sha256": "b",
+                },
+                {
+                    "ordinal": 3,
+                    "tool": "grep",
+                    "tool_class": NATIVE_SEARCH,
+                    "subject_call": False,
+                    "input_sha256": "a",
+                },
+                {
+                    "ordinal": 4,
+                    "tool": "read",
+                    "tool_class": NATIVE_READ,
+                    "subject_call": False,
+                    "input_sha256": "r",
+                },
+            ],
+        )
+        assisted = row(
+            subject_id="hashmarks",
+            invoked=True,
+            calls=[
+                {
+                    "ordinal": 1,
+                    "tool": "hashmarks_task_evidence",
+                    "tool_class": SUBJECT_REPOSITORY_INTELLIGENCE,
+                    "subject_call": True,
+                    "status": "completed",
+                    "result_bytes": 900,
+                    "input_sha256": "subject",
+                },
+                {
+                    "ordinal": 2,
+                    "tool": "grep",
+                    "tool_class": NATIVE_SEARCH,
+                    "subject_call": False,
+                    "input_sha256": "a",
+                },
+                {
+                    "ordinal": 3,
+                    "tool": "read",
+                    "tool_class": NATIVE_READ,
+                    "subject_call": False,
+                    "input_sha256": "r",
+                },
+            ],
+        )
+
+        summary = _repository_intelligence_search_efficiency([bare, assisted])
+        self.assertEqual(summary["state"], "observed")
+        self.assertFalse(summary["correctness_joined"])
+        subject = summary["subjects"][0]
+        self.assertEqual(subject["subject_id"], "hashmarks")
+        self.assertEqual(subject["evidence_observed_trials"], 1)
+        self.assertEqual(subject["paired_vs_bare"]["comparable_pairs"], 1)
+        self.assertEqual(
+            subject["paired_vs_bare"]["native_search_calls_delta"],
+            {
+                "observations": 1,
+                "mean": -2,
+                "median": -2,
+                "min": -2,
+                "max": -2,
+                "reduced": 1,
+                "same": 0,
+                "increased": 0,
+            },
+        )
+        self.assertEqual(
+            subject["paired_vs_bare"][
+                "exact_repeat_native_navigation_calls_delta"
+            ]["mean"],
+            -1,
+        )
+        self.assertIn(
+            "fewer observed calls are not scored as better",
+            subject["interpretation"]["correctness"],
+        )
+        self.assertIn(
+            "shell command semantics are not inferred",
+            subject["interpretation"]["native_search"],
+        )
 
     def test_retrieval_quality_summary_is_aggregate_and_non_optimizing(self) -> None:
         rows = [
