@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from benchmarks.tool_probe import REQUIRED_TOOLS
 from benchmarks.tool_routing import (
     catalog_admission,
     catalog_tool_names,
@@ -180,9 +179,12 @@ def score_trace(
     catalog_payload: object,
     trace_payload: object,
     subject: str,
+    required_tool: str,
 ) -> dict[str, Any]:
-    if subject not in REQUIRED_TOOLS:
-        raise ValueError(f"unsupported tool-routing subject: {subject}")
+    if not isinstance(subject, str) or not subject:
+        raise ValueError("tool-routing subject must be a nonempty string")
+    if not isinstance(required_tool, str) or not required_tool:
+        raise ValueError("tool-routing required tool must be a nonempty string")
     catalog = validate_catalog_capture(catalog_payload)
     trace = validate_trace(trace_payload)
     if trace["host"] != catalog["host"]:
@@ -195,7 +197,6 @@ def score_trace(
             "tool-routing trace catalog_sha256 does not match the supplied catalog"
         )
     catalog_names = catalog_tool_names(catalog_payload)
-    required_tool = REQUIRED_TOOLS[subject]
     admission = catalog_admission(
         catalog_names,
         subject=subject,

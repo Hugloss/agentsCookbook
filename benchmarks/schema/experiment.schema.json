@@ -184,6 +184,18 @@
           "type": "boolean"
         }
       }
+    },
+    "subject_exposure_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "require_probe_contract"
+      ],
+      "properties": {
+        "require_probe_contract": {
+          "const": true
+        }
+      }
     }
   }
 }

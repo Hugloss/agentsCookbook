@@ -20,6 +20,7 @@ from .oracle_reviews import (
     oracle_reviews_declared,
     validate_oracle_reviews,
 )
+from .subject_exposure import validate_subject_exposure_admission_contract
 from .suite import SuiteDefinition
 
 
@@ -177,6 +178,7 @@ def _read_manifest(directory: Path) -> dict[str, Any]:
         "benchmark-campaign-authority.v1",
         "benchmark-campaign-authority.v2",
         "benchmark-campaign-authority.v3",
+        "benchmark-campaign-authority.v4",
     }:
         raise CampaignAuthorityError("unsupported campaign authority contract")
     identity = value.get("campaign_id")
@@ -431,6 +433,21 @@ def audit_campaign(
     """
     if not rows:
         raise CampaignAuthorityError("campaign selection is empty")
+    try:
+        exposure_contracts = validate_subject_exposure_admission_contract(
+            suite=suite,
+            expected_rows=rows,
+        )
+    except ValueError as exc:
+        raise CampaignAuthorityError(str(exc)) from exc
+    if on_progress is not None and exposure_contracts:
+        on_progress(
+            {
+                "stage": "subject-exposure-contract",
+                "status": "verified",
+                "subjects": len(exposure_contracts),
+            }
+        )
     if results_root is not None:
         directory = results_root / ".campaign"
         if (
@@ -591,11 +608,12 @@ def audit_campaign(
         )
 
     payload = {
-        "contract": "benchmark-campaign-authority.v3",
+        "contract": "benchmark-campaign-authority.v4",
         "selected_definitions": selected,
         "task_conditions": observed,
         "agents": agents,
         "subjects": subjects,
+        "subject_exposure_contracts": exposure_contracts,
         "task_inputs": task_inputs,
         "suite_identity": campaign_suite_identity(suite),
         "oracle_review_sha256": (

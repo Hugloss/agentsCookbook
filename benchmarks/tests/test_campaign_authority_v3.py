@@ -47,12 +47,20 @@ def _suite() -> SuiteDefinition:
             },
         ],
         "scoring": {"id": "score", "version": 1, "metrics": ["task_success"]},
+        "subject_exposure_contract": {"require_probe_contract": True},
     }
     tasks = {
         name: {"id": name, "prompt": name, "budgets": {"timeout_seconds": 1}}
         for name in experiment["tasks"]
     }
-    subjects = {name: {"id": name} for name in ("none", "tool")}
+    subjects = {
+        "none": {"id": "none", "kind": "control"},
+        "tool": {
+            "id": "tool",
+            "kind": "repository_intelligence",
+            "exposure_probe": {"required_tool": "tool_context"},
+        },
+    }
     agents = {"agent": {"id": "agent"}}
     return SuiteDefinition(Path("."), experiment, tasks, subjects, agents)
 
@@ -186,7 +194,7 @@ class CampaignAuthorityTests(unittest.TestCase):
                 self.assertEqual(len(seen), 8)
                 self.assertEqual(audited, campaign)
                 self.assertEqual(
-                    campaign["contract"], "benchmark-campaign-authority.v3"
+                    campaign["contract"], "benchmark-campaign-authority.v4"
                 )
                 self.assertNotEqual(
                     campaign["task_conditions"]["task-a"]["bare"]["agent"][
@@ -282,6 +290,35 @@ class CampaignAuthorityTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(CampaignAuthorityError, "runtime or model"):
                     admit_campaign(**options)
+
+    def test_campaign_rejects_missing_subject_exposure_contract_before_work(
+        self,
+    ) -> None:
+        suite = _suite()
+        suite.subjects["tool"] = {
+            key: value
+            for key, value in suite.subjects["tool"].items()
+            if key != "exposure_probe"
+        }
+        rows = suite.trial_definitions()
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch(
+            "benchmarks.harness.campaign_authority.admit_trial",
+            side_effect=AssertionError("participant admission must not start"),
+        ) as admit:
+            root = Path(tmp)
+            with self.assertRaisesRegex(
+                CampaignAuthorityError,
+                "has no exposure_probe contract",
+            ):
+                audit_campaign(
+                    suite=suite,
+                    rows=rows,
+                    harness_root=root,
+                    cache_root=root / "cache",
+                    work_root=root / "work",
+                )
+        admit.assert_not_called()
 
     def test_campaign_trial_id_ignores_ephemeral_subject_exposure_hash(self) -> None:
         frozen = {

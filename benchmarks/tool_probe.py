@@ -13,6 +13,7 @@ from typing import Any
 from benchmarks.config import BenchmarkConfig
 from benchmarks.harness.identity import canonical_json, digest
 from benchmarks.harness.oracle_reviews import oracle_review_path, validate_oracle_reviews
+from benchmarks.harness.subject_exposure import exposure_probe_required_tool
 from benchmarks.harness.suite import load_suite
 
 
@@ -25,7 +26,6 @@ DEFAULT_TASKS = (
     "locate-directory-pruning",
     "locate-resource-invalidation",
 )
-REQUIRED_TOOLS = {"hashmarks": "hashmarks_task_evidence", "enola": "enola_explore"}
 
 
 def _task_file(suite_root: Path, task_id: str) -> Path:
@@ -42,8 +42,6 @@ def prepare_tool_probe_suite(
     runtime_env_file: Path | None = None,
     reuse: bool = False,
 ) -> dict[str, Any]:
-    if subject not in REQUIRED_TOOLS:
-        raise ToolProbeError(f"unsupported tool-probe subject: {subject}")
     suite = load_suite(source_suite)
     validate_oracle_reviews(suite, require_complete=True)
     if not task_ids or len(set(task_ids)) != len(task_ids):
@@ -51,17 +49,11 @@ def prepare_tool_probe_suite(
     unknown = set(task_ids) - set(suite.tasks)
     if unknown:
         raise ToolProbeError("unknown tool-probe tasks: " + ", ".join(sorted(unknown)))
-    unsupported = set(task_ids) - set(DEFAULT_TASKS)
-    if unsupported:
-        raise ToolProbeError(
-            "tool-probe tasks need a reviewed diagnostic design: "
-            + ", ".join(sorted(unsupported))
-        )
     for task_id in task_ids:
         if suite.tasks[task_id]["oracle"]["adapter"] != "repository-location-json":
             raise ToolProbeError(f"tool-probe task needs a location oracle: {task_id}")
     destination = destination.resolve()
-    required_tool = REQUIRED_TOOLS[subject]
+    required_tool = exposure_probe_required_tool(suite, subject)
     source_reviews = json.loads(
         oracle_review_path(suite).read_text(encoding="utf-8")
     )

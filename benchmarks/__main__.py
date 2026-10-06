@@ -15,7 +15,7 @@ from pathlib import Path
 
 from benchmarks.config import BenchmarkConfig, BenchmarkConfigError
 from benchmarks.diagnostic import DiagnosticError, prepare_diagnostic_suite
-from benchmarks.tool_probe import REQUIRED_TOOLS, ToolProbeError, prepare_tool_probe_suite
+from benchmarks.tool_probe import ToolProbeError, prepare_tool_probe_suite
 from benchmarks.tool_probe_score import smoke_gate
 from benchmarks.tool_routing import (
     catalog_admission,
@@ -178,22 +178,20 @@ def _parser() -> argparse.ArgumentParser:
 
     tool_probe = sub.add_parser("tool-probe-prepare")
     tool_probe.add_argument("--suite", type=Path, required=True)
-    tool_probe.add_argument("--subject", choices=("hashmarks", "enola"), required=True)
+    tool_probe.add_argument("--subject", required=True)
+    tool_probe.add_argument("--task", action="append", default=[])
     tool_probe.add_argument("--output-suite", type=Path, required=True)
     tool_probe.add_argument("--runtime-env-file", type=Path)
     tool_probe.add_argument("--reuse", action="store_true")
 
     probe_gate = sub.add_parser("tool-probe-smoke-gate")
     probe_gate.add_argument("--root", type=Path, required=True)
-    probe_gate.add_argument("--subject", choices=("hashmarks", "enola"), required=True)
+    probe_gate.add_argument("--subject", required=True)
 
     routing_catalog = sub.add_parser("tool-routing-catalog")
     routing_catalog.add_argument("--catalog", type=Path, required=True)
-    routing_catalog.add_argument(
-        "--subject",
-        choices=tuple(sorted(REQUIRED_TOOLS)),
-        required=True,
-    )
+    routing_catalog.add_argument("--subject", required=True)
+    routing_catalog.add_argument("--required-tool", required=True)
 
     routing_catalog.add_argument("--host")
     routing_catalog.add_argument("--capture-id")
@@ -202,11 +200,8 @@ def _parser() -> argparse.ArgumentParser:
     routing_trace = sub.add_parser("tool-routing-trace")
     routing_trace.add_argument("--catalog", type=Path, required=True)
     routing_trace.add_argument("--trace", type=Path, required=True)
-    routing_trace.add_argument(
-        "--subject",
-        choices=tuple(sorted(REQUIRED_TOOLS)),
-        required=True,
-    )
+    routing_trace.add_argument("--subject", required=True)
+    routing_trace.add_argument("--required-tool", required=True)
     routing_trace.add_argument("--output", type=Path)
 
     retrieval_probe = sub.add_parser("hashmarks-retrieval-probe")
@@ -864,13 +859,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "tool-probe-prepare":
         try:
-            evidence = prepare_tool_probe_suite(
-                source_suite=args.suite,
-                destination=args.output_suite,
-                subject=args.subject,
-                runtime_env_file=args.runtime_env_file,
-                reuse=args.reuse,
-            )
+            kwargs = {
+                "source_suite": args.suite,
+                "destination": args.output_suite,
+                "subject": args.subject,
+                "runtime_env_file": args.runtime_env_file,
+                "reuse": args.reuse,
+            }
+            if args.task:
+                kwargs["task_ids"] = tuple(args.task)
+            evidence = prepare_tool_probe_suite(**kwargs)
         except (ToolProbeError, OSError, ValueError) as exc:
             raise SystemExit(f"tool probe unavailable: {exc}") from exc
         print(json.dumps(evidence, indent=2, sort_keys=True))
@@ -907,7 +905,7 @@ def main(argv: list[str] | None = None) -> int:
             evidence = catalog_admission(
                 names,
                 subject=args.subject,
-                required_tool=REQUIRED_TOOLS[args.subject],
+                required_tool=args.required_tool,
             )
             evidence["catalog_sha256"] = routing_artifact_sha256(payload)
             if args.output_capture is not None:
@@ -924,6 +922,7 @@ def main(argv: list[str] | None = None) -> int:
                 catalog_payload=catalog_payload,
                 trace_payload=trace_payload,
                 subject=args.subject,
+                required_tool=args.required_tool,
             )
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             raise SystemExit(f"tool routing trace unavailable: {exc}") from exc

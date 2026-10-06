@@ -9,7 +9,7 @@ from pathlib import Path
 from benchmarks.harness.report import build_report
 from benchmarks.harness.suite import load_suite
 from benchmarks.harness.trace_diagnostics import build_trace_diagnostics
-from benchmarks.tool_probe import REQUIRED_TOOLS
+from benchmarks.harness.subject_exposure import exposure_probe_required_tool
 from benchmarks.tool_routing import (
     first_native_discovery,
     required_before_native_discovery,
@@ -17,12 +17,21 @@ from benchmarks.tool_routing import (
 )
 
 def smoke_gate(
-    score: dict[str, object], *, subject: str, expected_trials: int = 3
+    score: dict[str, object],
+    *,
+    subject: str,
+    expected_trials: int = 3,
+    required_tool: str | None = None,
 ) -> None:
     if score.get("schema") != "agents-cookbook-tool-probe-score.v3":
         raise ValueError("tool-probe smoke score v3 is required")
-    if score.get("subject") != subject or score.get("required_tool") != REQUIRED_TOOLS[subject]:
-        raise ValueError("smoke score subject or required tool differs from selection")
+    if score.get("subject") != subject:
+        raise ValueError("smoke score subject differs from selection")
+    observed_required_tool = score.get("required_tool")
+    if not isinstance(observed_required_tool, str) or not observed_required_tool:
+        raise ValueError("smoke score has no required tool")
+    if required_tool is not None and observed_required_tool != required_tool:
+        raise ValueError("smoke score required tool differs from selection")
     rows = score.get("required_tool_results")
     if not isinstance(rows, list) or len(rows) != expected_trials or (
         score.get("expected_trials") != expected_trials or
@@ -66,7 +75,7 @@ def main(suite_root: Path) -> int:
     )
     traces = build_trace_diagnostics(args.results)
     subject = suite.experiment["conditions"][0]["subject"]
-    required = REQUIRED_TOOLS[subject]
+    required = exposure_probe_required_tool(suite, subject)
     rows = []
     for trial in traces["trials"]:
         if trial["definition_id"] not in selected:

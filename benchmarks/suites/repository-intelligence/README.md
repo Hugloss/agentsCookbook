@@ -105,14 +105,20 @@ also used JSON fences even though the prompts requested one plain JSON object. T
 ordinary paired suite remains the natural-use measure. The separate tool probes below
 ask what happens after a specific subject tool is required; they are diagnostic only.
 
-Prepare one 9-trial suite per subject from the reviewed heldout task and oracle bytes:
+Prepare one 9-trial suite per non-control subject from the reviewed heldout
+task and oracle bytes:
 
 ```bash
 make benchmark-tool-probe-prepare PROBE_SUBJECT=hashmarks
 make benchmark-tool-probe-prepare PROBE_SUBJECT=enola
+# Future subject:
+# make benchmark-tool-probe-prepare PROBE_SUBJECT=<subject-id>
 ```
 
-The v2 generator copies task and independent review records exactly. It puts the
+The required tool comes from the frozen subject definition's
+`exposure_probe.required_tool`; the probe framework contains no product-name mapping.
+A future MCP subject therefore adds its own contract rather than changing probe code.
+The generator copies task and independent review records exactly. It puts the
 required-tool instruction in the diagnostic OpenCode agent definition, which changes
 the trial definition identity while preserving reviewed oracle authority. The generated
 `.env` uses runtime choices from the root `.env` and points to the diagnostic suite,
@@ -137,8 +143,10 @@ make benchmark-tool-probe-smoke-gate PROBE_SUBJECT=hashmarks
 make benchmark-tool-probe PROBE_SUBJECT=hashmarks
 ```
 
-Repeat with `PROBE_SUBJECT=enola`. `benchmark-tool-probe` checks the saved smoke gate
-before the full run. Use `benchmark-tool-probe-resume`, `-status`, and `-score` for a
+Repeat for each selected non-control subject. `benchmark-tool-probe` checks the saved
+smoke gate before the full run. Heldout campaign admission separately requires every
+selected non-control subject to carry this frozen exposure-probe contract, and completed
+campaign qualification still requires actual observed subject use. Use `benchmark-tool-probe-resume`, `-status`, and `-score` for a
 saved full run. The v2 score records required-call attempt and nonempty completion,
 whether that call preceded native file search, and unknown observations independently
 of semantic correctness. A complete nested Code Mode call without visible output
