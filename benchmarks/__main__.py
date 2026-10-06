@@ -704,6 +704,11 @@ def _refresh_canonical_report(
             report_data["reports_dir"] = str(_reports_dir(paths.root))
             _write_derived_json(paths.root, "report.json", report_data)
             trace_diagnostics = build_trace_diagnostics(paths.results)
+            _write_derived_json(
+                paths.root,
+                "trace-diagnostics.json",
+                trace_diagnostics,
+            )
             decision = build_decision_evidence(
                 report_data,
                 trace_diagnostics=trace_diagnostics,
@@ -713,11 +718,6 @@ def _refresh_canonical_report(
                 paths.root,
                 "decision-evidence.json",
                 decision,
-            )
-            _write_derived_json(
-                paths.root,
-                "trace-diagnostics.json",
-                trace_diagnostics,
             )
             return report_data, None
     except (RunStoreError, ReportError) as exc:
