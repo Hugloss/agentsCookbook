@@ -132,6 +132,34 @@ class DecisionEvidenceTests(unittest.TestCase):
                     },
                 },
             ],
+            "paired_assistance_treatment_summary": [
+                {
+                    "agent_id": "opencode-native",
+                    "subject_id": "hashmarks",
+                    "contracted_exposure_state": "contracted-successful-result",
+                    "contracted_treatment_observed": True,
+                    "total_pairs": 1,
+                    "transitions": {
+                        "gain": 1,
+                        "preserved": 0,
+                        "unresolved": 0,
+                        "regression": 0,
+                    },
+                },
+                {
+                    "agent_id": "opencode-native",
+                    "subject_id": "hashmarks",
+                    "contracted_exposure_state": "subject-not-invoked",
+                    "contracted_treatment_observed": False,
+                    "total_pairs": 2,
+                    "transitions": {
+                        "gain": 0,
+                        "preserved": 1,
+                        "unresolved": 0,
+                        "regression": 1,
+                    },
+                },
+            ],
             "decision_summary": {
                 "claim_guardrails": {"overall_winner": "not-permitted"}
             },
@@ -255,6 +283,25 @@ class DecisionEvidenceTests(unittest.TestCase):
             funnel["condition_outcomes_when_not_invoked"]["transitions"]["regression"],
             1,
         )
+        self.assertEqual(
+            funnel["contracted_treatment"]["observed"]["transitions"],
+            {
+                "gain": 1,
+                "preserved": 0,
+                "unresolved": 0,
+                "regression": 0,
+            },
+        )
+        self.assertEqual(
+            funnel["contracted_treatment"]["definite_non_treatment"][
+                "transitions"
+            ]["regression"],
+            1,
+        )
+        self.assertEqual(
+            funnel["contracted_treatment"]["unproven"]["pairs"],
+            0,
+        )
         self.assertIn(
             "cannot be attributed",
             funnel["interpretation"]["not_invoked"],
@@ -303,6 +350,7 @@ class DecisionEvidenceTests(unittest.TestCase):
                 "subject_adoption": [],
                 "paired_assistance_summary": [],
                 "paired_assistance_usage_summary": [],
+                "paired_assistance_treatment_summary": [],
             }
         )
 
