@@ -772,6 +772,44 @@ class TrialHeartbeat:
             self._thread.join()
 
 
+def _failure_fields(
+    result: TrialRunResult,
+    receipt: dict[str, Any] | None,
+) -> tuple[str, str | None, str | None, str | None, str | None]:
+    """Project failure fields from the persisted receipt when one is available."""
+    status = result.status
+    reason = result.reason
+    stage = result.stage
+    reason_code = result.reason_code
+    diagnostic = result.diagnostic
+
+    if receipt is None:
+        return status, reason, stage, reason_code, diagnostic
+
+    receipt_status = receipt.get("status")
+    if isinstance(receipt_status, str):
+        status = receipt_status
+
+    if "reason" in receipt:
+        receipt_reason = receipt.get("reason")
+        if receipt_reason is None or isinstance(receipt_reason, str):
+            reason = receipt_reason
+
+    source = receipt.get("diagnostic")
+    if isinstance(source, dict):
+        receipt_stage = source.get("stage")
+        receipt_reason_code = source.get("reason_code")
+        receipt_detail = source.get("detail")
+        if receipt_stage is None or isinstance(receipt_stage, str):
+            stage = receipt_stage
+        if receipt_reason_code is None or isinstance(receipt_reason_code, str):
+            reason_code = receipt_reason_code
+        if receipt_detail is None or isinstance(receipt_detail, str):
+            diagnostic = receipt_detail
+
+    return status, reason, stage, reason_code, diagnostic
+
+
 def render_trial_failure(
     *,
     row: dict[str, Any],
@@ -779,8 +817,9 @@ def render_trial_failure(
     result: TrialRunResult,
     receipt: dict[str, Any] | None = None,
 ) -> str | None:
-    """Render stable failure fields before bounded raw diagnostic evidence."""
-    if result.status == "PASS":
+    """Render one failure from the durable receipt authority when available."""
+    status, reason, stage, reason_code, diagnostic = _failure_fields(result, receipt)
+    if status == "PASS":
         return None
     replicate_id = row.get("replicate_id", row.get("seed"))
     lines = [
@@ -790,10 +829,10 @@ def render_trial_failure(
         f"Replicate ID: {replicate_id if replicate_id is not None else 'unknown'}",
         f"Condition: {row['condition_id']}",
         f"Subject: {_subject_label(subject)}",
-        f"Status: {result.status}",
-        f"Stage: {result.stage or 'unknown'}",
-        f"Reason code: {result.reason_code or 'unknown'}",
-        f"Reason: {result.reason or 'none'}",
+        f"Status: {status}",
+        f"Stage: {stage or 'unknown'}",
+        f"Reason code: {reason_code or 'unknown'}",
+        f"Reason: {reason or 'none'}",
         f"Evidence: {result.result_dir}",
     ]
     if receipt is not None:
@@ -841,8 +880,8 @@ def render_trial_failure(
             "Recovery: prior interrupted attempt preserved; "
             "execution retried as a numbered attempt"
         )
-    if result.diagnostic:
-        lines.extend(["", "--- diagnostic ---", result.diagnostic])
+    if diagnostic:
+        lines.extend(["", "--- diagnostic ---", diagnostic])
     return "\n".join(lines)
 
 
