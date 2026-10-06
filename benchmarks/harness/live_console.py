@@ -19,6 +19,7 @@ from benchmarks.harness.report import (
     repository_location_outcome_topology,
 )
 from benchmarks.harness.runner import TrialRunResult, bind_result_to_receipt
+from benchmarks.harness.treatment_attribution import contracted_treatment_evidence
 
 from benchmarks.harness.suite import SuiteDefinition
 
@@ -356,6 +357,70 @@ class LiveTaskMatrix:
                                 "Interpretation",
                             ],
                             attributed_rows,
+                        )
+                    )
+
+                lines.extend(["", "Paired outcome by contracted treatment"])
+                treatment_rows: list[list[str]] = []
+                for condition_id in assisted_conditions:
+                    assisted = {
+                        _replicate_key(row): receipt
+                        for row, observed_condition, receipt in outcomes
+                        if observed_condition == condition_id
+                    }
+                    by_treatment: dict[
+                        tuple[str, str], Counter[str]
+                    ] = {}
+                    for key in sorted(assisted, key=repr):
+                        baseline = controls.get(key)
+                        candidate = assisted.get(key)
+                        transition = (
+                            classify_assistance_pair(baseline, candidate)
+                            if baseline is not None and candidate is not None
+                            else None
+                        )
+                        treatment = contracted_treatment_evidence(candidate)
+                        group_key = (
+                            str(treatment["state"]),
+                            str(treatment["attribution_interpretation"]),
+                        )
+                        by_treatment.setdefault(group_key, Counter())[
+                            transition or "excluded"
+                        ] += 1
+                    for (state, interpretation), counts in sorted(
+                        by_treatment.items()
+                    ):
+                        pairs = sum(counts.values())
+                        if pairs == 0:
+                            continue
+                        treatment_rows.append(
+                            [
+                                label(condition_id),
+                                state,
+                                str(pairs),
+                                str(counts["gain"]),
+                                str(counts["preserved"]),
+                                str(counts["unresolved"]),
+                                str(counts["regression"]),
+                                str(counts["excluded"]),
+                                interpretation,
+                            ]
+                        )
+                if treatment_rows:
+                    lines.extend(
+                        _render_table(
+                            [
+                                "Subject",
+                                "Contracted state",
+                                "Pairs",
+                                "Gain",
+                                "Preserved",
+                                "Unresolved",
+                                "Regression",
+                                "Excluded",
+                                "Attribution",
+                            ],
+                            treatment_rows,
                         )
                     )
 
