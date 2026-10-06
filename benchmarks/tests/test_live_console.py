@@ -555,6 +555,50 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn("--- diagnostic ---", rendered)
         self.assertIn("ValueError: boom", rendered)
 
+    def test_failure_envelope_uses_persisted_receipt_as_diagnostic_authority(
+        self,
+    ) -> None:
+        suite, rows = self._prefix_opencode_rows()
+        result = TrialRunResult(
+            trial_id="a" * 64,
+            definition_id=rows[0]["definition_id"],
+            status="FAIL",
+            result_dir=Path("/tmp/evidence"),
+            reused=False,
+            reason="stale transient reason",
+            stage="stale-stage",
+            reason_code="stale-code",
+            diagnostic="stale transient diagnostic",
+        )
+        receipt = self._receipt(suite, rows[0], "INCOMPLETE")
+        receipt["reason"] = "agent terminal event was turn.failed"
+        receipt["diagnostic"] = {
+            "stage": "agent-execution",
+            "reason_code": "agent-terminal-failed",
+            "detail": (
+                "OpenCode export diagnostic:\n"
+                "Error: terminal assistant message has no final text\n"
+                "    at extractFinalAnswer"
+            ),
+        }
+
+        rendered = render_trial_failure(
+            row=rows[0],
+            subject="none",
+            result=result,
+            receipt=receipt,
+        )
+
+        assert rendered is not None
+        self.assertIn("Status: INCOMPLETE", rendered)
+        self.assertIn("Stage: agent-execution", rendered)
+        self.assertIn("Reason code: agent-terminal-failed", rendered)
+        self.assertIn("Reason: agent terminal event was turn.failed", rendered)
+        self.assertIn("at extractFinalAnswer", rendered)
+        self.assertNotIn("stale transient", rendered)
+        self.assertNotIn("stale-stage", rendered)
+        self.assertNotIn("stale-code", rendered)
+
     def test_assisted_failure_shows_subject_tool_attribution(self) -> None:
         suite, rows = self._prefix_opencode_rows()
         row = next(
