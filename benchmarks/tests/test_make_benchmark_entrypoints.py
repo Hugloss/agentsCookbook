@@ -418,7 +418,23 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 ),
                 mock.patch(
                     "benchmarks.__main__.build_trace_diagnostics",
-                    return_value={"schema": "agents-cookbook-trace-diagnostics.v1", "trials": []},
+                    return_value={
+                        "schema": "agents-cookbook-trace-diagnostics.v3",
+                        "trials": [],
+                        "summary": {
+                            "repository_intelligence_quality": {
+                                "state": "observed",
+                                "claim_scope": "descriptive-diagnostic-only",
+                                "subjects": [
+                                    {
+                                        "subject_id": "hashmarks",
+                                        "operation": "task_evidence",
+                                        "calls": 1,
+                                    }
+                                ],
+                            }
+                        },
+                    },
                 ),
                 mock.patch(
                     "benchmarks.__main__._canonical_campaign_persistence_gap",
@@ -454,10 +470,20 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             )
             self.assertEqual(
                 stored_decision["schema"],
-                "agents-cookbook-benchmark-decision-evidence.v3",
+                "agents-cookbook-benchmark-decision-evidence.v4",
             )
             self.assertEqual(stored_decision["run_id"], "000001")
             self.assertTrue(stored_decision["authority"]["derived_only"])
+            self.assertEqual(
+                stored_decision["repository_intelligence_quality"]["state"],
+                "observed",
+            )
+            self.assertEqual(
+                stored_decision["repository_intelligence_quality"]["subjects"][0][
+                    "calls"
+                ],
+                1,
+            )
             trace_file = run_root / "reports/trace-diagnostics.json"
             self.assertTrue(trace_file.is_file())
 
