@@ -122,6 +122,18 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
                     if len(agents) == 2
                     else "not-applicable-single-agent-selection",
                 )
+                self.assertEqual(
+                    payload["decision_summary"]["claim_guardrails"][
+                        "subject_effect_attribution"
+                    ],
+                    "exact-required-operation-with-successful-nonempty-result",
+                )
+                self.assertEqual(
+                    payload["decision_summary"]["claim_guardrails"][
+                        "generic_subject_invocation"
+                    ],
+                    "routing-and-adoption-descriptive-only",
+                )
 
     def test_score_honors_exact_partial_campaign_definitions(self) -> None:
         suite = load_suite(HELDOUT)
@@ -156,6 +168,24 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
                     "paired_assistance": [],
                     "paired_assistance_summary": [],
                     "paired_assistance_usage_summary": [],
+                    "paired_assistance_treatment_summary": [
+                        {
+                            "agent_id": "opencode-native",
+                            "subject_id": "hashmarks",
+                            "contracted_exposure_state": (
+                                "contracted-successful-result"
+                            ),
+                            "contracted_treatment_observed": True,
+                            "total_pairs": 1,
+                            "transitions": {
+                                "gain": 1,
+                                "preserved": 0,
+                                "unresolved": 0,
+                                "regression": 0,
+                            },
+                            "delta_metrics": {},
+                        }
+                    ],
                     "paired_assistance_exclusions": [],
                     "expected_assistance_pairs": 0,
                     "task_assistance_evidence": [],
@@ -197,6 +227,12 @@ class HeldoutScoreSelectionTests(unittest.TestCase):
             self.assertEqual(
                 payload["selection"]["definition_count"],
                 3,
+            )
+            self.assertEqual(
+                payload["languages"]["python"][
+                    "paired_assistance_treatment_summary"
+                ][0]["contracted_exposure_state"],
+                "contracted-successful-result",
             )
             self.assertEqual(
                 set(payload["selection"]["definition_ids"]),
