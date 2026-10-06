@@ -22,6 +22,7 @@ def _counter(values: list[str]) -> dict[str, int]:
 def _assistance_funnel(
     subject_adoption: list[dict[str, Any]],
     usage_summary: list[dict[str, Any]],
+    treatment_summary: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     usage = {
         (
@@ -32,6 +33,11 @@ def _assistance_funnel(
         for row in usage_summary
         if isinstance(row, dict)
     }
+    treatment = [
+        row
+        for row in treatment_summary
+        if isinstance(row, dict)
+    ]
 
     def conditional(
         agent_id: str,
@@ -47,6 +53,39 @@ def _assistance_funnel(
             "subject_mcp_calls": int(row.get("subject_mcp_calls", 0) or 0),
             "transitions": {
                 name: int(transitions.get(name, 0) or 0)
+                for name in ("gain", "preserved", "unresolved", "regression")
+            },
+        }
+
+    def contracted(
+        agent_id: str,
+        subject_id: str,
+        observed: bool | None,
+    ) -> dict[str, Any]:
+        rows = [
+            row
+            for row in treatment
+            if str(row.get("agent_id")) == agent_id
+            and str(row.get("subject_id")) == subject_id
+            and row.get("contracted_treatment_observed") is observed
+        ]
+        transitions = Counter()
+        pairs = 0
+        states: Counter[str] = Counter()
+        for row in rows:
+            pairs += int(row.get("total_pairs", 0) or 0)
+            state = row.get("contracted_exposure_state")
+            if isinstance(state, str):
+                states[state] += int(row.get("total_pairs", 0) or 0)
+            row_transitions = row.get("transitions")
+            if isinstance(row_transitions, dict):
+                for name in ("gain", "preserved", "unresolved", "regression"):
+                    transitions[name] += int(row_transitions.get(name, 0) or 0)
+        return {
+            "pairs": pairs,
+            "states": dict(sorted(states.items())),
+            "transitions": {
+                name: transitions[name]
                 for name in ("gain", "preserved", "unresolved", "regression")
             },
         }
@@ -106,12 +145,24 @@ def _assistance_funnel(
                 "condition_outcomes_when_invocation_unknown": conditional(
                     agent_id, subject_id, "unknown"
                 ),
+                "contracted_treatment": {
+                    "observed": contracted(agent_id, subject_id, True),
+                    "definite_non_treatment": contracted(
+                        agent_id, subject_id, False
+                    ),
+                    "unproven": contracted(agent_id, subject_id, None),
+                },
                 "interpretation": {
                     "overall_paired_summary": (
                         "condition effect; combines invoked and non-invoked assisted pairs"
                     ),
                     "usefulness_when_invoked": (
-                        "descriptive outcome transitions only where subject use was observed"
+                        "generic subject-use view; may include the wrong operation "
+                        "or unusable contracted results"
+                    ),
+                    "contracted_treatment": (
+                        "only exact contracted-operation calls with an observed "
+                        "successful nonempty result count as treatment"
                     ),
                     "not_invoked": (
                         "cannot be attributed to the subject tool because it was not invoked"
@@ -231,6 +282,11 @@ def build_decision_evidence(
         for row in report.get("paired_assistance_usage_summary", [])
         if isinstance(row, dict)
     ]
+    treatment_summary = [
+        row
+        for row in report.get("paired_assistance_treatment_summary", [])
+        if isinstance(row, dict)
+    ]
     adoption_states = [
         str(row["state"])
         for row in subject_adoption
@@ -326,7 +382,7 @@ def build_decision_evidence(
         evidence_signals.append("repository-intelligence-search-efficiency-observed")
 
     return {
-        "schema": "agents-cookbook-benchmark-decision-evidence.v5",
+        "schema": "agents-cookbook-benchmark-decision-evidence.v6",
         "authority": {
             "derived_only": True,
             "ranking_performed": False,
@@ -408,7 +464,12 @@ def build_decision_evidence(
                 "subject_adoption": subject_adoption,
                 "paired_summary": report.get("paired_assistance_summary", []),
                 "usage_summary": usage_summary,
-                "funnel": _assistance_funnel(subject_adoption, usage_summary),
+                "contracted_treatment_summary": treatment_summary,
+                "funnel": _assistance_funnel(
+                    subject_adoption,
+                    usage_summary,
+                    treatment_summary,
+                ),
                 "task_signal_counts": _counter(task_signals),
                 "task_evidence": task_assistance,
             },
