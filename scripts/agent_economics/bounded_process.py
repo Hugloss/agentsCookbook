@@ -32,6 +32,10 @@ class BoundedProcessError(ValueError):
     pass
 
 
+class StopStdinExchange(Exception):
+    """Close stdin without sending later stages; the caller interprets stdout."""
+
+
 @dataclass(frozen=True)
 class ProcessLimits:
     timeout_seconds: float = 30.0
@@ -179,6 +183,7 @@ def run_bounded(
     close_stdin: bool = False,
     stdin_bytes: bytes | None = None,
     stdin_close_when: Callable[[bytes], bool] | None = None,
+    stdin_stages: Sequence[tuple[bytes, Callable[[bytes], bool]]] | None = None,
 ) -> ProcessResult:
     if not argv or not all(isinstance(item, str) and item for item in argv):
         raise BoundedProcessError("argv must contain non-empty strings")
@@ -188,6 +193,18 @@ def run_bounded(
         raise BoundedProcessError("stdin_bytes must be bytes")
     if stdin_close_when is not None and stdin_bytes is None:
         raise BoundedProcessError("stdin_close_when requires stdin_bytes")
+    if stdin_stages is not None:
+        if close_stdin or stdin_bytes is not None or stdin_close_when is not None:
+            raise BoundedProcessError(
+                "stdin_stages cannot be combined with other stdin options"
+            )
+        if not stdin_stages or any(
+            not isinstance(payload, bytes) or not callable(ready)
+            for payload, ready in stdin_stages
+        ):
+            raise BoundedProcessError(
+                "stdin_stages requires bytes and readiness predicates"
+            )
     resolved_cwd, cwd_relative = safe_cwd(repository_root, cwd)
     runtime_environment = dict(environment or {})
     if any(
@@ -218,7 +235,7 @@ def run_bounded(
     }
     if close_stdin:
         popen_kwargs["stdin"] = subprocess.DEVNULL
-    elif stdin_bytes is not None:
+    elif stdin_bytes is not None or stdin_stages is not None:
         popen_kwargs["stdin"] = subprocess.PIPE
     if os.name == "nt":
         popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -255,6 +272,10 @@ def run_bounded(
     stdout, stderr = bytearray(), bytearray()
     stdout_truncated, stderr_truncated = threading.Event(), threading.Event()
     exchange_ready = threading.Event()
+    stage_satisfied = threading.Event()
+    stage_aborted = threading.Event()
+    stage_lock = threading.Lock()
+    active_predicate: list[Callable[[bytes], bool] | None] = [None]
     exchange_errors: list[Exception] = []
     termination = {"value": "not-needed"}
     termination_lock = threading.Lock()
@@ -267,7 +288,9 @@ def run_bounded(
     def drain(
         stream: object, sink: bytearray, maximum: int, truncated: threading.Event
     ) -> None:
-        watching_stdout = stream is process.stdout and stdin_close_when is not None
+        watching_stdout = stream is process.stdout and (
+            stdin_close_when is not None or stdin_stages is not None
+        )
         reader = (
             getattr(stream, "read1", stream.read)  # type: ignore[attr-defined]
             if watching_stdout
@@ -278,21 +301,31 @@ def run_bounded(
                 chunk = reader(65536)
                 if not chunk:
                     return
-                remaining = maximum - len(sink)
-                if remaining > 0:
-                    sink.extend(chunk[:remaining])
-                if len(chunk) > max(remaining, 0):
+                with stage_lock:
+                    remaining = maximum - len(sink)
+                    if remaining > 0:
+                        sink.extend(chunk[:remaining])
+                    over_limit = len(chunk) > max(remaining, 0)
+                    if watching_stdout and not over_limit:
+                        try:
+                            predicate = active_predicate[0]
+                            if predicate is not None and predicate(bytes(sink)):
+                                stage_satisfied.set()
+                                exchange_ready.set()
+                        except StopStdinExchange:
+                            active_predicate[0] = None
+                            stage_aborted.set()
+                            exchange_ready.set()
+                        except Exception as exc:
+                            exchange_errors.append(exc)
+                            exchange_ready.set()
+                if over_limit:
                     truncated.set()
                     terminate()
                     return
-                if watching_stdout:
-                    try:
-                        if stdin_close_when(bytes(sink)):
-                            exchange_ready.set()
-                    except Exception as exc:
-                        exchange_errors.append(exc)
-                        terminate()
-                        return
+                if exchange_errors:
+                    terminate()
+                    return
         finally:
             if watching_stdout:
                 exchange_ready.set()
@@ -325,13 +358,44 @@ def run_bounded(
     timer.start()
     try:
         try:
-            if stdin_bytes is not None:
+            if stdin_bytes is not None or stdin_stages is not None:
                 assert process.stdin is not None
                 try:
-                    process.stdin.write(stdin_bytes)
-                    process.stdin.flush()
-                    if stdin_close_when is not None:
-                        exchange_ready.wait()
+                    stages = (
+                        tuple(stdin_stages)
+                        if stdin_stages is not None
+                        else ((stdin_bytes, stdin_close_when),)
+                    )
+                    for payload, predicate in stages:
+                        with stage_lock:
+                            active_predicate[0] = predicate
+                            stage_satisfied.clear()
+                            stage_aborted.clear()
+                            exchange_ready.clear()
+                            if predicate is not None:
+                                try:
+                                    if predicate(bytes(stdout)):
+                                        stage_satisfied.set()
+                                        exchange_ready.set()
+                                except StopStdinExchange:
+                                    active_predicate[0] = None
+                                    stage_aborted.set()
+                                    exchange_ready.set()
+                                except Exception as exc:
+                                    exchange_errors.append(exc)
+                                    exchange_ready.set()
+                        if stage_aborted.is_set() or exchange_errors:
+                            break
+                        process.stdin.write(payload)
+                        process.stdin.flush()
+                        if predicate is not None:
+                            exchange_ready.wait()
+                            if (
+                                stage_aborted.is_set()
+                                or not stage_satisfied.is_set()
+                                or exchange_errors
+                            ):
+                                break
                 except (BrokenPipeError, OSError):
                     pass
                 finally:

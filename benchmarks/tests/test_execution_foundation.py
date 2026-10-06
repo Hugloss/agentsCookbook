@@ -150,6 +150,34 @@ class ExecutionFoundationTests(unittest.TestCase):
         if os.name != "nt":
             self.assertEqual(result.process_tree_termination, "posix-process-group")
 
+    def test_staged_exchange_times_out_waiting_for_second_response(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_bounded(
+                repository_root=Path(tmp),
+                argv=(
+                    sys.executable,
+                    "-u",
+                    "-c",
+                    (
+                        "import sys; "
+                        "sys.stdin.buffer.readline(); "
+                        "print('first', flush=True); "
+                        "sys.stdin.buffer.readline(); "
+                        "sys.stdin.buffer.read()"
+                    ),
+                ),
+                limits=ProcessLimits(timeout_seconds=0.3),
+                stdin_stages=(
+                    (b"request-1\n", lambda raw: b"first\n" in raw),
+                    (b"request-2\n", lambda raw: b"second\n" in raw),
+                ),
+            )
+        self.assertTrue(result.timed_out)
+        self.assertIn(b"first\n", result.stdout)
+        self.assertNotEqual(result.return_code, 0)
+        if os.name != "nt":
+            self.assertEqual(result.process_tree_termination, "posix-process-group")
+
     def test_bounded_process_interrupt_terminates_process_tree(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
