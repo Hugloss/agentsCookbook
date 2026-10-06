@@ -267,6 +267,7 @@ def _tool_strategy_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
             "max": max(first_subject_ordinals) if first_subject_ordinals else None,
         },
         "subject_routing_timing": {
+            "observations": sum(routing_timing.values()),
             "counts": dict(sorted(routing_timing.items())),
             "invoked_ordered_observations": (
                 routing_timing[ROUTING_FIRST_CHOICE]
@@ -565,6 +566,10 @@ def _subject_adoption_summary(
                 "subject_mcp_calls": sum(calls),
                 "subject_tool_names": tools,
                 "routing_timing_counts": dict(sorted(routing_timing.items())),
+                "routing_timing_observed_trials": sum(routing_timing.values()),
+                "routing_timing_unobserved_trials": (
+                    len(group) - sum(routing_timing.values())
+                ),
                 "first_choice_trials": routing_timing[ROUTING_FIRST_CHOICE],
                 "late_rescue_trials": routing_timing[ROUTING_LATE_RESCUE],
                 "never_invoked_timing_trials": routing_timing[
