@@ -158,7 +158,7 @@ class LiveTaskMatrixTests(unittest.TestCase):
                     tool_names=(
                         ["task_evidence", "find"]
                         if row["condition_id"] == "hashmarks-opencode-native"
-                        and row["trial"] == 0
+                        and row["trial"] != 2
                         else []
                     ),
                     tool_observability=(
@@ -178,7 +178,7 @@ class LiveTaskMatrixTests(unittest.TestCase):
                             }
                         ]
                         if row["condition_id"] == "hashmarks-opencode-native"
-                        and row["trial"] != 2
+                        and row["trial"] == 0
                         else []
                     ),
                 ),
