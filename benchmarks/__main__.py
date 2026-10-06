@@ -77,6 +77,7 @@ from benchmarks.harness.trace_diagnostics import (
 )
 from benchmarks.harness.runner import (
     TrialRunnerError,
+    bind_result_to_receipt,
     reuse_completed_trial,
     run_trial,
 )
@@ -1884,6 +1885,7 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
             receipt = json.loads(
                 (result.result_dir / "result.json").read_text(encoding="utf-8")
             )
+            result = bind_result_to_receipt(result, receipt)
             summary = live_matrix.record(row, receipt)
         except Exception as exc:
             print(

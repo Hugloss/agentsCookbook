@@ -258,6 +258,148 @@ class SavedRunRecoveryTests(unittest.TestCase):
             run.assert_not_called()
             persist_reports.assert_called_once()
 
+    def test_execute_run_uses_receipt_status_for_final_blocker_and_stdout(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            results = root / "results"
+            result_dir = results / ("b" * 64)
+            result_dir.mkdir(parents=True)
+            receipt = {
+                "trial_id": "b" * 64,
+                "definition_id": "a" * 64,
+                "status": "INCOMPLETE",
+                "reason": "agent terminal event was turn.failed",
+                "diagnostic": {
+                    "stage": "agent-execution",
+                    "reason_code": "agent-terminal-failed",
+                    "detail": (
+                        "OpenCode export diagnostic:\n"
+                        "Error: terminal assistant message has no final text\n"
+                        "    at extractFinalAnswer"
+                    ),
+                },
+                "scoring": {"oracle_grade": {}},
+                "measurements": {"agent": {}},
+            }
+            (result_dir / "result.json").write_text(
+                json.dumps(receipt),
+                encoding="utf-8",
+            )
+            row = {
+                "definition_id": "a" * 64,
+                "task_id": "task-a",
+                "condition_id": "bare",
+                "trial": 0,
+                "replicate_id": 9,
+            }
+            suite = SimpleNamespace(
+                experiment={
+                    "conditions": [
+                        {
+                            "id": "bare",
+                            "agent": "opencode-native",
+                            "subject": "none",
+                            "trials": 1,
+                        }
+                    ]
+                }
+            )
+            status = {
+                "complete_trials": 1,
+                "pending_trials": 0,
+                "interrupted_trials": 0,
+                "unresolved_outcome_trials": 1,
+                "rows": [
+                    {
+                        **row,
+                        "state": "COMPLETE",
+                        "trial_ids": ["b" * 64],
+                    }
+                ],
+                "outcomes": {"INCOMPLETE": 1},
+                "qualified": False,
+            }
+            stale = TrialRunResult(
+                trial_id="b" * 64,
+                definition_id="a" * 64,
+                status="FAIL",
+                result_dir=result_dir,
+                reused=True,
+                reason="stale transient reason",
+                stage="stale-stage",
+                reason_code="stale-code",
+                diagnostic="stale transient diagnostic",
+            )
+            args = SimpleNamespace(
+                root=root,
+                harness_root=root,
+                source=None,
+                codex_auth=None,
+            )
+            paths = SimpleNamespace(
+                root=root,
+                cache=root / "cache",
+                work=root / "work",
+                results=results,
+                run_id="000001",
+            )
+            stdout, stderr = io.StringIO(), io.StringIO()
+
+            with (
+                mock.patch(
+                    "benchmarks.__main__.campaign_status",
+                    side_effect=[status, status],
+                ),
+                mock.patch(
+                    "benchmarks.__main__.reuse_completed_trial",
+                    return_value=stale,
+                ),
+                mock.patch(
+                    "benchmarks.__main__.run_trial",
+                    side_effect=AssertionError(
+                        "completed receipt must not enter participant admission"
+                    ),
+                ),
+                mock.patch(
+                    "benchmarks.__main__._persist_completed_run_reports",
+                    return_value={
+                        "status": root / "reports/status.json",
+                        "report": root / "reports/report.json",
+                        "decision_evidence": root / "reports/decision-evidence.json",
+                        "score": root / "reports/score.json",
+                    },
+                ),
+                redirect_stdout(stdout),
+                redirect_stderr(stderr),
+            ):
+                self.assertEqual(
+                    _execute_run(
+                        args,
+                        suite,
+                        [row],
+                        paths,
+                        {"campaign_id": "c" * 64},
+                        {},
+                        SimpleNamespace(),
+                    ),
+                    0,
+                )
+
+            emitted = json.loads(stdout.getvalue())
+            self.assertEqual(emitted[0]["status"], "INCOMPLETE")
+            self.assertEqual(
+                emitted[0]["reason"],
+                "agent terminal event was turn.failed",
+            )
+            terminal = stderr.getvalue()
+            self.assertIn("task-a / bare: INCOMPLETE", terminal)
+            self.assertIn("RUN BLOCKERS 1 operational failure", terminal)
+            self.assertIn("Reason code: agent-terminal-failed", terminal)
+            self.assertIn("at extractFinalAnswer", terminal)
+            self.assertNotIn("stale transient", terminal)
+            self.assertNotIn("stale-stage", terminal)
+            self.assertNotIn("stale-code", terminal)
+
     def test_completed_nonqualified_run_persists_derived_reports(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
