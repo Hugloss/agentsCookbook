@@ -161,6 +161,7 @@ def _metrics(
         "subject_tool_configured": subject_server is not None,
         "subject_tool_invoked": subject_invoked,
         "subject_tool_names": subject_tool_names,
+        "subject_tool_observability": "complete",
         "mcp_result_bytes": result_bytes,
         "input_tokens": int(usage.get("input_tokens", 0) or 0),
         "cached_input_tokens": int(usage.get("cached_input_tokens", 0) or 0),
