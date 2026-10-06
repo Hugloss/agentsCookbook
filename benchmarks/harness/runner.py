@@ -62,24 +62,37 @@ class TrialRunResult:
     recovered: bool = False
 
 
-def bind_result_to_receipt(
-    result: TrialRunResult,
+def result_from_receipt(
     receipt: dict[str, Any],
+    *,
+    result_dir: Path,
+    reused: bool,
+    recovered: bool = False,
+    expected_trial_id: str | None = None,
+    expected_definition_id: str | None = None,
 ) -> TrialRunResult:
-    """Rebind downstream run state to the persisted receipt authority."""
-    receipt_trial_id = receipt.get("trial_id")
-    if receipt_trial_id is not None and receipt_trial_id != result.trial_id:
-        raise TrialRunnerError(
-            "persisted result receipt trial_id differs from runner result"
-        )
-    receipt_definition_id = receipt.get("definition_id")
-    if (
-        receipt_definition_id is not None
-        and receipt_definition_id != result.definition_id
-    ):
-        raise TrialRunnerError(
-            "persisted result receipt definition_id differs from runner result"
-        )
+    """Project one canonical TrialRunResult from receipt-owned fields."""
+
+    def identity(name: str, expected: str | None) -> str:
+        value = receipt.get(name)
+        if value is None:
+            if expected is None:
+                raise TrialRunnerError(
+                    f"persisted result receipt has no {name}"
+                )
+            value = expected
+        if not isinstance(value, str) or not value:
+            raise TrialRunnerError(
+                f"persisted result receipt {name} is not text"
+            )
+        if expected is not None and value != expected:
+            raise TrialRunnerError(
+                f"persisted result receipt {name} differs from runner result"
+            )
+        return value
+
+    trial_id = identity("trial_id", expected_trial_id)
+    definition_id = identity("definition_id", expected_definition_id)
 
     status = receipt.get("status")
     if not isinstance(status, str) or not status:
@@ -93,7 +106,9 @@ def bind_result_to_receipt(
     if diagnostic is None:
         diagnostic = {}
     if not isinstance(diagnostic, dict):
-        raise TrialRunnerError("persisted result receipt diagnostic is not an object")
+        raise TrialRunnerError(
+            "persisted result receipt diagnostic is not an object"
+        )
 
     def optional_text(name: str) -> str | None:
         value = diagnostic.get(name)
@@ -104,16 +119,31 @@ def bind_result_to_receipt(
         return value
 
     return TrialRunResult(
-        trial_id=result.trial_id,
-        definition_id=result.definition_id,
+        trial_id=trial_id,
+        definition_id=definition_id,
         status=status,
-        result_dir=result.result_dir,
-        reused=result.reused,
+        result_dir=result_dir,
+        reused=reused,
         reason=reason,
         stage=optional_text("stage"),
         reason_code=optional_text("reason_code"),
         diagnostic=optional_text("detail"),
+        recovered=recovered,
+    )
+
+
+def bind_result_to_receipt(
+    result: TrialRunResult,
+    receipt: dict[str, Any],
+) -> TrialRunResult:
+    """Rebind downstream run state through the canonical receipt projector."""
+    return result_from_receipt(
+        receipt,
+        result_dir=result.result_dir,
+        reused=result.reused,
         recovered=result.recovered,
+        expected_trial_id=result.trial_id,
+        expected_definition_id=result.definition_id,
     )
 
 
@@ -133,26 +163,13 @@ def reuse_completed_trial(
     existing = json.loads(
         (final_dir / "result.json").read_text(encoding="utf-8")
     )
-    if existing.get("definition_id") != definition_id:
-        raise TrialRunnerError(
-            "existing trial bundle does not match selected definition"
-        )
-    diagnostic = existing.get("diagnostic")
-    if not isinstance(diagnostic, dict):
-        diagnostic = {}
-    return TrialRunResult(
-        trial_id=trial_id,
-        definition_id=definition_id,
-        status=str(existing["status"]),
+    return result_from_receipt(
+        existing,
         result_dir=final_dir,
         reused=True,
-        reason=existing.get("reason"),
-        stage=diagnostic.get("stage"),
-        reason_code=diagnostic.get("reason_code"),
-        diagnostic=diagnostic.get("detail"),
-        recovered=False,
+        expected_trial_id=trial_id,
+        expected_definition_id=definition_id,
     )
-
 
 def _validate_result_receipt(receipt: dict[str, Any]) -> None:
     schema_path = Path(__file__).resolve().parents[1] / "schema" / "result.schema.json"
@@ -472,20 +489,12 @@ def run_trial(
                 existing = json.loads(
                     (final_dir / "result.json").read_text(encoding="utf-8")
                 )
-                diagnostic = existing.get("diagnostic")
-                if not isinstance(diagnostic, dict):
-                    diagnostic = {}
-                return TrialRunResult(
-                    trial_id=trial_id,
-                    definition_id=definition,
-                    status=str(existing["status"]),
+                return result_from_receipt(
+                    existing,
                     result_dir=final_dir,
                     reused=True,
-                    reason=existing.get("reason"),
-                    stage=diagnostic.get("stage"),
-                    reason_code=diagnostic.get("reason_code"),
-                    diagnostic=diagnostic.get("detail"),
-                    recovered=False,
+                    expected_trial_id=trial_id,
+                    expected_definition_id=definition,
                 )
 
             run_root = context.workspace.parent
@@ -859,17 +868,16 @@ def run_trial(
                     retire_completed_events(results_root, definition, launch_attempt)
                 except OSError:
                     pass  # The verified bundle already contains the sealed stream.
-            return TrialRunResult(
-                trial_id=trial_id,
-                definition_id=definition,
-                status=status.value,
+            persisted = json.loads(
+                (result_dir / "result.json").read_text(encoding="utf-8")
+            )
+            return result_from_receipt(
+                persisted,
                 result_dir=result_dir,
                 reused=False,
-                reason=reason,
-                stage=stage,
-                reason_code=reason_code,
-                diagnostic=diagnostic_detail,
                 recovered=recovered_interruption_attempt is not None,
+                expected_trial_id=trial_id,
+                expected_definition_id=definition,
             )
     except (TrialAdmissionError, CampaignAuthorityError) as exc:
         raise TrialRunnerError(str(exc)) from exc
