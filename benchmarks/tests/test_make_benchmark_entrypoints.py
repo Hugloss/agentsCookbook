@@ -7,7 +7,7 @@ import io
 import json
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import nullcontext, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -15,6 +15,7 @@ from benchmarks.__main__ import (
     _assert_saved_run_agents,
     _assert_saved_run_selection,
     _guard_automatic_start,
+    _refresh_canonical_report,
     main,
 )
 from benchmarks.harness.runner import TrialRunResult, TrialRunnerError
@@ -29,6 +30,71 @@ BENCHMARK_LAUNCHER = ROOT / "benchmark"
 
 
 class BenchmarkMakeEntrypointTests(unittest.TestCase):
+    def test_decision_projection_is_published_after_its_trace_source(self) -> None:
+        paths = mock.Mock()
+        paths.run_id = "000001"
+        paths.root = Path("/campaign/runs/000001")
+        paths.results = paths.root / "results"
+        order: list[str] = []
+        trace = {
+            "summary": {
+                "repository_intelligence_quality": {
+                    "state": "observed",
+                    "subjects": [],
+                }
+            }
+        }
+
+        def write(_root, filename, _payload):
+            order.append(filename)
+            return paths.root / "reports" / filename
+
+        with (
+            mock.patch("benchmarks.__main__.exclusive_store", return_value=nullcontext()),
+            mock.patch("benchmarks.__main__._same_saved_run_under_lock"),
+            mock.patch(
+                "benchmarks.__main__._canonical_campaign_persistence_gap",
+                return_value=None,
+            ),
+            mock.patch(
+                "benchmarks.__main__.build_report",
+                return_value={"decision_summary": {}},
+            ),
+            mock.patch(
+                "benchmarks.__main__.build_trace_diagnostics",
+                return_value=trace,
+            ),
+            mock.patch(
+                "benchmarks.__main__.build_decision_evidence",
+                return_value={"authority": {"derived_only": True}},
+            ) as decision,
+            mock.patch(
+                "benchmarks.__main__._write_derived_json",
+                side_effect=write,
+            ),
+        ):
+            report, error = _refresh_canonical_report(
+                store_root=Path("/campaign"),
+                paths=paths,
+                suite=mock.Mock(),
+                rows=[{"definition_id": "definition"}],
+            )
+
+        self.assertIsNone(error)
+        self.assertIsNotNone(report)
+        self.assertEqual(
+            order,
+            [
+                "report.json",
+                "trace-diagnostics.json",
+                "decision-evidence.json",
+            ],
+        )
+        decision.assert_called_once_with(
+            report,
+            trace_diagnostics=trace,
+        )
+
     def test_local_campaign_example_is_durable_and_ignored(self) -> None:
         env_example = ENV_EXAMPLE.read_text(encoding="utf-8")
         gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8-sig")
