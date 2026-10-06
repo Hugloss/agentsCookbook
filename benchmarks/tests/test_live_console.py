@@ -41,6 +41,7 @@ class LiveTaskMatrixTests(unittest.TestCase):
         subject_mcp_calls=None,
         tool_names=None,
         tool_observability=None,
+        tool_result_evidence=None,
     ):
         condition = next(
             item for item in suite.experiment["conditions"]
@@ -98,6 +99,9 @@ class LiveTaskMatrixTests(unittest.TestCase):
                     "subject_mcp_calls": subject_mcp_calls,
                     "subject_tool_names": list(tool_names or ()),
                     "subject_tool_observability": tool_observability,
+                    "subject_tool_result_evidence": list(
+                        tool_result_evidence or ()
+                    ),
                 }
             },
         }
@@ -162,6 +166,21 @@ class LiveTaskMatrixTests(unittest.TestCase):
                         if row["condition_id"] == "hashmarks-opencode-native"
                         else None
                     ),
+                    tool_result_evidence=(
+                        [
+                            {
+                                "operation": "task_evidence",
+                                "status": "completed",
+                                "result_bytes": 10,
+                                "error_present": False,
+                                "result_basis": "test",
+                                "outcome": "successful-result-observed",
+                            }
+                        ]
+                        if row["condition_id"] == "hashmarks-opencode-native"
+                        and row["trial"] == 0
+                        else []
+                    ),
                 ),
             )
             if value is not None:
@@ -210,6 +229,11 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn("Hashmarks | invoked", rendered)
         self.assertIn("Hashmarks | not-invoked", rendered)
         self.assertIn("Enola     | unknown", rendered)
+        self.assertIn("Paired outcome by contracted treatment", rendered)
+        self.assertIn("contracted-successful-result", rendered)
+        self.assertIn("contracted-treatment-observed", rendered)
+        self.assertIn("subject-not-invoked", rendered)
+        self.assertIn("contracted-result-unproven", rendered)
         self.assertIn("Subject tool use", rendered)
         self.assertIn(
             "Hashmarks | 2       | 1           | 0       | 3              | find,task_evidence",

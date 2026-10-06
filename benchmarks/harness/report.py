@@ -29,6 +29,10 @@ from benchmarks.harness.campaign_authority import (
     read_campaign,
 )
 from benchmarks.harness.subject_exposure import subject_exposure_qualification
+from benchmarks.harness.treatment_attribution import (
+    CONTRACTED_SUCCESSFUL_RESULT,
+    contracted_treatment_evidence,
+)
 from benchmarks.harness.suite import SuiteDefinition
 from benchmarks.harness.identity import digest, execution_task_contract
 
@@ -1040,6 +1044,17 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 if isinstance(name, str) and name
             }
         ) if isinstance(tool_names, list) else []
+        treatment = contracted_treatment_evidence(receipt)
+        row["contracted_required_tool"] = treatment["required_tool"]
+        row["contracted_required_operation"] = treatment["required_operation"]
+        row["contracted_exposure_state"] = treatment["state"]
+        row["contracted_treatment_observed"] = treatment["treatment_observed"]
+        row["subject_use_interpretation"] = row["attribution_interpretation"]
+        row["attribution_interpretation"] = (
+            treatment["attribution_interpretation"]
+            if treatment["state"] != "no-contract"
+            else row["subject_use_interpretation"]
+        )
         subject_calls = _agent_metric(receipt, "subject_mcp_calls")
         row["subject_mcp_calls"] = subject_calls
         for metric in (
@@ -1079,6 +1094,9 @@ def _paired_assistance_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any
             "subject_id": key[1],
             "comparison_scope": "subject-configured-condition-vs-bare",
             "attribution_requires_observed_subject_use": True,
+            "contracted_attribution_requires": (
+                "exact-required-operation-with-successful-nonempty-result"
+            ),
             "total_pairs": sum(counts.values()),
             "transitions": {
                 name: counts.get(name, 0)
@@ -1154,6 +1172,75 @@ def _paired_assistance_usage_summary(
     return summaries
 
 
+def _paired_assistance_treatment_summary(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        state = str(row.get("contracted_exposure_state") or "no-contract")
+        grouped[
+            (str(row["agent_id"]), str(row["subject_id"]), state)
+        ].append(row)
+
+    summaries: list[dict[str, Any]] = []
+    for (agent_id, subject_id, state), group in sorted(grouped.items()):
+        transitions = Counter(
+            str(row["assistance_transition"])
+            for row in group
+            if isinstance(row.get("assistance_transition"), str)
+        )
+        metric_summary: dict[str, dict[str, int | float | None]] = {}
+        for metric in (
+            "duration_ms",
+            "command_calls",
+            "tool_calls",
+            "mcp_calls",
+            "input_tokens",
+            "output_tokens",
+        ):
+            values = [
+                value
+                for row in group
+                if isinstance(
+                    (value := row.get(f"{metric}_delta")),
+                    (int, float),
+                )
+                and not isinstance(value, bool)
+            ]
+            metric_summary[metric] = {
+                "observations": len(values),
+                "mean": mean(values) if values else None,
+                "median": median(values) if values else None,
+            }
+        treatment_values = {
+            row.get("contracted_treatment_observed")
+            for row in group
+            if row.get("contracted_treatment_observed") in {True, False, None}
+        }
+        treatment_observed = (
+            True
+            if treatment_values == {True}
+            else False
+            if treatment_values == {False}
+            else None
+        )
+        summaries.append(
+            {
+                "agent_id": agent_id,
+                "subject_id": subject_id,
+                "contracted_exposure_state": state,
+                "contracted_treatment_observed": treatment_observed,
+                "total_pairs": len(group),
+                "transitions": {
+                    name: transitions.get(name, 0)
+                    for name in ("gain", "preserved", "unresolved", "regression")
+                },
+                "delta_metrics": metric_summary,
+            }
+        )
+    return summaries
+
+
 def _task_assistance_evidence(
     rows: list[dict[str, Any]],
     exclusions: list[dict[str, Any]],
@@ -1195,9 +1282,14 @@ def _task_assistance_evidence(
             "not-invoked": [],
             "unknown": [],
         }
+        by_treatment: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in pairs:
             state = str(row.get("subject_use_state") or "unknown")
             by_invocation[state].append(row)
+            treatment_state = str(
+                row.get("contracted_exposure_state") or "no-contract"
+            )
+            by_treatment[treatment_state].append(row)
 
         transition_by_invocation = {}
         economics_by_invocation = {}
@@ -1236,6 +1328,67 @@ def _task_assistance_evidence(
                 }
             economics_by_invocation[state] = metrics
 
+        transition_by_treatment: dict[str, dict[str, int]] = {}
+        economics_by_treatment: dict[
+            str,
+            dict[str, dict[str, int | float | None]],
+        ] = {}
+        for state, state_rows in sorted(by_treatment.items()):
+            counts = Counter(
+                str(row["assistance_transition"])
+                for row in state_rows
+                if isinstance(row.get("assistance_transition"), str)
+            )
+            transition_by_treatment[state] = {
+                name: counts.get(name, 0)
+                for name in ("gain", "preserved", "unresolved", "regression")
+            }
+            metrics: dict[str, dict[str, int | float | None]] = {}
+            for metric in (
+                "duration_ms",
+                "command_calls",
+                "tool_calls",
+                "mcp_calls",
+                "input_tokens",
+                "output_tokens",
+            ):
+                values = [
+                    value
+                    for row in state_rows
+                    if isinstance(
+                        (value := row.get(f"{metric}_delta")),
+                        (int, float),
+                    )
+                    and not isinstance(value, bool)
+                ]
+                metrics[metric] = {
+                    "observations": len(values),
+                    "mean": mean(values) if values else None,
+                    "median": median(values) if values else None,
+                }
+            economics_by_treatment[state] = metrics
+
+        contracted_rows = by_treatment.get(CONTRACTED_SUCCESSFUL_RESULT, [])
+        definite_non_treatment_rows = [
+            row
+            for row in pairs
+            if row.get("contracted_treatment_observed") is False
+        ]
+        unproven_treatment_rows = [
+            row
+            for row in pairs
+            if row.get("contracted_treatment_observed") is None
+        ]
+        contracted_transitions = transition_by_treatment.get(
+            CONTRACTED_SUCCESSFUL_RESULT,
+            {
+                "gain": 0,
+                "preserved": 0,
+                "unresolved": 0,
+                "regression": 0,
+            },
+        )
+
         bare_semantic_failures = (
             transitions.get("gain", 0) + transitions.get("unresolved", 0)
         )
@@ -1272,6 +1425,25 @@ def _task_assistance_evidence(
             signals.append("bare-headroom-without-subject-invocation")
         if not_invoked_transitions["regression"]:
             signals.append("regression-without-subject-invocation")
+        if contracted_rows:
+            signals.append("contracted-treatment-observed")
+            if contracted_transitions["gain"]:
+                signals.append("contracted-treatment-gain-observed")
+            if contracted_transitions["regression"]:
+                signals.append("contracted-treatment-regression-observed")
+            if not contracted_transitions["gain"]:
+                signals.append("contracted-treatment-no-gain-observed")
+        if definite_non_treatment_rows:
+            signals.append("subject-use-without-contracted-treatment")
+        if unproven_treatment_rows:
+            signals.append("contracted-treatment-unproven")
+        if bare_semantic_failures and not contracted_rows:
+            signals.append("bare-headroom-without-contracted-treatment")
+        if any(
+            row.get("assistance_transition") == "regression"
+            for row in definite_non_treatment_rows
+        ):
+            signals.append("regression-without-contracted-treatment")
 
         tools = sorted(
             {
@@ -1329,8 +1501,28 @@ def _task_assistance_evidence(
                     ),
                     "subject_tool_names": tools,
                 },
+                "contracted_treatment": {
+                    "observed_pairs": len(contracted_rows),
+                    "definite_non_treatment_pairs": len(
+                        definite_non_treatment_rows
+                    ),
+                    "unproven_pairs": len(unproven_treatment_rows),
+                    "state_counts": dict(
+                        sorted(
+                            Counter(
+                                str(
+                                    row.get("contracted_exposure_state")
+                                    or "no-contract"
+                                )
+                                for row in pairs
+                            ).items()
+                        )
+                    ),
+                },
                 "transitions_by_invocation": transition_by_invocation,
                 "delta_metrics_by_invocation": economics_by_invocation,
+                "transitions_by_contracted_treatment": transition_by_treatment,
+                "delta_metrics_by_contracted_treatment": economics_by_treatment,
                 "evidence_signals": signals,
             }
         )
@@ -2383,6 +2575,9 @@ def build_report(
     paired_assistance_usage_summary = _paired_assistance_usage_summary(
         paired_assistance
     )
+    paired_assistance_treatment_summary = _paired_assistance_treatment_summary(
+        paired_assistance
+    )
     task_assistance_evidence = _task_assistance_evidence(
         paired_assistance,
         pair_exclusions,
@@ -2413,7 +2608,7 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 18,
+            "version": 19,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
@@ -2437,6 +2632,7 @@ def build_report(
         "paired_assistance": paired_assistance,
         "paired_assistance_summary": paired_assistance_summary,
         "paired_assistance_usage_summary": paired_assistance_usage_summary,
+        "paired_assistance_treatment_summary": paired_assistance_treatment_summary,
         "paired_assistance_exclusions": pair_exclusions,
         "expected_assistance_pairs": len(paired_assistance) + len(pair_exclusions),
         "task_assistance_evidence": task_assistance_evidence,
@@ -2475,6 +2671,9 @@ def build_report(
             "invalid_outcomes_excluded_from_success_rates": True,
             "economics_include_invalid_and_incomplete_trials": True,
             "paired_assistance_scope": "valid-outcomes-only",
+            "paired_treatment_attribution": (
+                "exact-contracted-operation-with-usable-result"
+            ),
             "subject_exposure_qualification": (
                 "mandatory-for-selected-non-control-conditions"
             ),

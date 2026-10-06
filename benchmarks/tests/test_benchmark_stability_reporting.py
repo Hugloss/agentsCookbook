@@ -151,7 +151,7 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         ):
             report = build_report(suite=suite, results_root=Path("/unused"))
 
-        self.assertEqual(report["schema"]["version"], 18)
+        self.assertEqual(report["schema"]["version"], 19)
         stability = {row["subject_id"]: row for row in report["stability"]}
         self.assertEqual(stability["none"]["state"], "unstable")
         self.assertEqual(stability["none"]["semantic_correct"], 2)
@@ -168,6 +168,10 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
             "subject-configured-condition-vs-bare",
         )
         self.assertTrue(summary[0]["attribution_requires_observed_subject_use"])
+        self.assertEqual(
+            summary[0]["contracted_attribution_requires"],
+            "exact-required-operation-with-successful-nonempty-result",
+        )
         self.assertEqual(
             summary[0]["transitions"],
             {
@@ -869,6 +873,184 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertEqual(
             condition["reason_codes"],
             ["required-subject-tool-invocation-unproven"],
+        )
+
+    def test_paired_attribution_requires_successful_contracted_treatment(
+        self,
+    ) -> None:
+        suite = _suite()
+        suite.experiment["subject_exposure_contract"] = {
+            "require_probe_contract": True
+        }
+        suite.subjects["hashmarks"]["exposure_probe"] = {
+            "required_tool": "hashmarks_task_evidence"
+        }
+        rows = {
+            (str(row["condition_id"]), int(row["trial"])): row
+            for row in suite.trial_definitions()
+        }
+        receipts = []
+        assisted_specs = (
+            (
+                ["task_evidence"],
+                [
+                    {
+                        "operation": "task_evidence",
+                        "status": "completed",
+                        "result_bytes": 20,
+                        "error_present": False,
+                        "result_basis": "test",
+                        "outcome": "successful-result-observed",
+                    }
+                ],
+            ),
+            (
+                ["find"],
+                [
+                    {
+                        "operation": "find",
+                        "status": "completed",
+                        "result_bytes": 20,
+                        "error_present": False,
+                        "result_basis": "test",
+                        "outcome": "successful-result-observed",
+                    }
+                ],
+            ),
+            (
+                ["task_evidence"],
+                [
+                    {
+                        "operation": "task_evidence",
+                        "status": "completed",
+                        "result_bytes": None,
+                        "error_present": False,
+                        "result_basis": "test",
+                        "outcome": "result-unobserved",
+                    }
+                ],
+            ),
+        )
+        for index, (names, result_evidence) in enumerate(assisted_specs):
+            bare = _receipt(
+                suite,
+                rows[("bare", index)],
+                "FAIL" if index == 0 else "PASS",
+                chr(ord("a") + index) * 64,
+            )
+            assisted = _receipt(
+                suite,
+                rows[("hashmarks", index)],
+                "PASS",
+                chr(ord("d") + index) * 64,
+            )
+            bare["scoring"] = {
+                "oracle_grade": {
+                    "semantic_gradeable": True,
+                    "semantic_success": index != 0,
+                }
+            }
+            assisted["scoring"] = {
+                "oracle_grade": {
+                    "semantic_gradeable": True,
+                    "semantic_success": True,
+                }
+            }
+            assisted["authority"]["subject"]["available"] = True
+            assisted["measurements"]["agent"] = {
+                "subject_tool_configured": True,
+                "subject_tool_invoked": True,
+                "subject_mcp_calls": 1,
+                "subject_tool_names": names,
+                "subject_tool_observability": "complete",
+                "subject_tool_result_evidence": result_evidence,
+                "duration_ms": 130 + index * 10,
+                "input_tokens": 1200 + index * 100,
+            }
+            bare["measurements"]["agent"] = {
+                "duration_ms": 100,
+                "input_tokens": 1000,
+            }
+            receipts.extend((bare, assisted))
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+            )
+
+        paired = report["paired_assistance"]
+        self.assertEqual(
+            [row["contracted_exposure_state"] for row in paired],
+            [
+                "contracted-successful-result",
+                "other-subject-operation",
+                "contracted-result-unproven",
+            ],
+        )
+        self.assertEqual(
+            [row["contracted_treatment_observed"] for row in paired],
+            [True, False, None],
+        )
+        self.assertEqual(
+            [row["attribution_interpretation"] for row in paired],
+            [
+                "contracted-treatment-observed",
+                "subject-use-observed-without-contracted-operation",
+                "contracted-operation-result-unproven",
+            ],
+        )
+        self.assertTrue(
+            all(
+                row["subject_use_interpretation"] == "subject-use-observed"
+                for row in paired
+            )
+        )
+
+        treatment = {
+            row["contracted_exposure_state"]: row
+            for row in report["paired_assistance_treatment_summary"]
+        }
+        self.assertEqual(
+            treatment["contracted-successful-result"]["transitions"]["gain"],
+            1,
+        )
+        self.assertEqual(
+            treatment["other-subject-operation"]["transitions"]["preserved"],
+            1,
+        )
+        self.assertEqual(
+            treatment["contracted-result-unproven"]["transitions"]["preserved"],
+            1,
+        )
+        task = report["task_assistance_evidence"][0]
+        self.assertEqual(
+            task["contracted_treatment"],
+            {
+                "observed_pairs": 1,
+                "definite_non_treatment_pairs": 1,
+                "unproven_pairs": 1,
+                "state_counts": {
+                    "contracted-result-unproven": 1,
+                    "contracted-successful-result": 1,
+                    "other-subject-operation": 1,
+                },
+            },
+        )
+        self.assertIn(
+            "contracted-treatment-observed",
+            task["evidence_signals"],
+        )
+        self.assertIn(
+            "subject-use-without-contracted-treatment",
+            task["evidence_signals"],
+        )
+        self.assertIn(
+            "contracted-treatment-unproven",
+            task["evidence_signals"],
         )
 
     def test_report_summarizes_native_tool_strategy_without_raw_sequence(self) -> None:

@@ -46,13 +46,17 @@ prove that the agent invoked it. Therefore:
 - `paired_assistance_summary` is the overall **condition effect** and intentionally includes
   both invoked and non-invoked assisted pairs;
 - `subject_adoption` reports availability, configuration, observed invocation, and non-use;
-- `paired_assistance_usage_summary` and the derived decision-evidence assistance funnel
-  split outcome transitions by `invoked`, `not-invoked`, and `unknown`;
-- a gain or regression on a `not-invoked` pair is condition variance and must not be
-  attributed to the subject tool.
+- `paired_assistance_usage_summary` keeps the generic routing/adoption view split
+  by `invoked`, `not-invoked`, and `unknown`;
+- `paired_assistance_treatment_summary` and the derived decision-evidence treatment
+  funnel split outcome transitions by the frozen contracted-treatment state;
+- only `contracted-successful-result` is attributable to the contracted MCP treatment;
+  wrong operations, failed/empty results, and unproven results remain separate evidence;
+- a gain or regression on a non-treatment pair is condition variance and must not be
+  attributed to the contracted subject treatment.
 
 This keeps the natural benchmark unforced while separating the path
-`availability -> adoption -> usefulness when invoked`.
+`availability -> adoption -> exact contracted operation -> usable result -> treatment attribution`.
 
 Heldout-v1 also freezes a generic subject-exposure admission contract. Every selected
 non-control subject must declare `exposure_probe.required_tool`. Campaign admission
