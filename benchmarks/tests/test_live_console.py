@@ -296,7 +296,8 @@ class LiveTaskMatrixTests(unittest.TestCase):
         )
         self.assertIn("Exposure note", rendered)
         self.assertIn(
-            "Enola: configured condition, 0/3 subject invocations; outcomes are "
+            "Enola on locate-prefix-path-enumerator: configured condition, "
+            "0/3 subject invocations; outcomes are "
             "not attributable to the subject tool",
             rendered,
         )

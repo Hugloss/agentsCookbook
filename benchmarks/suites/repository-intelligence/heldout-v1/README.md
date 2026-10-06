@@ -4,6 +4,8 @@ This agentsCookbook suite measures what native Codex and native OpenCode do with
 
 **Status:** heldout-v1 is still being qualified. Its repository/source pins are deliberate, but the benchmark is not considered frozen until its oracle semantics and a complete campaign are qualified. Benchmark defects found during qualification are repaired in v1; results produced under superseded v1 authority must not be mixed with current score projections. Once v1 is frozen, newly discovered benchmark ideas enter as diagnostic/shadow tasks first rather than being added post-hoc to the scored population.
 
+Experiment version 4 binds the native MCP subject's declared generated-output namespace into workspace contamination accounting. Enola's explicit trial config writes `.benchmark-enola/**` inside the repository; those files are admitted only for its subject arm. Run `000012` and the earlier prompted Enola probe used the superseded allowance contract and remain immutable, unqualified evidence.
+
 The runner owns process execution, isolation, contamination checks, receipts, and scoring. Hashmarks supplies repository evidence only. Localization tasks use a deterministic repository-location oracle; the repair task keeps its independent command oracle. Expected answers and repair checks live in the suite definitions and are never supplied to the agent prompt.
 
 ### Localization grading
@@ -23,6 +25,8 @@ The localization boundary is deliberately split into observation and scoring. `r
 The result receipt keeps execution evidence separate from the score projection. `execution.evidence_identity` binds the frozen task execution, runtime authorities, mutation, environment, exact agent answer, original workspace root, recorded location observation, and agent trace digest without depending on oracle/scoring authority. `scoring.projection_identity` binds that execution evidence to the declared oracle and scoring policy. Verified bundles can be regraded without another model run when only scoring truth or policy changes and the normalization policy is unchanged. Older bundles without this evidence must be rerun.
 
 Reports expose `semantic_success_rate`, `semantic_gradeable_rate`, semantic-status counts, and `format_compliance_rate` independently over valid localization outcomes. Missing observations remain unknown with a zero denominator and a null rate; they are never converted to zero performance. Task PASS for localization follows semantic success; formatting remains a separate instruction-following signal.
+
+Trace diagnostics keep terminal execution failures separate from agent answers. `terminal_failure_cause` distinguishes an observed permission denial or context overflow from an unexplained missing final answer; all remain `INCOMPLETE`. Hashmarks retrieval diagnostics report `canonical_omitted_results` and `supplemental_results` separately from `retrieval_truncation`: presentation omission does not prove that the underlying repository search was complete or truncated.
 
 A complete campaign with legitimate candidate FAIL outcomes can still be qualified evidence. Campaign qualification is lost by missing, incomplete, invalid, or contaminated execution evidence, not by the candidate simply answering incorrectly.
 
@@ -202,6 +206,22 @@ make benchmark-score
 - `benchmark-report` is the generic framework report.
 - `benchmark-score` runs this suite's explicit language-separated held-out scorer.
 - Before a new full campaign after benchmark-authority changes, run `make benchmark-oracle-review-check` and `make benchmark-qualify-localization`. Do not buy a second review for every task by default: only tasks with recorded escalation evidence require it. The localization qualification then exercises five Python localization cases and one TypeScript case, including repository-content-identity, across bare, Hashmarks, and Enola for every selected agent. It is qualification evidence, not the full score.
+
+For a faster natural-use check after run `000012`, keep the frozen tasks and all three paired OpenCode arms but select four tasks that cover its strongest location mismatches, context overflow, and repair permission failure. This creates 36 trials under an independent campaign root and leaves run `000012` untouched:
+
+```sh
+./benchmark run --new --env-file .env \
+  --root .benchmark-runs/heldout-v1-focus-000012 \
+  --agent opencode-native \
+  --subject none --subject hashmarks --subject enola \
+  --task locate-prefix-path-enumerator \
+  --task locate-resource-invalidation \
+  --task locate-stale-index-removal \
+  --task repair-partial-receipt-regression \
+  --no-json-results
+```
+
+Use the Enola required-tool probe to diagnose whether `enola_explore` works when explicitly requested. Its prompted observations do not establish natural adoption. Check the focused run's saved `status.json` and `trace-diagnostics.json` for zero incomplete receipts and at least one successful natural `enola_explore` result before starting another 108-trial campaign. A focused run is diagnostic evidence, not the full held-out score.
 
 For a scoring-only change to a complete campaign recorded under the current normalization and execution-evidence contracts, run offline scoring without editing the source bundles:
 

@@ -69,9 +69,9 @@ class TrialAdmission:
     admission_timings_ms: dict[str, int]
 
     def generated_globs(self) -> tuple[str, ...]:
-        if self.subject_lifecycle_mode is SubjectLifecycleMode.ADAPTER:
-            return self.subject.generated_globs()
-        return ()
+        # Output ownership is independent of who invokes the subject. A native
+        # agent may invoke the subject's MCP tools inside the trial workspace.
+        return self.subject.generated_globs()
 
     def post_change(
         self,

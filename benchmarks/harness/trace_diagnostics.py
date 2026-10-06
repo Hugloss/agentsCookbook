@@ -60,6 +60,24 @@ def _tool_failure(status: Any, output: Any) -> str | None:
     return "tool-error"
 
 
+def _terminal_failure_cause(
+    receipt: dict[str, Any], terminal_tool_failure: str | None,
+) -> str | None:
+    if receipt.get("status") != "INCOMPLETE":
+        return None
+    terminal = receipt.get("execution", {}).get("agent_terminal", {})
+    if not isinstance(terminal, dict) or terminal.get("type") != "turn.failed":
+        return None
+    reason = str(terminal.get("reason") or "")
+    if "ContextOverflowError" in reason or "ContextWindowExceededError" in reason:
+        return "context-overflow"
+    if terminal_tool_failure == "permission-denied":
+        return "permission-denied"
+    if "terminal assistant message has no final text" in reason:
+        return "no-final-text-unexplained"
+    return "other-agent-terminal-failure"
+
+
 def _hashmarks_evidence(output: Any, expected: dict[str, str] | None) -> dict[str, Any]:
     try:
         packet = json.loads(output) if isinstance(output, str) else output
@@ -88,6 +106,14 @@ def _hashmarks_evidence(output: Any, expected: dict[str, str] | None) -> dict[st
         "retrieval_count": len(results) if isinstance(results, list) else None,
         "retrieval_truncated": (
             retrieval.get("truncated") if isinstance(retrieval, dict) else None
+        ),
+        "canonical_omitted_results": (
+            retrieval.get("canonical_omitted_results")
+            if isinstance(retrieval, dict) else None
+        ),
+        "supplemental_results": (
+            retrieval.get("supplemental_results")
+            if isinstance(retrieval, dict) else None
         ),
         "expected_target_rank": rank,
         "expected_target_observability": (
@@ -531,6 +557,26 @@ def _repository_intelligence_quality(
         )
     )
     truncation["unknown"] = len(hashmarks_calls) - sum(truncation.values())
+    canonical_omitted = [
+        int(value)
+        for call in hashmarks_calls
+        if isinstance(
+            (value := call["evidence"].get("canonical_omitted_results")),
+            int,
+        )
+        and not isinstance(value, bool)
+        and value >= 0
+    ]
+    supplemental = [
+        int(value)
+        for call in hashmarks_calls
+        if isinstance(
+            (value := call["evidence"].get("supplemental_results")),
+            int,
+        )
+        and not isinstance(value, bool)
+        and value >= 0
+    ]
 
     diagnostic_complete = 0
     for call in hashmarks_calls:
@@ -584,6 +630,13 @@ def _repository_intelligence_quality(
                     "false": truncation.get("false", 0),
                     "unknown": truncation.get("unknown", 0),
                 },
+                "canonical_omission": {
+                    "calls_with_omission": sum(value > 0 for value in canonical_omitted),
+                    "observed_calls": len(canonical_omitted),
+                    "unknown_calls": total_calls - len(canonical_omitted),
+                    "omitted_results": _numeric_summary(canonical_omitted),
+                },
+                "supplemental_results": _numeric_summary(supplemental),
                 "oracle_relative_target_observability": {
                     "counts": dict(sorted(target_observability.items())),
                     "evaluable_calls": evaluable_targets,
@@ -1341,6 +1394,7 @@ def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
             else condition.get("agent")
         )
         replicate_id = execution.get("replicate_id", execution.get("seed"))
+        terminal_tool_failure = calls[-1]["failure"] if calls else None
         row = {
             "trial_id": receipt["trial_id"],
             "definition_id": receipt["definition_id"],
@@ -1356,8 +1410,9 @@ def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
             "reason": receipt.get("reason"),
             "trace_state": trace_state,
             "last_assistant_text_present": final_text_present,
-            "terminal_tool_failure": (
-                calls[-1]["failure"] if calls else None
+            "terminal_tool_failure": terminal_tool_failure,
+            "terminal_failure_cause": _terminal_failure_cause(
+                receipt, terminal_tool_failure
             ),
             "trace_path": (
                 f"results/{directory.name}/{evidence['path']}"
@@ -1399,6 +1454,11 @@ def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
             ).items())),
             "subject_calls": dict(sorted(subject_calls.items())),
             "tool_failures": dict(sorted(tool_failures.items())),
+            "terminal_failure_causes": dict(sorted(Counter(
+                row["terminal_failure_cause"]
+                for row in rows
+                if row["terminal_failure_cause"] is not None
+            ).items())),
             "hashmarks_expected_target_absent_from_returned_candidates": dict(sorted(target_absences.items())),
             "repository_intelligence_quality": _repository_intelligence_quality(rows),
             "repository_intelligence_search_efficiency": (

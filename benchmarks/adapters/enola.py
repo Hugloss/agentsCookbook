@@ -145,4 +145,4 @@ class EnolaSubject:
         )
 
     def generated_globs(self) -> tuple[str, ...]:
-        return (".benchmark-enola/**", ".enola/**")
+        return (".benchmark-enola/**",)

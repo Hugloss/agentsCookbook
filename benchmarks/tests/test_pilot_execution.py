@@ -221,7 +221,7 @@ class FakeNativeSubject:
         )
 
     def generated_globs(self) -> tuple[str, ...]:
-        raise AssertionError("agent-native generated globs must stay native")
+        return (".native-generated/**",)
 
 
 class FakeNativeAgent(FakeAgent):
@@ -697,6 +697,9 @@ class PilotExecutionTests(unittest.TestCase):
             self.assertEqual(value["repo"], str(workspace))
             self.assertEqual(value["output"]["dir"], ".benchmark-enola")
             self.assertFalse(path.is_relative_to(workspace))
+            self.assertEqual(
+                EnolaSubject().generated_globs(), (".benchmark-enola/**",)
+            )
 
     def test_enola_adapter_uses_native_path_discovery(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3001,7 +3004,26 @@ class PilotExecutionTests(unittest.TestCase):
                         admission.subject_prepare.payload["lifecycle_owner"],
                         "agent-native",
                     )
-                    self.assertEqual(admission.generated_globs(), ())
+                    self.assertEqual(
+                        admission.generated_globs(), (".native-generated/**",)
+                    )
+                    contamination = classify_contamination(
+                        before={},
+                        after={
+                            ".native-generated/receipt.json": {
+                                "kind": "file", "size": 1, "sha256": "a"
+                            },
+                            "unexpected.txt": {
+                                "kind": "file", "size": 1, "sha256": "b"
+                            },
+                        },
+                        allowed_change_globs=(),
+                        allowed_generated_globs=admission.generated_globs(),
+                    )
+                    self.assertEqual(
+                        contamination["unexpected"],
+                        {"added": ["unexpected.txt"]},
+                    )
                     self.assertEqual(
                         admission.post_change(("x.py",)).payload["lifecycle_owner"],
                         "agent-native",

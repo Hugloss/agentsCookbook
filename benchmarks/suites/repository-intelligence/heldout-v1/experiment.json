@@ -1,6 +1,6 @@
 {
   "id": "repository-intelligence-heldout-outcomes-v1",
-  "version": 3,
+  "version": 4,
   "suite": "repository-intelligence",
   "oracle_reviews": "qualification/oracle-reviews.json",
   "tasks": [

@@ -246,4 +246,4 @@ class HashmarksSubject:
         )
 
     def generated_globs(self) -> tuple[str, ...]:
-        return (".hashmarks/**",)
+        return ()

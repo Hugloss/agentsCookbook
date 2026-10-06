@@ -25,6 +25,7 @@ from benchmarks.harness.trace_diagnostics import (
     _repository_intelligence_search_efficiency,
     _trial_evidence_to_action,
     _trial_search_efficiency,
+    _terminal_failure_cause,
     build_trace_diagnostics,
 )
 from benchmarks.harness.subject_exposure import exposure_probe_required_tool
@@ -136,6 +137,8 @@ class TraceAndToolProbeTests(unittest.TestCase):
                 "schema": "hashmarks.task-evidence.v3",
                 "retrieval": {
                     "presentation": "compact-locators-v1",
+                    "canonical_omitted_results": 2,
+                    "supplemental_results": 2,
                     "results": [
                         {
                             "path": "owner.py",
@@ -159,6 +162,9 @@ class TraceAndToolProbeTests(unittest.TestCase):
 
         self.assertEqual(evidence["schema"], "hashmarks.task-evidence.v3")
         self.assertEqual(evidence["expected_target_rank"], 1)
+        self.assertEqual(evidence["canonical_omitted_results"], 2)
+        self.assertEqual(evidence["supplemental_results"], 2)
+        self.assertIsNone(evidence["retrieval_truncated"])
         self.assertEqual(evidence["expected_target_observability"], "observed")
         self.assertEqual(evidence["ownership_status"], "ambiguous")
         self.assertEqual(evidence["next_read_path"], "owner.py")
@@ -732,6 +738,21 @@ class TraceAndToolProbeTests(unittest.TestCase):
             {"true": 1, "false": 2, "unknown": 1},
         )
         self.assertEqual(
+            subject["canonical_omission"],
+            {
+                "calls_with_omission": 0,
+                "observed_calls": 0,
+                "unknown_calls": 4,
+                "omitted_results": {
+                    "observations": 0,
+                    "mean": None,
+                    "median": None,
+                    "min": None,
+                    "max": None,
+                },
+            },
+        )
+        self.assertEqual(
             subject["oracle_relative_target_observability"],
             {
                 "counts": {
@@ -756,22 +777,59 @@ class TraceAndToolProbeTests(unittest.TestCase):
                 "unresolved_rate": 1 / 3,
             },
         )
-        self.assertEqual(
-            subject["evidence_sufficiency"]["state"],
-            "partial",
-        )
-        self.assertEqual(
-            subject["evidence_sufficiency"]["complete_calls"],
-            3,
-        )
-        self.assertEqual(
-            subject["evidence_sufficiency"]["complete_rate"],
-            3 / 4,
-        )
+        self.assertEqual(subject["evidence_sufficiency"]["state"], "partial")
+        self.assertEqual(subject["evidence_sufficiency"]["complete_calls"], 3)
+        self.assertEqual(subject["evidence_sufficiency"]["complete_rate"], 3 / 4)
         self.assertIn(
             "not a product acceptance threshold or optimization target",
             subject["interpretation"]["target_rank"],
         )
+
+    def test_hashmarks_presentation_omission_is_not_retrieval_truncation(self) -> None:
+        quality = _repository_intelligence_quality([{"calls": [{
+            "result_bytes": 17838,
+            "hashmarks_evidence": {
+                "packet_status": "parsed",
+                "retrieval_count": 20,
+                "retrieval_truncated": None,
+                "canonical_omitted_results": 2,
+                "supplemental_results": 2,
+                "expected_target_observability": "observed",
+                "expected_target_rank": 19,
+                "ownership_status": "ambiguous",
+            },
+        }]}])
+        subject = quality["subjects"][0]
+        self.assertEqual(subject["retrieval_truncation"]["unknown"], 1)
+        self.assertEqual(subject["canonical_omission"]["calls_with_omission"], 1)
+        self.assertEqual(subject["canonical_omission"]["omitted_results"]["mean"], 2)
+        self.assertEqual(subject["supplemental_results"]["mean"], 2)
+
+    def test_terminal_failure_cause_retains_incomplete_outcome(self) -> None:
+        receipt = {
+            "status": "INCOMPLETE",
+            "execution": {"agent_terminal": {
+                "type": "turn.failed",
+                "reason": "opencode export: terminal assistant message has no final text",
+            }},
+        }
+        self.assertEqual(
+            _terminal_failure_cause(receipt, "permission-denied"),
+            "permission-denied",
+        )
+        self.assertEqual(
+            _terminal_failure_cause(receipt, None),
+            "no-final-text-unexplained",
+        )
+        receipt["execution"]["agent_terminal"]["reason"] = (
+            "OpenCode run exited: ContextOverflowError"
+        )
+        self.assertEqual(
+            _terminal_failure_cause(receipt, None),
+            "context-overflow",
+        )
+        receipt["status"] = "PASS"
+        self.assertIsNone(_terminal_failure_cause(receipt, None))
 
     def test_trace_projection_separates_denial_from_retrieval_absence(self) -> None:
         packet = {

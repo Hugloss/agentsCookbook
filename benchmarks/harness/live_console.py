@@ -468,7 +468,7 @@ class LiveTaskMatrix:
                     )
                     if usage and invoked == 0 and unknown == 0:
                         exposure_notes.append(
-                            f"{label(condition_id)}: configured condition, "
+                            f"{label(condition_id)} on {task_id}: configured condition, "
                             f"0/{len(usage)} subject invocations; outcomes are "
                             "not attributable to the subject tool"
                         )
