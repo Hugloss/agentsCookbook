@@ -2014,6 +2014,7 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
         f"status {report_paths['status']} | "
         f"report {report_paths['report']} | "
         f"decision {report_paths['decision_evidence']} | "
+        f"trace-diagnostics {report_paths['trace_diagnostics']} | "
         f"score {report_paths['score']}",
         file=sys.stderr,
         flush=True,

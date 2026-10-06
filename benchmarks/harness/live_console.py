@@ -800,6 +800,7 @@ def render_trial_failure(
         f"Reason code: {authoritative.reason_code or 'unknown'}",
         f"Reason: {authoritative.reason or 'none'}",
         f"Evidence: {result.result_dir}",
+        f"Receipt: {result.result_dir / 'result.json'}",
     ]
     if receipt is not None:
         semantic = _display_outcome(receipt)
@@ -862,7 +863,8 @@ def render_run_blockers(failures: list[str]) -> str | None:
         f"RUN BLOCKERS {len(failures)} operational {label}",
         (
             "Repeated at end of run so the actionable diagnostic remains visible; "
-            "durable machine-readable detail is in the reports directory."
+            "durable raw detail is in each result receipt shown below, while "
+            "derived summaries are in the reports directory."
         ),
     ]
     for index, failure in enumerate(failures, start=1):
