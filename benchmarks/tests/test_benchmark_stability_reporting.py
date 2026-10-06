@@ -151,7 +151,7 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         ):
             report = build_report(suite=suite, results_root=Path("/unused"))
 
-        self.assertEqual(report["schema"]["version"], 17)
+        self.assertEqual(report["schema"]["version"], 18)
         stability = {row["subject_id"]: row for row in report["stability"]}
         self.assertEqual(stability["none"]["state"], "unstable")
         self.assertEqual(stability["none"]["semantic_correct"], 2)
@@ -196,6 +196,69 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         )
         self.assertFalse(
             report["authority"]["replicate_identity_is_provider_sampling_seed"]
+        )
+
+    def test_stability_distinguishes_raw_and_normalized_answer_variance(self) -> None:
+        suite = _suite()
+        rows = {
+            (str(row["condition_id"]), int(row["trial"])): row
+            for row in suite.trial_definitions()
+        }
+        raw_answers = (
+            '{"ok": true}',
+            '```json\n{"ok": true}\n```',
+            '{"ok":true}',
+        )
+        receipts = []
+        selected = set()
+        for index, answer in enumerate(raw_answers):
+            row = rows[("bare", index)]
+            selected.add(str(row["definition_id"]))
+            receipt = _receipt(
+                suite,
+                row,
+                "PASS",
+                chr(ord("a") + index) * 64,
+            )
+            receipt["execution"]["agent_answer"] = answer
+            receipt["scoring"] = {
+                "oracle_grade": {
+                    "semantic_success": True,
+                    "semantic_gradeable": True,
+                    "semantic_status": "CORRECT",
+                    "format_compliant": index != 1,
+                    "normalized_actual": {"ok": True},
+                }
+            }
+            receipts.append(receipt)
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+                selected_definitions=selected,
+            )
+
+        stability = report["stability"][0]
+        self.assertEqual(stability["raw_answer_flip_rate"], 1.0)
+        self.assertEqual(stability["raw_answer_flip_observations"], 3)
+        self.assertEqual(stability["normalized_answer_flip_rate"], 0.0)
+        self.assertEqual(stability["normalized_answer_flip_observations"], 3)
+        self.assertEqual(stability["answer_flip_rate"], 1.0)
+        self.assertEqual(
+            stability["answer_flip_source"],
+            "execution.agent_answer.raw-text",
+        )
+        self.assertEqual(
+            stability["answer_distribution_source"],
+            "scoring.oracle_grade.normalized_actual",
+        )
+        self.assertEqual(
+            stability["answer_distribution"],
+            {'{"ok": true}': 3},
         )
 
     def test_task_assistance_evidence_prevents_attributing_unused_subject_changes(self) -> None:
@@ -365,6 +428,28 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
             report = build_report(suite=suite, results_root=Path("/unused"))
 
         evidence = report["task_assistance_evidence"][0]
+        decision = report["decision_summary"]
+        self.assertEqual(decision["headroom"]["selected_tasks"], 1)
+        self.assertEqual(
+            decision["headroom"]["tasks_with_bare_correctness_headroom"],
+            1,
+        )
+        self.assertEqual(decision["headroom"]["headroom_task_ids"], ["task"])
+        self.assertEqual(decision["headroom"]["invoked_gain_task_ids"], ["task"])
+        self.assertEqual(decision["headroom"]["invoked_gain_task_fraction"], 1.0)
+        self.assertEqual(
+            decision["claim_guardrails"]["subject_effect_attribution"],
+            "observed-subject-invocation-only",
+        )
+        self.assertEqual(len(decision["subjects"]), 1)
+        self.assertEqual(
+            decision["subjects"][0]["paired_when_invoked"]["transitions"]["gain"],
+            1,
+        )
+        self.assertEqual(
+            decision["subjects"][0]["gain_task_ids_when_invoked"],
+            ["task"],
+        )
         self.assertEqual(evidence["subject_use"]["invoked_pairs"], 1)
         self.assertEqual(evidence["subject_use"]["subject_mcp_calls"], 1)
         self.assertEqual(

@@ -132,6 +132,9 @@ class DecisionEvidenceTests(unittest.TestCase):
                     },
                 },
             ],
+            "decision_summary": {
+                "claim_guardrails": {"overall_winner": "not-permitted"}
+            },
             "task_assistance_evidence": [
                 {
                     "task_id": "semantic-task",
@@ -147,9 +150,13 @@ class DecisionEvidenceTests(unittest.TestCase):
 
         self.assertEqual(
             evidence["schema"],
-            "agents-cookbook-benchmark-decision-evidence.v2",
+            "agents-cookbook-benchmark-decision-evidence.v3",
         )
         self.assertTrue(evidence["authority"]["derived_only"])
+        self.assertEqual(
+            evidence["decision_summary"]["claim_guardrails"]["overall_winner"],
+            "not-permitted",
+        )
         self.assertFalse(evidence["authority"]["ranking_performed"])
         self.assertFalse(evidence["authority"]["recommendation_performed"])
         self.assertEqual(evidence["surfaces"]["runtime"]["trials"], 1)
@@ -252,6 +259,7 @@ class DecisionEvidenceTests(unittest.TestCase):
             [],
         )
         self.assertEqual(evidence["evidence_signals"], [])
+        self.assertEqual(evidence["decision_summary"], {})
 
 
 if __name__ == "__main__":

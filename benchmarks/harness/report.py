@@ -1416,12 +1416,13 @@ def _stability(
         valid = [row for row in group if row.get("status") in _VALID_OUTCOMES]
         gradeable = [row for row in valid if _semantic_gradeable(row)]
         correct = sum(_semantic_success(row) is True for row in gradeable)
-        answer_counts = Counter(
-            json.dumps(
-                row.get("scoring", {}).get("oracle_grade", {}).get("normalized_actual"),
-                sort_keys=True,
-            )
+        normalized_answers = [
+            row.get("scoring", {}).get("oracle_grade", {}).get("normalized_actual")
             for row in gradeable
+        ]
+        answer_counts = Counter(
+            json.dumps(value, sort_keys=True)
+            for value in normalized_answers
         )
         raw_answers = [
             value
@@ -1484,8 +1485,18 @@ def _stability(
                     _oracle_bool(row, "format_compliant") is True for row in valid
                 ),
                 "answer_distribution": dict(sorted(answer_counts.items())),
+                "answer_distribution_source": (
+                    "scoring.oracle_grade.normalized_actual"
+                ),
+                "raw_answer_flip_rate": _pairwise_disagreement_rate(raw_answers),
+                "raw_answer_flip_observations": len(raw_answers),
+                "normalized_answer_flip_rate": _pairwise_disagreement_rate(
+                    normalized_answers
+                ),
+                "normalized_answer_flip_observations": len(normalized_answers),
                 "answer_flip_rate": _pairwise_disagreement_rate(raw_answers),
                 "answer_flip_observations": len(raw_answers),
+                "answer_flip_source": "execution.agent_answer.raw-text",
                 "semantic_flip_rate": _pairwise_disagreement_rate(semantic_values),
                 "semantic_flip_observations": len(semantic_values),
                 "route_flip_rate": _pairwise_disagreement_rate(route_values),
@@ -1941,6 +1952,310 @@ def _cross_agent_observations(
     ]
 
 
+
+def _decision_summary(
+    *,
+    expected: dict[str, dict[str, Any]],
+    status_counts: Counter[str],
+    campaign_complete: bool,
+    invalid_outcomes: int,
+    campaign_qualified: bool,
+    task_assistance: list[dict[str, Any]],
+    subject_adoption: list[dict[str, Any]],
+    usage_summary: list[dict[str, Any]],
+    condition_summaries: dict[str, dict[str, Any]],
+    agent_profiles: dict[str, dict[str, Any]],
+    context_invariance: list[dict[str, Any]],
+    analysis_evidence: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Lift decision-critical evidence without creating a ranking authority."""
+
+    selected_task_ids = sorted(
+        {
+            str(row["task_id"])
+            for row in expected.values()
+            if isinstance(row.get("task_id"), str)
+        }
+    )
+    evidence_by_task: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in task_assistance:
+        task_id = row.get("task_id")
+        if isinstance(task_id, str):
+            evidence_by_task[task_id].append(row)
+
+    headroom_task_ids: list[str] = []
+    no_headroom_task_ids: list[str] = []
+    unobserved_headroom_task_ids: list[str] = []
+    for task_id in selected_task_ids:
+        comparable = [
+            row
+            for row in evidence_by_task.get(task_id, [])
+            if int(row.get("comparable_pairs", 0) or 0) > 0
+        ]
+        if not comparable:
+            unobserved_headroom_task_ids.append(task_id)
+            continue
+        if any(
+            int(row.get("bare_semantic", {}).get("failures", 0) or 0) > 0
+            for row in comparable
+        ):
+            headroom_task_ids.append(task_id)
+        else:
+            no_headroom_task_ids.append(task_id)
+
+    invoked_gain_task_ids = sorted(
+        {
+            str(row["task_id"])
+            for row in task_assistance
+            if isinstance(row.get("task_id"), str)
+            and int(
+                row.get("transitions_by_invocation", {})
+                .get("invoked", {})
+                .get("gain", 0)
+                or 0
+            )
+            > 0
+        }
+    )
+    invoked_regression_task_ids = sorted(
+        {
+            str(row["task_id"])
+            for row in task_assistance
+            if isinstance(row.get("task_id"), str)
+            and int(
+                row.get("transitions_by_invocation", {})
+                .get("invoked", {})
+                .get("regression", 0)
+                or 0
+            )
+            > 0
+        }
+    )
+
+    usage_index = {
+        (
+            str(row.get("agent_id")),
+            str(row.get("subject_id")),
+            str(row.get("invocation_state")),
+        ): row
+        for row in usage_summary
+        if isinstance(row, dict)
+    }
+    subject_rows: list[dict[str, Any]] = []
+    for adoption in subject_adoption:
+        agent_id = str(adoption.get("agent_id"))
+        subject_id = str(adoption.get("subject_id"))
+        invoked = usage_index.get((agent_id, subject_id, "invoked"), {})
+        not_invoked = usage_index.get((agent_id, subject_id, "not-invoked"), {})
+        subject_gain_tasks = sorted(
+            {
+                str(row["task_id"])
+                for row in task_assistance
+                if row.get("agent_id") == agent_id
+                and row.get("subject_id") == subject_id
+                and isinstance(row.get("task_id"), str)
+                and int(
+                    row.get("transitions_by_invocation", {})
+                    .get("invoked", {})
+                    .get("gain", 0)
+                    or 0
+                )
+                > 0
+            }
+        )
+        subject_regression_tasks = sorted(
+            {
+                str(row["task_id"])
+                for row in task_assistance
+                if row.get("agent_id") == agent_id
+                and row.get("subject_id") == subject_id
+                and isinstance(row.get("task_id"), str)
+                and int(
+                    row.get("transitions_by_invocation", {})
+                    .get("invoked", {})
+                    .get("regression", 0)
+                    or 0
+                )
+                > 0
+            }
+        )
+        subject_rows.append(
+            {
+                "agent_id": agent_id,
+                "subject_id": subject_id,
+                "availability": {
+                    "trials": int(adoption.get("trials", 0) or 0),
+                    "available_trials": int(adoption.get("available_trials", 0) or 0),
+                    "configured_trials": int(adoption.get("configured_trials", 0) or 0),
+                    "invocation_observed_trials": int(
+                        adoption.get("invocation_observed_trials", 0) or 0
+                    ),
+                    "invoked_trials": int(adoption.get("invoked_trials", 0) or 0),
+                    "not_invoked_trials": int(
+                        adoption.get("not_invoked_trials", 0) or 0
+                    ),
+                    "invocation_unknown_trials": int(
+                        adoption.get("invocation_unknown_trials", 0) or 0
+                    ),
+                    "state": adoption.get("state"),
+                },
+                "paired_when_invoked": {
+                    "pairs": int(invoked.get("total_pairs", 0) or 0),
+                    "transitions": invoked.get(
+                        "transitions",
+                        {
+                            "gain": 0,
+                            "preserved": 0,
+                            "unresolved": 0,
+                            "regression": 0,
+                        },
+                    ),
+                    "delta_metrics": invoked.get("delta_metrics", {}),
+                },
+                "paired_when_not_invoked": {
+                    "pairs": int(not_invoked.get("total_pairs", 0) or 0),
+                    "transitions": not_invoked.get(
+                        "transitions",
+                        {
+                            "gain": 0,
+                            "preserved": 0,
+                            "unresolved": 0,
+                            "regression": 0,
+                        },
+                    ),
+                    "delta_metrics": not_invoked.get("delta_metrics", {}),
+                },
+                "gain_task_ids_when_invoked": subject_gain_tasks,
+                "regression_task_ids_when_invoked": subject_regression_tasks,
+                "attribution_scope": "observed-subject-invocation-only",
+            }
+        )
+
+    saturated_conditions = sorted(
+        condition_id
+        for condition_id, row in condition_summaries.items()
+        if row.get("format_contract", {}).get("state")
+        == "strict-contract-saturated-noncompliant"
+    )
+    if not condition_summaries:
+        strict_format_state = "not-observed"
+    elif len(saturated_conditions) == len(condition_summaries):
+        strict_format_state = "saturated-noncompliant"
+    elif saturated_conditions:
+        strict_format_state = "partially-saturated"
+    else:
+        strict_format_state = "not-saturated"
+
+    source_read_observability = sorted(
+        {
+            str(value)
+            for row in agent_profiles.values()
+            if isinstance(row, dict)
+            for value in row.get("source_read_observability", [])
+            if isinstance(value, str)
+        }
+    )
+    context_variants = sorted(
+        {
+            (
+                str(row.get("context_group")),
+                str(row.get("variant")),
+            )
+            for row in context_invariance
+            if row.get("context_group") is not None
+            and row.get("variant") is not None
+        }
+    )
+    context_evidence_state = (
+        str(analysis_evidence.get("evidence_state"))
+        if isinstance(analysis_evidence, dict)
+        and isinstance(analysis_evidence.get("evidence_state"), str)
+        else "not-measured"
+    )
+
+    condition_metrics = {
+        condition_id: {
+            "trials": int(row.get("trials", 0) or 0),
+            "valid_outcomes": int(row.get("valid_outcomes", 0) or 0),
+            "semantic_success": {
+                "rate": row.get("semantic_success_rate"),
+                "denominator": int(
+                    row.get("semantic_success_denominator", 0) or 0
+                ),
+            },
+            "format_compliance": {
+                "rate": row.get("format_compliance_rate"),
+                "denominator": int(
+                    row.get("format_compliance_denominator", 0) or 0
+                ),
+                "state": row.get("format_contract", {}).get("state"),
+            },
+            "subject_tool_adoption": {
+                "rate": row.get("subject_tool_adoption_rate"),
+                "denominator": int(
+                    row.get("subject_tool_adoption_denominator", 0) or 0
+                ),
+            },
+        }
+        for condition_id, row in sorted(condition_summaries.items())
+    }
+
+    selected_task_count = len(selected_task_ids)
+    return {
+        "campaign": {
+            "qualification": (
+                "QUALIFIED" if campaign_qualified else "NOT_QUALIFIED"
+            ),
+            "complete": campaign_complete,
+            "invalid_outcomes": invalid_outcomes,
+            "status_counts": dict(sorted(status_counts.items())),
+            "ranking_permitted": False,
+        },
+        "headroom": {
+            "selected_tasks": selected_task_count,
+            "headroom_observable_tasks": (
+                len(headroom_task_ids) + len(no_headroom_task_ids)
+            ),
+            "tasks_with_bare_correctness_headroom": len(headroom_task_ids),
+            "tasks_without_bare_correctness_headroom": len(no_headroom_task_ids),
+            "tasks_with_unobserved_headroom": len(unobserved_headroom_task_ids),
+            "headroom_task_ids": headroom_task_ids,
+            "no_headroom_task_ids": no_headroom_task_ids,
+            "unobserved_headroom_task_ids": unobserved_headroom_task_ids,
+            "invoked_gain_task_ids": invoked_gain_task_ids,
+            "invoked_regression_task_ids": invoked_regression_task_ids,
+            "invoked_gain_task_fraction": (
+                len(invoked_gain_task_ids) / selected_task_count
+                if selected_task_count
+                else None
+            ),
+        },
+        "subjects": subject_rows,
+        "condition_metrics": condition_metrics,
+        "benchmark_health": {
+            "strict_format_state": strict_format_state,
+            "strict_format_saturated_conditions": saturated_conditions,
+            "source_read_observability": source_read_observability,
+            "context_comparisons": len(context_invariance),
+            "context_variants": [
+                {"group": group, "variant": variant}
+                for group, variant in context_variants
+            ],
+            "context_evidence_state": context_evidence_state,
+            "replicate_identity_is_provider_sampling_seed": False,
+        },
+        "claim_guardrails": {
+            "overall_winner": "not-permitted",
+            "cross_agent_comparison": "descriptive-only",
+            "subject_effect_attribution": "observed-subject-invocation-only",
+            "generalization": (
+                "context-specific-descriptive-evidence"
+                if context_evidence_state == "minimum-evidence-observed"
+                else "not-demonstrated"
+            ),
+        },
+    }
+
 def build_report(
     *,
     suite: SuiteDefinition,
@@ -2064,10 +2379,41 @@ def build_report(
         suite=suite,
         interrupted=interrupted,
     )
+    paired_assistance_summary = _paired_assistance_summary(paired_assistance)
+    paired_assistance_usage_summary = _paired_assistance_usage_summary(
+        paired_assistance
+    )
+    task_assistance_evidence = _task_assistance_evidence(
+        paired_assistance,
+        pair_exclusions,
+    )
+    subject_adoption = _subject_adoption_summary(receipts)
+    condition_summaries = {
+        condition: _aggregate_condition(rows)
+        for condition, rows in sorted(by_condition.items())
+    }
+    agent_profiles = {
+        agent: _aggregate_condition(rows)
+        for agent, rows in sorted(by_agent.items())
+    }
+    decision_summary = _decision_summary(
+        expected=expected,
+        status_counts=statuses,
+        campaign_complete=campaign_complete,
+        invalid_outcomes=invalid_outcomes,
+        campaign_qualified=campaign_qualified,
+        task_assistance=task_assistance_evidence,
+        subject_adoption=subject_adoption,
+        usage_summary=paired_assistance_usage_summary,
+        condition_summaries=condition_summaries,
+        agent_profiles=agent_profiles,
+        context_invariance=context_invariance,
+        analysis_evidence=analysis_evidence,
+    )
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 17,
+            "version": 18,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
@@ -2087,27 +2433,19 @@ def build_report(
         "missing_definitions": missing,
         "interrupted_definitions": sorted(interrupted & set(missing)),
         "status_counts": dict(sorted(statuses.items())),
-        "conditions": {
-            condition: _aggregate_condition(rows)
-            for condition, rows in sorted(by_condition.items())
-        },
+        "conditions": condition_summaries,
         "paired_assistance": paired_assistance,
-        "paired_assistance_summary": _paired_assistance_summary(paired_assistance),
-        "paired_assistance_usage_summary": _paired_assistance_usage_summary(
-            paired_assistance
-        ),
+        "paired_assistance_summary": paired_assistance_summary,
+        "paired_assistance_usage_summary": paired_assistance_usage_summary,
         "paired_assistance_exclusions": pair_exclusions,
         "expected_assistance_pairs": len(paired_assistance) + len(pair_exclusions),
-        "task_assistance_evidence": _task_assistance_evidence(
-            paired_assistance,
-            pair_exclusions,
-        ),
+        "task_assistance_evidence": task_assistance_evidence,
         "stability": stability,
         "context_invariance": context_invariance,
         "context_invariance_summary": context_invariance_summary,
         "analysis_evidence": analysis_evidence,
         "task_agent_authority": _task_agent_authority(receipts),
-        "subject_adoption": _subject_adoption_summary(receipts),
+        "subject_adoption": subject_adoption,
         "diagnostics": [
             {
                 "definition_id": row["definition_id"],
@@ -2119,10 +2457,8 @@ def build_report(
             }
             for row in sorted(receipts, key=lambda item: item["definition_id"])
         ],
-        "agent_profiles": {
-            agent: _aggregate_condition(rows)
-            for agent, rows in sorted(by_agent.items())
-        },
+        "agent_profiles": agent_profiles,
+        "decision_summary": decision_summary,
         "cross_agent_observations": _cross_agent_observations(receipts),
         "campaign_qualification": {
             "status": "QUALIFIED" if campaign_qualified else "NOT_QUALIFIED",

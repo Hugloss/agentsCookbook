@@ -285,7 +285,7 @@ def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
         evidence_signals.append("native-tool-strategy-partially-observed")
 
     return {
-        "schema": "agents-cookbook-benchmark-decision-evidence.v2",
+        "schema": "agents-cookbook-benchmark-decision-evidence.v3",
         "authority": {
             "derived_only": True,
             "ranking_performed": False,
@@ -298,6 +298,7 @@ def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
             "status_counts": report.get("status_counts", {}),
             "qualification": report.get("campaign_qualification", {}),
         },
+        "decision_summary": report.get("decision_summary", {}),
         "surfaces": {
             "runtime": {
                 "trials": len(runtime_rows),

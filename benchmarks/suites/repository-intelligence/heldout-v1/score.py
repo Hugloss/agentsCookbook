@@ -102,6 +102,7 @@ def main() -> int:
             "observed_trials": report["observed_trials"],
             "status_counts": report["status_counts"],
             "campaign_qualification": report["campaign_qualification"],
+            "decision_summary": report.get("decision_summary", {}),
             "conditions": report["conditions"],
             "paired_assistance": report["paired_assistance"],
             "paired_assistance_summary": report["paired_assistance_summary"],
@@ -126,7 +127,7 @@ def main() -> int:
         raise SystemExit("heldout score selection contains no language tasks")
 
     payload = {
-        "schema": "agents-cookbook-heldout-observer-outcomes.v16",
+        "schema": "agents-cookbook-heldout-observer-outcomes.v17",
         "projection_mode": (
             "offline-regrade" if args.regrade_source_results is not None else "live"
         ),
@@ -150,6 +151,17 @@ def main() -> int:
             "languages": {
                 language: row["campaign_qualification"]
                 for language, row in sorted(languages.items())
+            },
+        },
+        "decision_summary": {
+            "languages": {
+                language: row.get("decision_summary", {})
+                for language, row in sorted(languages.items())
+            },
+            "claim_guardrails": {
+                "overall_winner": "not-permitted",
+                "cross_language_ranking": "not-performed",
+                "subject_effect_attribution": "observed-subject-invocation-only",
             },
         },
         "authority": {
