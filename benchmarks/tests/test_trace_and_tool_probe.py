@@ -32,6 +32,11 @@ from benchmarks.tool_routing import (
     NATIVE_READ,
     NATIVE_SEARCH,
     OTHER,
+    ROUTING_FIRST_CHOICE,
+    ROUTING_LATE_RESCUE,
+    ROUTING_NEVER_INVOKED,
+    ROUTING_NOT_CONFIGURED,
+    ROUTING_UNKNOWN,
     SHELL,
     SUBJECT_REPOSITORY_INTELLIGENCE,
     TOOL_ROUTER,
@@ -41,6 +46,7 @@ from benchmarks.tool_routing import (
     matches_subject_operation,
     required_before_native_discovery,
     required_call_result,
+    subject_routing_timing,
 )
 
 
@@ -51,6 +57,74 @@ SUITE = (
 
 
 class TraceAndToolProbeTests(unittest.TestCase):
+    def test_subject_routing_timing_distinguishes_choice_rescue_and_absence(
+        self,
+    ) -> None:
+        self.assertEqual(
+            subject_routing_timing(
+                ["mcp:hashmarks/task_evidence", "command_execution"],
+                [1],
+                configured=True,
+                invocation_observed=True,
+                order_complete=True,
+            ),
+            ROUTING_FIRST_CHOICE,
+        )
+        self.assertEqual(
+            subject_routing_timing(
+                ["command_execution", "mcp:hashmarks/task_evidence"],
+                [2],
+                configured=True,
+                invocation_observed=True,
+                order_complete=True,
+            ),
+            ROUTING_LATE_RESCUE,
+        )
+        self.assertEqual(
+            subject_routing_timing(
+                ["command_execution"],
+                [],
+                configured=True,
+                invocation_observed=False,
+                order_complete=True,
+            ),
+            ROUTING_NEVER_INVOKED,
+        )
+        self.assertEqual(
+            subject_routing_timing(
+                ["other_tool", "mcp:hashmarks/task_evidence"],
+                [2],
+                configured=True,
+                invocation_observed=True,
+                order_complete=False,
+            ),
+            ROUTING_UNKNOWN,
+        )
+        self.assertEqual(
+            subject_routing_timing(
+                ["grep", "mcp:hashmarks/task_evidence"],
+                [2],
+                configured=True,
+                invocation_observed=True,
+                order_complete=False,
+            ),
+            ROUTING_LATE_RESCUE,
+        )
+        self.assertEqual(
+            subject_routing_timing(
+                [],
+                [],
+                configured=False,
+                invocation_observed=False,
+                order_complete=True,
+            ),
+            ROUTING_NOT_CONFIGURED,
+        )
+        self.assertEqual(
+            classify_tool("command_execution", subject="hashmarks"),
+            SHELL,
+        )
+
     def test_hashmarks_trace_projection_reads_compact_v3_symbol_locator(self) -> None:
         evidence = _hashmarks_evidence(
             {
