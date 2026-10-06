@@ -500,7 +500,9 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                                         "subject_id": "hashmarks",
                                         "operation": "task_evidence",
                                         "calls": 1,
-                                    },
+                                    }
+                                ],
+                            },
                             "repository_intelligence_search_efficiency": {
                                 "state": "observed",
                                 "claim_scope": "descriptive-behavioral-only",
@@ -511,9 +513,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                                         "evidence_observed_trials": 1,
                                     }
                                 ],
-                            }
-                                ],
-                            }
+                            },
                         },
                     },
                 ),
