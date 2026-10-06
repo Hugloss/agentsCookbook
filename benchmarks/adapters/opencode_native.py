@@ -18,6 +18,7 @@ from typing import Any
 from benchmarks.adapters.runtime import observe_executable, resolve_native_executable
 from benchmarks.harness.identity import canonical_json
 from benchmarks.harness.runtime_authority import PROCESS_SUBSTRATE_ENV_KEYS
+from benchmarks.harness.tool_results import result_bytes, tool_result_evidence
 from benchmarks.harness.model import (
     Observation,
     ParticipantIdentity,
@@ -310,6 +311,7 @@ def _metrics(
         if any(name.startswith(f"{server}_") for server in mcp_servers)
     ]
     nested_tool_calls: list[str] = []
+    nested_tool_rows: list[dict[str, Any]] = []
     nested_mcp_calls: list[str] = []
     observed_tool_sequence: list[str] = []
     nested_observable = True
@@ -329,6 +331,7 @@ def _metrics(
             nested_observable = False
             continue
         nested_names = [call["tool"] for call in calls]
+        nested_tool_rows.extend(calls)
         nested_tool_calls.extend(nested_names)
         observed_tool_sequence.extend(f"nested:{name}" for name in nested_names)
     nested_mcp_calls = [
@@ -358,25 +361,55 @@ def _metrics(
     file_changes = [
         name for name in names if name in {"edit", "write", "patch", "apply_patch"}
     ]
-    result_bytes = 0
+    mcp_result_bytes = 0
     for part in tool_parts:
         name = _tool_name(part)
         if name not in direct_mcp_calls:
             continue
         state = part.get("state")
-        output = state.get("output") if isinstance(state, dict) else None
-        if output is not None:
-            rendered = (
-                output
-                if isinstance(output, str)
-                else json.dumps(
-                    output,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    default=str,
+        if isinstance(state, dict) and "output" in state:
+            measured = result_bytes(state.get("output"))
+            if measured is not None:
+                mcp_result_bytes += measured
+
+    subject_tool_result_evidence: list[dict[str, Any]] = []
+    if selected_server is not None:
+        for part in tool_parts:
+            name = _tool_name(part)
+            if not isinstance(name, str) or not is_subject_call(name):
+                continue
+            state = part.get("state")
+            state_dict = state if isinstance(state, dict) else {}
+            subject_tool_result_evidence.append(
+                tool_result_evidence(
+                    operation=_subject_tool_name(name, selected_server),
+                    status=state_dict.get("status"),
+                    result_present="output" in state_dict,
+                    result=state_dict.get("output"),
+                    error=state_dict.get("error"),
+                    basis="opencode-direct-export",
                 )
             )
-            result_bytes += len(rendered.encode("utf-8"))
+        for call in nested_tool_rows:
+            name = call.get("tool")
+            if not isinstance(name, str) or not is_subject_call(name):
+                continue
+            if "output" in call:
+                result_present = True
+                result = call.get("output")
+            else:
+                result_present = "result" in call
+                result = call.get("result")
+            subject_tool_result_evidence.append(
+                tool_result_evidence(
+                    operation=_subject_tool_name(name, selected_server),
+                    status=call.get("status"),
+                    result_present=result_present,
+                    result=result,
+                    error=call.get("error"),
+                    basis="opencode-execute-metadata",
+                )
+            )
     input_tokens, output_tokens, cached_tokens = _token_metrics(exported)
     subject_ordinals = [
         index
@@ -422,6 +455,7 @@ def _metrics(
             subject_tool_observability=(
                 "complete" if nested_observable else "partial"
             ),
+            subject_tool_result_evidence=subject_tool_result_evidence,
         )
     if nested_observable:
         metrics.update(
@@ -430,7 +464,7 @@ def _metrics(
             subject_tool_invoked=bool(subject_calls),
         )
         if not nested_mcp_calls:
-            metrics["mcp_result_bytes"] = result_bytes
+            metrics["mcp_result_bytes"] = mcp_result_bytes
     elif direct_subject_calls:
         # Direct exported MCP calls are authoritative positive evidence even
         # when nested execute() metadata is incomplete. Absence remains unknown.

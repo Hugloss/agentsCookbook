@@ -2110,6 +2110,19 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(metrics["subject_mcp_calls_observed"], 1)
         self.assertEqual(metrics["subject_tool_names"], ["find"])
         self.assertEqual(metrics["subject_tool_observability"], "complete")
+        self.assertEqual(
+            metrics["subject_tool_result_evidence"],
+            [
+                {
+                    "operation": "find",
+                    "status": None,
+                    "result_bytes": len("evidence".encode()),
+                    "error_present": False,
+                    "result_basis": "opencode-direct-export",
+                    "outcome": "successful-result-observed",
+                }
+            ],
+        )
         self.assertTrue(metrics["subject_tool_invoked"])
         self.assertEqual(metrics["command_calls"], 1)
         self.assertEqual(metrics["input_tokens"], 100)
@@ -2176,6 +2189,14 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(metrics["subject_mcp_calls_observed"], 2)
         self.assertEqual(metrics["subject_tool_names"], ["find"])
         self.assertEqual(metrics["subject_tool_observability"], "complete")
+        self.assertEqual(
+            [row["outcome"] for row in metrics["subject_tool_result_evidence"]],
+            ["successful-result-observed", "result-unobserved"],
+        )
+        self.assertEqual(
+            [row["result_basis"] for row in metrics["subject_tool_result_evidence"]],
+            ["opencode-direct-export", "opencode-execute-metadata"],
+        )
         self.assertTrue(metrics["subject_tool_invoked"])
         self.assertNotIn("mcp_result_bytes", metrics)
         self.assertEqual(
@@ -2206,6 +2227,19 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(partial["subject_mcp_calls_observed"], 1)
         self.assertEqual(partial["subject_tool_names"], ["find"])
         self.assertEqual(partial["subject_tool_observability"], "partial")
+        self.assertEqual(
+            partial["subject_tool_result_evidence"],
+            [
+                {
+                    "operation": "find",
+                    "status": None,
+                    "result_bytes": len("direct result".encode()),
+                    "error_present": False,
+                    "result_basis": "opencode-direct-export",
+                    "outcome": "successful-result-observed",
+                }
+            ],
+        )
         self.assertTrue(partial["subject_tool_invoked"])
         self.assertEqual(
             partial["tool_strategy_observability"],
@@ -2282,6 +2316,19 @@ class PilotExecutionTests(unittest.TestCase):
         self.assertEqual(metrics["tool_calls"], 2)
         self.assertTrue(metrics["subject_tool_configured"])
         self.assertEqual(metrics["subject_tool_names"], ["find"])
+        self.assertEqual(metrics["subject_tool_observability"], "complete")
+        self.assertEqual(
+            metrics["subject_tool_result_evidence"][0]["outcome"],
+            "successful-result-observed",
+        )
+        self.assertEqual(
+            metrics["subject_tool_result_evidence"][0]["operation"],
+            "find",
+        )
+        self.assertGreater(
+            metrics["subject_tool_result_evidence"][0]["result_bytes"],
+            0,
+        )
         self.assertEqual(metrics["input_tokens"], 100)
         self.assertEqual(metrics["tool_strategy_observability"], "codex-item-completed")
         self.assertEqual(

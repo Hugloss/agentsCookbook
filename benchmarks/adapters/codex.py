@@ -21,6 +21,7 @@ from benchmarks.harness.model import (
     SubjectLifecycleMode,
     TrialContext,
 )
+from benchmarks.harness.tool_results import result_bytes, tool_result_evidence
 from benchmarks.tool_routing import subject_routing_timing
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
@@ -135,21 +136,27 @@ def _metrics(
             if isinstance(item.get("tool"), str) and item.get("tool")
         }
     )
+    subject_tool_result_evidence = [
+        tool_result_evidence(
+            operation=str(item["tool"]),
+            status=item.get("status"),
+            result_present="result" in item,
+            result=item.get("result"),
+            error=item.get("error"),
+            basis="codex-item-completed",
+        )
+        for item in subject_calls
+        if isinstance(item.get("tool"), str) and item.get("tool")
+    ]
     completed = [event for event in events if event.get("type") == "turn.completed"]
     usage = completed[-1].get("usage", {}) if completed else {}
     if not isinstance(usage, dict):
         usage = {}
-    result_bytes = 0
+    mcp_result_bytes = 0
     for item in mcp_calls:
-        result = item.get("result")
-        if result is not None:
-            result_bytes += len(
-                json.dumps(
-                    result,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode()
-            )
+        measured = result_bytes(item.get("result")) if "result" in item else None
+        if measured is not None:
+            mcp_result_bytes += measured
     subject_invoked = bool(subject_calls)
     return {
         "event_count": len(events),
@@ -162,7 +169,8 @@ def _metrics(
         "subject_tool_invoked": subject_invoked,
         "subject_tool_names": subject_tool_names,
         "subject_tool_observability": "complete",
-        "mcp_result_bytes": result_bytes,
+        "subject_tool_result_evidence": subject_tool_result_evidence,
+        "mcp_result_bytes": mcp_result_bytes,
         "input_tokens": int(usage.get("input_tokens", 0) or 0),
         "cached_input_tokens": int(usage.get("cached_input_tokens", 0) or 0),
         "output_tokens": int(usage.get("output_tokens", 0) or 0),
