@@ -39,6 +39,7 @@ _MAX_SEARCH_TOTAL_BYTES = 64_000_000
 _MAX_SEARCH_RESULTS = 20
 _MAX_READ_LINES = 200
 _MAX_READ_BYTES = 100_000
+_HASHMARKS_ALLOWED_TOOLS = ("task_evidence", "find")
 
 
 class OpenAIRoutingProbeError(RuntimeError):
@@ -187,9 +188,15 @@ def _load_handoff(path: Path, workspace: Path) -> dict[str, Any]:
         for row in tools
         if isinstance(row, dict)
     } if isinstance(tools, list) else set()
-    if "task_evidence" not in names:
+    missing = [
+        name
+        for name in _HASHMARKS_ALLOWED_TOOLS
+        if name not in names
+    ]
+    if missing:
         raise OpenAIRoutingProbeError(
-            "Hashmarks tunnel handoff does not expose task_evidence"
+            "Hashmarks tunnel handoff does not expose required routing tools: "
+            + ", ".join(missing)
         )
     payload["_receipt_sha256"] = _sha256_bytes(raw)
     return payload
@@ -336,7 +343,7 @@ def _tools(tunnel_id: str) -> list[dict[str, Any]]:
             "type": "mcp",
             "server_label": "hashmarks",
             "tunnel_id": tunnel_id,
-            "allowed_tools": ["task_evidence"],
+            "allowed_tools": list(_HASHMARKS_ALLOWED_TOOLS),
             "require_approval": "never",
         },
         *_native_tools(),
@@ -578,7 +585,7 @@ def _response_items(
             name = item.get("name")
             if not isinstance(name, str):
                 raise OpenAIRoutingProbeError("MCP call has no tool name")
-            if name != "task_evidence":
+            if name not in _HASHMARKS_ALLOWED_TOOLS:
                 raise OpenAIRoutingProbeError(
                     f"Responses invoked an MCP tool outside the admitted contract: {name}"
                 )
@@ -1049,7 +1056,7 @@ def run_probe(
             "parallel_tool_calls": False,
             "credentials_persisted": False,
             "hashmarks_receives_openai_credentials": False,
-            "hashmarks_allowed_tools": ["task_evidence"],
+            "hashmarks_allowed_tools": list(_HASHMARKS_ALLOWED_TOOLS),
             "native_tools": ["grep", "read"],
             "tunnel_exclusivity": (
                 "local-nonblocking-lock; cross-host exclusivity remains external"
