@@ -2155,6 +2155,7 @@ def _decision_summary(
     task_assistance: list[dict[str, Any]],
     subject_adoption: list[dict[str, Any]],
     usage_summary: list[dict[str, Any]],
+    treatment_summary: list[dict[str, Any]],
     condition_summaries: dict[str, dict[str, Any]],
     agent_profiles: dict[str, dict[str, Any]],
     context_invariance: list[dict[str, Any]],
@@ -2195,7 +2196,7 @@ def _decision_summary(
         else:
             no_headroom_task_ids.append(task_id)
 
-    invoked_gain_task_ids = sorted(
+    generic_invoked_gain_task_ids = sorted(
         {
             str(row["task_id"])
             for row in task_assistance
@@ -2209,7 +2210,7 @@ def _decision_summary(
             > 0
         }
     )
-    invoked_regression_task_ids = sorted(
+    generic_invoked_regression_task_ids = sorted(
         {
             str(row["task_id"])
             for row in task_assistance
@@ -2217,6 +2218,34 @@ def _decision_summary(
             and int(
                 row.get("transitions_by_invocation", {})
                 .get("invoked", {})
+                .get("regression", 0)
+                or 0
+            )
+            > 0
+        }
+    )
+    contracted_gain_task_ids = sorted(
+        {
+            str(row["task_id"])
+            for row in task_assistance
+            if isinstance(row.get("task_id"), str)
+            and int(
+                row.get("transitions_by_contracted_treatment", {})
+                .get(CONTRACTED_SUCCESSFUL_RESULT, {})
+                .get("gain", 0)
+                or 0
+            )
+            > 0
+        }
+    )
+    contracted_regression_task_ids = sorted(
+        {
+            str(row["task_id"])
+            for row in task_assistance
+            if isinstance(row.get("task_id"), str)
+            and int(
+                row.get("transitions_by_contracted_treatment", {})
+                .get(CONTRACTED_SUCCESSFUL_RESULT, {})
                 .get("regression", 0)
                 or 0
             )
@@ -2233,13 +2262,58 @@ def _decision_summary(
         for row in usage_summary
         if isinstance(row, dict)
     }
+
+    def treatment_rows(
+        agent_id: str,
+        subject_id: str,
+        observed: bool | None,
+    ) -> list[dict[str, Any]]:
+        return [
+            row
+            for row in treatment_summary
+            if isinstance(row, dict)
+            and str(row.get("agent_id")) == agent_id
+            and str(row.get("subject_id")) == subject_id
+            and row.get("contracted_treatment_observed") is observed
+        ]
+
+    def aggregate_treatment(
+        rows: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        transitions = Counter()
+        state_rows: dict[str, dict[str, Any]] = {}
+        pairs = 0
+        for row in rows:
+            row_pairs = int(row.get("total_pairs", 0) or 0)
+            pairs += row_pairs
+            state = row.get("contracted_exposure_state")
+            if isinstance(state, str):
+                state_rows[state] = {
+                    "pairs": row_pairs,
+                    "transitions": row.get("transitions", {}),
+                    "delta_metrics": row.get("delta_metrics", {}),
+                }
+            row_transitions = row.get("transitions")
+            if isinstance(row_transitions, dict):
+                for name in ("gain", "preserved", "unresolved", "regression"):
+                    transitions[name] += int(row_transitions.get(name, 0) or 0)
+        return {
+            "pairs": pairs,
+            "states": dict(sorted(state_rows.items())),
+            "transitions": {
+                name: transitions[name]
+                for name in ("gain", "preserved", "unresolved", "regression")
+            },
+            "economics_aggregation": "per-contracted-state-only",
+        }
+
     subject_rows: list[dict[str, Any]] = []
     for adoption in subject_adoption:
         agent_id = str(adoption.get("agent_id"))
         subject_id = str(adoption.get("subject_id"))
         invoked = usage_index.get((agent_id, subject_id, "invoked"), {})
         not_invoked = usage_index.get((agent_id, subject_id, "not-invoked"), {})
-        subject_gain_tasks = sorted(
+        generic_gain_tasks = sorted(
             {
                 str(row["task_id"])
                 for row in task_assistance
@@ -2255,7 +2329,7 @@ def _decision_summary(
                 > 0
             }
         )
-        subject_regression_tasks = sorted(
+        generic_regression_tasks = sorted(
             {
                 str(row["task_id"])
                 for row in task_assistance
@@ -2270,6 +2344,47 @@ def _decision_summary(
                 )
                 > 0
             }
+        )
+        contracted_gain_tasks = sorted(
+            {
+                str(row["task_id"])
+                for row in task_assistance
+                if row.get("agent_id") == agent_id
+                and row.get("subject_id") == subject_id
+                and isinstance(row.get("task_id"), str)
+                and int(
+                    row.get("transitions_by_contracted_treatment", {})
+                    .get(CONTRACTED_SUCCESSFUL_RESULT, {})
+                    .get("gain", 0)
+                    or 0
+                )
+                > 0
+            }
+        )
+        contracted_regression_tasks = sorted(
+            {
+                str(row["task_id"])
+                for row in task_assistance
+                if row.get("agent_id") == agent_id
+                and row.get("subject_id") == subject_id
+                and isinstance(row.get("task_id"), str)
+                and int(
+                    row.get("transitions_by_contracted_treatment", {})
+                    .get(CONTRACTED_SUCCESSFUL_RESULT, {})
+                    .get("regression", 0)
+                    or 0
+                )
+                > 0
+            }
+        )
+        observed_treatment = aggregate_treatment(
+            treatment_rows(agent_id, subject_id, True)
+        )
+        definite_non_treatment = aggregate_treatment(
+            treatment_rows(agent_id, subject_id, False)
+        )
+        unproven_treatment = aggregate_treatment(
+            treatment_rows(agent_id, subject_id, None)
         )
         subject_rows.append(
             {
@@ -2291,35 +2406,47 @@ def _decision_summary(
                     ),
                     "state": adoption.get("state"),
                 },
-                "paired_when_invoked": {
-                    "pairs": int(invoked.get("total_pairs", 0) or 0),
-                    "transitions": invoked.get(
-                        "transitions",
-                        {
-                            "gain": 0,
-                            "preserved": 0,
-                            "unresolved": 0,
-                            "regression": 0,
-                        },
-                    ),
-                    "delta_metrics": invoked.get("delta_metrics", {}),
+                "generic_subject_use": {
+                    "paired_when_invoked": {
+                        "pairs": int(invoked.get("total_pairs", 0) or 0),
+                        "transitions": invoked.get(
+                            "transitions",
+                            {
+                                "gain": 0,
+                                "preserved": 0,
+                                "unresolved": 0,
+                                "regression": 0,
+                            },
+                        ),
+                        "delta_metrics": invoked.get("delta_metrics", {}),
+                    },
+                    "paired_when_not_invoked": {
+                        "pairs": int(not_invoked.get("total_pairs", 0) or 0),
+                        "transitions": not_invoked.get(
+                            "transitions",
+                            {
+                                "gain": 0,
+                                "preserved": 0,
+                                "unresolved": 0,
+                                "regression": 0,
+                            },
+                        ),
+                        "delta_metrics": not_invoked.get("delta_metrics", {}),
+                    },
+                    "gain_task_ids_when_invoked": generic_gain_tasks,
+                    "regression_task_ids_when_invoked": generic_regression_tasks,
+                    "claim_scope": "routing-and-adoption-descriptive-only",
                 },
-                "paired_when_not_invoked": {
-                    "pairs": int(not_invoked.get("total_pairs", 0) or 0),
-                    "transitions": not_invoked.get(
-                        "transitions",
-                        {
-                            "gain": 0,
-                            "preserved": 0,
-                            "unresolved": 0,
-                            "regression": 0,
-                        },
+                "contracted_treatment": {
+                    "observed": observed_treatment,
+                    "definite_non_treatment": definite_non_treatment,
+                    "unproven": unproven_treatment,
+                    "gain_task_ids": contracted_gain_tasks,
+                    "regression_task_ids": contracted_regression_tasks,
+                    "attribution_scope": (
+                        "exact-required-operation-with-successful-nonempty-result"
                     ),
-                    "delta_metrics": not_invoked.get("delta_metrics", {}),
                 },
-                "gain_task_ids_when_invoked": subject_gain_tasks,
-                "regression_task_ids_when_invoked": subject_regression_tasks,
-                "attribution_scope": "observed-subject-invocation-only",
             }
         )
 
@@ -2414,13 +2541,28 @@ def _decision_summary(
             "headroom_task_ids": headroom_task_ids,
             "no_headroom_task_ids": no_headroom_task_ids,
             "unobserved_headroom_task_ids": unobserved_headroom_task_ids,
-            "invoked_gain_task_ids": invoked_gain_task_ids,
-            "invoked_regression_task_ids": invoked_regression_task_ids,
-            "invoked_gain_task_fraction": (
-                len(invoked_gain_task_ids) / selected_task_count
-                if selected_task_count
-                else None
-            ),
+            "generic_subject_use": {
+                "gain_task_ids": generic_invoked_gain_task_ids,
+                "regression_task_ids": generic_invoked_regression_task_ids,
+                "gain_task_fraction": (
+                    len(generic_invoked_gain_task_ids) / selected_task_count
+                    if selected_task_count
+                    else None
+                ),
+                "claim_scope": "routing-and-adoption-descriptive-only",
+            },
+            "contracted_treatment": {
+                "gain_task_ids": contracted_gain_task_ids,
+                "regression_task_ids": contracted_regression_task_ids,
+                "gain_task_fraction": (
+                    len(contracted_gain_task_ids) / selected_task_count
+                    if selected_task_count
+                    else None
+                ),
+                "attribution_scope": (
+                    "exact-required-operation-with-successful-nonempty-result"
+                ),
+            },
         },
         "subjects": subject_rows,
         "condition_metrics": condition_metrics,
@@ -2439,7 +2581,10 @@ def _decision_summary(
         "claim_guardrails": {
             "overall_winner": "not-permitted",
             "cross_agent_comparison": "descriptive-only",
-            "subject_effect_attribution": "observed-subject-invocation-only",
+            "subject_effect_attribution": (
+                "exact-required-operation-with-successful-nonempty-result"
+            ),
+            "generic_subject_invocation": "routing-and-adoption-descriptive-only",
             "generalization": (
                 "context-specific-descriptive-evidence"
                 if context_evidence_state == "minimum-evidence-observed"
@@ -2600,6 +2745,7 @@ def build_report(
         task_assistance=task_assistance_evidence,
         subject_adoption=subject_adoption,
         usage_summary=paired_assistance_usage_summary,
+        treatment_summary=paired_assistance_treatment_summary,
         condition_summaries=condition_summaries,
         agent_profiles=agent_profiles,
         context_invariance=context_invariance,
@@ -2608,7 +2754,7 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 19,
+            "version": 20,
         },
         "suite": suite.experiment["suite"],
         "experiment": {

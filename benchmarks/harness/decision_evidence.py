@@ -399,7 +399,7 @@ def build_decision_evidence(
         evidence_signals.append("repository-intelligence-evidence-to-action-observed")
 
     return {
-        "schema": "agents-cookbook-benchmark-decision-evidence.v6",
+        "schema": "agents-cookbook-benchmark-decision-evidence.v7",
         "authority": {
             "derived_only": True,
             "ranking_performed": False,
