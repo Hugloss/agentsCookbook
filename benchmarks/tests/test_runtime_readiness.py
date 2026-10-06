@@ -13,6 +13,7 @@ from benchmarks.harness.model import McpExposure, Observation
 from benchmarks.harness.readiness import (
     _mcp_startup_diagnostic,
     _pair_check,
+    _subject_runtime_check,
     check_runtime_readiness,
 )
 from benchmarks.harness.suite import (
@@ -158,6 +159,58 @@ class RuntimeReadinessTests(unittest.TestCase):
             "run_trial",
         ):
             self.assertNotIn(forbidden, source)
+
+    def test_subject_runtime_requires_declared_mcp_operation_when_suite_opts_in(
+        self,
+    ) -> None:
+        suite = fake_suite()
+        suite.experiment["subject_exposure_contract"] = {
+            "require_probe_contract": True
+        }
+        suite.subjects["enola"]["kind"] = "repository_intelligence"
+        suite.subjects["enola"]["exposure_probe"] = {
+            "required_tool": "enola_explore"
+        }
+        observed = Observation(
+            {
+                "available": True,
+                "version": "test",
+                "executable_sha256": "a" * 64,
+            },
+            "test",
+        )
+        with tempfile.TemporaryDirectory() as tmp, (
+            mock.patch(
+                "benchmarks.harness.readiness.build_subject",
+                return_value=FakeSubject("enola"),
+            ),
+            mock.patch(
+                "benchmarks.harness.readiness.observe_executable",
+                return_value=observed,
+            ),
+            mock.patch(
+                "benchmarks.harness.readiness.probe_mcp_tool_catalog",
+                side_effect=ValueError(
+                    "MCP required operation is not exposed: explore"
+                ),
+            ) as catalog,
+        ):
+            result = _subject_runtime_check(
+                suite,
+                "enola",
+                Path(tmp),
+                {"PATH": os.environ.get("PATH", "")},
+            )
+
+        self.assertEqual(result.state, "FAILED")
+        self.assertIn(
+            "MCP required operation is not exposed: explore",
+            result.reason or "",
+        )
+        self.assertEqual(
+            catalog.call_args.kwargs["required_tool"],
+            "enola_explore",
+        )
 
     def test_failed_mcp_pair_surfaces_direct_child_stderr(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
