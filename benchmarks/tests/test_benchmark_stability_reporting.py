@@ -455,6 +455,187 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
             )
         )
 
+    def test_qualification_rejects_wrong_subject_tool_when_contract_requires_exact_operation(
+        self,
+    ) -> None:
+        suite = _suite()
+        suite.experiment["subject_exposure_contract"] = {
+            "require_probe_contract": True
+        }
+        suite.subjects["hashmarks"]["exposure_probe"] = {
+            "required_tool": "hashmarks_task_evidence"
+        }
+        rows = [
+            row
+            for row in suite.trial_definitions()
+            if row["condition_id"] == "hashmarks"
+        ]
+        receipts = []
+        for index, row in enumerate(rows):
+            receipt = _receipt(
+                suite,
+                row,
+                "PASS",
+                chr(ord("a") + index) * 64,
+            )
+            receipt["authority"]["subject"]["available"] = True
+            receipt["measurements"]["agent"] = {
+                "subject_tool_configured": True,
+                "subject_tool_invoked": True,
+                "subject_mcp_calls": 1,
+                "subject_tool_names": ["find"],
+                "subject_tool_observability": "complete",
+            }
+            receipts.append(receipt)
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+                selected_definitions={
+                    str(row["definition_id"])
+                    for row in rows
+                },
+            )
+
+        exposure = report["campaign_qualification"]["subject_exposure"]
+        condition = exposure["conditions"][0]
+        self.assertEqual(exposure["status"], "FAIL")
+        self.assertFalse(exposure["qualified"])
+        self.assertEqual(condition["invoked_trials"], 3)
+        self.assertEqual(condition["required_tool"], "hashmarks_task_evidence")
+        self.assertEqual(condition["required_operation"], "task_evidence")
+        self.assertEqual(condition["required_tool_invoked_trials"], 0)
+        self.assertEqual(
+            condition["required_tool_name_observability_complete_trials"],
+            3,
+        )
+        self.assertEqual(
+            condition["reason_codes"],
+            ["required-subject-tool-never-invoked"],
+        )
+        self.assertEqual(
+            report["campaign_qualification"]["status"],
+            "NOT_QUALIFIED",
+        )
+
+    def test_qualification_accepts_exact_contracted_operation_observed_once(
+        self,
+    ) -> None:
+        suite = _suite()
+        suite.experiment["subject_exposure_contract"] = {
+            "require_probe_contract": True
+        }
+        suite.subjects["hashmarks"]["exposure_probe"] = {
+            "required_tool": "hashmarks_task_evidence"
+        }
+        rows = [
+            row
+            for row in suite.trial_definitions()
+            if row["condition_id"] == "hashmarks"
+        ]
+        receipts = []
+        for index, row in enumerate(rows):
+            receipt = _receipt(
+                suite,
+                row,
+                "PASS",
+                chr(ord("d") + index) * 64,
+            )
+            names = ["task_evidence"] if index == 1 else ["find"]
+            receipt["authority"]["subject"]["available"] = True
+            receipt["measurements"]["agent"] = {
+                "subject_tool_configured": True,
+                "subject_tool_invoked": True,
+                "subject_mcp_calls": 1,
+                "subject_tool_names": names,
+                "subject_tool_observability": "complete",
+            }
+            receipts.append(receipt)
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+                selected_definitions={
+                    str(row["definition_id"])
+                    for row in rows
+                },
+            )
+
+        exposure = report["campaign_qualification"]["subject_exposure"]
+        condition = exposure["conditions"][0]
+        self.assertEqual(exposure["status"], "PASS")
+        self.assertTrue(exposure["qualified"])
+        self.assertEqual(condition["required_tool_invoked_trials"], 1)
+        self.assertEqual(condition["reason_codes"], [])
+        self.assertEqual(
+            report["campaign_qualification"]["status"],
+            "QUALIFIED",
+        )
+
+    def test_qualification_does_not_claim_wrong_tool_absence_when_name_observability_partial(
+        self,
+    ) -> None:
+        suite = _suite()
+        suite.experiment["subject_exposure_contract"] = {
+            "require_probe_contract": True
+        }
+        suite.subjects["hashmarks"]["exposure_probe"] = {
+            "required_tool": "hashmarks_task_evidence"
+        }
+        rows = [
+            row
+            for row in suite.trial_definitions()
+            if row["condition_id"] == "hashmarks"
+        ]
+        receipts = []
+        for index, row in enumerate(rows):
+            receipt = _receipt(
+                suite,
+                row,
+                "PASS",
+                chr(ord("g") + index) * 64,
+            )
+            receipt["authority"]["subject"]["available"] = True
+            receipt["measurements"]["agent"] = {
+                "subject_tool_configured": True,
+                "subject_tool_invoked": True,
+                "subject_mcp_calls": 1,
+                "subject_tool_names": ["find"],
+                "subject_tool_observability": (
+                    "partial" if index == 0 else "complete"
+                ),
+            }
+            receipts.append(receipt)
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+                selected_definitions={
+                    str(row["definition_id"])
+                    for row in rows
+                },
+            )
+
+        condition = report["campaign_qualification"]["subject_exposure"][
+            "conditions"
+        ][0]
+        self.assertEqual(
+            condition["reason_codes"],
+            ["required-subject-tool-invocation-unproven"],
+        )
+
     def test_report_summarizes_native_tool_strategy_without_raw_sequence(self) -> None:
         suite = _suite()
         rows = {
