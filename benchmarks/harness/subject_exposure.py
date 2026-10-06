@@ -170,17 +170,55 @@ def subject_exposure_qualification(
         )
         required_invoked = 0
         required_name_observability_complete = 0
+        required_successful_result_trials = 0
+        required_no_usable_result_trials = 0
+        required_result_unproven_trials = 0
         if required_operation is not None:
             for receipt in observed_receipts:
                 agent = receipt.get("measurements", {}).get("agent", {})
                 names = agent.get("subject_tool_names")
-                if (
+                operation_invoked = (
                     isinstance(names, list)
                     and required_operation in names
-                ):
+                )
+                if operation_invoked:
                     required_invoked += 1
-                if agent.get("subject_tool_observability") == "complete":
+                name_observability_complete = (
+                    agent.get("subject_tool_observability") == "complete"
+                )
+                if name_observability_complete:
                     required_name_observability_complete += 1
+
+                evidence = agent.get("subject_tool_result_evidence")
+                matching = (
+                    [
+                        row
+                        for row in evidence
+                        if isinstance(row, dict)
+                        and row.get("operation") == required_operation
+                    ]
+                    if isinstance(evidence, list)
+                    else []
+                )
+                if not operation_invoked:
+                    continue
+                if any(
+                    row.get("outcome") == "successful-result-observed"
+                    for row in matching
+                ):
+                    required_successful_result_trials += 1
+                    continue
+                if (
+                    name_observability_complete
+                    and matching
+                    and all(
+                        row.get("outcome") in {"failed", "empty-result"}
+                        for row in matching
+                    )
+                ):
+                    required_no_usable_result_trials += 1
+                else:
+                    required_result_unproven_trials += 1
         complete = len(observed_receipts) == expected
         reasons: list[str] = []
         if complete:
@@ -197,6 +235,15 @@ def subject_exposure_qualification(
                     "required-subject-tool-never-invoked"
                     if required_name_observability_complete == expected
                     else "required-subject-tool-invocation-unproven"
+                )
+            elif (
+                required_operation is not None
+                and required_successful_result_trials == 0
+            ):
+                reasons.append(
+                    "required-subject-tool-result-unproven"
+                    if required_result_unproven_trials > 0
+                    else "required-subject-tool-no-usable-result"
                 )
 
         rows.append(
@@ -217,6 +264,15 @@ def subject_exposure_qualification(
                 "required_tool_invoked_trials": required_invoked,
                 "required_tool_name_observability_complete_trials": (
                     required_name_observability_complete
+                ),
+                "required_tool_successful_result_trials": (
+                    required_successful_result_trials
+                ),
+                "required_tool_no_usable_result_trials": (
+                    required_no_usable_result_trials
+                ),
+                "required_tool_result_unproven_trials": (
+                    required_result_unproven_trials
                 ),
                 "status": (
                     "PENDING"
@@ -254,7 +310,8 @@ def subject_exposure_qualification(
             "each selected non-control condition must prove complete invocation "
             "observability and at least one subject-tool invocation; when the "
             "suite requires an exposure probe contract, the exact contracted "
-            "operation must be observed at least once"
+            "operation must be observed at least once and return at least one "
+            "successful nonempty result"
         ),
         "conditions": rows,
         "failed_conditions": failed,
