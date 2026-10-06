@@ -57,6 +57,10 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 return_value=None,
             ),
             mock.patch(
+                "benchmarks.__main__._selection_metadata",
+                return_value={},
+            ),
+            mock.patch(
                 "benchmarks.__main__.build_report",
                 return_value={"decision_summary": {}},
             ),
