@@ -110,6 +110,10 @@ def main() -> int:
                 "paired_assistance_usage_summary",
                 [],
             ),
+            "paired_assistance_treatment_summary": report.get(
+                "paired_assistance_treatment_summary",
+                [],
+            ),
             "paired_assistance_exclusions": report["paired_assistance_exclusions"],
             "expected_assistance_pairs": report["expected_assistance_pairs"],
             "task_assistance_evidence": report.get(
@@ -161,7 +165,10 @@ def main() -> int:
             "claim_guardrails": {
                 "overall_winner": "not-permitted",
                 "cross_language_ranking": "not-performed",
-                "subject_effect_attribution": "observed-subject-invocation-only",
+                "subject_effect_attribution": (
+                    "exact-required-operation-with-successful-nonempty-result"
+                ),
+                "generic_subject_invocation": "routing-and-adoption-descriptive-only",
             },
         },
         "authority": {
