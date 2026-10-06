@@ -178,9 +178,14 @@ def run_bounded(
     environment: Mapping[str, str] | None = None,
     inherit_environment: bool = True,
     close_stdin: bool = False,
+    stdin_bytes: bytes | None = None,
 ) -> ProcessResult:
     if not argv or not all(isinstance(item, str) and item for item in argv):
         raise BoundedProcessError("argv must contain non-empty strings")
+    if close_stdin and stdin_bytes is not None:
+        raise BoundedProcessError("close_stdin and stdin_bytes are mutually exclusive")
+    if stdin_bytes is not None and not isinstance(stdin_bytes, bytes):
+        raise BoundedProcessError("stdin_bytes must be bytes")
     resolved_cwd, cwd_relative = safe_cwd(repository_root, cwd)
     runtime_environment = dict(environment or {})
     if any(
@@ -211,6 +216,8 @@ def run_bounded(
     }
     if close_stdin:
         popen_kwargs["stdin"] = subprocess.DEVNULL
+    elif stdin_bytes is not None:
+        popen_kwargs["stdin"] = subprocess.PIPE
     if os.name == "nt":
         popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
@@ -283,6 +290,18 @@ def run_bounded(
     ]
     for thread in threads:
         thread.start()
+    if stdin_bytes is not None:
+        assert process.stdin is not None
+        try:
+            process.stdin.write(stdin_bytes)
+            process.stdin.flush()
+        except (BrokenPipeError, OSError):
+            pass
+        finally:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
     timed_out = threading.Event()
 
     def timeout_kill() -> None:
