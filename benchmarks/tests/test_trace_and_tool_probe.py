@@ -20,8 +20,10 @@ from benchmarks.harness.trace_diagnostics import (
     _hashmarks_evidence,
     _last_assistant_text_present,
     _opencode_calls,
+    _repository_intelligence_evidence_to_action,
     _repository_intelligence_quality,
     _repository_intelligence_search_efficiency,
+    _trial_evidence_to_action,
     _trial_search_efficiency,
     build_trace_diagnostics,
 )
@@ -152,6 +154,218 @@ class TraceAndToolProbeTests(unittest.TestCase):
         self.assertEqual(evidence["expected_target_rank"], 1)
         self.assertEqual(evidence["expected_target_observability"], "observed")
         self.assertEqual(evidence["ownership_status"], "ambiguous")
+
+    def test_evidence_to_action_uses_subject_candidates_not_oracle(self) -> None:
+        packet = {
+            "schema": "hashmarks.task-evidence.v3",
+            "retrieval": {
+                "results": [
+                    {
+                        "path": "pkg/candidate.py",
+                        "symbol": "pkg.owner",
+                    }
+                ]
+            },
+            "ownership": {"status": "ambiguous"},
+        }
+        receipt = {
+            "condition": {"subject": "hashmarks"},
+            "execution": {"workspace_root": "/trial/workspace"},
+            "task": {
+                "oracle": {
+                    "configuration": {
+                        "expected": {
+                            "path": "different/oracle.py",
+                            "symbol": "different",
+                        }
+                    }
+                }
+            },
+        }
+        trace = {
+            "messages": [
+                {
+                    "parts": [
+                        {
+                            "type": "tool",
+                            "tool": "hashmarks_task_evidence",
+                            "state": {
+                                "status": "completed",
+                                "input": {"task": "find owner"},
+                                "output": json.dumps(packet),
+                            },
+                        },
+                        {
+                            "type": "tool",
+                            "tool": "read",
+                            "state": {
+                                "status": "completed",
+                                "input": {
+                                    "filePath": "/trial/workspace/pkg/candidate.py"
+                                },
+                                "output": "source",
+                            },
+                        },
+                        {
+                            "type": "tool",
+                            "tool": "grep",
+                            "state": {
+                                "status": "completed",
+                                "input": {"pattern": "owner"},
+                                "output": "match",
+                            },
+                        },
+                        {
+                            "type": "tool",
+                            "tool": "read",
+                            "state": {
+                                "status": "completed",
+                                "input": {
+                                    "filePath": "/trial/workspace/pkg/other.py"
+                                },
+                                "output": "other",
+                            },
+                        },
+                    ]
+                }
+            ]
+        }
+
+        calls = _opencode_calls(trace, receipt)
+        self.assertEqual(
+            calls[0]["repository_evidence"]["state"],
+            "candidate-locators-observed",
+        )
+        self.assertEqual(
+            calls[0]["hashmarks_evidence"]["expected_target_observability"],
+            "absent-from-returned-candidates",
+        )
+        self.assertEqual(
+            calls[1]["evidence_followup"]["match_basis"],
+            ["candidate-path-read"],
+        )
+        self.assertTrue(calls[1]["evidence_followup"]["candidate_match"])
+        self.assertEqual(
+            calls[2]["evidence_followup"]["match_basis"],
+            ["candidate-symbol-query"],
+        )
+        self.assertTrue(calls[2]["evidence_followup"]["candidate_match"])
+        self.assertFalse(calls[3]["evidence_followup"]["candidate_match"])
+
+        action = _trial_evidence_to_action(calls)
+        self.assertIsNotNone(action)
+        assert action is not None
+        self.assertFalse(action["oracle_relative"])
+        self.assertFalse(action["correctness_joined"])
+        self.assertEqual(action["candidate_evidence_segments"], 1)
+        segment = action["segments"][0]
+        self.assertEqual(segment["state"], "candidate-followed")
+        self.assertEqual(segment["candidate_followup_calls"], 2)
+        self.assertEqual(
+            segment["candidate_followup_basis_counts"],
+            {
+                "candidate-path-read": 1,
+                "candidate-symbol-query": 1,
+            },
+        )
+        self.assertEqual(segment["other_native_navigation_calls"], 1)
+
+    def test_evidence_to_action_fails_closed_when_native_inputs_are_unobservable(self) -> None:
+        calls = [
+            {
+                "ordinal": 1,
+                "tool": "hashmarks_task_evidence",
+                "tool_class": SUBJECT_REPOSITORY_INTELLIGENCE,
+                "subject_call": True,
+                "status": "completed",
+                "result_bytes": 100,
+                "repository_evidence": {
+                    "state": "candidate-locators-observed",
+                    "candidate_results": 1,
+                    "candidate_paths_observed": 1,
+                    "candidate_symbols_observed": 1,
+                },
+            },
+            {
+                "ordinal": 2,
+                "tool": "read",
+                "tool_class": NATIVE_READ,
+                "subject_call": False,
+                "input_sha256": None,
+                "observability": "execute-metadata",
+                "evidence_followup": {
+                    "source_subject_ordinal": 1,
+                    "candidate_match": None,
+                    "match_basis": [],
+                    "observability": "inputs-unavailable",
+                },
+            },
+        ]
+
+        action = _trial_evidence_to_action(calls)
+        self.assertIsNotNone(action)
+        assert action is not None
+        segment = action["segments"][0]
+        self.assertEqual(segment["state"], "followup-unresolved")
+        self.assertEqual(segment["candidate_followup_calls"], 0)
+        self.assertEqual(segment["unresolved_native_navigation_calls"], 1)
+
+    def test_evidence_to_action_aggregate_stays_descriptive(self) -> None:
+        rows = [
+            {
+                "subject_id": "hashmarks",
+                "evidence_to_action": {
+                    "candidate_evidence_segments": 2,
+                    "segments": [
+                        {
+                            "state": "candidate-followed",
+                            "candidate_followup_basis_counts": {
+                                "candidate-path-read": 1
+                            },
+                            "first_candidate_followup_ordinal_delta": 1,
+                            "other_native_navigation_calls": 0,
+                            "unresolved_native_navigation_calls": 0,
+                            "shell_followup_calls_unknown_semantics": 0,
+                        },
+                        {
+                            "state": "other-native-navigation",
+                            "candidate_followup_basis_counts": {},
+                            "first_candidate_followup_ordinal_delta": None,
+                            "other_native_navigation_calls": 2,
+                            "unresolved_native_navigation_calls": 0,
+                            "shell_followup_calls_unknown_semantics": 0,
+                        },
+                    ],
+                },
+            }
+        ]
+
+        summary = _repository_intelligence_evidence_to_action(rows)
+        self.assertEqual(summary["state"], "observed")
+        self.assertFalse(summary["oracle_relative"])
+        self.assertFalse(summary["correctness_joined"])
+        subject = summary["subjects"][0]
+        self.assertEqual(subject["candidate_evidence_segments"], 2)
+        self.assertEqual(
+            subject["action_state_counts"],
+            {
+                "candidate-followed": 1,
+                "other-native-navigation": 1,
+            },
+        )
+        self.assertEqual(subject["candidate_followup_rate"], 0.5)
+        self.assertEqual(
+            subject["candidate_followup_basis_counts"],
+            {"candidate-path-read": 1},
+        )
+        self.assertIn(
+            "not equivalent to ignored evidence",
+            subject["interpretation"]["no_observed_native_followup"],
+        )
+        self.assertIn(
+            "does not consult the frozen oracle",
+            subject["interpretation"]["oracle"],
+        )
 
     def test_trial_search_efficiency_keeps_search_read_and_repeats_separate(self) -> None:
         calls = [

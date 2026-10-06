@@ -144,6 +144,21 @@ def build_decision_evidence(
         if isinstance(trace_summary, dict)
         else {}
     )
+    repository_intelligence_evidence_to_action = (
+        trace_summary.get("repository_intelligence_evidence_to_action", {})
+        if isinstance(trace_summary, dict)
+        else {}
+    )
+    if not isinstance(repository_intelligence_evidence_to_action, dict):
+        repository_intelligence_evidence_to_action = {}
+    if not repository_intelligence_evidence_to_action:
+        repository_intelligence_evidence_to_action = {
+            "state": "not-projected",
+            "claim_scope": "descriptive-behavioral-only",
+            "oracle_relative": False,
+            "correctness_joined": False,
+            "subjects": [],
+        }
     if not isinstance(repository_intelligence_search_efficiency, dict):
         repository_intelligence_search_efficiency = {}
     if not repository_intelligence_search_efficiency:
@@ -324,9 +339,11 @@ def build_decision_evidence(
         evidence_signals.append("repository-intelligence-quality-observed")
     if repository_intelligence_search_efficiency.get("state") == "observed":
         evidence_signals.append("repository-intelligence-search-efficiency-observed")
+    if repository_intelligence_evidence_to_action.get("state") == "observed":
+        evidence_signals.append("repository-intelligence-evidence-to-action-observed")
 
     return {
-        "schema": "agents-cookbook-benchmark-decision-evidence.v5",
+        "schema": "agents-cookbook-benchmark-decision-evidence.v6",
         "authority": {
             "derived_only": True,
             "ranking_performed": False,
@@ -348,6 +365,9 @@ def build_decision_evidence(
         "repository_intelligence_quality": repository_intelligence_quality,
         "repository_intelligence_search_efficiency": (
             repository_intelligence_search_efficiency
+        ),
+        "repository_intelligence_evidence_to_action": (
+            repository_intelligence_evidence_to_action
         ),
         "surfaces": {
             "runtime": {
@@ -426,6 +446,9 @@ def build_decision_evidence(
             ),
             "repository_intelligence_search_efficiency_state": (
                 repository_intelligence_search_efficiency.get("state")
+            ),
+            "repository_intelligence_evidence_to_action_state": (
+                repository_intelligence_evidence_to_action.get("state")
             ),
         },
         "evidence_signals": sorted(set(evidence_signals)),
