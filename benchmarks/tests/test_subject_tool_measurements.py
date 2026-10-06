@@ -15,6 +15,8 @@ class SubjectToolMeasurementTests(unittest.TestCase):
                     "server": "futuremcp",
                     "tool": "context",
                     "result": {"ok": True},
+                    "error": None,
+                    "status": "completed",
                 },
             },
             {
@@ -33,6 +35,16 @@ class SubjectToolMeasurementTests(unittest.TestCase):
         self.assertEqual(metrics["subject_mcp_calls"], 1)
         self.assertEqual(metrics["subject_tool_names"], ["context"])
         self.assertEqual(metrics["subject_tool_observability"], "complete")
+        evidence = metrics["subject_tool_result_evidence"]
+        self.assertEqual(len(evidence), 1)
+        self.assertEqual(evidence[0]["operation"], "context")
+        self.assertEqual(evidence[0]["status"], "completed")
+        self.assertGreater(evidence[0]["result_bytes"], 0)
+        self.assertFalse(evidence[0]["error_present"])
+        self.assertEqual(
+            evidence[0]["outcome"],
+            "successful-result-observed",
+        )
 
 
 if __name__ == "__main__":
