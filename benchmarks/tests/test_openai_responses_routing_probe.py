@@ -261,7 +261,7 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
                 self.assertEqual(tool_types, ["mcp", "function", "function"])
                 self.assertEqual(
                     payload["tools"][0]["allowed_tools"],
-                    ["task_evidence"],
+                    ["task_evidence", "find"],
                 )
                 return {
                     "id": "resp_hashmarks_first",
@@ -281,7 +281,7 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
                                 {"task": "locate checkout discount owner"}
                             ),
                             "output": json.dumps(
-                                {"schema": "hashmarks.task-evidence.v2"}
+                                {"schema": "hashmarks.task-evidence.v3"}
                             ),
                             "error": None,
                         },
@@ -323,6 +323,88 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
             rendered = json.dumps(receipt, sort_keys=True)
             self.assertNotIn("openai-secret", rendered)
             self.assertNotIn("control-secret", rendered)
+
+    def test_hashmarks_find_call_is_preserved_in_ordered_trace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = _workspace(root / "repo")
+            hashmarks = _fake_hashmarks(root)
+            handoff = _handoff(root / "handoff.json", workspace, hashmarks)
+            tunnel_client = _fake_tunnel_client(root)
+
+            def requester(payload, *, api_key):
+                self.assertEqual(api_key, "openai-secret")
+                return {
+                    "id": "resp_find_first",
+                    "status": "completed",
+                    "output": [
+                        {
+                            "type": "mcp_list_tools",
+                            "server_label": "hashmarks",
+                            "tools": [
+                                {"name": "task_evidence"},
+                                {"name": "find"},
+                            ],
+                        },
+                        {
+                            "type": "mcp_call",
+                            "server_label": "hashmarks",
+                            "name": "find",
+                            "arguments": json.dumps({"query": "normalized_call"}),
+                            "output": json.dumps(
+                                {
+                                    "schema": "hashmarks.find.v1",
+                                    "results": [
+                                        {
+                                            "path": "benchmarks/tool_routing.py",
+                                            "name": "normalized_call",
+                                        }
+                                    ],
+                                }
+                            ),
+                            "error": None,
+                        },
+                        {
+                            "type": "message",
+                            "content": [
+                                {
+                                    "type": "output_text",
+                                    "text": "benchmarks/tool_routing.py",
+                                }
+                            ],
+                        },
+                    ],
+                }
+
+            with mock.patch(
+                "benchmarks.openai_responses_routing_probe._running_tunnel",
+                _fake_tunnel,
+            ):
+                receipt = run_probe(
+                    workspace=workspace,
+                    handoff_path=handoff,
+                    tunnel_client=tunnel_client,
+                    tunnel_id="tunnel_" + "8" * 32,
+                    model="gpt-test",
+                    prompt="Locate exact symbol normalized_call.",
+                    openai_api_key="openai-secret",
+                    control_plane_api_key="control-secret",
+                    requester=requester,
+                )
+
+            self.assertEqual(
+                receipt["trace"]["calls"][0]["tool"],
+                "mcp__hashmarks__find",
+            )
+            self.assertEqual(
+                receipt["trace"]["calls"][0]["status"],
+                "completed",
+            )
+            self.assertEqual(
+                receipt["trace"]["calls"][0]["input"],
+                {"query": "normalized_call"},
+            )
+            self.assertEqual(receipt["score"]["outcome"], "FAIL")
 
     def test_missing_hashmarks_catalog_scores_environment_blocked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -433,7 +515,7 @@ class OpenAIResponsesRoutingProbeTests(unittest.TestCase):
                                 {"task": "locate checkout discount owner"}
                             ),
                             "output": json.dumps(
-                                {"schema": "hashmarks.task-evidence.v2"}
+                                {"schema": "hashmarks.task-evidence.v3"}
                             ),
                             "error": None,
                         },

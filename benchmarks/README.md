@@ -253,7 +253,7 @@ Outcomes are `PASS` when the required subject call completed with an observable 
 
 ### OpenAI Responses routing dogfood
 
-After a Hashmarks Secure MCP Tunnel handoff has been qualified, agentsCookbook can run one external OpenAI Responses diagnostic that puts Hashmarks `task_evidence` and bounded native `grep`/`read` in the same model-visible tool set.
+After a Hashmarks Secure MCP Tunnel handoff has been qualified, agentsCookbook can run one external OpenAI Responses diagnostic that puts Hashmarks `task_evidence` and `find` plus bounded native `grep`/`read` in the same model-visible tool set.
 
 Prerequisites:
 
@@ -289,7 +289,7 @@ The probe:
 3. takes a nonblocking local lock keyed by tunnel ID;
 4. launches one foreground `tunnel-client` with the exact qualified Hashmarks stdio command;
 5. calls the Responses API with `store:false`, `parallel_tool_calls:false`, and neutral repository instructions;
-6. exposes only Hashmarks `task_evidence` from MCP plus native `grep` and `read`;
+6. exposes only Hashmarks `task_evidence` and `find` from MCP plus native `grep` and `read`;
 7. revalidates workspace and Hashmarks implementation authority around execution;
 8. emits the same canonical catalog/trace score contract used by the host-neutral scorer.
 
@@ -309,7 +309,7 @@ This diagnostic deliberately remains `heldout_comparable=false`. It proves model
 
 ### Multi-task OpenAI routing dogfood campaign
 
-For a real dogfood pass, use the balanced manifest at `benchmarks/dogfood/openai-routing-v2.json`. It contains five semantic repository-localization tasks where Hashmarks should reduce the problem before native discovery, plus two known-path controls where native `read` should win immediately. The semantic prompts intentionally do not name Hashmarks, `task_evidence`, MCP, or native grep. Expected owner paths and routing expectations are used only after the model returns; they are never inserted into the model-visible instructions.
+For a real dogfood pass, use the three-way manifest at `benchmarks/dogfood/openai-routing-v3.json`. It contains five unknown-path behavior-localization tasks where `task_evidence` should win, two exact-symbol/unknown-path controls where Hashmarks `find` should win, and two exact-known-path controls where native `read` should win immediately. The prompts do not tell the model which tool to choose. Expected owner paths and routing expectations are used only after the model returns; they are never inserted into the model-visible instructions.
 
 First create a fresh Hashmarks handoff bound to the agentsCookbook checkout from the sibling Hashmarks repository:
 
@@ -381,9 +381,9 @@ runs/
         └── receipt.json
 ```
 
-`summary.json` preserves the raw host-neutral Hashmarks-first outcomes and separately reports task-semantic routing fit. The two primary rates are `semantic_hashmarks_first_rate` for unknown-path behavior localization and `known_path_native_read_rate` for exact-path controls, plus overall `routing_fit_rate`, expected-path mention rate, first-tool counts, token totals, and elapsed time. A strong Hashmarks routing change should raise or preserve the semantic rate **without lowering the known-path native-read control rate**.
+`summary.json` preserves the raw host-neutral `task_evidence`-first outcomes and separately reports task-semantic routing fit. The three primary rates are `semantic_task_evidence_first_rate` for unknown-path behavior localization, `exact_symbol_hashmarks_find_rate` for exact-symbol/unknown-path controls, and `known_path_native_read_rate` for exact-path controls, plus overall `routing_fit_rate`, expected-path mention rate, first-tool counts, token totals, and elapsed time. A strong Hashmarks routing change should improve the semantic/tool-specific rates **without stealing direct-read cases**.
 
-For routing changes, use numbered runs as an A/B sequence: first run the balanced campaign against the current Hashmarks main and keep that run as the baseline; then change/merge the Hashmarks candidate, regenerate the handoff, and start another numbered run. `summary.json` records the admitted Hashmarks handoff SHA plus runtime version/executable identity, so the two results remain attributable without inspecting individual trial receipts.
+For routing changes, use numbered runs as an A/B sequence: first run the three-way campaign against the current Hashmarks main and keep that run as the baseline; then change/merge the Hashmarks candidate, regenerate the handoff, and start another numbered run. Compare all three routing rates together. `summary.json` records the admitted Hashmarks handoff SHA plus runtime version/executable identity, so the two results remain attributable without inspecting individual trial receipts.
 
 The checked-in agentsCookbook repository is intentionally small enough for the current native comparison snapshot bound; preflight still rechecks the actual local checkout before any model work.
 

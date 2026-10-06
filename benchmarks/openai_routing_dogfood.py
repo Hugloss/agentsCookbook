@@ -21,8 +21,8 @@ from benchmarks.openai_responses_routing_probe import (
     run_probe,
 )
 
-_MANIFEST_SCHEMA = "agents-cookbook-openai-routing-dogfood-manifest.v2"
-_SUMMARY_SCHEMA = "agents-cookbook-openai-routing-dogfood-summary.v2"
+_MANIFEST_SCHEMA = "agents-cookbook-openai-routing-dogfood-manifest.v3"
+_SUMMARY_SCHEMA = "agents-cookbook-openai-routing-dogfood-summary.v3"
 _MAX_TASKS = 32
 _MAX_REPEATS = 5
 _FORBIDDEN_PROMPT_TERMS = (
@@ -33,7 +33,8 @@ _FORBIDDEN_PROMPT_TERMS = (
 )
 _ROUTING_EXPECTATIONS = frozenset(
     {
-        "hashmarks-first",
+        "hashmarks-task-evidence-first",
+        "hashmarks-find-first",
         "native-read-first",
     }
 )
@@ -114,7 +115,7 @@ class OpenAIRoutingSettings:
 
         manifest = Path(
             values.get("OPENAI_ROUTING_MANIFEST")
-            or "benchmarks/dogfood/openai-routing-v2.json"
+            or "benchmarks/dogfood/openai-routing-v3.json"
         ).expanduser().resolve()
         run_root = Path(
             values.get("OPENAI_ROUTING_RUN_ROOT")
@@ -345,15 +346,17 @@ def _routing_fit(
     raw_outcome: str,
     first_tool: str | None,
 ) -> str:
-    if raw_outcome in {"ENVIRONMENT_BLOCKED", "UNKNOWN"}:
+    if raw_outcome == "ENVIRONMENT_BLOCKED":
         return raw_outcome
-    if raw_outcome not in {"PASS", "FAIL"}:
-        return "UNKNOWN"
-    if routing_expectation == "hashmarks-first":
-        return raw_outcome
-    if routing_expectation == "native-read-first":
-        if first_tool is None:
+    if routing_expectation == "hashmarks-task-evidence-first":
+        if raw_outcome not in {"PASS", "FAIL", "UNKNOWN"}:
             return "UNKNOWN"
+        return raw_outcome
+    if first_tool is None:
+        return "UNKNOWN"
+    if routing_expectation == "hashmarks-find-first":
+        return "PASS" if first_tool == "mcp__hashmarks__find" else "FAIL"
+    if routing_expectation == "native-read-first":
         return "PASS" if first_tool == "read" else "FAIL"
     raise OpenAIRoutingDogfoodError(
         f"unsupported routing expectation: {routing_expectation}"
@@ -462,8 +465,13 @@ def list_dogfood_runs(root: Path) -> list[dict[str, object]]:
                         if isinstance(aggregate, dict)
                         else None
                     ),
-                    "semantic_hashmarks_first_rate": (
-                        aggregate.get("semantic_hashmarks_first_rate")
+                    "semantic_task_evidence_first_rate": (
+                        aggregate.get("semantic_task_evidence_first_rate")
+                        if isinstance(aggregate, dict)
+                        else None
+                    ),
+                    "exact_symbol_hashmarks_find_rate": (
+                        aggregate.get("exact_symbol_hashmarks_find_rate")
                         if isinstance(aggregate, dict)
                         else None
                     ),
@@ -515,7 +523,8 @@ def list_dogfood_runs(root: Path) -> list[dict[str, object]]:
                 "hashmarks_executable_sha256": None,
                 "hashmarks_first_rate": None,
                 "routing_fit_rate": None,
-                "semantic_hashmarks_first_rate": None,
+                "semantic_task_evidence_first_rate": None,
+                "exact_symbol_hashmarks_find_rate": None,
                 "known_path_native_read_rate": None,
                 "outcomes": None,
             }
@@ -733,7 +742,13 @@ def run_campaign(
     semantic_rows = [
         row
         for row in rows
-        if row.get("routing_expectation") == "hashmarks-first"
+        if row.get("routing_expectation") == "hashmarks-task-evidence-first"
+        and row.get("routing_fit") in {"PASS", "FAIL"}
+    ]
+    symbol_find_rows = [
+        row
+        for row in rows
+        if row.get("routing_expectation") == "hashmarks-find-first"
         and row.get("routing_fit") in {"PASS", "FAIL"}
     ]
     native_read_rows = [
@@ -783,10 +798,16 @@ def run_campaign(
             "routing_fit_rate": (
                 fit_pass / fit_scoreable if fit_scoreable else None
             ),
-            "semantic_hashmarks_first_rate": (
+            "semantic_task_evidence_first_rate": (
                 sum(row["routing_fit"] == "PASS" for row in semantic_rows)
                 / len(semantic_rows)
                 if semantic_rows
+                else None
+            ),
+            "exact_symbol_hashmarks_find_rate": (
+                sum(row["routing_fit"] == "PASS" for row in symbol_find_rows)
+                / len(symbol_find_rows)
+                if symbol_find_rows
                 else None
             ),
             "known_path_native_read_rate": (
