@@ -2076,7 +2076,10 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
             flush=True,
         )
         print(
-            "Next: inspect benchmark status and report with the same selectors",
+            "Next: inspect persisted qualification and diagnosis | "
+            f"status {report_paths['status']} | "
+            f"decision {report_paths['decision_evidence']} | "
+            f"trace-diagnostics {report_paths['trace_diagnostics']}",
             file=sys.stderr,
             flush=True,
         )

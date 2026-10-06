@@ -895,9 +895,22 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         self.assertIn("NOT QUALIFIED: non-outcome receipts 1", stderr.getvalue())
         self.assertIn("REPORTS saved", stderr.getvalue())
         self.assertIn(
+            "Next: inspect persisted qualification and diagnosis",
+            stderr.getvalue(),
+        )
+        self.assertIn(
+            f"status {root / 'reports/status.json'}",
+            stderr.getvalue(),
+        )
+        self.assertIn(
+            f"decision {root / 'reports/decision-evidence.json'}",
+            stderr.getvalue(),
+        )
+        self.assertIn(
             f"trace-diagnostics {root / 'reports/trace-diagnostics.json'}",
             stderr.getvalue(),
         )
+        self.assertNotIn("with the same selectors", stderr.getvalue())
         persist_reports.assert_called_once()
 
     def test_run_abort_reports_active_trial_without_stdout_result(self) -> None:
