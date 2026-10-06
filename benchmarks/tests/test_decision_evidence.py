@@ -96,6 +96,11 @@ class DecisionEvidenceTests(unittest.TestCase):
                     "invoked_trials": 1,
                     "not_invoked_trials": 2,
                     "invocation_unknown_trials": 0,
+                    "first_choice_trials": 0,
+                    "late_rescue_trials": 1,
+                    "never_invoked_timing_trials": 2,
+                    "routing_timing_unknown_trials": 0,
+                    "first_choice_rate": 0.0,
                 }
             ],
             "paired_assistance_summary": [],
@@ -171,6 +176,16 @@ class DecisionEvidenceTests(unittest.TestCase):
         self.assertEqual(funnel["availability"]["rate"], 1.0)
         self.assertEqual(funnel["adoption"]["rate"], 1 / 3)
         self.assertEqual(
+            funnel["routing_timing"],
+            {
+                "first_choice_trials": 0,
+                "late_rescue_trials": 1,
+                "never_invoked_trials": 2,
+                "unknown_trials": 0,
+                "first_choice_rate": 0.0,
+            },
+        )
+        self.assertEqual(
             funnel["usefulness_when_invoked"]["transitions"],
             {
                 "gain": 1,
@@ -205,6 +220,7 @@ class DecisionEvidenceTests(unittest.TestCase):
             evidence["evidence_signals"],
             [
                 "bare-headroom-observed",
+                "late-rescue-observed",
                 "native-tool-strategy-partially-observed",
                 "runtime-or-host-instability-observed",
                 "semantic-misses-observed",
