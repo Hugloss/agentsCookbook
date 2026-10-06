@@ -2281,48 +2281,30 @@ def _decision_summary(
         rows: list[dict[str, Any]],
     ) -> dict[str, Any]:
         transitions = Counter()
-        state_counts: Counter[str] = Counter()
-        metric_values: dict[str, list[int | float]] = defaultdict(list)
+        state_rows: dict[str, dict[str, Any]] = {}
         pairs = 0
         for row in rows:
             row_pairs = int(row.get("total_pairs", 0) or 0)
             pairs += row_pairs
             state = row.get("contracted_exposure_state")
             if isinstance(state, str):
-                state_counts[state] += row_pairs
+                state_rows[state] = {
+                    "pairs": row_pairs,
+                    "transitions": row.get("transitions", {}),
+                    "delta_metrics": row.get("delta_metrics", {}),
+                }
             row_transitions = row.get("transitions")
             if isinstance(row_transitions, dict):
                 for name in ("gain", "preserved", "unresolved", "regression"):
                     transitions[name] += int(row_transitions.get(name, 0) or 0)
-            delta_metrics = row.get("delta_metrics")
-            if isinstance(delta_metrics, dict):
-                for metric, summary in delta_metrics.items():
-                    if not isinstance(metric, str) or not isinstance(summary, dict):
-                        continue
-                    value = summary.get("mean")
-                    observations = summary.get("observations")
-                    if (
-                        isinstance(value, (int, float))
-                        and not isinstance(value, bool)
-                        and isinstance(observations, int)
-                        and observations > 0
-                    ):
-                        metric_values[metric].extend([value] * observations)
         return {
             "pairs": pairs,
-            "states": dict(sorted(state_counts.items())),
+            "states": dict(sorted(state_rows.items())),
             "transitions": {
                 name: transitions[name]
                 for name in ("gain", "preserved", "unresolved", "regression")
             },
-            "delta_metrics": {
-                metric: {
-                    "observations": len(values),
-                    "mean": mean(values) if values else None,
-                    "median": median(values) if values else None,
-                }
-                for metric, values in sorted(metric_values.items())
-            },
+            "economics_aggregation": "per-contracted-state-only",
         }
 
     subject_rows: list[dict[str, Any]] = []
