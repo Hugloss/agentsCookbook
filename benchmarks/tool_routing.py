@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+
+from benchmarks.harness.tool_results import result_bytes
 import re
 from typing import Any
 
@@ -300,17 +302,6 @@ def catalog_admission(
         "native_discovery_classes": native_classes,
         "reason_codes": reasons,
     }
-
-
-def result_bytes(value: object) -> int | None:
-    """Return exact serialized result size when a captured result is observable."""
-    if isinstance(value, str):
-        return len(value.encode("utf-8"))
-    if isinstance(value, (dict, list)):
-        return len(json.dumps(value, sort_keys=True).encode("utf-8"))
-    if isinstance(value, bytes):
-        return len(value)
-    return None
 
 
 def normalized_call(
