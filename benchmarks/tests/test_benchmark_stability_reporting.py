@@ -606,6 +606,7 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertEqual(
             strategy["subject_routing_timing"],
             {
+                "observations": 3,
                 "counts": {
                     "FIRST_CHOICE": 1,
                     "LATE_RESCUE": 1,
