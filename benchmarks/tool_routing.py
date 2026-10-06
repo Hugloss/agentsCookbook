@@ -215,7 +215,7 @@ def subject_routing_timing(
     first_subject = min(valid_ordinals)
     prior = tool_sequence[: first_subject - 1]
     if any(
-        classify_tool(name) in DISCOVERY_CLASSES
+        classify_tool(name.removeprefix("nested:")) in DISCOVERY_CLASSES
         for name in prior
     ):
         return ROUTING_LATE_RESCUE
