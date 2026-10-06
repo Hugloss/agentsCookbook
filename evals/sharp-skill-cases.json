@@ -1311,6 +1311,27 @@
       "kind": "positive",
       "expected": "FINDING",
       "scenario": "A CLI subsystem maintains SPECIAL_COMMANDS and *_SKIP_COMMANDS sets whose literal command names decide update-check behavior even though the parser already owns each command declaration and could expose one semantic eligibility property. Renaming an equivalent command changes behavior. Triage should route this identity-as-policy hotspot to hidden-authority-cucumber-attack rather than generic semantic redecision."
+    },
+    {
+      "id": "python-static-analysis-repair-positive-behavior-change",
+      "skill": "python-static-analysis-repair",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "Pyright and ty report that get_limit() is annotated as returning int but can return None. Current callers use None to mean 'not configured'. A proposed cleanup changes the implementation to return 0 when the value is missing, and no focused behavior test exists. Review whether this is an admissible static-analysis cleanup and what must happen before production code changes."
+    },
+    {
+      "id": "python-static-analysis-repair-control-mechanical-formatting",
+      "skill": "python-static-analysis-repair",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "Ruff reports only formatting differences in a Python file. The candidate changes whitespace and line wrapping without changing tokens that affect execution, Pyright and ty were already clean, and the existing relevant tests still pass. Determine whether a new behavior-lock test is required before this mechanical cleanup."
+    },
+    {
+      "id": "python-static-analysis-repair-confusion-general-coverage",
+      "skill": "python-static-analysis-repair",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "Ruff, Pyright, and ty all pass for the repository-owned scope. A parser has weak test coverage for malformed external input, but no static-analysis repair is pending. Determine whether this skill should report that general coverage gap as its own finding."
     }
   ]
 }
