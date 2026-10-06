@@ -748,6 +748,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                         "status": root / "reports/status.json",
                         "report": root / "reports/report.json",
                         "decision_evidence": root / "reports/decision-evidence.json",
+                        "trace_diagnostics": root / "reports/trace-diagnostics.json",
                         "score": root / "reports/score.json",
                     },
                 ) as persist_reports,
@@ -765,6 +766,10 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         self.assertIn("RUN SUMMARY processed 3/3 | verified 3/3", stderr.getvalue())
         self.assertIn("qualified True", stderr.getvalue())
         self.assertIn("REPORTS saved", stderr.getvalue())
+        self.assertIn(
+            f"trace-diagnostics {root / 'reports/trace-diagnostics.json'}",
+            stderr.getvalue(),
+        )
         persist_reports.assert_called_once()
 
     def test_completed_nonqualified_run_is_not_a_shell_failure(self) -> None:
@@ -846,6 +851,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                         "status": root / "reports/status.json",
                         "report": root / "reports/report.json",
                         "decision_evidence": root / "reports/decision-evidence.json",
+                        "trace_diagnostics": root / "reports/trace-diagnostics.json",
                         "score": root / "reports/score.json",
                     },
                 ) as persist_reports,
@@ -864,6 +870,10 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         self.assertIn("qualified False", stderr.getvalue())
         self.assertIn("NOT QUALIFIED: non-outcome receipts 1", stderr.getvalue())
         self.assertIn("REPORTS saved", stderr.getvalue())
+        self.assertIn(
+            f"trace-diagnostics {root / 'reports/trace-diagnostics.json'}",
+            stderr.getvalue(),
+        )
         persist_reports.assert_called_once()
 
     def test_run_abort_reports_active_trial_without_stdout_result(self) -> None:
