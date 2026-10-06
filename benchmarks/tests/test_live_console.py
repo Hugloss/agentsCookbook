@@ -508,7 +508,8 @@ class LiveTaskMatrixTests(unittest.TestCase):
             "Status: INCOMPLETE\n"
             "Stage: agent-execution\n"
             "Reason code: agent-terminal-failed\n"
-            "Evidence: /tmp/evidence\n\n"
+            "Evidence: /tmp/evidence\n"
+            "Receipt: /tmp/evidence/result.json\n\n"
             "--- diagnostic ---\n"
             "Traceback (most recent call last):\nValueError: boom"
         )
@@ -518,6 +519,8 @@ class LiveTaskMatrixTests(unittest.TestCase):
         assert rendered is not None
         self.assertIn("RUN BLOCKERS 1 operational failure", rendered)
         self.assertIn("Repeated at end of run", rendered)
+        self.assertIn("durable raw detail is in each result receipt", rendered)
+        self.assertIn("derived summaries are in the reports directory", rendered)
         self.assertIn("--- blocker 1/1 ---", rendered)
         self.assertIn("Status: INCOMPLETE", rendered)
         self.assertIn("Evidence: /tmp/evidence", rendered)
@@ -557,6 +560,7 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn("Stage: agent-execution", rendered)
         self.assertIn("Reason code: agent-terminal-failed", rendered)
         self.assertIn("Evidence: /tmp/evidence", rendered)
+        self.assertIn("Receipt: /tmp/evidence/result.json", rendered)
         self.assertIn("Semantic outcome: INCOMPLETE", rendered)
         self.assertIn("Format compliant: unknown", rendered)
         self.assertIn("--- diagnostic ---", rendered)
