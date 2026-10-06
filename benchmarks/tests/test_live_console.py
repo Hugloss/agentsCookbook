@@ -527,7 +527,7 @@ class LiveTaskMatrixTests(unittest.TestCase):
         suite, rows = self._prefix_opencode_rows()
         result = TrialRunResult(
             trial_id="a" * 64,
-            definition_id="b" * 64,
+            definition_id=rows[0]["definition_id"],
             status="INCOMPLETE",
             result_dir=Path("/tmp/evidence"),
             reused=False,
