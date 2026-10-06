@@ -53,7 +53,11 @@ def tool_result_evidence(
         else None
     )
     measured = result_bytes(result) if result_present else None
-    error_present = error not in {None, False, ""}
+    error_present = not (
+        error is None
+        or error is False
+        or error == ""
+    )
     explicit_failure = (
         normalized_status in _FAILURE_STATUSES
         or error_present
