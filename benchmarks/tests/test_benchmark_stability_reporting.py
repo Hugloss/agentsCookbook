@@ -539,6 +539,97 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertFalse(strategy["arguments_or_source_contents_included"])
         self.assertNotIn("tool_sequence", strategy)
 
+    def test_report_separates_first_choice_late_rescue_and_never_invoked(
+        self,
+    ) -> None:
+        suite = _suite()
+        rows = {
+            (str(row["condition_id"]), int(row["trial"])): row
+            for row in suite.trial_definitions()
+        }
+        receipts = []
+        cases = (
+            (
+                ["mcp:hashmarks/task_evidence", "command_execution"],
+                [1],
+                True,
+            ),
+            (
+                ["command_execution", "mcp:hashmarks/task_evidence"],
+                [2],
+                True,
+            ),
+            (
+                ["command_execution"],
+                [],
+                False,
+            ),
+        )
+        for index, (sequence, ordinals, invoked) in enumerate(cases):
+            receipt = _receipt(
+                suite,
+                rows[("hashmarks", index)],
+                "PASS",
+                chr(ord("k") + index) * 64,
+            )
+            receipt["authority"]["subject"]["available"] = True
+            receipt["measurements"]["agent"] = {
+                "subject_tool_configured": True,
+                "subject_tool_invoked": invoked,
+                "subject_mcp_calls": 1 if invoked else 0,
+                "subject_tool_names": ["task_evidence"] if invoked else [],
+                "tool_strategy_observability": "codex-item-completed",
+                "tool_sequence": sequence,
+                "tool_name_counts": dict(Counter(sequence)),
+                "subject_tool_call_ordinals": ordinals,
+                "subject_first_tool_call_ordinal": (
+                    ordinals[0] if ordinals else None
+                ),
+            }
+            receipts.append(receipt)
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+                selected_definitions={
+                    str(rows[("hashmarks", index)]["definition_id"])
+                    for index in range(3)
+                },
+            )
+
+        strategy = report["conditions"]["hashmarks"]["tool_strategy"]
+        self.assertEqual(
+            strategy["subject_routing_timing"],
+            {
+                "counts": {
+                    "FIRST_CHOICE": 1,
+                    "LATE_RESCUE": 1,
+                    "NEVER_INVOKED": 1,
+                },
+                "invoked_ordered_observations": 2,
+                "first_choice_rate": 0.5,
+            },
+        )
+
+        adoption = report["subject_adoption"][0]
+        self.assertEqual(
+            adoption["routing_timing_counts"],
+            {
+                "FIRST_CHOICE": 1,
+                "LATE_RESCUE": 1,
+                "NEVER_INVOKED": 1,
+            },
+        )
+        self.assertEqual(adoption["first_choice_trials"], 1)
+        self.assertEqual(adoption["late_rescue_trials"], 1)
+        self.assertEqual(adoption["never_invoked_timing_trials"], 1)
+        self.assertEqual(adoption["routing_timing_unknown_trials"], 0)
+        self.assertEqual(adoption["first_choice_rate"], 0.5)
+
     def test_format_contract_explains_saturated_noncompliance(self) -> None:
         suite = _suite()
         rows = suite.trial_definitions()[:3]
