@@ -2754,7 +2754,7 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 19,
+            "version": 20,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
