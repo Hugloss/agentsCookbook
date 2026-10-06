@@ -41,7 +41,7 @@ def _manifest(
     path: Path,
     *,
     forbidden: bool = False,
-    routing_expectation: str = "hashmarks-first",
+    routing_expectation: str = "hashmarks-task-evidence-first",
 ) -> Path:
     prompt = (
         "Use Hashmarks task_evidence to locate the owner."
@@ -50,14 +50,19 @@ def _manifest(
             "Inspect benchmarks/tool_routing.py and report the function that projects "
             "one host call into canonical routing evidence."
             if routing_expectation == "native-read-first"
-            else "Locate the implementation that maps host-specific repository tool names "
-            "into semantic routing classes. Report the owning path."
+            else (
+                "Locate the exact symbol normalized_call and report its repository path "
+                "plus what that symbol projects."
+                if routing_expectation == "hashmarks-find-first"
+                else "Locate the implementation that maps host-specific repository tool "
+                "names into semantic routing classes. Report the owning path."
+            )
         )
     )
     path.write_text(
         json.dumps(
             {
-                "schema": "agents-cookbook-openai-routing-dogfood-manifest.v2",
+                "schema": "agents-cookbook-openai-routing-dogfood-manifest.v3",
                 "name": "fixture",
                 "tasks": [
                     {
@@ -166,7 +171,7 @@ class OpenAIRoutingDogfoodTests(unittest.TestCase):
             self.assertEqual(settings.repeats, 1)
             self.assertTrue(
                 str(settings.manifest).endswith(
-                    "benchmarks/dogfood/openai-routing-v2.json"
+                    "benchmarks/dogfood/openai-routing-v3.json"
                 )
             )
             self.assertTrue(
@@ -440,8 +445,11 @@ class OpenAIRoutingDogfoodTests(unittest.TestCase):
             self.assertEqual(summary["aggregate"]["hashmarks_first_rate"], 0.5)
             self.assertEqual(summary["aggregate"]["routing_fit_rate"], 0.5)
             self.assertEqual(
-                summary["aggregate"]["semantic_hashmarks_first_rate"],
+                summary["aggregate"]["semantic_task_evidence_first_rate"],
                 0.5,
+            )
+            self.assertIsNone(
+                summary["aggregate"]["exact_symbol_hashmarks_find_rate"]
             )
             self.assertIsNone(
                 summary["aggregate"]["known_path_native_read_rate"]
@@ -465,6 +473,94 @@ class OpenAIRoutingDogfoodTests(unittest.TestCase):
             self.assertTrue(
                 (output / "trials" / "routing-owner-r02" / "receipt.json").is_file()
             )
+
+    def test_known_symbol_control_rewards_hashmarks_find(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = _workspace(root / "repo")
+            manifest = _manifest(
+                root / "manifest.json",
+                routing_expectation="hashmarks-find-first",
+            )
+            output = root / "run"
+
+            with mock.patch(
+                "benchmarks.openai_routing_dogfood.preflight_probe",
+                return_value={"schema": "preflight", "status": "READY"},
+            ):
+                summary = run_campaign(
+                    manifest_path=manifest,
+                    workspace=workspace,
+                    handoff_path=root / "handoff.json",
+                    tunnel_client=root / "tunnel-client",
+                    tunnel_id="tunnel_" + "6" * 32,
+                    model="gpt-test",
+                    repeats=1,
+                    output_dir=output,
+                    openai_api_key="openai-secret",
+                    control_plane_api_key="control-secret",
+                    probe_runner=mock.Mock(
+                        return_value=_receipt(
+                            "FAIL",
+                            "Owned by benchmarks/tool_routing.py",
+                            first_tool="mcp__hashmarks__find",
+                        )
+                    ),
+                )
+
+            self.assertEqual(summary["trials"][0]["outcome"], "FAIL")
+            self.assertEqual(summary["trials"][0]["routing_fit"], "PASS")
+            self.assertEqual(
+                summary["aggregate"]["routing_fit_counts"],
+                {"PASS": 1},
+            )
+            self.assertEqual(
+                summary["aggregate"]["exact_symbol_hashmarks_find_rate"],
+                1.0,
+            )
+            self.assertEqual(campaign_exit_code(summary), 0)
+
+    def test_known_symbol_control_fails_when_task_evidence_steals_find(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = _workspace(root / "repo")
+            manifest = _manifest(
+                root / "manifest.json",
+                routing_expectation="hashmarks-find-first",
+            )
+            output = root / "run"
+
+            with mock.patch(
+                "benchmarks.openai_routing_dogfood.preflight_probe",
+                return_value={"schema": "preflight", "status": "READY"},
+            ):
+                summary = run_campaign(
+                    manifest_path=manifest,
+                    workspace=workspace,
+                    handoff_path=root / "handoff.json",
+                    tunnel_client=root / "tunnel-client",
+                    tunnel_id="tunnel_" + "7" * 32,
+                    model="gpt-test",
+                    repeats=1,
+                    output_dir=output,
+                    openai_api_key="openai-secret",
+                    control_plane_api_key="control-secret",
+                    probe_runner=mock.Mock(
+                        return_value=_receipt(
+                            "PASS",
+                            "Owned by benchmarks/tool_routing.py",
+                            first_tool="mcp__hashmarks__task_evidence",
+                        )
+                    ),
+                )
+
+            self.assertEqual(summary["trials"][0]["outcome"], "PASS")
+            self.assertEqual(summary["trials"][0]["routing_fit"], "FAIL")
+            self.assertEqual(
+                summary["aggregate"]["exact_symbol_hashmarks_find_rate"],
+                0.0,
+            )
+            self.assertEqual(campaign_exit_code(summary), 1)
 
     def test_known_path_control_rewards_native_read_not_hashmarks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -568,7 +664,7 @@ class OpenAIRoutingDogfoodTests(unittest.TestCase):
             manifest.write_text(
                 json.dumps(
                     {
-                        "schema": "agents-cookbook-openai-routing-dogfood-manifest.v2",
+                        "schema": "agents-cookbook-openai-routing-dogfood-manifest.v3",
                         "name": "fixture",
                         "tasks": [
                             {
