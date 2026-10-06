@@ -169,6 +169,10 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         )
         self.assertTrue(summary[0]["attribution_requires_observed_subject_use"])
         self.assertEqual(
+            summary[0]["contracted_attribution_requires"],
+            "exact-required-operation-with-successful-nonempty-result",
+        )
+        self.assertEqual(
             summary[0]["transitions"],
             {
                 "gain": 1,
