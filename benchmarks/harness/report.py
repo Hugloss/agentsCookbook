@@ -1094,6 +1094,9 @@ def _paired_assistance_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any
             "subject_id": key[1],
             "comparison_scope": "subject-configured-condition-vs-bare",
             "attribution_requires_observed_subject_use": True,
+            "contracted_attribution_requires": (
+                "exact-required-operation-with-successful-nonempty-result"
+            ),
             "total_pairs": sum(counts.values()),
             "transitions": {
                 name: counts.get(name, 0)
