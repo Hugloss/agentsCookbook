@@ -58,6 +58,13 @@ prove that the agent invoked it. Therefore:
 This keeps the natural benchmark unforced while separating the path
 `availability -> adoption -> exact contracted operation -> usable result -> treatment attribution`.
 
+The top-level `decision_summary` and heldout `score.json` use that same treatment
+authority. Generic subject invocation is retained only as routing/adoption evidence;
+gain, regression, and treatment economics at the decision layer are attributed only
+to `contracted-successful-result`. The score projection must retain
+`paired_assistance_treatment_summary` and must not downgrade attribution back to
+"subject invoked".
+
 Heldout-v1 also freezes a generic subject-exposure admission contract. Every selected
 non-control subject must declare `exposure_probe.required_tool`. Campaign admission
 validates that contract before participant admission or model work and binds it into
