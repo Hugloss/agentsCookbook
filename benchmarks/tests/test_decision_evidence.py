@@ -170,6 +170,19 @@ class DecisionEvidenceTests(unittest.TestCase):
                         }
                     ],
                 },
+                "repository_intelligence_evidence_to_action": {
+                    "state": "observed",
+                    "claim_scope": "descriptive-behavioral-only",
+                    "oracle_relative": False,
+                    "correctness_joined": False,
+                    "subjects": [
+                        {
+                            "subject_id": "hashmarks",
+                            "candidate_evidence_segments": 1,
+                            "candidate_followed_segments": 1,
+                        }
+                    ],
+                },
             }
         }
         evidence = build_decision_evidence(
@@ -179,7 +192,7 @@ class DecisionEvidenceTests(unittest.TestCase):
 
         self.assertEqual(
             evidence["schema"],
-            "agents-cookbook-benchmark-decision-evidence.v5",
+            "agents-cookbook-benchmark-decision-evidence.v6",
         )
         self.assertTrue(evidence["authority"]["derived_only"])
         self.assertEqual(
@@ -206,6 +219,20 @@ class DecisionEvidenceTests(unittest.TestCase):
         )
         self.assertFalse(
             evidence["repository_intelligence_search_efficiency"][
+                "correctness_joined"
+            ]
+        )
+        self.assertEqual(
+            evidence["repository_intelligence_evidence_to_action"]["state"],
+            "observed",
+        )
+        self.assertFalse(
+            evidence["repository_intelligence_evidence_to_action"][
+                "oracle_relative"
+            ]
+        )
+        self.assertFalse(
+            evidence["repository_intelligence_evidence_to_action"][
                 "correctness_joined"
             ]
         )
@@ -281,6 +308,7 @@ class DecisionEvidenceTests(unittest.TestCase):
                 "native-tool-strategy-partially-observed",
                 "repository-intelligence-quality-observed",
                 "repository-intelligence-search-efficiency-observed",
+                "repository-intelligence-evidence-to-action-observed",
                 "runtime-or-host-instability-observed",
                 "semantic-misses-observed",
                 "source-read-archaeology-unavailable",
@@ -327,6 +355,16 @@ class DecisionEvidenceTests(unittest.TestCase):
         self.assertEqual(
             evidence["evidence_gaps"][
                 "repository_intelligence_search_efficiency_state"
+            ],
+            "not-projected",
+        )
+        self.assertEqual(
+            evidence["repository_intelligence_evidence_to_action"]["state"],
+            "not-projected",
+        )
+        self.assertEqual(
+            evidence["evidence_gaps"][
+                "repository_intelligence_evidence_to_action_state"
             ],
             "not-projected",
         )
