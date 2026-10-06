@@ -29,6 +29,7 @@ from benchmarks.harness.campaign_authority import (
     read_campaign,
 )
 from benchmarks.harness.subject_exposure import subject_exposure_qualification
+from benchmarks.harness.treatment_attribution import contracted_treatment_evidence
 from benchmarks.harness.suite import SuiteDefinition
 from benchmarks.harness.identity import digest, execution_task_contract
 
@@ -1040,6 +1041,17 @@ def _paired_assistance(receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 if isinstance(name, str) and name
             }
         ) if isinstance(tool_names, list) else []
+        treatment = contracted_treatment_evidence(receipt)
+        row["contracted_required_tool"] = treatment["required_tool"]
+        row["contracted_required_operation"] = treatment["required_operation"]
+        row["contracted_exposure_state"] = treatment["state"]
+        row["contracted_treatment_observed"] = treatment["treatment_observed"]
+        row["subject_use_interpretation"] = row["attribution_interpretation"]
+        row["attribution_interpretation"] = (
+            treatment["attribution_interpretation"]
+            if treatment["state"] != "no-contract"
+            else row["subject_use_interpretation"]
+        )
         subject_calls = _agent_metric(receipt, "subject_mcp_calls")
         row["subject_mcp_calls"] = subject_calls
         for metric in (
@@ -1144,6 +1156,75 @@ def _paired_assistance_usage_summary(
                     )
                     and not isinstance(value, bool)
                 ),
+                "transitions": {
+                    name: transitions.get(name, 0)
+                    for name in ("gain", "preserved", "unresolved", "regression")
+                },
+                "delta_metrics": metric_summary,
+            }
+        )
+    return summaries
+
+
+def _paired_assistance_treatment_summary(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        state = str(row.get("contracted_exposure_state") or "no-contract")
+        grouped[
+            (str(row["agent_id"]), str(row["subject_id"]), state)
+        ].append(row)
+
+    summaries: list[dict[str, Any]] = []
+    for (agent_id, subject_id, state), group in sorted(grouped.items()):
+        transitions = Counter(
+            str(row["assistance_transition"])
+            for row in group
+            if isinstance(row.get("assistance_transition"), str)
+        )
+        metric_summary: dict[str, dict[str, int | float | None]] = {}
+        for metric in (
+            "duration_ms",
+            "command_calls",
+            "tool_calls",
+            "mcp_calls",
+            "input_tokens",
+            "output_tokens",
+        ):
+            values = [
+                value
+                for row in group
+                if isinstance(
+                    (value := row.get(f"{metric}_delta")),
+                    (int, float),
+                )
+                and not isinstance(value, bool)
+            ]
+            metric_summary[metric] = {
+                "observations": len(values),
+                "mean": mean(values) if values else None,
+                "median": median(values) if values else None,
+            }
+        treatment_values = {
+            row.get("contracted_treatment_observed")
+            for row in group
+            if row.get("contracted_treatment_observed") in {True, False, None}
+        }
+        treatment_observed = (
+            True
+            if treatment_values == {True}
+            else False
+            if treatment_values == {False}
+            else None
+        )
+        summaries.append(
+            {
+                "agent_id": agent_id,
+                "subject_id": subject_id,
+                "contracted_exposure_state": state,
+                "contracted_treatment_observed": treatment_observed,
+                "total_pairs": len(group),
                 "transitions": {
                     name: transitions.get(name, 0)
                     for name in ("gain", "preserved", "unresolved", "regression")
@@ -2383,6 +2464,9 @@ def build_report(
     paired_assistance_usage_summary = _paired_assistance_usage_summary(
         paired_assistance
     )
+    paired_assistance_treatment_summary = _paired_assistance_treatment_summary(
+        paired_assistance
+    )
     task_assistance_evidence = _task_assistance_evidence(
         paired_assistance,
         pair_exclusions,
@@ -2437,6 +2521,7 @@ def build_report(
         "paired_assistance": paired_assistance,
         "paired_assistance_summary": paired_assistance_summary,
         "paired_assistance_usage_summary": paired_assistance_usage_summary,
+        "paired_assistance_treatment_summary": paired_assistance_treatment_summary,
         "paired_assistance_exclusions": pair_exclusions,
         "expected_assistance_pairs": len(paired_assistance) + len(pair_exclusions),
         "task_assistance_evidence": task_assistance_evidence,
@@ -2475,6 +2560,9 @@ def build_report(
             "invalid_outcomes_excluded_from_success_rates": True,
             "economics_include_invalid_and_incomplete_trials": True,
             "paired_assistance_scope": "valid-outcomes-only",
+            "paired_treatment_attribution": (
+                "exact-contracted-operation-with-usable-result"
+            ),
             "subject_exposure_qualification": (
                 "mandatory-for-selected-non-control-conditions"
             ),
