@@ -62,6 +62,61 @@ class TrialRunResult:
     recovered: bool = False
 
 
+def bind_result_to_receipt(
+    result: TrialRunResult,
+    receipt: dict[str, Any],
+) -> TrialRunResult:
+    """Rebind downstream run state to the persisted receipt authority."""
+    receipt_trial_id = receipt.get("trial_id")
+    if receipt_trial_id is not None and receipt_trial_id != result.trial_id:
+        raise TrialRunnerError(
+            "persisted result receipt trial_id differs from runner result"
+        )
+    receipt_definition_id = receipt.get("definition_id")
+    if (
+        receipt_definition_id is not None
+        and receipt_definition_id != result.definition_id
+    ):
+        raise TrialRunnerError(
+            "persisted result receipt definition_id differs from runner result"
+        )
+
+    status = receipt.get("status")
+    if not isinstance(status, str) or not status:
+        raise TrialRunnerError("persisted result receipt has no status")
+
+    reason = receipt.get("reason")
+    if reason is not None and not isinstance(reason, str):
+        raise TrialRunnerError("persisted result receipt reason is not text")
+
+    diagnostic = receipt.get("diagnostic")
+    if diagnostic is None:
+        diagnostic = {}
+    if not isinstance(diagnostic, dict):
+        raise TrialRunnerError("persisted result receipt diagnostic is not an object")
+
+    def optional_text(name: str) -> str | None:
+        value = diagnostic.get(name)
+        if value is not None and not isinstance(value, str):
+            raise TrialRunnerError(
+                f"persisted result receipt diagnostic.{name} is not text"
+            )
+        return value
+
+    return TrialRunResult(
+        trial_id=result.trial_id,
+        definition_id=result.definition_id,
+        status=status,
+        result_dir=result.result_dir,
+        reused=result.reused,
+        reason=reason,
+        stage=optional_text("stage"),
+        reason_code=optional_text("reason_code"),
+        diagnostic=optional_text("detail"),
+        recovered=result.recovered,
+    )
+
+
 def reuse_completed_trial(
     *,
     results_root: Path,
