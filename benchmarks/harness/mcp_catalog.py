@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from benchmarks.adapters.registry import build_subject
 from benchmarks.harness.identity import canonical_json
 from benchmarks.harness.model import McpExposure, TrialContext
+from benchmarks.harness.runtime_authority import transport_runtime_authority
+from benchmarks.harness.suite import SuiteDefinition
+from benchmarks.harness.workspace import isolated_environment
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
@@ -197,3 +202,43 @@ def probe_mcp_tool_catalog(
             canonical_json(catalog_identity)
         ).hexdigest(),
     }
+
+
+def probe_subject_catalog_contracts(
+    *,
+    suite: SuiteDefinition,
+    contracts: list[dict[str, str]],
+    source: Mapping[str, str],
+    root: Path,
+) -> list[dict[str, Any]]:
+    """Probe each selected subject once in an isolated admission workspace."""
+    proofs: list[dict[str, Any]] = []
+    root.mkdir(parents=True, exist_ok=True)
+    for contract in contracts:
+        subject_id = contract["subject_id"]
+        required_tool = contract["required_tool"]
+        subject_root = root / subject_id
+        workspace = subject_root / "workspace"
+        control = subject_root / "control"
+        workspace.mkdir(parents=True)
+        control.mkdir(parents=True)
+        environment = isolated_environment(control, source=source)
+        transport_runtime_authority(source, environment)
+        context = TrialContext(
+            workspace=workspace,
+            control_root=control,
+            environment=environment,
+        )
+        subject = build_subject(suite.subjects[subject_id])
+        exposure = subject.mcp_exposure(context)
+        if exposure is None:
+            raise ValueError(f"subject {subject_id} has no MCP exposure")
+        proofs.append(
+            probe_mcp_tool_catalog(
+                context=context,
+                exposure=exposure,
+                subject_id=subject_id,
+                required_tool=required_tool,
+            )
+        )
+    return proofs
