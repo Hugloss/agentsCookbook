@@ -302,12 +302,12 @@ class ContextInvarianceTests(unittest.TestCase):
         with mock.patch("benchmarks.harness.report._receipts", return_value=receipts):
             report = build_report(suite=suite, results_root=Path("/unused"))
 
-        self.assertEqual(report["schema"]["version"], 17)
+        self.assertEqual(report["schema"]["version"], 18)
         self.assertEqual(report["paired_assistance"], [])
         stability = {row["context_variant"]: row for row in report["stability"]}
-        self.assertEqual(stability["neutral"]["answer_flip_rate"], 0.0)
+        self.assertEqual(stability["neutral"]["answer_flip_rate"], 0.0)\n        self.assertEqual(stability["neutral"]["raw_answer_flip_rate"], 0.0)\n        self.assertEqual(stability["neutral"]["normalized_answer_flip_rate"], 0.0)
         self.assertEqual(stability["neutral"]["semantic_flip_rate"], 0.0)
-        self.assertEqual(stability["misleading"]["answer_flip_rate"], 2 / 3)
+        self.assertEqual(stability["misleading"]["answer_flip_rate"], 2 / 3)\n        self.assertEqual(stability["misleading"]["raw_answer_flip_rate"], 2 / 3)\n        self.assertEqual(stability["misleading"]["normalized_answer_flip_rate"], 2 / 3)
         self.assertEqual(stability["misleading"]["semantic_flip_rate"], 2 / 3)
         self.assertEqual(stability["misleading"]["route_flip_rate"], 2 / 3)
         self.assertIsNone(stability["misleading"]["authority_flip_rate"])
