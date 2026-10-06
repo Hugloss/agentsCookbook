@@ -1,6 +1,6 @@
 # Ping-Pong Plan Flow
 
-This flow composes eight standalone reviewers. It does not own their methodology.
+This flow composes nine standalone reviewers. It does not own their methodology.
 
 ## Authority
 
@@ -19,8 +19,9 @@ This flow composes eight standalone reviewers. It does not own their methodology
 6. Red-team review.
 7. Implementation simulation.
 8. Fact audit.
-9. Contract check.
-10. Return one coordinator-authored final plan.
+9. Performance audit.
+10. Contract check.
+11. Return one coordinator-authored final plan.
 
 Every mandatory reviewer is attempted exactly once. A failed reviewer does not erase useful plan work but makes the flow incomplete.
 

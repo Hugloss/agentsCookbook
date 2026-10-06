@@ -4,7 +4,7 @@ The router is a convenience composition over standalone reviewers. It is not req
 
 ## Selection
 
-Honor explicit reviewer names. Otherwise choose the narrowest relevant specialty: plan gaps, alternative route, validation, coverage realism, red-team risk, implementation simulation, factual grounding, or final contract.
+Honor explicit reviewer names. Otherwise choose the narrowest relevant specialty: plan gaps, alternative route, validation, coverage realism, red-team risk, implementation simulation, factual grounding, performance, or final contract.
 
 ## Boundaries
 
@@ -12,6 +12,5 @@ Honor explicit reviewer names. Otherwise choose the narrowest relevant specialty
 - Never substitute the router's own analysis for the selected reviewer.
 - Do not require Ping-Pong state or run artifacts.
 - Give the reviewer a bounded subject/evidence packet.
-- Do not route the standalone performance auditor implicitly; users or other flows may invoke it directly by name.
 
-If the user requests the full eight-review planning/build flow, use the corresponding primary flow rather than simulating it here.
+If the user requests the full nine-review planning/build flow, use the corresponding primary flow rather than simulating it here.

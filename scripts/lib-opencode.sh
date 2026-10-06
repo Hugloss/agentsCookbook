@@ -6,40 +6,37 @@ ping-pong-plan.md
 subagent-router.md
 "
 
-# Exactly these eight reviewers are mandatory in Ping-Pong/Ping-Ping.
+# Exactly these nine reviewers are mandatory in Ping-Pong/Ping-Ping.
 AC_FLOW_REVIEWER_AGENT_FILES="
-plan-coverage-reviewer.md
 plan-improver-model2.md
 plan-improver-model3.md
 plan-validation-designer.md
+plan-coverage-reviewer.md
 plan-red-team-gate.md
 plan-implementation-simulator.md
 plan-fact-auditor.md
+code-performance-optimization-auditor.md
 plan-contract-checker.md
 "
 
-# Standalone capabilities are installable but are not silently added to the
-# mandatory eight-review workflow.
-AC_STANDALONE_AGENT_FILES="
-code-performance-optimization-auditor.md
-"
+# Standalone capabilities remain outside the mandatory flow.
+AC_STANDALONE_AGENT_FILES=""
 
 AC_AGENT_FILES="$AC_PRIMARY_AGENT_FILES$AC_FLOW_REVIEWER_AGENT_FILES$AC_STANDALONE_AGENT_FILES"
 
 AC_FLOW_REVIEWER_SKILL_MAP="
-plan-coverage-reviewer coverage-design-review liteLLM/gpt-oss
 plan-improver-model2 plan-gap-scout liteLLM/gpt-oss
 plan-improver-model3 alternative-route-challenge liteLLM/gpt-oss
 plan-validation-designer validation-gap-finder liteLLM/gpt-oss
+plan-coverage-reviewer coverage-design-review liteLLM/gpt-oss
 plan-red-team-gate red-team-leftover-gate liteLLM/gpt-oss
 plan-implementation-simulator implementation-dry-run liteLLM/gpt-oss
 plan-fact-auditor fact-grounding-auditor liteLLM/gemma4
+code-performance-optimization-auditor code-performance-optimization-audit liteLLM/devstral
 plan-contract-checker plan-contract-guard liteLLM/gemma4
 "
 
-AC_STANDALONE_AGENT_SKILL_MAP="
-code-performance-optimization-auditor code-performance-optimization-audit liteLLM/devstral
-"
+AC_STANDALONE_AGENT_SKILL_MAP=""
 
 AC_OPENCODE_ARTIFACT_PLUGIN="agents-cookbook-review-artifact.js"
 AC_PI_ARTIFACT_EXTENSION="agents-cookbook-review-artifact"

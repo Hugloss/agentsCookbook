@@ -23,7 +23,7 @@ When adding evaluations:
 - test 98k context-pressure behavior with bounded evidence packets;
 - execute the same behavioral corpus on OpenCode and Pi instead of maintaining two copies;
 - distinguish install/discovery proof from model-backed behavioral proof;
-- distinguish 12 installable agents from the exact eight mandatory flow reviewers;
+- distinguish 12 installable agents from the exact nine mandatory flow reviewers;
 - verify failed/skipped reviewer calls cannot be reported as successes.
 
 Structural corpus validation is safe for CI:

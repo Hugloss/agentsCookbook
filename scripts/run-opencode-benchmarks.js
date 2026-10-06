@@ -110,7 +110,7 @@ const BENCHMARKS = {
     {
       name: 'full-flow-requested',
       title: 'Full Flow Requested',
-      prompt: `Run the full eight-reviewer ping-pong planning flow on this request.`,
+      prompt: `Run the full nine-reviewer ping-pong planning flow on this request.`,
       expectedNoSubagent: true,
       expectedContract: 'subagent-router',
     },

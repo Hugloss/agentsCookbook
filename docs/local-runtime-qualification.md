@@ -13,7 +13,7 @@ Use this as the promotion gate for a real local deployment.
 - Pi: `>=0.85.0`;
 - `pi-open-agents`: `>=0.1.20`.
 
-The canonical `liteLLM/...` model names are deployment aliases, not methodology requirements. The default profile currently routes general reviewers through `liteLLM/gpt-oss`, coordinator/final-fact gates through `liteLLM/gemma4`, and the standalone performance auditor through `liteLLM/devstral`. You may point those aliases at different local endpoints as long as the required tool use, context window, and output contracts remain compatible.
+The canonical `liteLLM/...` model names are deployment aliases, not methodology requirements. The default profile currently routes general reviewers through `liteLLM/gpt-oss`, coordinator/final-fact gates through `liteLLM/gemma4`, and the performance auditor through `liteLLM/devstral`. You may point those aliases at different local endpoints as long as the required tool use, context window, and output contracts remain compatible.
 
 ## 1. Install and preflight
 
@@ -44,7 +44,7 @@ mkdir -p "$AGENTS_COOKBOOK_RUN_DIR"
 
 The directory must be absolute and fresh. Existing reviewer IDs are never overwritten.
 
-Use a different fresh directory for Pi so the exact eight reviewer IDs cannot collide with the OpenCode run.
+Use a different fresh directory for Pi so the exact nine reviewer IDs cannot collide with the OpenCode run.
 
 ## 3. Qualify OpenCode full flow
 
@@ -137,7 +137,7 @@ Do not compare OpenCode and Pi by exact prose. Compare verdict, scope, evidence 
 
 A runtime/profile is qualified only when the relevant claims below are true:
 
-- all eight mandatory reviewers are attempted exactly once and all eight succeed in the full flow;
+- all nine mandatory reviewers are attempted exactly once and all nine succeed in the full flow;
 - no unexpected reviewer is invoked;
 - reviewer authority remains deny-by-default;
 - every reviewer produces one immutable artifact and one matching receipt;

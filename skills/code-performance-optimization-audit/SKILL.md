@@ -32,6 +32,12 @@ Do not report unmeasured micro-optimizations, speculative concurrency, or caches
 
 Use this order: eliminate work → improve algorithm → improve data structure → reduce I/O → reuse trustworthy results → bounded batching → constants. Preserve correctness, freshness, determinism, and ownership.
 
+## BUILD REVIEW MODE
+
+When input starts with `BUILD REVIEW MODE`, inspect the changed production paths and supplied implementation evidence for material runtime cost. Report only costs supported by the change, its callers, or a realistic workload. Do not require a measured win when no material performance issue is found.
+
+Return `# Build Performance Review` with findings, missing measurement or evidence, concrete fixes, and remaining risk. Use `None` when no material performance issue is supported.
+
 ## OUTPUT
 
-Return `# Code Performance Optimization Audit` with `Performance Model`, `Findings`, `Final Performance Map`, and `Smallest Coherent Optimization Sequence`. Each finding: location, current cost, root cause, proposed cost, expected impact, correctness risk, measurement, priority.
+Otherwise return `# Code Performance Optimization Audit` with `Performance Model`, `Findings`, `Final Performance Map`, and `Smallest Coherent Optimization Sequence`. Each finding: location, current cost, root cause, proposed cost, expected impact, correctness risk, measurement, priority.

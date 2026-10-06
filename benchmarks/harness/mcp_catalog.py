@@ -14,7 +14,11 @@ from benchmarks.harness.model import McpExposure, TrialContext
 from benchmarks.harness.runtime_authority import transport_runtime_authority
 from benchmarks.harness.suite import SuiteDefinition
 from benchmarks.harness.workspace import isolated_environment
-from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
+from scripts.agent_economics.bounded_process import (
+    ProcessLimits,
+    StopStdinExchange,
+    run_bounded,
+)
 
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
@@ -22,8 +26,15 @@ MCP_CATALOG_TIMEOUT_SECONDS = 10
 MCP_CATALOG_MAX_OUTPUT_BYTES = 1_000_000
 
 
-def _request_bytes() -> bytes:
-    messages = (
+def _message_bytes(message: dict[str, Any]) -> bytes:
+    return (
+        json.dumps(message, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        + b"\n"
+    )
+
+
+def _initialize_request_bytes() -> bytes:
+    return _message_bytes(
         {
             "jsonrpc": "2.0",
             "id": 1,
@@ -36,27 +47,17 @@ def _request_bytes() -> bytes:
                     "version": "1",
                 },
             },
-        },
-        {
-            "jsonrpc": "2.0",
-            "method": "notifications/initialized",
-            "params": {},
-        },
-        {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/list",
-            "params": {},
-        },
+        }
     )
+
+
+def _catalog_request_bytes() -> bytes:
     return b"".join(
-        json.dumps(
-            message,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        + b"\n"
-        for message in messages
+        _message_bytes(message)
+        for message in (
+            {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        )
     )
 
 
@@ -80,12 +81,53 @@ def _response_by_id(raw: bytes) -> dict[int, dict[str, Any]]:
                 f"MCP catalog stdout line {number} is not a JSON object"
             )
         response_id = value.get("id")
-        if response_id not in {1, 2}:
+        if type(response_id) is not int or response_id not in (1, 2):
             continue
         if response_id in responses:
             raise ValueError(f"MCP catalog emitted duplicate response id {response_id}")
         responses[int(response_id)] = value
     return responses
+
+
+def _complete_responses(raw: bytes) -> dict[int, dict[str, Any]] | None:
+    last_newline = raw.rfind(b"\n")
+    if last_newline < 0:
+        return None
+    return _response_by_id(raw[: last_newline + 1])
+
+
+def _initialize_response_ready(raw: bytes) -> bool:
+    try:
+        responses = _complete_responses(raw)
+    except ValueError as exc:
+        raise StopStdinExchange() from exc
+    if responses is None or 1 not in responses:
+        return False
+    try:
+        initialize = _result(responses[1], label="initialize")
+        negotiated = initialize.get("protocolVersion")
+        if not isinstance(negotiated, str) or not negotiated:
+            raise ValueError("MCP initialize response has no protocolVersion")
+    except ValueError as exc:
+        raise StopStdinExchange() from exc
+    return True
+
+
+def _catalog_responses_ready(raw: bytes) -> bool:
+    """Close stdin after a complete catalog response, including malformed output."""
+    try:
+        responses = _complete_responses(raw)
+    except ValueError:
+        return True
+    return responses is not None and 2 in responses
+
+
+def _timeout_stage(raw: bytes) -> str:
+    try:
+        responses = _complete_responses(raw)
+    except ValueError:
+        return "valid MCP output"
+    return "tools/list" if responses is not None and 1 in responses else "initialize"
 
 
 def _result(response: dict[str, Any], *, label: str) -> dict[str, Any]:
@@ -117,9 +159,7 @@ def probe_mcp_tool_catalog(
         )
     prefix = subject_id + "_"
     if not required_tool.startswith(prefix):
-        raise ValueError(
-            f"required tool must use the {prefix} prefix"
-        )
+        raise ValueError(f"required tool must use the {prefix} prefix")
     required_operation = required_tool[len(prefix):]
     if not required_operation:
         raise ValueError("required MCP operation is empty")
@@ -135,12 +175,20 @@ def probe_mcp_tool_catalog(
             max_stderr_bytes=MCP_CATALOG_MAX_OUTPUT_BYTES,
         ),
         inherit_environment=False,
-        stdin_bytes=_request_bytes(),
+        stdin_stages=(
+            (_initialize_request_bytes(), _initialize_response_ready),
+            (_catalog_request_bytes(), _catalog_responses_ready),
+        ),
     )
     if result.executable_missing:
         raise ValueError("MCP catalog executable is missing")
     if result.timed_out:
-        raise ValueError("MCP catalog probe timed out")
+        stderr = result.stderr.decode("utf-8", errors="replace").strip()
+        detail = f": {stderr[-1000:]}" if stderr else ""
+        stage = _timeout_stage(result.stdout)
+        raise ValueError(
+            f"MCP catalog probe timed out waiting for {stage} response{detail}"
+        )
     if result.stdout_truncated or result.stderr_truncated:
         raise ValueError("MCP catalog probe output exceeded admission bounds")
     if result.return_code not in {0, None}:
@@ -153,14 +201,13 @@ def probe_mcp_tool_catalog(
     responses = _response_by_id(result.stdout)
     if 1 not in responses:
         raise ValueError("MCP catalog emitted no initialize response")
-    if 2 not in responses:
-        raise ValueError("MCP catalog emitted no tools/list response")
-
     initialize = _result(responses[1], label="initialize")
     negotiated = initialize.get("protocolVersion")
     if not isinstance(negotiated, str) or not negotiated:
         raise ValueError("MCP initialize response has no protocolVersion")
 
+    if 2 not in responses:
+        raise ValueError("MCP catalog emitted no tools/list response")
     tools_result = _result(responses[2], label="tools/list")
     if tools_result.get("nextCursor") not in {None, ""}:
         raise ValueError(
@@ -233,12 +280,14 @@ def probe_subject_catalog_contracts(
         exposure = subject.mcp_exposure(context)
         if exposure is None:
             raise ValueError(f"subject {subject_id} has no MCP exposure")
-        proofs.append(
-            probe_mcp_tool_catalog(
+        try:
+            proof = probe_mcp_tool_catalog(
                 context=context,
                 exposure=exposure,
                 subject_id=subject_id,
                 required_tool=required_tool,
             )
-        )
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"{subject_id}: {exc}") from exc
+        proofs.append(proof)
     return proofs

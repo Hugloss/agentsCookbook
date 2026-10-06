@@ -92,7 +92,7 @@ The run-store checker validates exact reviewer sets, receipt identity, hashes, o
 
 ## Mandatory versus installable capabilities
 
-The repository currently installs 12 agents and 35 skills. Only eight reviewer agents are mandatory in the Ping-Pong/Ping-Ping full-review gate. Additional standalone agents and skills do not automatically enlarge that gate.
+The repository currently installs 12 agents and 75 skills. Nine reviewer agents are mandatory in the Ping-Pong/Ping-Ping full-review gate. Additional standalone agents and skills do not automatically enlarge that gate.
 
 This distinction prevents new capabilities from silently changing established workflow cost or semantics.
 

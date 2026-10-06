@@ -9,10 +9,10 @@ trap cleanup EXIT
 
 run_dir="$temp_root/full"
 mkdir -p "$run_dir/reviews" "$run_dir/receipts"
-node - "$run_dir" <<'NODE'
+node - "$run_dir" "$repo_root" <<'NODE'
 const crypto=require('crypto'),fs=require('fs'),path=require('path');
-const root=process.argv[2];
-const reviewers=['plan-improver-model2','plan-improver-model3','plan-validation-designer','plan-coverage-reviewer','plan-red-team-gate','plan-implementation-simulator','plan-fact-auditor','plan-contract-checker'];
+const root=process.argv[2],repoRoot=process.argv[3];
+const reviewers=JSON.parse(fs.readFileSync(path.join(repoRoot,'reviewers.json'),'utf8'));
 for(const reviewer of reviewers){
   const body=`# ${reviewer}\n\nMaterial finding for ${reviewer}.\n`;
   fs.writeFileSync(path.join(root,'reviews',`${reviewer}.md`),body);
@@ -49,20 +49,25 @@ printf 'SMOKE name=run_artifacts_missing_reviewers status=pass\n'
 pi_good="$temp_root/pi-artifact-good.jsonl"
 pi_missing="$temp_root/pi-artifact-missing.jsonl"
 pi_unsafe="$temp_root/pi-artifact-unsafe-tool.jsonl"
-node - "$pi_good" "$pi_missing" "$pi_unsafe" <<'NODE'
-const fs=require('fs');
-const [goodPath,missingPath,unsafePath]=process.argv.slice(2);
-const reviewers=[
- ['plan-improver-model2','plan-gap-scout'],
- ['plan-improver-model3','alternative-route-challenge'],
- ['plan-validation-designer','validation-gap-finder'],
- ['plan-coverage-reviewer','coverage-design-review'],
- ['plan-red-team-gate','red-team-leftover-gate'],
- ['plan-implementation-simulator','implementation-dry-run'],
- ['plan-fact-auditor','fact-grounding-auditor'],
- ['plan-contract-checker','plan-contract-guard'],
-];
+node - "$pi_good" "$pi_missing" "$pi_unsafe" "$repo_root" <<'NODE'
+const fs=require('fs'),path=require('path');
+const [goodPath,missingPath,unsafePath,repoRoot]=process.argv.slice(2);
+const reviewers=JSON.parse(fs.readFileSync(path.join(repoRoot,'reviewers.json'),'utf8')).map(agent=>{
+  const skillMap={
+    'plan-improver-model2':'plan-gap-scout',
+    'plan-improver-model3':'alternative-route-challenge',
+    'plan-validation-designer':'validation-gap-finder',
+    'plan-coverage-reviewer':'coverage-design-review',
+    'plan-red-team-gate':'red-team-leftover-gate',
+    'plan-implementation-simulator':'implementation-dry-run',
+    'plan-fact-auditor':'fact-grounding-auditor',
+    'plan-contract-checker':'plan-contract-guard',
+    'code-performance-optimization-auditor':'code-performance-optimization-audit'
+  };
+  return [agent,skillMap[agent]];
+});
 function make(mode){
+
  const entries=[{type:'session',version:3,id:'session-artifact',cwd:'/repo'},{type:'message',id:'user',parentId:null,message:{role:'user',content:[{type:'text',text:'plan'}]}}];
  let parent='user';
  reviewers.forEach(([agent,skill],index)=>{

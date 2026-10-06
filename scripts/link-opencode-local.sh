@@ -170,5 +170,5 @@ Installed cookbook links from canonical sources:
 
 Set AGENTS_COOKBOOK_RUN_DIR to an absolute per-run directory to enable bounded live artifact tools. Leave it unset for normal full-review-output behavior.
 
-SUMMARY status=pass agents_per_runtime=$agent_count skills=$skill_count adapters=2 mandatory_flow_reviewers=8 dry_run=$dry_run
+SUMMARY status=pass agents_per_runtime=$agent_count skills=$skill_count adapters=2 mandatory_flow_reviewers=9 dry_run=$dry_run
 NEXT_STEPS

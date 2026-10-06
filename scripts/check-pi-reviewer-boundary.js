@@ -2,24 +2,16 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
 const repoRoot = path.resolve(__dirname, '..');
+const reviewers = JSON.parse(fs.readFileSync(path.join(repoRoot, 'reviewers.json'), 'utf8'));
 const corePath = path.join(repoRoot, 'adapters', 'pi', 'reviewer-tool-boundary.js');
 const adapterPath = path.join(repoRoot, 'adapters', 'pi', 'review-artifact.js');
 
-const expectedReviewers = [
-  'plan-improver-model2',
-  'plan-improver-model3',
-  'plan-validation-designer',
-  'plan-coverage-reviewer',
-  'plan-red-team-gate',
-  'plan-implementation-simulator',
-  'plan-fact-auditor',
-  'plan-contract-checker',
-  'code-performance-optimization-auditor',
-];
+const expectedReviewers = reviewers;
 const expectedBaseTools = ['read', 'grep', 'find', 'ls'];
 
 function same(actual, expected) {
@@ -32,6 +24,7 @@ function fail(message) {
 }
 
 async function main() {
+  if (expectedReviewers.length !== 9 || new Set(expectedReviewers).size !== 9) fail('invalid_reviewer_catalog');
   const core = await import(pathToFileURL(corePath).href);
 
   if (!same(core.PI_REVIEWER_AGENTS, expectedReviewers)) fail(`reviewers=${JSON.stringify(core.PI_REVIEWER_AGENTS)}`);
@@ -51,6 +44,18 @@ async function main() {
   }
   if (core.activeReviewerName({ PI_OPEN_AGENTS_DEPTH: '0', PI_OPEN_AGENTS_NAME: expectedReviewers[0] })) fail('primary_process_misclassified_as_reviewer_child');
   if (core.activeReviewerName({ PI_OPEN_AGENTS_DEPTH: '1', PI_OPEN_AGENTS_NAME: 'unknown-agent' })) fail('unknown_agent_misclassified_as_reviewer');
+
+  const foreignCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cookbook-reviewer-boundary-'));
+  const originalCwd = process.cwd();
+  try {
+    fs.writeFileSync(path.join(foreignCwd, 'reviewers.json'), '["unknown-agent"]\n');
+    process.chdir(foreignCwd);
+    const foreignCore = await import(`${pathToFileURL(corePath).href}?foreign-cwd`);
+    if (!same(foreignCore.PI_REVIEWER_AGENTS, expectedReviewers)) fail('foreign_working_directory_changed_reviewer_authority');
+  } finally {
+    process.chdir(originalCwd);
+    fs.rmSync(foreignCwd, { recursive: true, force: true });
+  }
 
   const adapter = fs.readFileSync(adapterPath, 'utf8');
   const requiredFragments = [

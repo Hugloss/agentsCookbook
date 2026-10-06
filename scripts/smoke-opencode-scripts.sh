@@ -35,7 +35,7 @@ pass link_dry_run
 
 assert_link opencode_primary "$global_dir/agents/ping-pong-plan.md" "$repo_root/agents/ping-pong-plan.md"
 assert_link opencode_reviewer "$global_dir/agents/plan-coverage-reviewer.md" "$repo_root/agents/plan-coverage-reviewer.md"
-assert_link opencode_standalone "$global_dir/agents/code-performance-optimization-auditor.md" "$repo_root/agents/code-performance-optimization-auditor.md"
+assert_link opencode_performance_reviewer "$global_dir/agents/code-performance-optimization-auditor.md" "$repo_root/agents/code-performance-optimization-auditor.md"
 assert_link pi_primary "$pi_dir/agents/ping-ping-build.md" "$repo_root/agents/ping-ping-build.md"
 assert_link pi_reviewer "$pi_dir/agents/plan-contract-checker.md" "$repo_root/agents/plan-contract-checker.md"
 assert_link shared_skill "$skills_dir/plan-gap-scout" "$repo_root/skills/plan-gap-scout"
@@ -84,8 +84,8 @@ pass force_backup
 expected_skill_count="$(printf '%s\n' $AC_SKILL_NAMES | sed '/^$/d' | wc -l)"
 [ "$(printf '%s\n' $AC_AGENT_FILES | sed '/^$/d' | wc -l)" -eq 12 ] || fail agent_registry_count
 [ "$expected_skill_count" -gt 0 ] || fail skill_registry_empty
-[ "$(printf '%s\n' $AC_FLOW_REVIEWER_AGENT_FILES | sed '/^$/d' | wc -l)" -eq 8 ] || fail flow_reviewer_count
-! printf '%s\n' $AC_FLOW_REVIEWER_AGENT_FILES | grep -qx 'code-performance-optimization-auditor.md' || fail standalone_leaked_into_flow_gate
+[ "$(printf '%s\n' $AC_FLOW_REVIEWER_AGENT_FILES | sed '/^$/d' | wc -l)" -eq 9 ] || fail flow_reviewer_count
+printf '%s\n' $AC_FLOW_REVIEWER_AGENT_FILES | grep -qx 'code-performance-optimization-auditor.md' || fail performance_reviewer_missing_from_flow_gate
 pass registry_boundaries
 
 for adapter in "$repo_root/adapters/opencode/review-artifact.js" "$repo_root/adapters/pi/review-artifact.js"; do
@@ -131,4 +131,4 @@ rm -- "$global_dir/agents/ping-pong-plan.md"; printf 'user file\n' >"$global_dir
 [ ! -e "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY" ] && [ ! -L "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY" ] || fail unlink_removes_legacy_pi_adapter
 pass unlink_safe
 
-printf 'SUMMARY status=pass agents=12 skills=%s adapters=2 mandatory_flow_reviewers=8\n' "$expected_skill_count"
+printf 'SUMMARY status=pass agents=12 skills=%s adapters=2 mandatory_flow_reviewers=9\n' "$expected_skill_count"

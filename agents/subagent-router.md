@@ -5,7 +5,7 @@ mode: primary
 model: liteLLM/gemma4
 temperature: 0.1
 maxDepth: 1
-allowedAgents: [plan-improver-model2, plan-improver-model3, plan-validation-designer, plan-coverage-reviewer, plan-red-team-gate, plan-implementation-simulator, plan-fact-auditor, plan-contract-checker]
+allowedAgents: [plan-improver-model2, plan-improver-model3, plan-validation-designer, plan-coverage-reviewer, plan-red-team-gate, plan-implementation-simulator, plan-fact-auditor, code-performance-optimization-auditor, plan-contract-checker]
 permission:
   "*": deny
   task:
@@ -18,6 +18,7 @@ permission:
     plan-implementation-simulator: allow
     plan-fact-auditor: allow
     plan-contract-checker: allow
+    code-performance-optimization-auditor: allow
   read: allow
   grep: allow
   glob: allow
@@ -38,7 +39,7 @@ This file is a reusable routing prompt from Agents Cookbook. It is an optional c
 - Never modify files, run shell/web/question tools, invoke skills, or call arbitrary agents.
 - Use read-only repo inspection only when it materially improves the selected review.
 - A reviewer is standalone: it must receive enough subject/evidence to work without Ping-Pong state.
-- This router never claims the full eight-review flow ran.
+- This router never claims the full nine-review flow ran.
 
 ## Runtime delegation
 

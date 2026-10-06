@@ -39,14 +39,16 @@ else
 fi
 
 stale_skill_name='plan-improvement''-scout'
-if grep -Rqs --exclude-dir=.git "$stale_skill_name" "$repo_root"; then fail removed_skill_reference "name=$stale_skill_name"; else pass removed_skill_reference absent=true; fi
+if git -C "$repo_root" grep -q "$stale_skill_name" -- .; then fail removed_skill_reference "name=$stale_skill_name"; else pass removed_skill_reference absent=true; fi
 
 for agent_file in $AC_AGENT_FILES; do check_description agent "${agent_file%.md}" "$agent_src_dir/$agent_file" "$AC_AGENT_DESCRIPTION_MAX"; done
 for skill_name in $AC_SKILL_NAMES; do check_description skill "$skill_name" "$skill_src_dir/$skill_name/SKILL.md" "$AC_SKILL_DESCRIPTION_MAX"; done
 
 flow_count="$(printf '%s\n' $AC_FLOW_REVIEWER_AGENT_FILES | sed '/^$/d' | wc -l)"
-[ "$flow_count" -eq 8 ] && pass flow_reviewer_count count=8 || fail flow_reviewer_count "count=$flow_count"
-if printf '%s\n' $AC_FLOW_REVIEWER_AGENT_FILES | grep -qx 'code-performance-optimization-auditor.md'; then fail standalone_flow_leak performance_auditor_in_mandatory_gate; else pass standalone_flow_leak absent; fi
+[ "$flow_count" -eq 9 ] && pass flow_reviewer_count count=9 || fail flow_reviewer_count "count=$flow_count"
+catalog_reviewers="$(node -e 'const fs=require("fs");const list=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(!Array.isArray(list)||list.length!==9||new Set(list).size!==9||list.some(x=>typeof x!=="string"||!/^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/.test(x)))process.exit(1);process.stdout.write(list.slice().sort().join("\n"))' "$repo_root/reviewers.json" 2>/dev/null)" || catalog_reviewers=""
+flow_reviewers="$(printf '%s\n' $AC_FLOW_REVIEWER_AGENT_FILES | sed '/^$/d;s/\.md$//' | sort)"
+[ -n "$catalog_reviewers" ] && [ "$catalog_reviewers" = "$flow_reviewers" ] && pass reviewer_catalog_exact count=9 || fail reviewer_catalog_exact mismatch
 
 for skill_name in $AC_SKILL_NAMES; do
   file="$skill_src_dir/$skill_name/SKILL.md"
@@ -82,19 +84,11 @@ for pair in "opencode:$opencode_adapter" "pi:$pi_adapter"; do
   if grep -Fq 'AGENTS_COOKBOOK_RUN_DIR' "$file" && grep -Fq 'flag: "wx"' "$file" && grep -Fq 'review_artifact_read' "$file" && ! grep -Eq 'path:[[:space:]]*(Type\.|tool\.schema)' "$file"; then pass "artifact_adapter_$runtime" bounded_root=true no_arbitrary_path=true no_overwrite=true; else fail "artifact_adapter_$runtime" safety_contract_mismatch; fi
 done
 
-# OpenCode custom tools expose the current agent in execution context. Bind
-# write/read authority to the cookbook reviewer/primary identities even if a
-# future permission visibility regression exposes the wrong tool.
-if grep -Fq 'const REVIEWER_AGENT_IDS = new Set([' "$opencode_adapter" \
-  && grep -Fq 'const PRIMARY_AGENT_IDS = new Set([' "$opencode_adapter" \
-  && grep -Fq 'review_artifact is reviewer-only' "$opencode_adapter" \
-  && grep -Fq 'review_artifact_read is primary-only' "$opencode_adapter" \
-  && grep -Fq 'unknown reviewer artifact_id' "$opencode_adapter" \
-  && grep -Fq 'artifact_id must equal current reviewer name' "$opencode_adapter"; then
-  pass opencode_artifact_role_binding reviewers=9 primaries=3 known_ids_only=true
-else
-  fail opencode_artifact_role_binding contract_mismatch
-fi
+# Exercise the OpenCode plugin with a foreign working directory and a hostile
+# project-local reviewer list. The adapter must use only its cookbook catalog.
+opencode_boundary_output="$(node "$repo_root/scripts/check-opencode-reviewer-boundary.js" 2>&1)"; opencode_boundary_status=$?
+printf '%s\n' "$opencode_boundary_output"
+[ "$opencode_boundary_status" -eq 0 ] || fail opencode_reviewer_runtime_boundary "status=$opencode_boundary_status"
 
 # This Pi family exposes TypeBox through the `typebox` peer used by
 # pi-open-agents. Pin the import contract so syntax-only checks cannot hide a
@@ -115,5 +109,5 @@ printf '%s\n' "$pi_boundary_output"
 
 if [ -d "$repo_root/.agents/skills" ] || [ -d "$repo_root/.opencode/agents" ]; then fail hidden_source_layout present; else pass hidden_source_layout absent; fi
 
-if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass agents=12 skills=%s adapters=2 mandatory_flow_reviewers=8\n' "$expected_skill_count"; exit 0; fi
+if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass agents=12 skills=%s adapters=2 mandatory_flow_reviewers=9\n' "$expected_skill_count"; exit 0; fi
 printf 'SUMMARY status=fail failures=%s\n' "$failures"; exit 1

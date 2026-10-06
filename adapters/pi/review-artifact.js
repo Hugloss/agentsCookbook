@@ -6,22 +6,13 @@ import {
   activeReviewerName,
   reviewerAllowedTools,
   reviewerToolAllowed,
+  PI_REVIEWER_AGENTS,
 } from "./reviewer-tool-boundary.js"
 
 const MAX_REPORT_CHARS = 65536
 const MAX_SUMMARY_CHARS = 1200
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/
-const REVIEWER_ARTIFACT_IDS = new Set([
-  "plan-improver-model2",
-  "plan-improver-model3",
-  "plan-validation-designer",
-  "plan-coverage-reviewer",
-  "plan-red-team-gate",
-  "plan-implementation-simulator",
-  "plan-fact-auditor",
-  "plan-contract-checker",
-  "code-performance-optimization-auditor",
-])
+const REVIEWER_ARTIFACT_IDS = new Set(PI_REVIEWER_AGENTS)
 
 function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex")

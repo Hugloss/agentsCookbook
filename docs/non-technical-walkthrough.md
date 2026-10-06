@@ -5,7 +5,7 @@ Agents Cookbook gives a local AI model several independent specialist reviewers 
 A full planning run works like this:
 
 1. one coordinator drafts the plan;
-2. eight read-only specialists review different risks;
+2. nine read-only specialists review different risks;
 3. the coordinator accepts or rejects their material findings;
 4. one final plan is returned.
 

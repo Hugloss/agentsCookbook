@@ -13,13 +13,14 @@ const FULL_REVIEWERS = [
   'plan-red-team-gate',
   'plan-implementation-simulator',
   'plan-fact-auditor',
+  'code-performance-optimization-auditor',
   'plan-contract-checker',
 ];
 
 function usage() {
   process.stdout.write(`Usage: scripts/check-run-artifacts.js --run-dir DIR [--reviewer NAME ...]\n\n`);
   process.stdout.write('Validate live artifact-backed reviewer reports and receipts.\n');
-  process.stdout.write('Without --reviewer, requires exactly the eight mandatory full-flow reviewers.\n');
+  process.stdout.write('Without --reviewer, requires exactly the nine mandatory full-flow reviewers.\n');
 }
 
 function parseArgs(argv) {

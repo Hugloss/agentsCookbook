@@ -60,7 +60,7 @@ You do **not** need to run a giant review flow. Pick the smallest prompt that an
 | find obsolete alternate implementation paths | [`alternate-path-removal-review`](skills/alternate-path-removal-review/SKILL.md) |
 | find slow work caused by repeated repository/runtime effort | [`code-performance-optimization-audit`](skills/code-performance-optimization-audit/SKILL.md) |
 | review whether tests exercise real behavior | [`coverage-design-review`](skills/coverage-design-review/SKILL.md) |
-| plan a change through eight independent review passes | [`ping-pong-plan`](agents/ping-pong-plan.md) |
+| plan a change through nine independent review passes | [`ping-pong-plan`](agents/ping-pong-plan.md) |
 | implement, validate, review, fix, and polish a change | [`ping-ping-build`](agents/ping-ping-build.md) |
 
 The complete skill catalog and its overlap boundaries are in [`skills/README.md`](skills/README.md).
@@ -203,7 +203,7 @@ The `liteLLM/...` model names in these wrappers are repository-owner deployment 
 
 `flows/` contains optional compositions. They sequence existing prompts but do not own unique reviewer intelligence.
 
-The provided `ping-pong-plan` and `ping-ping-build` flows use exactly eight independent reviewers. Adding a new standalone skill does **not** silently enlarge that gate.
+The provided `ping-pong-plan` and `ping-ping-build` flows use exactly nine independent reviewers. Adding a new standalone skill does **not** silently enlarge that gate.
 
 ## Stability and reproducibility
 
