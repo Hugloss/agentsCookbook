@@ -347,7 +347,8 @@ class CampaignAuthorityTests(unittest.TestCase):
     ) -> None:
         suite = _suite()
         rows = suite.trial_definitions()
-        with tempfile.TemporaryDirectory() as tmp, (
+        with (
+            tempfile.TemporaryDirectory() as tmp,
             mock.patch(
                 "benchmarks.harness.campaign_authority.probe_subject_catalog_contracts",
                 side_effect=ValueError(
