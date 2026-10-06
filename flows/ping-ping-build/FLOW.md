@@ -1,6 +1,6 @@
 # Ping-Ping Build Flow
 
-This flow composes implementation ownership with eight standalone read-only reviews.
+This flow composes implementation ownership with nine standalone read-only reviews.
 
 ## Authority
 
@@ -15,7 +15,7 @@ This flow composes implementation ownership with eight standalone read-only revi
 3. Edit directly as the build master.
 4. Run relevant validation.
 5. Build a compact implementation-evidence packet.
-6. Run all eight mandatory reviewers exactly once.
+6. Run all nine mandatory reviewers exactly once.
 7. Classify material findings as accepted, rejected, or deferred.
 8. Apply accepted fixes as the build master.
 9. Rerun affected validation.

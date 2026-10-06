@@ -10,7 +10,7 @@ usage() {
 Usage: scripts/preflight-opencode-ping-pong.sh [--global-dir DIR] [--shared-skill-dir DIR] [--quick] [target-repo]
 
 Validate canonical sources, installed OpenCode links, deny-by-default reviewer
-authority, optional bounded artifact transport, and the exact eight-review gate.
+authority, optional bounded artifact transport, and the exact nine-review gate.
 USAGE
 }
 
@@ -85,13 +85,13 @@ $AC_FLOW_REVIEWER_SKILL_MAP
 EOF
 while read -r reviewer skill model; do
   [ -n "$reviewer" ] || continue; path="$agent_src_dir/$reviewer.md"
-  if grep -Fq '  "*": deny' "$path" && grep -q '^  review_artifact: allow$' "$path" && grep -Fq 'not part of the mandatory eight-review' "$path"; then pass "standalone_agent_$reviewer" "deny_by_default=true artifact_write=bounded flow_gate=false"; else fail "standalone_agent_$reviewer" standalone_contract_mismatch; fi
+  if grep -Fq '  "*": deny' "$path" && grep -q '^  review_artifact: allow$' "$path"; then pass "standalone_agent_$reviewer" "deny_by_default=true artifact_write=bounded flow_gate=false"; else fail "standalone_agent_$reviewer" standalone_contract_mismatch; fi
 done <<EOF
 $AC_STANDALONE_AGENT_SKILL_MAP
 EOF
 
 plan_source="$agent_src_dir/ping-pong-plan.md"
-if grep -Fq 'Attempt every reviewer exactly once' "$plan_source" && grep -Fq '98,304' "$plan_source" && grep -Fq 'review_artifact_read' "$plan_source" && ! grep -Fq 'code-performance-optimization-auditor' "$plan_source"; then pass source_ping_pong_gate "mandatory_reviewers=8 context_98k=true selective_artifact_read=true"; else fail source_ping_pong_gate gate_contract_mismatch; fi
+if grep -Fq 'Attempt every reviewer exactly once' "$plan_source" && grep -Fq '98,304' "$plan_source" && grep -Fq 'review_artifact_read' "$plan_source" && grep -Fq 'code-performance-optimization-auditor' "$plan_source"; then pass source_ping_pong_gate "mandatory_reviewers=9 context_98k=true selective_artifact_read=true"; else fail source_ping_pong_gate gate_contract_mismatch; fi
 
 if [ -d "$repo_root/.opencode/agents" ] || [ -d "$repo_root/.agents/skills" ]; then fail canonical_layout legacy_hidden_source_dirs_present; else pass canonical_layout hidden_source_dirs=absent; fi
 
@@ -113,5 +113,5 @@ const fs=require("fs");const mode=process.argv[1],artifact=process.argv[2]==="tr
   fi
 fi
 
-if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass runtime=opencode quick=%s agents=12 skills=%s adapters=1 mandatory_flow_reviewers=8\n' "$quick" "$expected_skill_count"; exit 0; fi
+if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass runtime=opencode quick=%s agents=12 skills=%s adapters=1 mandatory_flow_reviewers=9\n' "$quick" "$expected_skill_count"; exit 0; fi
 printf 'SUMMARY status=fail runtime=opencode failures=%s\n' "$failures"; exit 1

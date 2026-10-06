@@ -259,6 +259,7 @@ const required = [
   "plan-red-team-gate",
   "plan-implementation-simulator",
   "plan-fact-auditor",
+  "code-performance-optimization-auditor",
   "plan-contract-checker",
 ];
 const requiredSet = new Set(required);

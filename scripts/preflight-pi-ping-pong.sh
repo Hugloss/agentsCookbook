@@ -9,9 +9,10 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/preflight-pi-ping-pong.sh [--pi-agent-dir DIR] [--shared-skill-dir DIR] [target-repo]
 
-Validate Pi, pi-open-agents, canonical source contracts, installed links,
-deny-by-default reviewer authority, bounded artifact extension, project
-shadowing, and the exact eight-review gate.
+  Validate Pi, pi-open-agents, canonical source contracts, installed links,
+  deny-by-default reviewer authority, bounded artifact extension, project
+  shadowing, and the exact nine-review gate.
+
 USAGE
 }
 
@@ -74,10 +75,10 @@ done
 legacy_pi_extension="$pi_agent_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY"
 if [ -e "$legacy_pi_extension" ] || [ -L "$legacy_pi_extension" ]; then fail pi_legacy_artifact_extension "duplicate=$legacy_pi_extension"; else pass pi_legacy_artifact_extension absent; fi
 
-expected_allowed='allowedAgents: [plan-improver-model2, plan-improver-model3, plan-validation-designer, plan-coverage-reviewer, plan-red-team-gate, plan-implementation-simulator, plan-fact-auditor, plan-contract-checker]'
+expected_allowed="allowedAgents: [$(node -e 'const fs=require("fs");process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).join(", "))' "$repo_root/reviewers.json")]"
 for primary_file in $AC_PRIMARY_AGENT_FILES; do
   path="$agent_src_dir/$primary_file"
-  if grep -Fqx "$expected_allowed" "$path" && grep -q '^maxDepth: 1$' "$path" && grep -Fq '  "*": deny' "$path" && grep -q '^  review_artifact_read: allow$' "$path"; then pass "pi_contract_${primary_file%.md}" "allowed_reviewers=8 artifact_read=allow"; else fail "pi_contract_${primary_file%.md}" primary_contract_mismatch; fi
+  if grep -Fqx "$expected_allowed" "$path" && grep -q '^maxDepth: 1$' "$path" && grep -Fq '  "*": deny' "$path" && grep -q '^  review_artifact_read: allow$' "$path"; then pass "pi_contract_${primary_file%.md}" "allowed_reviewers=9 artifact_read=allow"; else fail "pi_contract_${primary_file%.md}" primary_contract_mismatch; fi
 done
 
 while read -r reviewer skill model; do
@@ -88,7 +89,7 @@ $AC_FLOW_REVIEWER_SKILL_MAP
 EOF
 while read -r reviewer skill model; do
   [ -n "$reviewer" ] || continue; path="$agent_src_dir/$reviewer.md"
-  if grep -Fqx "skills: [$skill]" "$path" && grep -Fq '  "*": deny' "$path" && grep -q '^  review_artifact: allow$' "$path" && grep -Fq 'not part of the mandatory eight-review' "$path"; then pass "pi_standalone_$reviewer" "skill=$skill artifact_write=bounded flow_gate=false"; else fail "pi_standalone_$reviewer" standalone_contract_mismatch; fi
+  if grep -Fqx "skills: [$skill]" "$path" && grep -Fq '  "*": deny' "$path" && grep -q '^  review_artifact: allow$' "$path"; then pass "pi_standalone_$reviewer" "skill=$skill artifact_write=bounded flow_gate=false"; else fail "pi_standalone_$reviewer" standalone_contract_mismatch; fi
 done <<EOF
 $AC_STANDALONE_AGENT_SKILL_MAP
 EOF
@@ -101,5 +102,5 @@ for agent_file in $AC_AGENT_FILES; do
   done
 done
 
-if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass runtime=pi agents=12 skills=%s adapters=1 mandatory_flow_reviewers=8 pi_open_agents=%s\n' "$expected_skill_count" "$package_version"; exit 0; fi
+if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass runtime=pi agents=12 skills=%s adapters=1 mandatory_flow_reviewers=9 pi_open_agents=%s\n' "$expected_skill_count" "$package_version"; exit 0; fi
 printf 'SUMMARY status=fail runtime=pi failures=%s\n' "$failures"; exit 1

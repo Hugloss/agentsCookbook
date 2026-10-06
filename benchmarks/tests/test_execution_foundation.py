@@ -132,6 +132,24 @@ class ExecutionFoundationTests(unittest.TestCase):
             self.assertEqual(result.return_code, 0)
             self.assertEqual(result.stdout.decode().strip(), "closed")
 
+    def test_bounded_exchange_times_out_and_terminates_waiting_child(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_bounded(
+                repository_root=Path(tmp),
+                argv=(
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stdin.buffer.read()",
+                ),
+                limits=ProcessLimits(timeout_seconds=0.3),
+                stdin_bytes=b"request\n",
+                stdin_close_when=lambda _: False,
+            )
+        self.assertTrue(result.timed_out)
+        self.assertNotEqual(result.return_code, 0)
+        if os.name != "nt":
+            self.assertEqual(result.process_tree_termination, "posix-process-group")
+
     def test_bounded_process_interrupt_terminates_process_tree(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

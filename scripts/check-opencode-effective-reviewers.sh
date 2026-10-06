@@ -37,5 +37,5 @@ $AC_FLOW_REVIEWER_SKILL_MAP
 $AC_STANDALONE_AGENT_SKILL_MAP
 EOF
 
-if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass effective_reviewers=9 mandatory_flow_reviewers=8 artifact_mode=%s\n' "$artifact_enabled"; exit 0; fi
+if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass effective_reviewers=9 mandatory_flow_reviewers=9 artifact_mode=%s\n' "$artifact_enabled"; exit 0; fi
 printf 'SUMMARY status=fail failures=%s\n' "$failures"; exit 1

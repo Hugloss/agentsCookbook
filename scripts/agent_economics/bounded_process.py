@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import platform
 import shutil
 import signal
 import subprocess
@@ -13,7 +12,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
 
 _retained_lock_fd: ContextVar[int | None] = ContextVar("retained_benchmark_lock_fd", default=None)
@@ -179,6 +178,7 @@ def run_bounded(
     inherit_environment: bool = True,
     close_stdin: bool = False,
     stdin_bytes: bytes | None = None,
+    stdin_close_when: Callable[[bytes], bool] | None = None,
 ) -> ProcessResult:
     if not argv or not all(isinstance(item, str) and item for item in argv):
         raise BoundedProcessError("argv must contain non-empty strings")
@@ -186,6 +186,8 @@ def run_bounded(
         raise BoundedProcessError("close_stdin and stdin_bytes are mutually exclusive")
     if stdin_bytes is not None and not isinstance(stdin_bytes, bytes):
         raise BoundedProcessError("stdin_bytes must be bytes")
+    if stdin_close_when is not None and stdin_bytes is None:
+        raise BoundedProcessError("stdin_close_when requires stdin_bytes")
     resolved_cwd, cwd_relative = safe_cwd(repository_root, cwd)
     runtime_environment = dict(environment or {})
     if any(
@@ -252,6 +254,8 @@ def run_bounded(
 
     stdout, stderr = bytearray(), bytearray()
     stdout_truncated, stderr_truncated = threading.Event(), threading.Event()
+    exchange_ready = threading.Event()
+    exchange_errors: list[Exception] = []
     termination = {"value": "not-needed"}
     termination_lock = threading.Lock()
 
@@ -263,17 +267,35 @@ def run_bounded(
     def drain(
         stream: object, sink: bytearray, maximum: int, truncated: threading.Event
     ) -> None:
-        while True:
-            chunk = stream.read(65536)  # type: ignore[attr-defined]
-            if not chunk:
-                return
-            remaining = maximum - len(sink)
-            if remaining > 0:
-                sink.extend(chunk[:remaining])
-            if len(chunk) > max(remaining, 0):
-                truncated.set()
-                terminate()
-                return
+        watching_stdout = stream is process.stdout and stdin_close_when is not None
+        reader = (
+            getattr(stream, "read1", stream.read)  # type: ignore[attr-defined]
+            if watching_stdout
+            else stream.read  # type: ignore[attr-defined]
+        )
+        try:
+            while True:
+                chunk = reader(65536)
+                if not chunk:
+                    return
+                remaining = maximum - len(sink)
+                if remaining > 0:
+                    sink.extend(chunk[:remaining])
+                if len(chunk) > max(remaining, 0):
+                    truncated.set()
+                    terminate()
+                    return
+                if watching_stdout:
+                    try:
+                        if stdin_close_when(bytes(sink)):
+                            exchange_ready.set()
+                    except Exception as exc:
+                        exchange_errors.append(exc)
+                        terminate()
+                        return
+        finally:
+            if watching_stdout:
+                exchange_ready.set()
 
     assert process.stdout is not None and process.stderr is not None
     threads = [
@@ -290,29 +312,33 @@ def run_bounded(
     ]
     for thread in threads:
         thread.start()
-    if stdin_bytes is not None:
-        assert process.stdin is not None
-        try:
-            process.stdin.write(stdin_bytes)
-            process.stdin.flush()
-        except (BrokenPipeError, OSError):
-            pass
-        finally:
-            try:
-                process.stdin.close()
-            except OSError:
-                pass
     timed_out = threading.Event()
 
     def timeout_kill() -> None:
-        timed_out.set()
-        terminate()
+        if process.poll() is None:
+            timed_out.set()
+            terminate()
+            exchange_ready.set()
 
     timer = threading.Timer(limits.timeout_seconds, timeout_kill)
     timer.daemon = True
     timer.start()
     try:
         try:
+            if stdin_bytes is not None:
+                assert process.stdin is not None
+                try:
+                    process.stdin.write(stdin_bytes)
+                    process.stdin.flush()
+                    if stdin_close_when is not None:
+                        exchange_ready.wait()
+                except (BrokenPipeError, OSError):
+                    pass
+                finally:
+                    try:
+                        process.stdin.close()
+                    except OSError:
+                        pass
             return_code = process.wait()
         except BaseException:
             terminate()
@@ -323,6 +349,11 @@ def run_bounded(
             raise
     finally:
         timer.cancel()
+        if process.stdin is not None and not process.stdin.closed:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
         for thread in threads:
             thread.join(timeout=1.0)
         for stream in (process.stdout, process.stderr):
@@ -330,6 +361,8 @@ def run_bounded(
                 stream.close()
             except OSError:
                 pass
+    if exchange_errors:
+        raise BoundedProcessError("stdout completion predicate failed") from exchange_errors[0]
     sig = -return_code if return_code < 0 else None
     return ProcessResult(
         argv=tuple(argv),

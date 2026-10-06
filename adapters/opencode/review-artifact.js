@@ -1,22 +1,16 @@
 import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { tool } from "@opencode-ai/plugin"
+
+const sourceFile = fs.realpathSync(fileURLToPath(import.meta.url))
+const reviewers = JSON.parse(fs.readFileSync(path.resolve(path.dirname(sourceFile), "../../reviewers.json"), "utf8"))
 
 const MAX_REPORT_CHARS = 65536
 const MAX_SUMMARY_CHARS = 1200
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/
-const REVIEWER_AGENT_IDS = new Set([
-  "plan-improver-model2",
-  "plan-improver-model3",
-  "plan-validation-designer",
-  "plan-coverage-reviewer",
-  "plan-red-team-gate",
-  "plan-implementation-simulator",
-  "plan-fact-auditor",
-  "plan-contract-checker",
-  "code-performance-optimization-auditor",
-])
+const REVIEWER_AGENT_IDS = new Set(reviewers)
 const PRIMARY_AGENT_IDS = new Set([
   "ping-pong-plan",
   "ping-ping-build",

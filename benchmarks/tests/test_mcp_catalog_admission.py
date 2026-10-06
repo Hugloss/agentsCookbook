@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -103,6 +105,61 @@ class McpCatalogAdmissionTests(unittest.TestCase):
         self.assertIn('"method":"initialize"', payload)
         self.assertIn('"method":"notifications/initialized"', payload)
         self.assertIn('"method":"tools/list"', payload)
+
+    @unittest.skipIf(os.name == "nt", "select cannot inspect stdin pipes on Windows")
+    def test_catalog_keeps_stdio_open_until_server_responds(self) -> None:
+        server = """
+import json, select, sys
+requests = [json.loads(sys.stdin.buffer.readline()) for _ in range(3)]
+if [request['method'] for request in requests] != [
+    'initialize', 'notifications/initialized', 'tools/list'
+]:
+    raise SystemExit(2)
+if select.select([sys.stdin], [], [], 0)[0]:
+    raise SystemExit(0)  # This server discards queued requests on early EOF.
+for response in (
+    {'jsonrpc': '2.0', 'id': 1, 'result': {'protocolVersion': '2024-11-05'}},
+    {'jsonrpc': '2.0', 'id': 2, 'result': {'tools': [{'name': 'context'}]}},
+):
+    print(json.dumps(response), flush=True)
+sys.stdin.buffer.read()  # Exit after the client has received both responses.
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            context = self._context(root)
+            exposure = McpExposure(
+                name="futuremcp",
+                command=sys.executable,
+                args=("-u", "-c", server),
+                cwd=context.workspace,
+                semantic_identity={"transport": "stdio"},
+            )
+            proof = probe_mcp_tool_catalog(
+                context=context,
+                exposure=exposure,
+                subject_id="futuremcp",
+                required_tool="futuremcp_context",
+            )
+        self.assertEqual(proof["tool_names"], ["context"])
+
+    def test_process_exits_without_initialize_response(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            context = self._context(root)
+            exposure = McpExposure(
+                name="futuremcp",
+                command=sys.executable,
+                args=("-c", "raise SystemExit(0)"),
+                cwd=context.workspace,
+                semantic_identity={"transport": "stdio"},
+            )
+            with self.assertRaisesRegex(ValueError, "no initialize response"):
+                probe_mcp_tool_catalog(
+                    context=context,
+                    exposure=exposure,
+                    subject_id="futuremcp",
+                    required_tool="futuremcp_context",
+                )
 
     def test_missing_required_operation_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

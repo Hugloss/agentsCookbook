@@ -92,7 +92,7 @@ Agent changes should be explicit about:
 - expected output contract;
 - whether the agent is standalone or part of an optional flow.
 
-The eight-review Ping-Pong/Ping-Ping gate must not grow accidentally when a standalone skill is added.
+The nine-review Ping-Pong/Ping-Ping gate must not grow accidentally when a standalone skill is added.
 
 ## Runtime boundary
 

@@ -24,7 +24,7 @@ Current `pi-open-agents` cannot derive a finite child-process `--tools` whitelis
 
 The Pi adapter closes that runtime-specific gap using the authoritative child identity in `PI_OPEN_AGENTS_NAME` + `PI_OPEN_AGENTS_DEPTH`:
 
-- only the nine cookbook reviewer identities are affected (eight flow reviewers plus the standalone performance auditor);
+- only the nine cookbook reviewer identities are affected;
 - normal reviewer children get exactly `read`, `grep`, `find`, and `ls` as active tools;
 - artifact-backed reviewer children additionally get `review_artifact`;
 - `bash`, `powershell`, `edit`, `write`, delegation, and `review_artifact_read` are excluded;
@@ -59,4 +59,4 @@ A reviewer remains standalone in Pi even when invoked directly rather than as a 
 
 Leave `AGENTS_COOKBOOK_RUN_DIR` unset for normal standalone behavior where reviewers return full review artifacts directly; the finite reviewer child tool boundary still applies to delegated reviewers.
 
-`preflight-pi-ping-pong.sh` validates Pi version, compatible `pi-open-agents`, canonical contracts, adapter links, exact eight-review flow allowlists, and project-local shadowing. `scripts/check-pi-reviewer-boundary.js` separately gates the finite reviewer identity/tool set, role-separated artifact tools, known artifact IDs, session-start reapplication, and the execution blocker. Real model-backed execution remains a local runtime qualification step.
+`preflight-pi-ping-pong.sh` validates Pi version, compatible `pi-open-agents`, canonical contracts, adapter links, exact nine-review flow allowlists, and project-local shadowing. `scripts/check-pi-reviewer-boundary.js` separately gates the finite reviewer identity/tool set, role-separated artifact tools, known artifact IDs, session-start reapplication, and the execution blocker. Real model-backed execution remains a local runtime qualification step.

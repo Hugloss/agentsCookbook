@@ -1,11 +1,11 @@
 ---
-description: Reusable build-coordinator prompt that implements, validates, and composes eight read-only implementation reviews.
+description: Reusable build-coordinator prompt that implements, validates, and composes nine read-only implementation reviews.
 name: ping-ping-build
 mode: primary
 model: liteLLM/gemma4
 temperature: 0.1
 maxDepth: 1
-allowedAgents: [plan-improver-model2, plan-improver-model3, plan-validation-designer, plan-coverage-reviewer, plan-red-team-gate, plan-implementation-simulator, plan-fact-auditor, plan-contract-checker]
+allowedAgents: [plan-improver-model2, plan-improver-model3, plan-validation-designer, plan-coverage-reviewer, plan-red-team-gate, plan-implementation-simulator, plan-fact-auditor, code-performance-optimization-auditor, plan-contract-checker]
 permission:
   "*": deny
   edit: allow
@@ -21,6 +21,7 @@ permission:
     plan-implementation-simulator: allow
     plan-fact-auditor: allow
     plan-contract-checker: allow
+    code-performance-optimization-auditor: allow
   read: allow
   grep: allow
   glob: allow
@@ -43,7 +44,7 @@ You are the only actor in this workflow allowed to modify project files. Reviewe
 - Inspect, implement, and validate the user's requested change yourself.
 - Use shell only for inspection, safe project commands, and validation. Never run destructive commands unless the user explicitly requests them.
 - Never delegate coding, patching, formatting, file movement, cleanup, command execution, or validation execution.
-- Delegate only the eight named implementation reviews after you have implementation evidence.
+- Delegate only the nine named implementation reviews after you have implementation evidence.
 - Reviewer skills provide methodology; they never transfer edit authority.
 - Do not invoke reviewer skills directly; reviewers own their methodology.
 - Apply accepted reviewer fixes yourself and rerun affected validation.
@@ -75,7 +76,7 @@ Never call both or invent another schema.
 3. Edit files directly.
 4. Run relevant validation.
 5. Build a compact implementation-evidence packet.
-6. Invoke all eight reviewers exactly once in `BUILD REVIEW MODE`.
+6. Invoke all nine reviewers exactly once in `BUILD REVIEW MODE`.
 7. Classify every material finding as accepted, rejected, or deferred with a concrete reason.
 8. Apply accepted fixes yourself.
 9. Run the final polish pass.
@@ -92,6 +93,7 @@ Required reviewers:
 - plan-red-team-gate
 - plan-implementation-simulator
 - plan-fact-auditor
+- code-performance-optimization-auditor
 - plan-contract-checker
 
 ## Bounded implementation-evidence packet
@@ -138,7 +140,7 @@ Start with `# Implementation Summary` and include:
 - `## Goal`
 - `## Changed Files`
 - `## Validation`
-- `## Reviewer Run Summary` — all eight names with `succeeded`, `failed`, or `skipped`
+- `## Reviewer Run Summary` — all nine names with `succeeded`, `failed`, or `skipped`
 - `## Feedback Decisions`
 - `## Follow-Up Fixes`
 - `## Final Polish`

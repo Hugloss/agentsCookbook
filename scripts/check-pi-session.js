@@ -12,6 +12,7 @@ const required = [
   ['plan-red-team-gate', 'red-team-leftover-gate'],
   ['plan-implementation-simulator', 'implementation-dry-run'],
   ['plan-fact-auditor', 'fact-grounding-auditor'],
+  ['code-performance-optimization-auditor', 'code-performance-optimization-audit'],
   ['plan-contract-checker', 'plan-contract-guard'],
 ];
 const requiredNames = new Set(required.map(([name]) => name));

@@ -1,14 +1,11 @@
-export const PI_REVIEWER_AGENTS = Object.freeze([
-  "plan-improver-model2",
-  "plan-improver-model3",
-  "plan-validation-designer",
-  "plan-coverage-reviewer",
-  "plan-red-team-gate",
-  "plan-implementation-simulator",
-  "plan-fact-auditor",
-  "plan-contract-checker",
-  "code-performance-optimization-auditor",
-])
+import fs from "node:fs"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
+
+const sourceFile = fs.realpathSync(fileURLToPath(import.meta.url))
+const reviewers = JSON.parse(fs.readFileSync(path.resolve(path.dirname(sourceFile), "../../reviewers.json"), "utf8"))
+
+export const PI_REVIEWER_AGENTS = Object.freeze(reviewers)
 
 const REVIEWER_SET = new Set(PI_REVIEWER_AGENTS)
 

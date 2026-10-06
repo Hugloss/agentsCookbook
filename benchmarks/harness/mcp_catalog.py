@@ -80,12 +80,25 @@ def _response_by_id(raw: bytes) -> dict[int, dict[str, Any]]:
                 f"MCP catalog stdout line {number} is not a JSON object"
             )
         response_id = value.get("id")
-        if response_id not in {1, 2}:
+        if type(response_id) is not int or response_id not in (1, 2):
             continue
         if response_id in responses:
             raise ValueError(f"MCP catalog emitted duplicate response id {response_id}")
         responses[int(response_id)] = value
     return responses
+
+
+def _catalog_responses_ready(raw: bytes) -> bool:
+    """Wait for complete response lines while the server's stdin remains open."""
+    last_newline = raw.rfind(b"\n")
+    if last_newline < 0:
+        return False
+    try:
+        responses = _response_by_id(raw[: last_newline + 1])
+    except ValueError:
+        # Close stdin so the normal parser can report malformed output promptly.
+        return True
+    return 1 in responses and 2 in responses
 
 
 def _result(response: dict[str, Any], *, label: str) -> dict[str, Any]:
@@ -136,6 +149,7 @@ def probe_mcp_tool_catalog(
         ),
         inherit_environment=False,
         stdin_bytes=_request_bytes(),
+        stdin_close_when=_catalog_responses_ready,
     )
     if result.executable_missing:
         raise ValueError("MCP catalog executable is missing")
@@ -233,12 +247,14 @@ def probe_subject_catalog_contracts(
         exposure = subject.mcp_exposure(context)
         if exposure is None:
             raise ValueError(f"subject {subject_id} has no MCP exposure")
-        proofs.append(
-            probe_mcp_tool_catalog(
+        try:
+            proof = probe_mcp_tool_catalog(
                 context=context,
                 exposure=exposure,
                 subject_id=subject_id,
                 required_tool=required_tool,
             )
-        )
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"{subject_id}: {exc}") from exc
+        proofs.append(proof)
     return proofs

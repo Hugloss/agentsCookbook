@@ -34,11 +34,12 @@ MASTER v1
   -> red team
   -> implementation simulation
   -> fact audit
+  -> performance audit
   -> contract check
   -> FINAL MASTER
 ```
 
-The exact eight mandatory reviewers are listed in the root README. The standalone performance auditor is installable and reusable but is not part of this mandatory gate.
+The exact nine mandatory reviewers are listed in `reviewers.json`. The performance auditor is also available for direct standalone review.
 
 ## Context discipline
 
@@ -63,6 +64,6 @@ This is different from the post-run exporter: post-run export improves audit/reu
 
 A reviewer counts only when the runtime records a real call to the exact reviewer and returns usable output or a valid compact artifact receipt. Missing, failed, duplicate, skipped, or unexpected mandatory calls make the flow incomplete.
 
-In Pi artifact-backed mode, `check-pi-session.js` additionally requires evidence that each successful reviewer loaded its exact skill first and called `review_artifact` with its own fixed artifact ID. `check-run-artifacts.js` validates the resulting exact-eight run store, hashes, receipt identities, and summary budgets.
+In Pi artifact-backed mode, `check-pi-session.js` additionally requires evidence that each successful reviewer loaded its exact skill first and called `review_artifact` with its own fixed artifact ID. `check-run-artifacts.js` validates the resulting exact-nine run store, hashes, receipt identities, and summary budgets.
 
 OpenCode full preflight validates effective reviewer/primary tool permissions. Durable run artifacts provide a second independent proof that the bounded artifact writes completed.
