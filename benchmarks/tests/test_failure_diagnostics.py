@@ -1,13 +1,48 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from benchmarks.adapters.opencode_native import _run_failure_diagnostic
 from benchmarks.harness.model import Observation
-from benchmarks.harness.runner import _agent_failure_diagnostic
+from benchmarks.harness.runner import (
+    TrialRunResult,
+    _agent_failure_diagnostic,
+    bind_result_to_receipt,
+)
 
 
 class FailureDiagnosticTests(unittest.TestCase):
+    def test_receipt_projector_clears_stale_optional_result_fields(self) -> None:
+        transient = TrialRunResult(
+            trial_id="a" * 64,
+            definition_id="b" * 64,
+            status="INCOMPLETE",
+            result_dir=Path("/tmp/result"),
+            reused=True,
+            reason="stale reason",
+            stage="stale-stage",
+            reason_code="stale-code",
+            diagnostic="stale diagnostic",
+            recovered=True,
+        )
+        receipt = {
+            "trial_id": transient.trial_id,
+            "definition_id": transient.definition_id,
+            "status": "PASS",
+        }
+
+        bound = bind_result_to_receipt(transient, receipt)
+
+        self.assertEqual(bound.status, "PASS")
+        self.assertIsNone(bound.reason)
+        self.assertIsNone(bound.stage)
+        self.assertIsNone(bound.reason_code)
+        self.assertIsNone(bound.diagnostic)
+        self.assertTrue(bound.reused)
+        self.assertTrue(bound.recovered)
+        self.assertEqual(bound.result_dir, transient.result_dir)
+
     def test_runner_prefers_preserved_adapter_diagnostic(self) -> None:
         observation = Observation(
             {

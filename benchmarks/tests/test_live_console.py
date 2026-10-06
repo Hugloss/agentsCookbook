@@ -527,7 +527,7 @@ class LiveTaskMatrixTests(unittest.TestCase):
         suite, rows = self._prefix_opencode_rows()
         result = TrialRunResult(
             trial_id="a" * 64,
-            definition_id="b" * 64,
+            definition_id=rows[0]["definition_id"],
             status="INCOMPLETE",
             result_dir=Path("/tmp/evidence"),
             reused=False,
@@ -536,11 +536,18 @@ class LiveTaskMatrixTests(unittest.TestCase):
             reason_code="agent-terminal-failed",
             diagnostic="Traceback (most recent call last):\nValueError: boom",
         )
+        receipt = self._receipt(suite, rows[0], "INCOMPLETE")
+        receipt["reason"] = "agent terminal event was turn.failed"
+        receipt["diagnostic"] = {
+            "stage": "agent-execution",
+            "reason_code": "agent-terminal-failed",
+            "detail": "Traceback (most recent call last):\nValueError: boom",
+        }
         rendered = render_trial_failure(
             row=rows[0],
             subject="none",
             result=result,
-            receipt=self._receipt(suite, rows[0], "INCOMPLETE"),
+            receipt=receipt,
         )
         assert rendered is not None
         self.assertIn("FAILURE locate-prefix-path-enumerator", rendered)
