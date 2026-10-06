@@ -179,7 +179,8 @@ class RuntimeReadinessTests(unittest.TestCase):
             },
             "test",
         )
-        with tempfile.TemporaryDirectory() as tmp, (
+        with (
+            tempfile.TemporaryDirectory() as tmp,
             mock.patch(
                 "benchmarks.harness.readiness.build_subject",
                 return_value=FakeSubject("enola"),
