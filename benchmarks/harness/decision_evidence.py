@@ -82,6 +82,21 @@ def _assistance_funnel(
                     "unknown_trials": unknown,
                     "rate": invoked / observed if observed else None,
                 },
+                "routing_timing": {
+                    "first_choice_trials": int(
+                        row.get("first_choice_trials", 0) or 0
+                    ),
+                    "late_rescue_trials": int(
+                        row.get("late_rescue_trials", 0) or 0
+                    ),
+                    "never_invoked_trials": int(
+                        row.get("never_invoked_timing_trials", 0) or 0
+                    ),
+                    "unknown_trials": int(
+                        row.get("routing_timing_unknown_trials", 0) or 0
+                    ),
+                    "first_choice_rate": row.get("first_choice_rate"),
+                },
                 "usefulness_when_invoked": conditional(
                     agent_id, subject_id, "invoked"
                 ),
@@ -243,6 +258,11 @@ def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
         evidence_signals.append("runtime-or-host-instability-observed")
     if semantic_rows:
         evidence_signals.append("semantic-misses-observed")
+    if any(
+        int(row.get("late_rescue_trials", 0) or 0) > 0
+        for row in subject_adoption
+    ):
+        evidence_signals.append("late-rescue-observed")
     if any(
         row.get("state") == "strict-contract-saturated-noncompliant"
         for row in agent_formats

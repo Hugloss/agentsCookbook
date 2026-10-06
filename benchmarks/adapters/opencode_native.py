@@ -25,6 +25,7 @@ from benchmarks.harness.model import (
     SubjectLifecycleMode,
     TrialContext,
 )
+from benchmarks.tool_routing import subject_routing_timing
 from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 
 
@@ -434,6 +435,17 @@ def _metrics(
         # Direct exported MCP calls are authoritative positive evidence even
         # when nested execute() metadata is incomplete. Absence remains unknown.
         metrics["subject_tool_invoked"] = True
+
+    invoked_value = metrics.get("subject_tool_invoked")
+    metrics["subject_routing_timing"] = subject_routing_timing(
+        [name.removeprefix("nested:") for name in observed_tool_sequence],
+        subject_ordinals,
+        configured=selected_server is not None,
+        invocation_observed=(
+            invoked_value if isinstance(invoked_value, bool) else None
+        ),
+        order_complete=nested_observable,
+    )
     return metrics
 
 

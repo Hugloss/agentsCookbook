@@ -8,6 +8,15 @@ from pathlib import Path, PurePosixPath
 from statistics import mean, median
 from typing import Any
 
+from benchmarks.tool_routing import (
+    ROUTING_FIRST_CHOICE,
+    ROUTING_LATE_RESCUE,
+    ROUTING_NEVER_INVOKED,
+    ROUTING_NOT_CONFIGURED,
+    ROUTING_UNKNOWN,
+    subject_routing_timing,
+)
+
 from benchmarks.adapters.oracles import (
     REPOSITORY_LOCATION_NORMALIZATION_POLICY,
     REPOSITORY_LOCATION_SCORING_POLICY,
@@ -131,9 +140,56 @@ def _metric_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     return metrics
 
 
+def _subject_routing_timing_metric(receipt: dict[str, Any]) -> str | None:
+    agent = receipt.get("measurements", {}).get("agent", {})
+    if not isinstance(agent, dict):
+        return None
+    explicit = agent.get("subject_routing_timing")
+    allowed = {
+        ROUTING_FIRST_CHOICE,
+        ROUTING_LATE_RESCUE,
+        ROUTING_NEVER_INVOKED,
+        ROUTING_UNKNOWN,
+        ROUTING_NOT_CONFIGURED,
+    }
+    if isinstance(explicit, str) and explicit in allowed:
+        return explicit
+
+    sequence = agent.get("tool_sequence")
+    configured = agent.get("subject_tool_configured")
+    invoked = agent.get("subject_tool_invoked")
+    if (
+        not isinstance(sequence, list)
+        or not all(isinstance(name, str) and name for name in sequence)
+        or not isinstance(configured, bool)
+        or not isinstance(invoked, bool)
+    ):
+        return None
+
+    ordinals = agent.get("subject_tool_call_ordinals")
+    if not isinstance(ordinals, list):
+        first = agent.get("subject_first_tool_call_ordinal")
+        ordinals = [first] if isinstance(first, int) and not isinstance(first, bool) else []
+    if not all(isinstance(value, int) and not isinstance(value, bool) for value in ordinals):
+        return None
+
+    observability = agent.get("tool_strategy_observability")
+    order_complete = not (
+        isinstance(observability, str) and "partial" in observability
+    )
+    return subject_routing_timing(
+        sequence,
+        ordinals,
+        configured=configured,
+        invocation_observed=invoked,
+        order_complete=order_complete,
+    )
+
+
 def _tool_strategy_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
     observability = Counter()
     tool_names = Counter()
+    routing_timing = Counter()
     first_subject_ordinals: list[int | float] = []
     sequence_lengths: list[int] = []
     observed_sequences = 0
@@ -174,6 +230,10 @@ def _tool_strategy_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
         ):
             first_subject_ordinals.append(ordinal)
 
+        timing = _subject_routing_timing_metric(row)
+        if timing is not None:
+            routing_timing[timing] += 1
+
     partial = sum(
         count
         for state, count in observability.items()
@@ -205,6 +265,26 @@ def _tool_strategy_summary(receipts: list[dict[str, Any]]) -> dict[str, Any]:
             ),
             "min": min(first_subject_ordinals) if first_subject_ordinals else None,
             "max": max(first_subject_ordinals) if first_subject_ordinals else None,
+        },
+        "subject_routing_timing": {
+            "observations": sum(routing_timing.values()),
+            "counts": dict(sorted(routing_timing.items())),
+            "invoked_ordered_observations": (
+                routing_timing[ROUTING_FIRST_CHOICE]
+                + routing_timing[ROUTING_LATE_RESCUE]
+            ),
+            "first_choice_rate": (
+                routing_timing[ROUTING_FIRST_CHOICE]
+                / (
+                    routing_timing[ROUTING_FIRST_CHOICE]
+                    + routing_timing[ROUTING_LATE_RESCUE]
+                )
+                if (
+                    routing_timing[ROUTING_FIRST_CHOICE]
+                    + routing_timing[ROUTING_LATE_RESCUE]
+                )
+                else None
+            ),
         },
         "full_order_retained_in_receipts": True,
         "arguments_or_source_contents_included": False,
@@ -418,6 +498,15 @@ def _subject_adoption_summary(
             )
             is not None
         ]
+        routing_timing = Counter(
+            timing
+            for row in group
+            if (timing := _subject_routing_timing_metric(row)) is not None
+        )
+        ordered_invocations = (
+            routing_timing[ROUTING_FIRST_CHOICE]
+            + routing_timing[ROUTING_LATE_RESCUE]
+        )
         tools = sorted(
             {
                 name
@@ -476,6 +565,22 @@ def _subject_adoption_summary(
                 "invocation_unknown_trials": len(group) - len(observed),
                 "subject_mcp_calls": sum(calls),
                 "subject_tool_names": tools,
+                "routing_timing_counts": dict(sorted(routing_timing.items())),
+                "routing_timing_observed_trials": sum(routing_timing.values()),
+                "routing_timing_unobserved_trials": (
+                    len(group) - sum(routing_timing.values())
+                ),
+                "first_choice_trials": routing_timing[ROUTING_FIRST_CHOICE],
+                "late_rescue_trials": routing_timing[ROUTING_LATE_RESCUE],
+                "never_invoked_timing_trials": routing_timing[
+                    ROUTING_NEVER_INVOKED
+                ],
+                "routing_timing_unknown_trials": routing_timing[ROUTING_UNKNOWN],
+                "first_choice_rate": (
+                    routing_timing[ROUTING_FIRST_CHOICE] / ordered_invocations
+                    if ordered_invocations
+                    else None
+                ),
                 "output_contract_failures": output_contract_failures,
                 "format_noncompliant_trials": format_noncompliant,
                 "semantic_incorrect_trials": semantic_incorrect,

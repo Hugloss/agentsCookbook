@@ -177,6 +177,16 @@ OpenCode benchmark trials are deliberately single-turn. The benchmark overlay di
 
 Tool-selection diagnostics score semantic routing rather than host-specific tool names. Trace projection classifies calls as `subject-repository-intelligence`, `native-search`, `native-read`, `shell`, `tool-router`, or `other`. The required subject call must complete before the first native repository-discovery class; wrapper/router calls do not count by themselves.
 
+Completed campaign reports also classify *when* the configured repository-intelligence subject entered the observed tool order:
+
+- `FIRST_CHOICE`: the subject was selected before native repository exploration;
+- `LATE_RESCUE`: native search/read/shell discovery happened first and the subject was invoked later;
+- `NEVER_INVOKED`: invocation absence is authoritatively observed;
+- `UNKNOWN`: ordering/invocation evidence is insufficient, including partial opaque routing;
+- `NOT_CONFIGURED`: no repository-intelligence subject was configured.
+
+This timing surface is diagnostic only. It does not change task scoring, campaign qualification, or subject-exposure admission. Reports retain explicit timing observation denominators, and older receipts are reclassified only when their stored tool sequence, subject ordinal, invocation state, and order observability are sufficient.
+
 This lets OpenCode names such as `grep`/`read` and ChatGPT-style names such as `mcp__GitHub__search`/`mcp__GitHub__fetch_file` use the same scoring contract. Subject namespaces are normalized too, so `hashmarks_task_evidence`, `tools.hashmarks.task_evidence`, and `mcp__hashmarks__task_evidence` represent the same operation.
 
 A host catalog is admissible only when both the required subject tool and at least one native discovery class are visible. Missing Hashmarks is `ENVIRONMENT_BLOCKED`, not a routing failure; only a READY catalog can answer whether the host selected Hashmarks before native repository discovery.

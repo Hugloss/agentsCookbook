@@ -14,6 +14,12 @@ SHELL = "shell"
 TOOL_ROUTER = "tool-router"
 OTHER = "other"
 
+ROUTING_FIRST_CHOICE = "FIRST_CHOICE"
+ROUTING_LATE_RESCUE = "LATE_RESCUE"
+ROUTING_NEVER_INVOKED = "NEVER_INVOKED"
+ROUTING_UNKNOWN = "UNKNOWN"
+ROUTING_NOT_CONFIGURED = "NOT_CONFIGURED"
+
 DISCOVERY_CLASSES = frozenset({NATIVE_SEARCH, NATIVE_READ, SHELL})
 
 
@@ -48,6 +54,7 @@ _SHELL_OPERATIONS = frozenset({
     "shell",
     "terminal",
     "run_command",
+    "command_execution",
 })
 _ROUTER_OPERATIONS = frozenset({
     "execute",
@@ -171,6 +178,50 @@ def first_discovery_index(calls: list[dict[str, Any]]) -> int:
         ),
         len(calls),
     )
+
+
+def subject_routing_timing(
+    tool_sequence: list[str] | tuple[str, ...],
+    subject_ordinals: list[int] | tuple[int, ...],
+    *,
+    configured: bool,
+    invocation_observed: bool | None,
+    order_complete: bool,
+) -> str:
+    """Classify when a configured repository-intelligence subject entered the run.
+
+    Subject ordinals are observed by the host adapter. Tool classification remains
+    host-neutral here. Positive evidence is asymmetric: an observed native
+    discovery before the first subject call proves LATE_RESCUE, and ordinal 1
+    proves FIRST_CHOICE. Partial order without either proof remains UNKNOWN.
+    """
+    if not configured:
+        return ROUTING_NOT_CONFIGURED
+    if invocation_observed is False:
+        return ROUTING_NEVER_INVOKED
+    if invocation_observed is not True:
+        return ROUTING_UNKNOWN
+
+    valid_ordinals = [
+        value
+        for value in subject_ordinals
+        if isinstance(value, int)
+        and not isinstance(value, bool)
+        and 1 <= value <= len(tool_sequence)
+    ]
+    if not valid_ordinals:
+        return ROUTING_UNKNOWN
+
+    first_subject = min(valid_ordinals)
+    prior = tool_sequence[: first_subject - 1]
+    if any(
+        classify_tool(name.removeprefix("nested:")) in DISCOVERY_CLASSES
+        for name in prior
+    ):
+        return ROUTING_LATE_RESCUE
+    if first_subject == 1 or order_complete:
+        return ROUTING_FIRST_CHOICE
+    return ROUTING_UNKNOWN
 
 
 def catalog_tool_names(payload: object) -> list[str]:
