@@ -24,6 +24,7 @@ from benchmarks.harness.model import TrialContext
 from benchmarks.harness.runtime_authority import transport_runtime_authority
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.workspace import WorkspaceError, isolated_environment
+from benchmarks.hashmarks_task_evidence import is_task_evidence_packet
 
 FAMILIES = ("logs", "splunk", "dependencies", "semantics", "identities", "code_owners")
 SUBJECTS = ("hashmarks", "enola")
@@ -190,10 +191,7 @@ def grade_direct_claims(
         packet = json.loads(raw)
     except json.JSONDecodeError:
         packet = None
-    if (
-        not isinstance(packet, dict)
-        or packet.get("schema") != "hashmarks.task-evidence.v2"
-    ):
+    if not is_task_evidence_packet(packet):
         return {
             "parse_valid": False,
             "answer_correctness": "NOT_ASSESSED",

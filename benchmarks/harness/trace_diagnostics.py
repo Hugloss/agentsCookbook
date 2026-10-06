@@ -8,6 +8,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from benchmarks.hashmarks_task_evidence import retrieval_candidate_matches
 from benchmarks.tool_routing import (
     NATIVE_READ,
     NATIVE_SEARCH,
@@ -68,13 +69,7 @@ def _hashmarks_evidence(output: Any, expected: dict[str, str] | None) -> dict[st
     rank = None
     if isinstance(results, list) and expected:
         for index, candidate in enumerate(results, 1):
-            if not isinstance(candidate, dict):
-                continue
-            if candidate.get("path") == expected.get("path") and (
-                candidate.get("name") == expected.get("symbol")
-                or candidate.get("qualname", "").rsplit(".", 1)[-1]
-                == expected.get("symbol")
-            ):
+            if retrieval_candidate_matches(candidate, expected):
                 rank = index
                 break
     ownership = packet.get("ownership")

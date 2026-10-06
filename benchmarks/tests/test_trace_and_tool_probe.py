@@ -51,6 +51,31 @@ SUITE = (
 
 
 class TraceAndToolProbeTests(unittest.TestCase):
+    def test_hashmarks_trace_projection_reads_compact_v3_symbol_locator(self) -> None:
+        evidence = _hashmarks_evidence(
+            {
+                "schema": "hashmarks.task-evidence.v3",
+                "retrieval": {
+                    "presentation": "compact-locators-v1",
+                    "results": [
+                        {
+                            "path": "owner.py",
+                            "rank": 19,
+                            "symbol": "pkg.owner",
+                            "evidence_visibility": "source",
+                        }
+                    ],
+                },
+                "ownership": {"status": "ambiguous"},
+            },
+            {"path": "owner.py", "symbol": "owner"},
+        )
+
+        self.assertEqual(evidence["schema"], "hashmarks.task-evidence.v3")
+        self.assertEqual(evidence["expected_target_rank"], 1)
+        self.assertEqual(evidence["expected_target_observability"], "observed")
+        self.assertEqual(evidence["ownership_status"], "ambiguous")
+
     def test_trace_projection_separates_denial_from_retrieval_absence(self) -> None:
         packet = {
             "schema": "hashmarks.task-evidence.v2",
