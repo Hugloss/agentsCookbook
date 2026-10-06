@@ -489,7 +489,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 mock.patch(
                     "benchmarks.__main__.build_trace_diagnostics",
                     return_value={
-                        "schema": "agents-cookbook-trace-diagnostics.v3",
+                        "schema": "agents-cookbook-trace-diagnostics.v4",
                         "trials": [],
                         "summary": {
                             "repository_intelligence_quality": {
@@ -500,7 +500,18 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                                         "subject_id": "hashmarks",
                                         "operation": "task_evidence",
                                         "calls": 1,
+                                    },
+                            "repository_intelligence_search_efficiency": {
+                                "state": "observed",
+                                "claim_scope": "descriptive-behavioral-only",
+                                "correctness_joined": False,
+                                "subjects": [
+                                    {
+                                        "subject_id": "hashmarks",
+                                        "evidence_observed_trials": 1,
                                     }
+                                ],
+                            }
                                 ],
                             }
                         },
@@ -540,13 +551,24 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             )
             self.assertEqual(
                 stored_decision["schema"],
-                "agents-cookbook-benchmark-decision-evidence.v4",
+                "agents-cookbook-benchmark-decision-evidence.v5",
             )
             self.assertEqual(stored_decision["run_id"], "000001")
             self.assertTrue(stored_decision["authority"]["derived_only"])
             self.assertEqual(
                 stored_decision["repository_intelligence_quality"]["state"],
                 "observed",
+            )
+            self.assertEqual(
+                stored_decision[
+                    "repository_intelligence_search_efficiency"
+                ]["state"],
+                "observed",
+            )
+            self.assertFalse(
+                stored_decision[
+                    "repository_intelligence_search_efficiency"
+                ]["correctness_joined"]
             )
             self.assertEqual(
                 stored_decision["repository_intelligence_quality"]["subjects"][0][
