@@ -385,6 +385,12 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
 
     def test_task_assistance_evidence_preserves_invoked_tool_names_and_effect(self) -> None:
         suite = _suite()
+        suite.experiment["subject_exposure_contract"] = {
+            "require_probe_contract": True
+        }
+        suite.subjects["hashmarks"]["exposure_probe"] = {
+            "required_tool": "hashmarks_task_evidence"
+        }
         rows = {
             (str(row["condition_id"]), int(row["trial"])): row
             for row in suite.trial_definitions()
@@ -410,6 +416,21 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
                 "subject_tool_invoked": invoked,
                 "subject_mcp_calls": 1 if invoked else 0,
                 "subject_tool_names": ["task_evidence"] if invoked else [],
+                "subject_tool_observability": "complete",
+                "subject_tool_result_evidence": (
+                    [
+                        {
+                            "operation": "task_evidence",
+                            "status": "completed",
+                            "result_bytes": 20,
+                            "error_present": False,
+                            "result_basis": "test",
+                            "outcome": "successful-result-observed",
+                        }
+                    ]
+                    if invoked
+                    else []
+                ),
                 "duration_ms": 180 if invoked else 120,
                 "tool_calls": 5 if invoked else 3,
                 "mcp_calls": 1 if invoked else 0,
@@ -439,20 +460,51 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
             1,
         )
         self.assertEqual(decision["headroom"]["headroom_task_ids"], ["task"])
-        self.assertEqual(decision["headroom"]["invoked_gain_task_ids"], ["task"])
-        self.assertEqual(decision["headroom"]["invoked_gain_task_fraction"], 1.0)
+        self.assertEqual(
+            decision["headroom"]["generic_subject_use"]["gain_task_ids"],
+            ["task"],
+        )
+        self.assertEqual(
+            decision["headroom"]["contracted_treatment"]["gain_task_ids"],
+            ["task"],
+        )
+        self.assertEqual(
+            decision["headroom"]["contracted_treatment"]["gain_task_fraction"],
+            1.0,
+        )
         self.assertEqual(
             decision["claim_guardrails"]["subject_effect_attribution"],
-            "observed-subject-invocation-only",
+            "exact-required-operation-with-successful-nonempty-result",
+        )
+        self.assertEqual(
+            decision["claim_guardrails"]["generic_subject_invocation"],
+            "routing-and-adoption-descriptive-only",
         )
         self.assertEqual(len(decision["subjects"]), 1)
+        subject_decision = decision["subjects"][0]
         self.assertEqual(
-            decision["subjects"][0]["paired_when_invoked"]["transitions"]["gain"],
+            subject_decision["generic_subject_use"]["paired_when_invoked"][
+                "transitions"
+            ]["gain"],
             1,
         )
         self.assertEqual(
-            decision["subjects"][0]["gain_task_ids_when_invoked"],
+            subject_decision["generic_subject_use"]["gain_task_ids_when_invoked"],
             ["task"],
+        )
+        self.assertEqual(
+            subject_decision["contracted_treatment"]["observed"]["transitions"][
+                "gain"
+            ],
+            1,
+        )
+        self.assertEqual(
+            subject_decision["contracted_treatment"]["gain_task_ids"],
+            ["task"],
+        )
+        self.assertEqual(
+            subject_decision["contracted_treatment"]["attribution_scope"],
+            "exact-required-operation-with-successful-nonempty-result",
         )
         self.assertEqual(evidence["subject_use"]["invoked_pairs"], 1)
         self.assertEqual(evidence["subject_use"]["subject_mcp_calls"], 1)
@@ -471,6 +523,10 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertEqual(paired[0]["subject_use_state"], "invoked")
         self.assertEqual(
             paired[0]["attribution_interpretation"],
+            "contracted-treatment-observed",
+        )
+        self.assertEqual(
+            paired[0]["subject_use_interpretation"],
             "subject-use-observed",
         )
         self.assertTrue(
@@ -485,6 +541,97 @@ class BenchmarkStabilityReportingTests(unittest.TestCase):
         self.assertTrue(exposure["qualified"])
         self.assertEqual(exposure["conditions"][0]["invoked_trials"], 1)
         self.assertEqual(report["campaign_qualification"]["status"], "QUALIFIED")
+
+    def test_decision_summary_does_not_credit_wrong_operation_gain_as_treatment(
+        self,
+    ) -> None:
+        suite = _suite()
+        suite.experiment["subject_exposure_contract"] = {
+            "require_probe_contract": True
+        }
+        suite.subjects["hashmarks"]["exposure_probe"] = {
+            "required_tool": "hashmarks_task_evidence"
+        }
+        rows = {
+            (str(row["condition_id"]), int(row["trial"])): row
+            for row in suite.trial_definitions()
+        }
+        receipts = []
+        for index in range(3):
+            bare_status = "FAIL" if index == 0 else "PASS"
+            bare = _receipt(
+                suite,
+                rows[("bare", index)],
+                bare_status,
+                chr(ord("p") + index) * 64,
+            )
+            assisted = _receipt(
+                suite,
+                rows[("hashmarks", index)],
+                "PASS",
+                chr(ord("s") + index) * 64,
+            )
+            operation = "find" if index == 0 else "task_evidence"
+            assisted["authority"]["subject"]["available"] = True
+            assisted["measurements"]["agent"] = {
+                "subject_tool_configured": True,
+                "subject_tool_invoked": True,
+                "subject_mcp_calls": 1,
+                "subject_tool_names": [operation],
+                "subject_tool_observability": "complete",
+                "subject_tool_result_evidence": [
+                    {
+                        "operation": operation,
+                        "status": "completed",
+                        "result_bytes": 20,
+                        "error_present": False,
+                        "result_basis": "test",
+                        "outcome": "successful-result-observed",
+                    }
+                ],
+            }
+            receipts.extend((bare, assisted))
+
+        with mock.patch(
+            "benchmarks.harness.report._receipts",
+            return_value=receipts,
+        ):
+            report = build_report(
+                suite=suite,
+                results_root=Path("/unused"),
+            )
+
+        decision = report["decision_summary"]
+        self.assertEqual(
+            decision["headroom"]["generic_subject_use"]["gain_task_ids"],
+            ["task"],
+        )
+        self.assertEqual(
+            decision["headroom"]["contracted_treatment"]["gain_task_ids"],
+            [],
+        )
+        self.assertEqual(
+            decision["subjects"][0]["generic_subject_use"][
+                "gain_task_ids_when_invoked"
+            ],
+            ["task"],
+        )
+        self.assertEqual(
+            decision["subjects"][0]["contracted_treatment"]["gain_task_ids"],
+            [],
+        )
+        treatment = {
+            row["contracted_exposure_state"]: row
+            for row in report["paired_assistance_treatment_summary"]
+        }
+        self.assertEqual(
+            treatment["other-subject-operation"]["transitions"]["gain"],
+            1,
+        )
+        self.assertEqual(
+            treatment["contracted-successful-result"]["transitions"]["gain"],
+            0,
+        )
 
     def test_campaign_status_blocks_never_invoked_non_control_subject(self) -> None:
         suite = _suite()
