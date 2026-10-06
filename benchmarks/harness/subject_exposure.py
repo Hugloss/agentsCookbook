@@ -156,6 +156,31 @@ def subject_exposure_qualification(
             is True
             for receipt in observed_receipts
         )
+        exposure_contract = experiment.get("subject_exposure_contract")
+        required_tool = (
+            exposure_probe_required_tool(suite, subject_id)
+            if isinstance(exposure_contract, dict)
+            and exposure_contract.get("require_probe_contract") is True
+            else None
+        )
+        required_operation = (
+            required_tool.removeprefix(subject_id + "_")
+            if required_tool is not None
+            else None
+        )
+        required_invoked = 0
+        required_name_observability_complete = 0
+        if required_operation is not None:
+            for receipt in observed_receipts:
+                agent = receipt.get("measurements", {}).get("agent", {})
+                names = agent.get("subject_tool_names")
+                if (
+                    isinstance(names, list)
+                    and required_operation in names
+                ):
+                    required_invoked += 1
+                if agent.get("subject_tool_observability") == "complete":
+                    required_name_observability_complete += 1
         complete = len(observed_receipts) == expected
         reasons: list[str] = []
         if complete:
@@ -167,6 +192,12 @@ def subject_exposure_qualification(
                 reasons.append("subject-invocation-observability-incomplete")
             if invoked == 0:
                 reasons.append("subject-never-invoked")
+            elif required_operation is not None and required_invoked == 0:
+                reasons.append(
+                    "required-subject-tool-never-invoked"
+                    if required_name_observability_complete == expected
+                    else "required-subject-tool-invocation-unproven"
+                )
 
         rows.append(
             {
@@ -181,6 +212,12 @@ def subject_exposure_qualification(
                 "not_invoked_trials": invocation_observed - invoked,
                 "invocation_unknown_trials": len(observed_receipts)
                 - invocation_observed,
+                "required_tool": required_tool,
+                "required_operation": required_operation,
+                "required_tool_invoked_trials": required_invoked,
+                "required_tool_name_observability_complete_trials": (
+                    required_name_observability_complete
+                ),
                 "status": (
                     "PENDING"
                     if not complete
@@ -215,7 +252,9 @@ def subject_exposure_qualification(
         "qualified": not failed and not pending,
         "policy": (
             "each selected non-control condition must prove complete invocation "
-            "observability and at least one subject-tool invocation"
+            "observability and at least one subject-tool invocation; when the "
+            "suite requires an exposure probe contract, the exact contracted "
+            "operation must be observed at least once"
         ),
         "conditions": rows,
         "failed_conditions": failed,
