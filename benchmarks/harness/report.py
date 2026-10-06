@@ -29,7 +29,10 @@ from benchmarks.harness.campaign_authority import (
     read_campaign,
 )
 from benchmarks.harness.subject_exposure import subject_exposure_qualification
-from benchmarks.harness.treatment_attribution import contracted_treatment_evidence
+from benchmarks.harness.treatment_attribution import (
+    CONTRACTED_SUCCESSFUL_RESULT,
+    contracted_treatment_evidence,
+)
 from benchmarks.harness.suite import SuiteDefinition
 from benchmarks.harness.identity import digest, execution_task_contract
 
@@ -1276,9 +1279,14 @@ def _task_assistance_evidence(
             "not-invoked": [],
             "unknown": [],
         }
+        by_treatment: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in pairs:
             state = str(row.get("subject_use_state") or "unknown")
             by_invocation[state].append(row)
+            treatment_state = str(
+                row.get("contracted_exposure_state") or "no-contract"
+            )
+            by_treatment[treatment_state].append(row)
 
         transition_by_invocation = {}
         economics_by_invocation = {}
@@ -1317,6 +1325,67 @@ def _task_assistance_evidence(
                 }
             economics_by_invocation[state] = metrics
 
+        transition_by_treatment: dict[str, dict[str, int]] = {}
+        economics_by_treatment: dict[
+            str,
+            dict[str, dict[str, int | float | None]],
+        ] = {}
+        for state, state_rows in sorted(by_treatment.items()):
+            counts = Counter(
+                str(row["assistance_transition"])
+                for row in state_rows
+                if isinstance(row.get("assistance_transition"), str)
+            )
+            transition_by_treatment[state] = {
+                name: counts.get(name, 0)
+                for name in ("gain", "preserved", "unresolved", "regression")
+            }
+            metrics: dict[str, dict[str, int | float | None]] = {}
+            for metric in (
+                "duration_ms",
+                "command_calls",
+                "tool_calls",
+                "mcp_calls",
+                "input_tokens",
+                "output_tokens",
+            ):
+                values = [
+                    value
+                    for row in state_rows
+                    if isinstance(
+                        (value := row.get(f"{metric}_delta")),
+                        (int, float),
+                    )
+                    and not isinstance(value, bool)
+                ]
+                metrics[metric] = {
+                    "observations": len(values),
+                    "mean": mean(values) if values else None,
+                    "median": median(values) if values else None,
+                }
+            economics_by_treatment[state] = metrics
+
+        contracted_rows = by_treatment.get(CONTRACTED_SUCCESSFUL_RESULT, [])
+        definite_non_treatment_rows = [
+            row
+            for row in pairs
+            if row.get("contracted_treatment_observed") is False
+        ]
+        unproven_treatment_rows = [
+            row
+            for row in pairs
+            if row.get("contracted_treatment_observed") is None
+        ]
+        contracted_transitions = transition_by_treatment.get(
+            CONTRACTED_SUCCESSFUL_RESULT,
+            {
+                "gain": 0,
+                "preserved": 0,
+                "unresolved": 0,
+                "regression": 0,
+            },
+        )
+
         bare_semantic_failures = (
             transitions.get("gain", 0) + transitions.get("unresolved", 0)
         )
@@ -1353,6 +1422,25 @@ def _task_assistance_evidence(
             signals.append("bare-headroom-without-subject-invocation")
         if not_invoked_transitions["regression"]:
             signals.append("regression-without-subject-invocation")
+        if contracted_rows:
+            signals.append("contracted-treatment-observed")
+            if contracted_transitions["gain"]:
+                signals.append("contracted-treatment-gain-observed")
+            if contracted_transitions["regression"]:
+                signals.append("contracted-treatment-regression-observed")
+            if not contracted_transitions["gain"]:
+                signals.append("contracted-treatment-no-gain-observed")
+        if definite_non_treatment_rows:
+            signals.append("subject-use-without-contracted-treatment")
+        if unproven_treatment_rows:
+            signals.append("contracted-treatment-unproven")
+        if bare_semantic_failures and not contracted_rows:
+            signals.append("bare-headroom-without-contracted-treatment")
+        if any(
+            row.get("assistance_transition") == "regression"
+            for row in definite_non_treatment_rows
+        ):
+            signals.append("regression-without-contracted-treatment")
 
         tools = sorted(
             {
@@ -1410,8 +1498,28 @@ def _task_assistance_evidence(
                     ),
                     "subject_tool_names": tools,
                 },
+                "contracted_treatment": {
+                    "observed_pairs": len(contracted_rows),
+                    "definite_non_treatment_pairs": len(
+                        definite_non_treatment_rows
+                    ),
+                    "unproven_pairs": len(unproven_treatment_rows),
+                    "state_counts": dict(
+                        sorted(
+                            Counter(
+                                str(
+                                    row.get("contracted_exposure_state")
+                                    or "no-contract"
+                                )
+                                for row in pairs
+                            ).items()
+                        )
+                    ),
+                },
                 "transitions_by_invocation": transition_by_invocation,
                 "delta_metrics_by_invocation": economics_by_invocation,
+                "transitions_by_contracted_treatment": transition_by_treatment,
+                "delta_metrics_by_contracted_treatment": economics_by_treatment,
                 "evidence_signals": signals,
             }
         )
