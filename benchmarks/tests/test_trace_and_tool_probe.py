@@ -145,7 +145,14 @@ class TraceAndToolProbeTests(unittest.TestCase):
                         }
                     ],
                 },
-                "ownership": {"status": "ambiguous"},
+                "ownership": {
+                    "status": "ambiguous",
+                    "next_read": {
+                        "path": "owner.py",
+                        "reason": "ownership-ambiguity-discrimination",
+                        "authority": "non-authoritative-discrimination",
+                    },
+                },
             },
             {"path": "owner.py", "symbol": "owner"},
         )
@@ -154,6 +161,15 @@ class TraceAndToolProbeTests(unittest.TestCase):
         self.assertEqual(evidence["expected_target_rank"], 1)
         self.assertEqual(evidence["expected_target_observability"], "observed")
         self.assertEqual(evidence["ownership_status"], "ambiguous")
+        self.assertEqual(evidence["next_read_path"], "owner.py")
+        self.assertEqual(
+            evidence["next_read_reason"],
+            "ownership-ambiguity-discrimination",
+        )
+        self.assertEqual(
+            evidence["next_read_authority"],
+            "non-authoritative-discrimination",
+        )
 
     def test_evidence_to_action_uses_subject_candidates_not_oracle(self) -> None:
         packet = {
@@ -384,6 +400,9 @@ class TraceAndToolProbeTests(unittest.TestCase):
                 "status": "completed",
                 "result_bytes": 1200,
                 "input_sha256": "subject",
+                "hashmarks_evidence": {
+                    "next_read_path": "owner.py",
+                },
             },
             {
                 "ordinal": 3,
@@ -398,6 +417,7 @@ class TraceAndToolProbeTests(unittest.TestCase):
                 "tool_class": NATIVE_READ,
                 "subject_call": False,
                 "input_sha256": "read-a",
+                "path_attempted": "owner.py",
             },
             {
                 "ordinal": 5,
@@ -424,6 +444,71 @@ class TraceAndToolProbeTests(unittest.TestCase):
             1,
         )
         self.assertEqual(metrics["subject_result_observed_calls"], 1)
+        self.assertEqual(
+            metrics["subject_next_read_guidance"],
+            {
+                "emitted_calls": 1,
+                "followup_counts": {"search-first": 1},
+                "advised_read_first_rate": 0.0,
+                "claim_scope": "descriptive-followup-only",
+            },
+        )
+
+    def test_trial_search_efficiency_classifies_next_read_followups(self) -> None:
+        def measure(followup: dict[str, object] | None) -> dict[str, object]:
+            calls: list[dict[str, object]] = [
+                {
+                    "ordinal": 1,
+                    "tool": "hashmarks_task_evidence",
+                    "tool_class": SUBJECT_REPOSITORY_INTELLIGENCE,
+                    "subject_call": True,
+                    "status": "completed",
+                    "result_bytes": 100,
+                    "hashmarks_evidence": {"next_read_path": "owner.py"},
+                }
+            ]
+            if followup is not None:
+                calls.append({"ordinal": 2, **followup})
+            metrics = _trial_search_efficiency(calls)
+            assert metrics is not None
+            return metrics["subject_next_read_guidance"]
+
+        self.assertEqual(
+            measure(
+                {
+                    "tool": "read",
+                    "tool_class": NATIVE_READ,
+                    "subject_call": False,
+                    "path_attempted": "owner.py",
+                }
+            )["followup_counts"],
+            {"advised-read-first": 1},
+        )
+        self.assertEqual(
+            measure(
+                {
+                    "tool": "read",
+                    "tool_class": NATIVE_READ,
+                    "subject_call": False,
+                    "path_attempted": "other.py",
+                }
+            )["followup_counts"],
+            {"different-read-first": 1},
+        )
+        self.assertEqual(
+            measure(
+                {
+                    "tool": "grep",
+                    "tool_class": NATIVE_SEARCH,
+                    "subject_call": False,
+                }
+            )["followup_counts"],
+            {"search-first": 1},
+        )
+        self.assertEqual(
+            measure(None)["followup_counts"],
+            {"no-native-navigation": 1},
+        )
 
     def test_search_efficiency_compares_only_observed_subject_evidence_to_bare(self) -> None:
         def row(
@@ -475,6 +560,7 @@ class TraceAndToolProbeTests(unittest.TestCase):
                     "tool_class": NATIVE_READ,
                     "subject_call": False,
                     "input_sha256": "r",
+                    "path_attempted": "owner.py",
                 },
             ],
         )
@@ -490,6 +576,9 @@ class TraceAndToolProbeTests(unittest.TestCase):
                     "status": "completed",
                     "result_bytes": 900,
                     "input_sha256": "subject",
+                    "hashmarks_evidence": {
+                        "next_read_path": "owner.py",
+                    },
                 },
                 {
                     "ordinal": 2,
@@ -515,6 +604,15 @@ class TraceAndToolProbeTests(unittest.TestCase):
         self.assertEqual(subject["subject_id"], "hashmarks")
         self.assertEqual(subject["evidence_observed_trials"], 1)
         self.assertEqual(subject["paired_vs_bare"]["comparable_pairs"], 1)
+        self.assertEqual(
+            subject["post_subject"]["next_read_guidance"],
+            {
+                "emitted_calls": 1,
+                "followup_counts": {"search-first": 1},
+                "advised_read_first_rate": 0.0,
+                "claim_scope": "descriptive-followup-only",
+            },
+        )
         self.assertEqual(
             subject["paired_vs_bare"]["native_search_calls_delta"],
             {
