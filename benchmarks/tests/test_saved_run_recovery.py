@@ -231,6 +231,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
                         "status": root / "reports/status.json",
                         "report": root / "reports/report.json",
                         "decision_evidence": root / "reports/decision-evidence.json",
+                        "trace_diagnostics": root / "reports/trace-diagnostics.json",
                         "score": root / "reports/score.json",
                     },
                 ) as persist_reports,
@@ -366,6 +367,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
                         "status": root / "reports/status.json",
                         "report": root / "reports/report.json",
                         "decision_evidence": root / "reports/decision-evidence.json",
+                        "trace_diagnostics": root / "reports/trace-diagnostics.json",
                         "score": root / "reports/score.json",
                     },
                 ),
@@ -393,7 +395,12 @@ class SavedRunRecoveryTests(unittest.TestCase):
             )
             terminal = stderr.getvalue()
             self.assertIn("task-a / bare: INCOMPLETE", terminal)
+            self.assertIn(
+                f"trace-diagnostics {root / 'reports/trace-diagnostics.json'}",
+                terminal,
+            )
             self.assertIn("RUN BLOCKERS 1 operational failure", terminal)
+            self.assertIn(f"Receipt: {result_dir / 'result.json'}", terminal)
             self.assertIn("Reason code: agent-terminal-failed", terminal)
             self.assertIn("at extractFinalAnswer", terminal)
             self.assertNotIn("stale transient", terminal)
@@ -959,6 +966,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
                 "status": run_root / "reports/status.json",
                 "report": run_root / "reports/report.json",
                 "decision_evidence": run_root / "reports/decision-evidence.json",
+                "trace_diagnostics": run_root / "reports/trace-diagnostics.json",
                 "score": run_root / "reports/score.json",
             }
             stdout = io.StringIO()
@@ -1012,6 +1020,10 @@ class SavedRunRecoveryTests(unittest.TestCase):
             payload = json.loads(stdout.getvalue())
             self.assertEqual(payload["run_id"], "000001")
             self.assertEqual(payload["reports"]["score"], str(written["score"]))
+            self.assertEqual(
+                payload["reports"]["trace_diagnostics"],
+                str(written["trace_diagnostics"]),
+            )
 
     def test_new_runs_are_numbered_and_latest_never_overwrites_history(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
