@@ -102,7 +102,7 @@ class TraceAndToolProbeTests(unittest.TestCase):
         )
         self.assertEqual(
             subject_routing_timing(
-                ["grep", "mcp:hashmarks/task_evidence"],
+                ["nested:grep", "mcp:hashmarks/task_evidence"],
                 [2],
                 configured=True,
                 invocation_observed=True,
