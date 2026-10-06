@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections import Counter
 from pathlib import Path
 from statistics import mean, median
@@ -93,6 +94,175 @@ def _hashmarks_evidence(output: Any, expected: dict[str, str] | None) -> dict[st
     }
 
 
+def _normalize_repo_path(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    rendered = value.strip().replace("\\", "/")
+    while rendered.startswith("./"):
+        rendered = rendered[2:]
+    return rendered or None
+
+
+def _repository_candidate_evidence(
+    output: Any,
+) -> tuple[dict[str, Any], set[str], set[str]]:
+    """Extract subject-returned candidate locators without consulting the oracle."""
+    try:
+        packet = json.loads(output) if isinstance(output, str) else output
+    except ValueError:
+        packet = None
+    if not isinstance(packet, dict):
+        return (
+            {
+                "state": "unparseable",
+                "candidate_results": None,
+                "candidate_paths_observed": 0,
+                "candidate_symbols_observed": 0,
+            },
+            set(),
+            set(),
+        )
+
+    retrieval = packet.get("retrieval")
+    results = retrieval.get("results") if isinstance(retrieval, dict) else None
+    if not isinstance(results, list):
+        return (
+            {
+                "state": "unsupported-candidate-shape",
+                "candidate_results": None,
+                "candidate_paths_observed": 0,
+                "candidate_symbols_observed": 0,
+            },
+            set(),
+            set(),
+        )
+
+    paths: set[str] = set()
+    symbols: set[str] = set()
+    for candidate in results:
+        if not isinstance(candidate, dict):
+            continue
+        path = _normalize_repo_path(candidate.get("path"))
+        if path is not None:
+            paths.add(path)
+        for key in ("symbol", "qualname", "name"):
+            value = candidate.get(key)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            rendered = value.strip()
+            symbols.add(rendered)
+            terminal = rendered.rsplit(".", 1)[-1]
+            if terminal:
+                symbols.add(terminal)
+
+    return (
+        {
+            "state": (
+                "candidate-locators-observed"
+                if paths or symbols
+                else "no-candidate-locators"
+            ),
+            "candidate_results": len(results),
+            "candidate_paths_observed": len(paths),
+            "candidate_symbols_observed": len(symbols),
+            "locator_source": "subject-result.retrieval.results",
+            "oracle_relative": False,
+        },
+        paths,
+        symbols,
+    )
+
+
+_QUERY_KEYS = frozenset(
+    {
+        "pattern",
+        "query",
+        "q",
+        "search",
+        "search_query",
+        "text",
+        "symbol",
+        "name",
+    }
+)
+
+
+def _query_strings(value: Any, *, selected: bool = False) -> list[str]:
+    if isinstance(value, str):
+        return [value] if selected else []
+    if isinstance(value, list):
+        return [
+            item
+            for child in value
+            for item in _query_strings(child, selected=selected)
+        ]
+    if not isinstance(value, dict):
+        return []
+
+    output: list[str] = []
+    for key, child in value.items():
+        key_selected = str(key).strip().lower() in _QUERY_KEYS
+        output.extend(
+            _query_strings(
+                child,
+                selected=selected or key_selected,
+            )
+        )
+    return output
+
+
+def _query_mentions_symbol(query: str, symbol: str) -> bool:
+    query = query.strip()
+    symbol = symbol.strip()
+    if not query or not symbol:
+        return False
+    if query == symbol:
+        return True
+    return re.search(
+        rf"(?<![A-Za-z0-9_]){re.escape(symbol)}(?![A-Za-z0-9_])",
+        query,
+    ) is not None
+
+
+def _candidate_followup(
+    *,
+    inputs: dict[str, Any],
+    tool_class: str,
+    path_attempted: str | None,
+    evidence: dict[str, Any],
+) -> dict[str, Any]:
+    candidate_paths = evidence["paths"]
+    candidate_symbols = evidence["symbols"]
+    query_strings = _query_strings(inputs)
+    normalized_path = _normalize_repo_path(path_attempted)
+    bases: list[str] = []
+
+    if tool_class == NATIVE_READ and normalized_path in candidate_paths:
+        bases.append("candidate-path-read")
+    if tool_class == NATIVE_SEARCH:
+        if normalized_path in candidate_paths:
+            bases.append("candidate-path-search-scope")
+        if any(
+            path in query
+            for path in candidate_paths
+            for query in query_strings
+        ):
+            bases.append("candidate-path-query")
+        if any(
+            _query_mentions_symbol(query, symbol)
+            for symbol in candidate_symbols
+            for query in query_strings
+        ):
+            bases.append("candidate-symbol-query")
+
+    return {
+        "source_subject_ordinal": evidence["ordinal"],
+        "candidate_match": bool(bases),
+        "match_basis": sorted(set(bases)),
+        "observability": "direct-native-call-inputs",
+    }
+
+
 def _opencode_calls(trace: dict[str, Any], receipt: dict[str, Any]) -> list[dict[str, Any]]:
     subject = receipt.get("condition", {}).get("subject")
     expected = (
@@ -101,6 +271,7 @@ def _opencode_calls(trace: dict[str, Any], receipt: dict[str, Any]) -> list[dict
     expected = expected if isinstance(expected, dict) else None
     workspace = str(receipt.get("execution", {}).get("workspace_root", ""))
     calls: list[dict[str, Any]] = []
+    active_evidence: dict[str, Any] | None = None
     for message in trace.get("messages", []):
         if not isinstance(message, dict):
             continue
@@ -120,6 +291,10 @@ def _opencode_calls(trace: dict[str, Any], receipt: dict[str, Any]) -> list[dict
                 inputs,
                 subject=subject,
             )
+            if subject_call:
+                # A new subject call ends attribution to any previous result.
+                active_evidence = None
+
             row: dict[str, Any] = {
                 "ordinal": len(calls) + 1,
                 "tool": name,
@@ -134,8 +309,32 @@ def _opencode_calls(trace: dict[str, Any], receipt: dict[str, Any]) -> list[dict
                 row["path_attempted"] = _relative_path(
                     inputs.get("filePath") or inputs.get("path"), workspace
                 )
+                if active_evidence is not None:
+                    row["evidence_followup"] = _candidate_followup(
+                        inputs=inputs,
+                        tool_class=tool_class,
+                        path_attempted=row["path_attempted"],
+                        evidence=active_evidence,
+                    )
             if subject_call:
                 row["result_bytes"] = result_bytes(output)
+                if status == "completed":
+                    repository_evidence, paths, symbols = (
+                        _repository_candidate_evidence(output)
+                    )
+                    row["repository_evidence"] = repository_evidence
+                    if (
+                        repository_evidence["state"]
+                        == "candidate-locators-observed"
+                        and isinstance(row["result_bytes"], int)
+                        and not isinstance(row["result_bytes"], bool)
+                        and row["result_bytes"] > 0
+                    ):
+                        active_evidence = {
+                            "ordinal": row["ordinal"],
+                            "paths": paths,
+                            "symbols": symbols,
+                        }
                 if (
                     status == "completed"
                     and matches_subject_operation(
@@ -158,33 +357,50 @@ def _opencode_calls(trace: dict[str, Any], receipt: dict[str, Any]) -> list[dict
             else:
                 nested = None
             calls.append(row)
-            if name == "execute" and isinstance(nested, list):
-                    for call in nested:
-                        if not isinstance(call, dict):
-                            continue
-                        nested_name = call.get("tool")
-                        nested_status = call.get("status")
-                        nested_result = call.get("result")
-                        calls.append({
-                            "ordinal": len(calls) + 1,
-                            "tool": nested_name,
-                            "tool_class": classify_tool(
-                                nested_name,
-                                subject=subject,
-                            ),
-                            "status": nested_status,
-                            "failure": _tool_failure(nested_status, nested_result),
-                            "subject_call": is_subject_tool(
-                                nested_name,
-                                subject,
-                            ),
-                            "input_sha256": None,
-                            "input_fields": [],
-                            "observability": "execute-metadata",
-                            "result_bytes": None,
-                        })
-    return calls
 
+            if name == "execute" and isinstance(nested, list):
+                for call in nested:
+                    if not isinstance(call, dict):
+                        continue
+                    nested_name = call.get("tool")
+                    nested_status = call.get("status")
+                    nested_result = call.get("result")
+                    nested_subject = is_subject_tool(nested_name, subject)
+                    nested_class = classify_tool(
+                        nested_name,
+                        subject=subject,
+                    )
+                    nested_row: dict[str, Any] = {
+                        "ordinal": len(calls) + 1,
+                        "tool": nested_name,
+                        "tool_class": nested_class,
+                        "status": nested_status,
+                        "failure": _tool_failure(
+                            nested_status,
+                            nested_result,
+                        ),
+                        "subject_call": nested_subject,
+                        "input_sha256": None,
+                        "input_fields": [],
+                        "observability": "execute-metadata",
+                        "result_bytes": None,
+                    }
+                    if (
+                        active_evidence is not None
+                        and nested_class in {NATIVE_READ, NATIVE_SEARCH}
+                    ):
+                        nested_row["evidence_followup"] = {
+                            "source_subject_ordinal": active_evidence["ordinal"],
+                            "candidate_match": None,
+                            "match_basis": [],
+                            "observability": "inputs-unavailable",
+                        }
+                    calls.append(nested_row)
+                    if nested_subject:
+                        # The nested result is not observable enough to establish
+                        # a new candidate authority, so fail closed.
+                        active_evidence = None
+    return calls
 
 def _last_assistant_text_present(trace: dict[str, Any]) -> bool | None:
     for message in reversed(trace.get("messages", [])):
@@ -552,6 +768,284 @@ def _delta_summary(values: list[int | float]) -> dict[str, Any]:
     }
 
 
+def _trial_evidence_to_action(
+    calls: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    """Classify observed action on subject-returned candidates without oracle use."""
+    if calls is None:
+        return None
+
+    subject_ordinals = sorted(
+        int(call["ordinal"])
+        for call in calls
+        if call.get("subject_call") is True
+        and isinstance(call.get("ordinal"), int)
+        and not isinstance(call.get("ordinal"), bool)
+    )
+    evidence_calls = [
+        call
+        for call in calls
+        if call.get("subject_call") is True
+        and isinstance(call.get("repository_evidence"), dict)
+        and call["repository_evidence"].get("state")
+        == "candidate-locators-observed"
+        and isinstance(call.get("result_bytes"), int)
+        and not isinstance(call.get("result_bytes"), bool)
+        and call["result_bytes"] > 0
+    ]
+
+    segments: list[dict[str, Any]] = []
+    for source in evidence_calls:
+        source_ordinal = int(source["ordinal"])
+        next_subject = next(
+            (
+                ordinal
+                for ordinal in subject_ordinals
+                if ordinal > source_ordinal
+            ),
+            None,
+        )
+        segment_calls = [
+            call
+            for call in calls
+            if isinstance(call.get("ordinal"), int)
+            and call["ordinal"] > source_ordinal
+            and (next_subject is None or call["ordinal"] < next_subject)
+        ]
+        native_calls = [
+            call
+            for call in segment_calls
+            if call.get("tool_class") in {NATIVE_SEARCH, NATIVE_READ}
+        ]
+        followed = [
+            call
+            for call in native_calls
+            if call.get("evidence_followup", {}).get("source_subject_ordinal")
+            == source_ordinal
+            and call.get("evidence_followup", {}).get("candidate_match") is True
+        ]
+        unresolved_native = [
+            call
+            for call in native_calls
+            if call.get("evidence_followup", {}).get("source_subject_ordinal")
+            == source_ordinal
+            and call.get("evidence_followup", {}).get("candidate_match") is None
+        ]
+        unmatched_native = [
+            call
+            for call in native_calls
+            if call.get("evidence_followup", {}).get("source_subject_ordinal")
+            == source_ordinal
+            and call.get("evidence_followup", {}).get("candidate_match") is False
+        ]
+        opaque_router_calls = [
+            call
+            for call in segment_calls
+            if call.get("tool_class") == TOOL_ROUTER
+            and call.get("routing_observability") == "opaque"
+        ]
+        shell_calls = [
+            call
+            for call in segment_calls
+            if call.get("tool_class") == SHELL
+        ]
+
+        basis_counts = Counter(
+            basis
+            for call in followed
+            for basis in call.get("evidence_followup", {}).get("match_basis", [])
+            if isinstance(basis, str)
+        )
+        followed_ordinals = [
+            int(call["ordinal"])
+            for call in followed
+            if isinstance(call.get("ordinal"), int)
+        ]
+        if followed:
+            state = "candidate-followed"
+        elif unresolved_native or opaque_router_calls:
+            state = "followup-unresolved"
+        elif unmatched_native:
+            state = "other-native-navigation"
+        elif shell_calls:
+            state = "shell-only-followup-unknown"
+        else:
+            state = "no-observed-native-followup"
+
+        segments.append(
+            {
+                "source_subject_ordinal": source_ordinal,
+                "next_subject_ordinal": next_subject,
+                "candidate_results": source["repository_evidence"].get(
+                    "candidate_results"
+                ),
+                "candidate_paths_observed": source["repository_evidence"].get(
+                    "candidate_paths_observed"
+                ),
+                "candidate_symbols_observed": source["repository_evidence"].get(
+                    "candidate_symbols_observed"
+                ),
+                "state": state,
+                "candidate_followup_calls": len(followed),
+                "candidate_followup_basis_counts": dict(sorted(basis_counts.items())),
+                "other_native_navigation_calls": len(unmatched_native),
+                "unresolved_native_navigation_calls": len(unresolved_native),
+                "opaque_router_calls": len(opaque_router_calls),
+                "shell_followup_calls_unknown_semantics": len(shell_calls),
+                "first_candidate_followup_ordinal_delta": (
+                    min(followed_ordinals) - source_ordinal
+                    if followed_ordinals
+                    else None
+                ),
+            }
+        )
+
+    return {
+        "candidate_evidence_segments": len(segments),
+        "segments": segments,
+        "state_counts": dict(
+            sorted(Counter(segment["state"] for segment in segments).items())
+        ),
+        "candidate_followed_segments": sum(
+            segment["state"] == "candidate-followed"
+            for segment in segments
+        ),
+        "oracle_relative": False,
+        "correctness_joined": False,
+        "observability": "direct-subject-result-and-native-inputs-only",
+    }
+
+
+def _repository_intelligence_evidence_to_action(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    by_subject: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        subject_id = row.get("subject_id")
+        evidence = row.get("evidence_to_action")
+        if (
+            not isinstance(subject_id, str)
+            or not subject_id
+            or subject_id == "none"
+            or not isinstance(evidence, dict)
+            or int(evidence.get("candidate_evidence_segments", 0) or 0) <= 0
+        ):
+            continue
+        by_subject.setdefault(subject_id, []).append(row)
+
+    if not by_subject:
+        return {
+            "state": "not-observed",
+            "claim_scope": "descriptive-behavioral-only",
+            "oracle_relative": False,
+            "correctness_joined": False,
+            "subjects": [],
+        }
+
+    subjects: list[dict[str, Any]] = []
+    for subject_id, subject_rows in sorted(by_subject.items()):
+        segments = [
+            segment
+            for row in subject_rows
+            for segment in row["evidence_to_action"].get("segments", [])
+            if isinstance(segment, dict)
+        ]
+        state_counts = Counter(
+            str(segment["state"])
+            for segment in segments
+            if isinstance(segment.get("state"), str)
+        )
+        basis_counts = Counter(
+            str(basis)
+            for segment in segments
+            for basis, count in (
+                segment.get("candidate_followup_basis_counts", {}) or {}
+            ).items()
+            for _ in range(int(count))
+        )
+        ordinal_deltas = [
+            int(value)
+            for segment in segments
+            if isinstance(
+                (value := segment.get("first_candidate_followup_ordinal_delta")),
+                int,
+            )
+            and not isinstance(value, bool)
+            and value >= 1
+        ]
+        followed = state_counts.get("candidate-followed", 0)
+        subjects.append(
+            {
+                "subject_id": subject_id,
+                "evidence_observed_trials": len(subject_rows),
+                "candidate_evidence_segments": len(segments),
+                "action_state_counts": dict(sorted(state_counts.items())),
+                "candidate_followed_segments": followed,
+                "candidate_followup_rate": (
+                    followed / len(segments) if segments else None
+                ),
+                "candidate_followup_basis_counts": dict(sorted(basis_counts.items())),
+                "first_candidate_followup_ordinal_delta": _numeric_summary(
+                    ordinal_deltas
+                ),
+                "other_native_navigation_calls": sum(
+                    int(segment.get("other_native_navigation_calls", 0) or 0)
+                    for segment in segments
+                ),
+                "unresolved_native_navigation_calls": sum(
+                    int(
+                        segment.get(
+                            "unresolved_native_navigation_calls",
+                            0,
+                        )
+                        or 0
+                    )
+                    for segment in segments
+                ),
+                "shell_followup_calls_unknown_semantics": sum(
+                    int(
+                        segment.get(
+                            "shell_followup_calls_unknown_semantics",
+                            0,
+                        )
+                        or 0
+                    )
+                    for segment in segments
+                ),
+                "interpretation": {
+                    "candidate_followed": (
+                        "a directly observed native read/search matched a locator "
+                        "returned by the immediately preceding subject result"
+                    ),
+                    "other_native_navigation": (
+                        "native repository navigation was observed, but no exact "
+                        "returned candidate locator match was established"
+                    ),
+                    "no_observed_native_followup": (
+                        "not equivalent to ignored evidence; the agent may answer "
+                        "from the subject result or use unclassified/opaque tools"
+                    ),
+                    "correctness": (
+                        "not joined; following or not following subject evidence "
+                        "does not change semantic task correctness"
+                    ),
+                    "oracle": (
+                        "candidate-action matching uses subject-returned locators "
+                        "only and does not consult the frozen oracle"
+                    ),
+                },
+            }
+        )
+
+    return {
+        "state": "observed",
+        "claim_scope": "descriptive-behavioral-only",
+        "oracle_relative": False,
+        "correctness_joined": False,
+        "subjects": subjects,
+    }
+
+
 def _repository_intelligence_search_efficiency(
     rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -791,6 +1285,7 @@ def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
             "session_export_attempts": receipt.get("measurements", {}).get("agent", {}).get("session_export_attempts"),
             "subject_invocation_observed": receipt.get("measurements", {}).get("agent", {}).get("subject_tool_invoked"),
             "search_efficiency": _trial_search_efficiency(calls),
+            "evidence_to_action": _trial_evidence_to_action(calls),
             "calls": calls,
         }
         rows.append(row)
@@ -809,7 +1304,7 @@ def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
             ):
                 target_absences[str(row["task_id"])] += 1
     return {
-        "schema": "agents-cookbook-trace-diagnostics.v4",
+        "schema": "agents-cookbook-trace-diagnostics.v5",
         "authority": {"derived_only": True, "source": "verified-result-bundles"},
         "trials": rows,
         "summary": {
@@ -826,6 +1321,9 @@ def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
             "repository_intelligence_quality": _repository_intelligence_quality(rows),
             "repository_intelligence_search_efficiency": (
                 _repository_intelligence_search_efficiency(rows)
+            ),
+            "repository_intelligence_evidence_to_action": (
+                _repository_intelligence_evidence_to_action(rows)
             ),
         },
     }
