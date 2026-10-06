@@ -122,8 +122,31 @@ def _assistance_funnel(
     return output
 
 
-def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
+def build_decision_evidence(
+    report: dict[str, Any],
+    *,
+    trace_diagnostics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Summarize decision-relevant evidence without adding a scoring authority."""
+
+    trace_summary = (
+        trace_diagnostics.get("summary", {})
+        if isinstance(trace_diagnostics, dict)
+        else {}
+    )
+    repository_intelligence_quality = (
+        trace_summary.get("repository_intelligence_quality", {})
+        if isinstance(trace_summary, dict)
+        else {}
+    )
+    if not isinstance(repository_intelligence_quality, dict):
+        repository_intelligence_quality = {}
+    if not repository_intelligence_quality:
+        repository_intelligence_quality = {
+            "state": "not-projected",
+            "claim_scope": "descriptive-diagnostic-only",
+            "subjects": [],
+        }
 
     diagnostics = [
         row
@@ -283,14 +306,21 @@ def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
         evidence_signals.append("subject-invocation-partially-unobserved")
     if partial_tool_strategy_trials:
         evidence_signals.append("native-tool-strategy-partially-observed")
+    if repository_intelligence_quality.get("state") == "observed":
+        evidence_signals.append("repository-intelligence-quality-observed")
 
     return {
-        "schema": "agents-cookbook-benchmark-decision-evidence.v3",
+        "schema": "agents-cookbook-benchmark-decision-evidence.v4",
         "authority": {
             "derived_only": True,
             "ranking_performed": False,
             "recommendation_performed": False,
             "source": "report.json",
+            "sources": (
+                ["report.json", "trace-diagnostics.json"]
+                if isinstance(trace_diagnostics, dict)
+                else ["report.json"]
+            ),
         },
         "campaign": {
             "expected_trials": report.get("expected_trials"),
@@ -299,6 +329,7 @@ def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
             "qualification": report.get("campaign_qualification", {}),
         },
         "decision_summary": report.get("decision_summary", {}),
+        "repository_intelligence_quality": repository_intelligence_quality,
         "surfaces": {
             "runtime": {
                 "trials": len(runtime_rows),
@@ -371,6 +402,9 @@ def build_decision_evidence(report: dict[str, Any]) -> dict[str, Any]:
             "source_read_observability": source_read_observability,
             "subject_invocation_unknown_trials": invocation_unknown,
             "tool_strategy_partial_trials": partial_tool_strategy_trials,
+            "repository_intelligence_quality_state": (
+                repository_intelligence_quality.get("state")
+            ),
         },
         "evidence_signals": sorted(set(evidence_signals)),
     }

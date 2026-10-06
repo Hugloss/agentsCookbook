@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections import Counter
 from pathlib import Path
+from statistics import mean, median
 from typing import Any
 
 from benchmarks.hashmarks_task_evidence import retrieval_candidate_matches
@@ -204,6 +205,214 @@ def _last_assistant_text_present(trace: dict[str, Any]) -> bool | None:
     return None
 
 
+
+def _numeric_summary(values: list[int | float]) -> dict[str, Any]:
+    return {
+        "observations": len(values),
+        "mean": mean(values) if values else None,
+        "median": median(values) if values else None,
+        "min": min(values) if values else None,
+        "max": max(values) if values else None,
+    }
+
+
+def _repository_intelligence_quality(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Aggregate generic retrieval-quality diagnostics without ranking products."""
+
+    hashmarks_calls: list[dict[str, Any]] = []
+    for row in rows:
+        for call in row.get("calls") or []:
+            evidence = call.get("hashmarks_evidence")
+            if isinstance(evidence, dict):
+                hashmarks_calls.append(
+                    {
+                        "result_bytes": call.get("result_bytes"),
+                        "evidence": evidence,
+                    }
+                )
+
+    if not hashmarks_calls:
+        return {
+            "state": "not-observed",
+            "claim_scope": "descriptive-diagnostic-only",
+            "subjects": [],
+        }
+
+    packet_statuses = Counter(
+        str(call["evidence"].get("packet_status"))
+        for call in hashmarks_calls
+        if isinstance(call["evidence"].get("packet_status"), str)
+    )
+    schemas = Counter(
+        str(call["evidence"].get("schema"))
+        for call in hashmarks_calls
+        if isinstance(call["evidence"].get("schema"), str)
+    )
+    retrieval_counts = [
+        int(value)
+        for call in hashmarks_calls
+        if isinstance(
+            (value := call["evidence"].get("retrieval_count")),
+            int,
+        )
+        and not isinstance(value, bool)
+        and value >= 0
+    ]
+    result_sizes = [
+        int(value)
+        for call in hashmarks_calls
+        if isinstance((value := call.get("result_bytes")), int)
+        and not isinstance(value, bool)
+        and value >= 0
+    ]
+    target_observability = Counter(
+        str(call["evidence"].get("expected_target_observability"))
+        for call in hashmarks_calls
+        if isinstance(
+            call["evidence"].get("expected_target_observability"),
+            str,
+        )
+    )
+    target_ranks = [
+        int(value)
+        for call in hashmarks_calls
+        if isinstance(
+            (value := call["evidence"].get("expected_target_rank")),
+            int,
+        )
+        and not isinstance(value, bool)
+        and value >= 1
+    ]
+    ownership = Counter(
+        str(call["evidence"].get("ownership_status"))
+        for call in hashmarks_calls
+        if isinstance(call["evidence"].get("ownership_status"), str)
+    )
+    truncation = Counter(
+        str(value).lower()
+        for call in hashmarks_calls
+        if isinstance(
+            (value := call["evidence"].get("retrieval_truncated")),
+            bool,
+        )
+    )
+    truncation["unknown"] = len(hashmarks_calls) - sum(truncation.values())
+
+    diagnostic_complete = 0
+    for call in hashmarks_calls:
+        evidence = call["evidence"]
+        observable_target = evidence.get("expected_target_observability")
+        if (
+            evidence.get("packet_status") == "parsed"
+            and isinstance(evidence.get("retrieval_count"), int)
+            and not isinstance(evidence.get("retrieval_count"), bool)
+            and isinstance(evidence.get("ownership_status"), str)
+            and isinstance(call.get("result_bytes"), int)
+            and not isinstance(call.get("result_bytes"), bool)
+            and observable_target
+            in {"observed", "absent-from-returned-candidates"}
+        ):
+            diagnostic_complete += 1
+
+    evaluable_targets = (
+        target_observability.get("observed", 0)
+        + target_observability.get("absent-from-returned-candidates", 0)
+    )
+    ownership_observations = sum(ownership.values())
+    rank_buckets = {
+        "1": sum(rank == 1 for rank in target_ranks),
+        "2-5": sum(2 <= rank <= 5 for rank in target_ranks),
+        "6-10": sum(6 <= rank <= 10 for rank in target_ranks),
+        "11+": sum(rank >= 11 for rank in target_ranks),
+    }
+    total_calls = len(hashmarks_calls)
+    if diagnostic_complete == total_calls:
+        sufficiency_state = "complete"
+    elif diagnostic_complete:
+        sufficiency_state = "partial"
+    else:
+        sufficiency_state = "insufficient"
+
+    return {
+        "state": "observed",
+        "claim_scope": "descriptive-diagnostic-only",
+        "subjects": [
+            {
+                "subject_id": "hashmarks",
+                "operation": "task_evidence",
+                "calls": total_calls,
+                "packet_status_counts": dict(sorted(packet_statuses.items())),
+                "schema_counts": dict(sorted(schemas.items())),
+                "candidate_set_size": _numeric_summary(retrieval_counts),
+                "result_payload_bytes": _numeric_summary(result_sizes),
+                "retrieval_truncation": {
+                    "true": truncation.get("true", 0),
+                    "false": truncation.get("false", 0),
+                    "unknown": truncation.get("unknown", 0),
+                },
+                "oracle_relative_target_observability": {
+                    "counts": dict(sorted(target_observability.items())),
+                    "evaluable_calls": evaluable_targets,
+                    "observed_calls": target_observability.get("observed", 0),
+                    "coverage_rate": (
+                        target_observability.get("observed", 0)
+                        / evaluable_targets
+                        if evaluable_targets
+                        else None
+                    ),
+                },
+                "oracle_relative_target_rank": {
+                    **_numeric_summary(target_ranks),
+                    "buckets": rank_buckets,
+                },
+                "ownership": {
+                    "observations": ownership_observations,
+                    "status_counts": dict(sorted(ownership.items())),
+                    "ambiguous_rate": (
+                        ownership.get("ambiguous", 0) / ownership_observations
+                        if ownership_observations
+                        else None
+                    ),
+                    "unresolved_rate": (
+                        ownership.get("unresolved", 0) / ownership_observations
+                        if ownership_observations
+                        else None
+                    ),
+                },
+                "evidence_sufficiency": {
+                    "state": sufficiency_state,
+                    "complete_calls": diagnostic_complete,
+                    "total_calls": total_calls,
+                    "complete_rate": (
+                        diagnostic_complete / total_calls if total_calls else None
+                    ),
+                    "required_fields": [
+                        "parsed-packet",
+                        "retrieval-count",
+                        "ownership-status",
+                        "result-bytes",
+                        "oracle-target-observability",
+                    ],
+                },
+                "interpretation": {
+                    "target_rank": (
+                        "aggregate oracle-relative benchmark observation only; "
+                        "not a product acceptance threshold or optimization target"
+                    ),
+                    "ownership": (
+                        "subject-reported packet status; benchmark does not "
+                        "reinterpret ownership certainty"
+                    ),
+                    "candidate_set_and_payload": (
+                        "descriptive retrieval-shape and transport-cost evidence"
+                    ),
+                },
+            }
+        ],
+    }
+
 def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
     """Inspect every verified result bundle; never turn an absent trace into no calls."""
     if not results_root.is_dir():
@@ -276,7 +485,7 @@ def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
             ):
                 target_absences[str(row["task_id"])] += 1
     return {
-        "schema": "agents-cookbook-trace-diagnostics.v2",
+        "schema": "agents-cookbook-trace-diagnostics.v3",
         "authority": {"derived_only": True, "source": "verified-result-bundles"},
         "trials": rows,
         "summary": {
@@ -290,5 +499,6 @@ def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
             "subject_calls": dict(sorted(subject_calls.items())),
             "tool_failures": dict(sorted(tool_failures.items())),
             "hashmarks_expected_target_absent_from_returned_candidates": dict(sorted(target_absences.items())),
+            "repository_intelligence_quality": _repository_intelligence_quality(rows),
         },
     }

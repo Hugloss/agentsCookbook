@@ -146,11 +146,29 @@ class DecisionEvidenceTests(unittest.TestCase):
             ],
         }
 
-        evidence = build_decision_evidence(report)
+        trace_diagnostics = {
+            "summary": {
+                "repository_intelligence_quality": {
+                    "state": "observed",
+                    "claim_scope": "descriptive-diagnostic-only",
+                    "subjects": [
+                        {
+                            "subject_id": "hashmarks",
+                            "operation": "task_evidence",
+                            "calls": 1,
+                        }
+                    ],
+                }
+            }
+        }
+        evidence = build_decision_evidence(
+            report,
+            trace_diagnostics=trace_diagnostics,
+        )
 
         self.assertEqual(
             evidence["schema"],
-            "agents-cookbook-benchmark-decision-evidence.v3",
+            "agents-cookbook-benchmark-decision-evidence.v4",
         )
         self.assertTrue(evidence["authority"]["derived_only"])
         self.assertEqual(
@@ -159,6 +177,18 @@ class DecisionEvidenceTests(unittest.TestCase):
         )
         self.assertFalse(evidence["authority"]["ranking_performed"])
         self.assertFalse(evidence["authority"]["recommendation_performed"])
+        self.assertEqual(
+            evidence["authority"]["sources"],
+            ["report.json", "trace-diagnostics.json"],
+        )
+        self.assertEqual(
+            evidence["repository_intelligence_quality"]["state"],
+            "observed",
+        )
+        self.assertEqual(
+            evidence["repository_intelligence_quality"]["subjects"][0]["calls"],
+            1,
+        )
         self.assertEqual(evidence["surfaces"]["runtime"]["trials"], 1)
         self.assertEqual(
             evidence["surfaces"]["runtime"]["tasks"],
@@ -229,6 +259,7 @@ class DecisionEvidenceTests(unittest.TestCase):
                 "bare-headroom-observed",
                 "late-rescue-observed",
                 "native-tool-strategy-partially-observed",
+                "repository-intelligence-quality-observed",
                 "runtime-or-host-instability-observed",
                 "semantic-misses-observed",
                 "source-read-archaeology-unavailable",
@@ -260,6 +291,14 @@ class DecisionEvidenceTests(unittest.TestCase):
         )
         self.assertEqual(evidence["evidence_signals"], [])
         self.assertEqual(evidence["decision_summary"], {})
+        self.assertEqual(
+            evidence["repository_intelligence_quality"]["state"],
+            "not-projected",
+        )
+        self.assertEqual(
+            evidence["evidence_gaps"]["repository_intelligence_quality_state"],
+            "not-projected",
+        )
 
 
 if __name__ == "__main__":

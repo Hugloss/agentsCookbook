@@ -20,6 +20,7 @@ from benchmarks.harness.trace_diagnostics import (
     _hashmarks_evidence,
     _last_assistant_text_present,
     _opencode_calls,
+    _repository_intelligence_quality,
     build_trace_diagnostics,
 )
 from benchmarks.harness.subject_exposure import exposure_probe_required_tool
@@ -149,6 +150,138 @@ class TraceAndToolProbeTests(unittest.TestCase):
         self.assertEqual(evidence["expected_target_rank"], 1)
         self.assertEqual(evidence["expected_target_observability"], "observed")
         self.assertEqual(evidence["ownership_status"], "ambiguous")
+
+    def test_retrieval_quality_summary_is_aggregate_and_non_optimizing(self) -> None:
+        rows = [
+            {
+                "calls": [
+                    {
+                        "result_bytes": 20831,
+                        "hashmarks_evidence": {
+                            "packet_status": "parsed",
+                            "schema": "hashmarks.task-evidence.v3",
+                            "retrieval_count": 20,
+                            "retrieval_truncated": False,
+                            "expected_target_rank": 19,
+                            "expected_target_observability": "observed",
+                            "ownership_status": "ambiguous",
+                        },
+                    }
+                ]
+            },
+            {
+                "calls": [
+                    {
+                        "result_bytes": 8000,
+                        "hashmarks_evidence": {
+                            "packet_status": "parsed",
+                            "schema": "hashmarks.task-evidence.v3",
+                            "retrieval_count": 10,
+                            "retrieval_truncated": False,
+                            "expected_target_rank": None,
+                            "expected_target_observability": (
+                                "absent-from-returned-candidates"
+                            ),
+                            "ownership_status": "unresolved",
+                        },
+                    }
+                ]
+            },
+            {
+                "calls": [
+                    {
+                        "result_bytes": 16071,
+                        "hashmarks_evidence": {
+                            "packet_status": "parsed",
+                            "schema": "hashmarks.task-evidence.v3",
+                            "retrieval_count": 17,
+                            "retrieval_truncated": True,
+                            "expected_target_rank": 14,
+                            "expected_target_observability": "observed",
+                            "ownership_status": "ambiguous",
+                        },
+                    }
+                ]
+            },
+            {
+                "calls": [
+                    {
+                        "result_bytes": 500,
+                        "hashmarks_evidence": {
+                            "packet_status": "unparseable",
+                        },
+                    }
+                ]
+            },
+        ]
+
+        quality = _repository_intelligence_quality(rows)
+        self.assertEqual(quality["state"], "observed")
+        self.assertEqual(quality["claim_scope"], "descriptive-diagnostic-only")
+        self.assertEqual(len(quality["subjects"]), 1)
+        subject = quality["subjects"][0]
+        self.assertEqual(subject["subject_id"], "hashmarks")
+        self.assertEqual(subject["operation"], "task_evidence")
+        self.assertEqual(subject["calls"], 4)
+        self.assertEqual(
+            subject["packet_status_counts"],
+            {"parsed": 3, "unparseable": 1},
+        )
+        self.assertEqual(
+            subject["candidate_set_size"],
+            {
+                "observations": 3,
+                "mean": 47 / 3,
+                "median": 17,
+                "min": 10,
+                "max": 20,
+            },
+        )
+        self.assertEqual(
+            subject["retrieval_truncation"],
+            {"true": 1, "false": 2, "unknown": 1},
+        )
+        self.assertEqual(
+            subject["oracle_relative_target_observability"],
+            {
+                "counts": {
+                    "absent-from-returned-candidates": 1,
+                    "observed": 2,
+                },
+                "evaluable_calls": 3,
+                "observed_calls": 2,
+                "coverage_rate": 2 / 3,
+            },
+        )
+        self.assertEqual(
+            subject["oracle_relative_target_rank"]["buckets"],
+            {"1": 0, "2-5": 0, "6-10": 0, "11+": 2},
+        )
+        self.assertEqual(
+            subject["ownership"],
+            {
+                "observations": 3,
+                "status_counts": {"ambiguous": 2, "unresolved": 1},
+                "ambiguous_rate": 2 / 3,
+                "unresolved_rate": 1 / 3,
+            },
+        )
+        self.assertEqual(
+            subject["evidence_sufficiency"]["state"],
+            "partial",
+        )
+        self.assertEqual(
+            subject["evidence_sufficiency"]["complete_calls"],
+            3,
+        )
+        self.assertEqual(
+            subject["evidence_sufficiency"]["complete_rate"],
+            3 / 4,
+        )
+        self.assertIn(
+            "not a product acceptance threshold or optimization target",
+            subject["interpretation"]["target_rank"],
+        )
 
     def test_trace_projection_separates_denial_from_retrieval_absence(self) -> None:
         packet = {
