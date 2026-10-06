@@ -75,6 +75,12 @@ def _hashmarks_evidence(output: Any, expected: dict[str, str] | None) -> dict[st
                 rank = index
                 break
     ownership = packet.get("ownership")
+    next_read = (
+        ownership.get("next_read")
+        if isinstance(ownership, dict)
+        and isinstance(ownership.get("next_read"), dict)
+        else None
+    )
     return {
         "packet_status": "parsed",
         "schema": packet.get("schema"),
@@ -89,6 +95,15 @@ def _hashmarks_evidence(output: Any, expected: dict[str, str] | None) -> dict[st
         ),
         "ownership_status": (
             ownership.get("status") if isinstance(ownership, dict) else None
+        ),
+        "next_read_path": (
+            next_read.get("path") if isinstance(next_read, dict) else None
+        ),
+        "next_read_reason": (
+            next_read.get("reason") if isinstance(next_read, dict) else None
+        ),
+        "next_read_authority": (
+            next_read.get("authority") if isinstance(next_read, dict) else None
         ),
     }
 
@@ -430,6 +445,45 @@ def _native_call_signature(call: dict[str, Any]) -> tuple[str, str, str] | None:
     return tool_class, tool, input_sha256
 
 
+def _subject_next_read_followups(
+    calls: list[dict[str, Any]],
+) -> dict[str, Any]:
+    outcomes: Counter[str] = Counter()
+    emitted = 0
+    for index, call in enumerate(calls):
+        evidence = call.get("hashmarks_evidence")
+        if not isinstance(evidence, dict):
+            continue
+        advised = evidence.get("next_read_path")
+        if not isinstance(advised, str) or not advised:
+            continue
+        emitted += 1
+        outcome = "no-native-navigation"
+        for later in calls[index + 1 :]:
+            if later.get("subject_call") is True:
+                break
+            tool_class = later.get("tool_class")
+            if tool_class == NATIVE_SEARCH:
+                outcome = "search-first"
+                break
+            if tool_class == NATIVE_READ:
+                attempted = later.get("path_attempted")
+                outcome = (
+                    "advised-read-first"
+                    if isinstance(attempted, str) and attempted == advised
+                    else "different-read-first"
+                )
+                break
+        outcomes[outcome] += 1
+    followed = outcomes.get("advised-read-first", 0)
+    return {
+        "emitted_calls": emitted,
+        "followup_counts": dict(sorted(outcomes.items())),
+        "advised_read_first_rate": followed / emitted if emitted else None,
+        "claim_scope": "descriptive-followup-only",
+    }
+
+
 def _trial_search_efficiency(
     calls: list[dict[str, Any]] | None,
 ) -> dict[str, Any] | None:
@@ -501,6 +555,7 @@ def _trial_search_efficiency(
     return {
         "subject_calls": len(subject_calls),
         "subject_result_observed_calls": subject_results_observed,
+        "subject_next_read_guidance": _subject_next_read_followups(calls),
         "first_subject_ordinal": first_subject,
         "last_subject_ordinal": last_subject,
         "native_search_calls": len(search_calls),
@@ -638,6 +693,22 @@ def _repository_intelligence_search_efficiency(
             row["search_efficiency"]["no_native_navigation_after_subject"] is True
             for row in assisted_rows
         )
+        next_read_followups: Counter[str] = Counter()
+        next_read_emitted = 0
+        for row in assisted_rows:
+            guidance = row["search_efficiency"].get("subject_next_read_guidance")
+            if not isinstance(guidance, dict):
+                continue
+            next_read_emitted += int(guidance.get("emitted_calls", 0) or 0)
+            counts = guidance.get("followup_counts")
+            if isinstance(counts, dict):
+                next_read_followups.update(
+                    {
+                        str(key): int(value)
+                        for key, value in counts.items()
+                        if isinstance(value, int) and not isinstance(value, bool)
+                    }
+                )
         subjects.append(
             {
                 "subject_id": subject_id,
@@ -660,6 +731,17 @@ def _repository_intelligence_search_efficiency(
                         if assisted_rows
                         else None
                     ),
+                    "next_read_guidance": {
+                        "emitted_calls": next_read_emitted,
+                        "followup_counts": dict(sorted(next_read_followups.items())),
+                        "advised_read_first_rate": (
+                            next_read_followups.get("advised-read-first", 0)
+                            / next_read_emitted
+                            if next_read_emitted
+                            else None
+                        ),
+                        "claim_scope": "descriptive-followup-only",
+                    },
                 },
                 "pre_subject": {
                     "native_navigation_calls": _numeric_summary(pre_navigation),
@@ -809,7 +891,7 @@ def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
             ):
                 target_absences[str(row["task_id"])] += 1
     return {
-        "schema": "agents-cookbook-trace-diagnostics.v4",
+        "schema": "agents-cookbook-trace-diagnostics.v5",
         "authority": {"derived_only": True, "source": "verified-result-bundles"},
         "trials": rows,
         "summary": {
