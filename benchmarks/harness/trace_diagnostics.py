@@ -13,6 +13,7 @@ from benchmarks.hashmarks_task_evidence import retrieval_candidate_matches
 from benchmarks.tool_routing import (
     NATIVE_READ,
     NATIVE_SEARCH,
+    SHELL,
     TOOL_ROUTER,
     classify_call,
     classify_tool,
@@ -413,6 +414,306 @@ def _repository_intelligence_quality(
         ],
     }
 
+
+def _native_call_signature(call: dict[str, Any]) -> tuple[str, str, str] | None:
+    tool_class = call.get("tool_class")
+    tool = call.get("tool")
+    input_sha256 = call.get("input_sha256")
+    if (
+        tool_class not in {NATIVE_SEARCH, NATIVE_READ}
+        or not isinstance(tool, str)
+        or not tool
+        or not isinstance(input_sha256, str)
+        or not input_sha256
+    ):
+        return None
+    return tool_class, tool, input_sha256
+
+
+def _trial_search_efficiency(
+    calls: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    """Describe observed repository navigation without inferring command semantics."""
+    if calls is None:
+        return None
+
+    subject_calls = [call for call in calls if call.get("subject_call") is True]
+    subject_ordinals = [
+        int(call["ordinal"])
+        for call in subject_calls
+        if isinstance(call.get("ordinal"), int)
+        and not isinstance(call.get("ordinal"), bool)
+    ]
+    first_subject = min(subject_ordinals) if subject_ordinals else None
+    last_subject = max(subject_ordinals) if subject_ordinals else None
+    subject_results_observed = sum(
+        call.get("status") == "completed"
+        and isinstance(call.get("result_bytes"), int)
+        and not isinstance(call.get("result_bytes"), bool)
+        for call in subject_calls
+    )
+
+    native_calls = [
+        call
+        for call in calls
+        if call.get("tool_class") in {NATIVE_SEARCH, NATIVE_READ}
+    ]
+    search_calls = [
+        call for call in native_calls if call.get("tool_class") == NATIVE_SEARCH
+    ]
+    read_calls = [
+        call for call in native_calls if call.get("tool_class") == NATIVE_READ
+    ]
+    shell_calls = [call for call in calls if call.get("tool_class") == SHELL]
+
+    def before(call: dict[str, Any]) -> bool:
+        return (
+            first_subject is not None
+            and isinstance(call.get("ordinal"), int)
+            and call["ordinal"] < first_subject
+        )
+
+    def after(call: dict[str, Any]) -> bool:
+        return (
+            last_subject is not None
+            and isinstance(call.get("ordinal"), int)
+            and call["ordinal"] > last_subject
+        )
+
+    seen: set[tuple[str, str, str]] = set()
+    exact_repeats = 0
+    post_subject_exact_repeats = 0
+    for call in native_calls:
+        signature = _native_call_signature(call)
+        if signature is None:
+            continue
+        repeated = signature in seen
+        if repeated:
+            exact_repeats += 1
+            if after(call):
+                post_subject_exact_repeats += 1
+        seen.add(signature)
+
+    post_subject_search = sum(after(call) for call in search_calls)
+    post_subject_read = sum(after(call) for call in read_calls)
+    post_subject_native = post_subject_search + post_subject_read
+
+    return {
+        "subject_calls": len(subject_calls),
+        "subject_result_observed_calls": subject_results_observed,
+        "first_subject_ordinal": first_subject,
+        "last_subject_ordinal": last_subject,
+        "native_search_calls": len(search_calls),
+        "native_read_calls": len(read_calls),
+        "native_navigation_calls": len(native_calls),
+        "shell_calls": len(shell_calls),
+        "pre_subject_native_search_calls": sum(before(call) for call in search_calls),
+        "pre_subject_native_read_calls": sum(before(call) for call in read_calls),
+        "pre_subject_native_navigation_calls": sum(
+            before(call) for call in native_calls
+        ),
+        "post_subject_native_search_calls": post_subject_search,
+        "post_subject_native_read_calls": post_subject_read,
+        "post_subject_native_navigation_calls": post_subject_native,
+        "post_subject_shell_calls": sum(after(call) for call in shell_calls),
+        "no_native_search_after_subject": (
+            post_subject_search == 0 if last_subject is not None else None
+        ),
+        "no_native_navigation_after_subject": (
+            post_subject_native == 0 if last_subject is not None else None
+        ),
+        "exact_repeat_native_navigation_calls": exact_repeats,
+        "post_subject_exact_repeat_native_navigation_calls": (
+            post_subject_exact_repeats
+        ),
+        "exact_repeat_signature_observability": (
+            "direct-call-input-hash-only"
+        ),
+    }
+
+
+def _trace_pair_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        row.get("task_id"),
+        row.get("agent_id"),
+        row.get("trial_index"),
+        row.get("replicate_id"),
+        row.get("context_group"),
+        row.get("context_variant"),
+    )
+
+
+def _delta_summary(values: list[int | float]) -> dict[str, Any]:
+    return {
+        **_numeric_summary(values),
+        "reduced": sum(value < 0 for value in values),
+        "same": sum(value == 0 for value in values),
+        "increased": sum(value > 0 for value in values),
+    }
+
+
+def _repository_intelligence_search_efficiency(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compare observed navigation behavior without treating fewer calls as correctness."""
+
+    baseline = {
+        _trace_pair_key(row): row
+        for row in rows
+        if row.get("subject_id") == "none"
+        and isinstance(row.get("search_efficiency"), dict)
+    }
+    by_subject: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        subject_id = row.get("subject_id")
+        metrics = row.get("search_efficiency")
+        if (
+            not isinstance(subject_id, str)
+            or not subject_id
+            or subject_id == "none"
+            or row.get("subject_invocation_observed") is not True
+            or not isinstance(metrics, dict)
+            or int(metrics.get("subject_result_observed_calls", 0) or 0) <= 0
+        ):
+            continue
+        by_subject.setdefault(subject_id, []).append(row)
+
+    if not by_subject:
+        return {
+            "state": "not-observed",
+            "claim_scope": "descriptive-behavioral-only",
+            "correctness_joined": False,
+            "subjects": [],
+        }
+
+    subjects = []
+    for subject_id, assisted_rows in sorted(by_subject.items()):
+        paired: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        for assisted in assisted_rows:
+            bare = baseline.get(_trace_pair_key(assisted))
+            if bare is not None:
+                paired.append((bare, assisted))
+
+        post_search = [
+            int(row["search_efficiency"]["post_subject_native_search_calls"])
+            for row in assisted_rows
+        ]
+        post_read = [
+            int(row["search_efficiency"]["post_subject_native_read_calls"])
+            for row in assisted_rows
+        ]
+        post_navigation = [
+            int(row["search_efficiency"]["post_subject_native_navigation_calls"])
+            for row in assisted_rows
+        ]
+        post_repeats = [
+            int(
+                row["search_efficiency"][
+                    "post_subject_exact_repeat_native_navigation_calls"
+                ]
+            )
+            for row in assisted_rows
+        ]
+        pre_navigation = [
+            int(row["search_efficiency"]["pre_subject_native_navigation_calls"])
+            for row in assisted_rows
+        ]
+        post_shell = [
+            int(row["search_efficiency"]["post_subject_shell_calls"])
+            for row in assisted_rows
+        ]
+
+        def paired_delta(metric: str) -> list[int]:
+            return [
+                int(assisted["search_efficiency"][metric])
+                - int(bare["search_efficiency"][metric])
+                for bare, assisted in paired
+            ]
+
+        no_search = sum(
+            row["search_efficiency"]["no_native_search_after_subject"] is True
+            for row in assisted_rows
+        )
+        no_navigation = sum(
+            row["search_efficiency"]["no_native_navigation_after_subject"] is True
+            for row in assisted_rows
+        )
+        subjects.append(
+            {
+                "subject_id": subject_id,
+                "evidence_observed_trials": len(assisted_rows),
+                "post_subject": {
+                    "native_search_calls": _numeric_summary(post_search),
+                    "native_read_calls": _numeric_summary(post_read),
+                    "native_navigation_calls": _numeric_summary(post_navigation),
+                    "exact_repeat_native_navigation_calls": _numeric_summary(
+                        post_repeats
+                    ),
+                    "shell_calls_unknown_semantics": _numeric_summary(post_shell),
+                    "no_native_search_trials": no_search,
+                    "no_native_search_rate": (
+                        no_search / len(assisted_rows) if assisted_rows else None
+                    ),
+                    "no_native_navigation_trials": no_navigation,
+                    "no_native_navigation_rate": (
+                        no_navigation / len(assisted_rows)
+                        if assisted_rows
+                        else None
+                    ),
+                },
+                "pre_subject": {
+                    "native_navigation_calls": _numeric_summary(pre_navigation),
+                },
+                "paired_vs_bare": {
+                    "eligible_assisted_trials": len(assisted_rows),
+                    "comparable_pairs": len(paired),
+                    "unpaired_trials": len(assisted_rows) - len(paired),
+                    "delta_policy": "assisted-minus-bare",
+                    "native_search_calls_delta": _delta_summary(
+                        paired_delta("native_search_calls")
+                    ),
+                    "native_read_calls_delta": _delta_summary(
+                        paired_delta("native_read_calls")
+                    ),
+                    "native_navigation_calls_delta": _delta_summary(
+                        paired_delta("native_navigation_calls")
+                    ),
+                    "exact_repeat_native_navigation_calls_delta": _delta_summary(
+                        paired_delta("exact_repeat_native_navigation_calls")
+                    ),
+                },
+                "interpretation": {
+                    "correctness": (
+                        "not joined; fewer observed calls are not scored as better "
+                        "and do not change semantic task correctness"
+                    ),
+                    "native_search": (
+                        "counts only directly classified native search/read calls; "
+                        "shell command semantics are not inferred"
+                    ),
+                    "exact_repeat": (
+                        "same observed tool name plus exact input hash; structural "
+                        "repetition is not proof that a call was unnecessary"
+                    ),
+                    "paired_delta": (
+                        "descriptive assisted-minus-bare comparison for matched "
+                        "task/agent/replicate/context pairs"
+                    ),
+                    "attribution": (
+                        "requires observed subject invocation plus at least one "
+                        "completed subject result with observable result bytes"
+                    ),
+                },
+            }
+        )
+
+    return {
+        "state": "observed",
+        "claim_scope": "descriptive-behavioral-only",
+        "correctness_joined": False,
+        "subjects": subjects,
+    }
+
 def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
     """Inspect every verified result bundle; never turn an absent trace into no calls."""
     if not results_root.is_dir():
@@ -445,14 +746,36 @@ def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
                 final_text_present = None
         if not isinstance(evidence, dict):
             final_text_present = None
-        subject = receipt.get("condition", {}).get("subject")
+        condition = receipt.get("condition", {})
+        execution = receipt.get("execution", {})
+        subject_definition = condition.get("subject_definition", {})
+        agent_definition = condition.get("agent_definition", {})
+        context = condition.get("context")
+        context = context if isinstance(context, dict) else {}
+        subject = (
+            subject_definition.get("id")
+            if isinstance(subject_definition, dict)
+            and isinstance(subject_definition.get("id"), str)
+            else condition.get("subject")
+        )
+        agent_id = (
+            agent_definition.get("id")
+            if isinstance(agent_definition, dict)
+            and isinstance(agent_definition.get("id"), str)
+            else condition.get("agent")
+        )
+        replicate_id = execution.get("replicate_id", execution.get("seed"))
         row = {
             "trial_id": receipt["trial_id"],
             "definition_id": receipt["definition_id"],
             "task_id": receipt.get("task", {}).get("id"),
-            "condition_id": receipt.get("condition", {}).get("id"),
+            "condition_id": condition.get("id"),
+            "agent_id": agent_id,
             "subject_id": subject,
-            "replicate_id": receipt.get("execution", {}).get("replicate_id"),
+            "trial_index": execution.get("trial_index"),
+            "replicate_id": replicate_id,
+            "context_group": context.get("group"),
+            "context_variant": context.get("variant"),
             "status": receipt.get("status"),
             "reason": receipt.get("reason"),
             "trace_state": trace_state,
@@ -467,6 +790,7 @@ def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
             "trace_sha256": evidence.get("sha256") if isinstance(evidence, dict) else None,
             "session_export_attempts": receipt.get("measurements", {}).get("agent", {}).get("session_export_attempts"),
             "subject_invocation_observed": receipt.get("measurements", {}).get("agent", {}).get("subject_tool_invoked"),
+            "search_efficiency": _trial_search_efficiency(calls),
             "calls": calls,
         }
         rows.append(row)
@@ -485,7 +809,7 @@ def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
             ):
                 target_absences[str(row["task_id"])] += 1
     return {
-        "schema": "agents-cookbook-trace-diagnostics.v3",
+        "schema": "agents-cookbook-trace-diagnostics.v4",
         "authority": {"derived_only": True, "source": "verified-result-bundles"},
         "trials": rows,
         "summary": {
@@ -500,5 +824,8 @@ def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
             "tool_failures": dict(sorted(tool_failures.items())),
             "hashmarks_expected_target_absent_from_returned_candidates": dict(sorted(target_absences.items())),
             "repository_intelligence_quality": _repository_intelligence_quality(rows),
+            "repository_intelligence_search_efficiency": (
+                _repository_intelligence_search_efficiency(rows)
+            ),
         },
     }
