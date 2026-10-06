@@ -136,6 +136,19 @@ class CampaignAuthorityTests(unittest.TestCase):
                 ),
             )
 
+        catalog_proofs = [
+            {
+                "subject_id": "tool",
+                "required_tool": "tool_context",
+                "required_operation": "context",
+                "protocol_version": "2024-11-05",
+                "tool_names": ["context"],
+                "required_tool_visible": True,
+                "tool_count": 1,
+                "catalog_sha256": "a" * 64,
+            }
+        ]
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             options = dict(
@@ -158,11 +171,16 @@ class CampaignAuthorityTests(unittest.TestCase):
                     "benchmarks.harness.campaign_authority.harness_identity",
                     return_value={"commit": "stable-harness"},
                 ) as harness_identity,
+                mock.patch(
+                    "benchmarks.harness.campaign_authority.probe_subject_catalog_contracts",
+                    return_value=catalog_proofs,
+                ),
             ):
                 progress = []
                 audited = audit_campaign(
                     **{k: v for k, v in options.items() if k != "results_root"},
                     on_progress=progress.append,
+                    subject_catalog_proofs=catalog_proofs,
                 )
                 self.assertEqual(len(seen), 4)
                 self.assertEqual(harness_identity.call_count, 2)
@@ -194,7 +212,7 @@ class CampaignAuthorityTests(unittest.TestCase):
                 self.assertEqual(len(seen), 8)
                 self.assertEqual(audited, campaign)
                 self.assertEqual(
-                    campaign["contract"], "benchmark-campaign-authority.v4"
+                    campaign["contract"], "benchmark-campaign-authority.v5"
                 )
                 self.assertNotEqual(
                     campaign["task_conditions"]["task-a"]["bare"]["agent"][
@@ -287,6 +305,10 @@ class CampaignAuthorityTests(unittest.TestCase):
                     "benchmarks.harness.campaign_authority.harness_identity",
                     return_value={"commit": "stable-harness"},
                 ),
+                mock.patch(
+                    "benchmarks.harness.campaign_authority.probe_subject_catalog_contracts",
+                    return_value=catalog_proofs,
+                ),
             ):
                 with self.assertRaisesRegex(CampaignAuthorityError, "runtime or model"):
                     admit_campaign(**options)
@@ -314,6 +336,40 @@ class CampaignAuthorityTests(unittest.TestCase):
                 audit_campaign(
                     suite=suite,
                     rows=rows,
+                    harness_root=root,
+                    cache_root=root / "cache",
+                    work_root=root / "work",
+                )
+        admit.assert_not_called()
+
+    def test_campaign_rejects_missing_required_tool_before_trial_admission(
+        self,
+    ) -> None:
+        suite = _suite()
+        rows = suite.trial_definitions()
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch(
+                "benchmarks.harness.campaign_authority.probe_subject_catalog_contracts",
+                side_effect=ValueError(
+                    "MCP required operation is not exposed: context"
+                ),
+            ),
+            mock.patch(
+                "benchmarks.harness.campaign_authority.admit_trial",
+                side_effect=AssertionError("trial admission must not start"),
+            ) as admit,
+        ):
+            root = Path(tmp)
+            with self.assertRaisesRegex(
+                CampaignAuthorityError,
+                "subject MCP catalog admission failed: "
+                "MCP required operation is not exposed: context",
+            ):
+                admit_campaign(
+                    suite=suite,
+                    rows=rows,
+                    results_root=root / "results",
                     harness_root=root,
                     cache_root=root / "cache",
                     work_root=root / "work",
@@ -548,6 +604,21 @@ class CampaignAuthorityTests(unittest.TestCase):
                 mock.patch(
                     "benchmarks.harness.campaign_authority.harness_identity",
                     return_value={"commit": "stable-harness"},
+                ),
+                mock.patch(
+                    "benchmarks.harness.campaign_authority.probe_subject_catalog_contracts",
+                    return_value=[
+                        {
+                            "subject_id": "tool",
+                            "required_tool": "tool_context",
+                            "required_operation": "context",
+                            "protocol_version": "2024-11-05",
+                            "tool_names": ["context"],
+                            "required_tool_visible": True,
+                            "tool_count": 1,
+                            "catalog_sha256": "b" * 64,
+                        }
+                    ],
                 ),
             ):
                 with self.assertRaisesRegex(

@@ -15,6 +15,7 @@ from typing import Any, Callable, Iterator, Mapping
 from .admission import TrialAdmission, TrialAdmissionError, admit_trial, harness_identity
 from .bundle import verify_bundle
 from .identity import canonical_json, digest, execution_id
+from .mcp_catalog import probe_subject_catalog_contracts
 from .oracle_reviews import (
     oracle_review_path,
     oracle_reviews_declared,
@@ -179,6 +180,7 @@ def _read_manifest(directory: Path) -> dict[str, Any]:
         "benchmark-campaign-authority.v2",
         "benchmark-campaign-authority.v3",
         "benchmark-campaign-authority.v4",
+        "benchmark-campaign-authority.v5",
     }:
         raise CampaignAuthorityError("unsupported campaign authority contract")
     identity = value.get("campaign_id")
@@ -426,6 +428,7 @@ def audit_campaign(
     codex_auth: Path | None = None,
     source: Mapping[str, str] | None = None,
     on_progress: Callable[[dict[str, Any]], None] | None = None,
+    subject_catalog_proofs: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Observe every selected condition without inference or publishing authority.
 
@@ -608,12 +611,21 @@ def audit_campaign(
         )
 
     payload = {
-        "contract": "benchmark-campaign-authority.v4",
+        "contract": (
+            "benchmark-campaign-authority.v5"
+            if subject_catalog_proofs is not None
+            else "benchmark-campaign-authority.v4"
+        ),
         "selected_definitions": selected,
         "task_conditions": observed,
         "agents": agents,
         "subjects": subjects,
         "subject_exposure_contracts": exposure_contracts,
+        **(
+            {"subject_tool_catalog_proofs": subject_catalog_proofs}
+            if subject_catalog_proofs is not None
+            else {}
+        ),
         "task_inputs": task_inputs,
         "suite_identity": campaign_suite_identity(suite),
         "oracle_review_sha256": (
@@ -660,6 +672,46 @@ def admit_campaign(
         if on_progress is not None:
             on_progress({"stage": "oracle-review", "status": "checking"})
         validate_oracle_reviews(suite, require_complete=True)
+
+    try:
+        exposure_contracts = validate_subject_exposure_admission_contract(
+            suite=suite,
+            expected_rows=rows,
+        )
+        if exposure_contracts:
+            if on_progress is not None:
+                on_progress(
+                    {
+                        "stage": "subject-tool-catalog",
+                        "status": "checking",
+                        "subjects": len(exposure_contracts),
+                    }
+                )
+            runtime_source = os.environ if source is None else source
+            with tempfile.TemporaryDirectory(
+                prefix="agents-cookbook-subject-catalog-"
+            ) as temporary:
+                subject_catalog_proofs = probe_subject_catalog_contracts(
+                    suite=suite,
+                    contracts=exposure_contracts,
+                    source=runtime_source,
+                    root=Path(temporary),
+                )
+            if on_progress is not None:
+                on_progress(
+                    {
+                        "stage": "subject-tool-catalog",
+                        "status": "verified",
+                        "subjects": len(subject_catalog_proofs),
+                    }
+                )
+        else:
+            subject_catalog_proofs = []
+    except (OSError, ValueError) as exc:
+        raise CampaignAuthorityError(
+            f"subject MCP catalog admission failed: {exc}"
+        ) from exc
+
     directory = results_root / ".campaign"
     with _locked(directory):
         existing = (directory / "authority.json").exists()
@@ -683,6 +735,7 @@ def admit_campaign(
             codex_auth=codex_auth,
             source=source,
             on_progress=on_progress,
+            subject_catalog_proofs=subject_catalog_proofs,
         )
         if existing:
             if _read_manifest(directory) != payload:

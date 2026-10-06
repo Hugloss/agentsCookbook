@@ -18,7 +18,9 @@ from benchmarks.adapters.hashmarks import HashmarksSubject
 from benchmarks.adapters.opencode_native import _native_environment
 from benchmarks.adapters.registry import build_agent, build_subject
 from benchmarks.adapters.runtime import observe_executable
+from benchmarks.harness.mcp_catalog import probe_mcp_tool_catalog
 from benchmarks.harness.model import McpExposure, TrialContext
+from benchmarks.harness.subject_exposure import exposure_probe_required_tool
 from benchmarks.harness.runtime_authority import (
     native_host_paths,
     transport_runtime_authority,
@@ -136,6 +138,15 @@ def _subject_runtime_check(
                     "FAILED",
                     "Hashmarks benchmark source authority is not clean",
                 )
+        contract = suite.experiment.get("subject_exposure_contract")
+        if isinstance(contract, dict) and contract.get("require_probe_contract") is True:
+            required_tool = exposure_probe_required_tool(suite, subject_id)
+            probe_mcp_tool_catalog(
+                context=context,
+                exposure=exposure,
+                subject_id=subject_id,
+                required_tool=required_tool,
+            )
         return ReadinessCheck(f"{subject_id} runtime", "READY")
     except (OSError, ValueError) as exc:
         return ReadinessCheck(f"{subject_id} runtime", "FAILED", str(exc))
