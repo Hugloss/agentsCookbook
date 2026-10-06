@@ -171,6 +171,7 @@ def reuse_completed_trial(
         expected_definition_id=definition_id,
     )
 
+
 def _validate_result_receipt(receipt: dict[str, Any]) -> None:
     schema_path = Path(__file__).resolve().parents[1] / "schema" / "result.schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
