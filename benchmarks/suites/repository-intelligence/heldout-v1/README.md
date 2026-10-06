@@ -61,8 +61,10 @@ campaign authority. The completed campaign then has the independent qualificatio
 backstop: invocation observability must be complete, each selected non-control
 condition must contain at least one observed subject-tool invocation, and the exact
 contracted operation (for example `task_evidence` or `explore`) must itself be
-observed at least once. Calling a different operation on the same MCP does not satisfy
-that contract. The rule is keyed by subject definitions, not by Hashmarks/Enola names,
+observed at least once **with a successful nonempty result**. Calling a different
+operation, calling the right operation but receiving only failed/empty results, or being
+unable to prove the required operation's result does not satisfy that contract. The
+rule is keyed by subject definitions, not by Hashmarks/Enola names,
 so adding another MCP subject does not require a benchmark-code exception.
 
 The committed `qualification/oracle-reviews.json` binds each expected owner to its task digest and records independent source-audit evidence. One independent review with a `unique` decision is the default qualification requirement. A second independent review is required only when the task carries an explicit evidence-backed escalation reason, such as prior benchmark instability or unresolved ownership ambiguity. Campaign admission fails before any model call while any task lacks its required reviews or has a non-unique decision. If a task has two defensible owners, repair or retire it and start a new saved run; do not add a grading exception. Current heldout-v1 authority escalates `locate-prefix-path-enumerator`, `locate-directory-pruning`, and `locate-resource-invalidation` to two independent reviews because run 000007 exposed semantic instability on those task boundaries; both committed reviews independently retain the frozen owner as unique.
