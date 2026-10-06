@@ -489,7 +489,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 mock.patch(
                     "benchmarks.__main__.build_trace_diagnostics",
                     return_value={
-                        "schema": "agents-cookbook-trace-diagnostics.v4",
+                        "schema": "agents-cookbook-trace-diagnostics.v5",
                         "trials": [],
                         "summary": {
                             "repository_intelligence_quality": {
@@ -511,6 +511,19 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                                     {
                                         "subject_id": "hashmarks",
                                         "evidence_observed_trials": 1,
+                                    }
+                                ],
+                            },
+                            "repository_intelligence_evidence_to_action": {
+                                "state": "observed",
+                                "claim_scope": "descriptive-behavioral-only",
+                                "oracle_relative": False,
+                                "correctness_joined": False,
+                                "subjects": [
+                                    {
+                                        "subject_id": "hashmarks",
+                                        "candidate_evidence_segments": 1,
+                                        "candidate_followed_segments": 1,
                                     }
                                 ],
                             },
@@ -551,7 +564,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             )
             self.assertEqual(
                 stored_decision["schema"],
-                "agents-cookbook-benchmark-decision-evidence.v5",
+                "agents-cookbook-benchmark-decision-evidence.v6",
             )
             self.assertEqual(stored_decision["run_id"], "000001")
             self.assertTrue(stored_decision["authority"]["derived_only"])
@@ -569,6 +582,17 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 stored_decision[
                     "repository_intelligence_search_efficiency"
                 ]["correctness_joined"]
+            )
+            self.assertEqual(
+                stored_decision[
+                    "repository_intelligence_evidence_to_action"
+                ]["state"],
+                "observed",
+            )
+            self.assertFalse(
+                stored_decision[
+                    "repository_intelligence_evidence_to_action"
+                ]["oracle_relative"]
             )
             self.assertEqual(
                 stored_decision["repository_intelligence_quality"]["subjects"][0][
