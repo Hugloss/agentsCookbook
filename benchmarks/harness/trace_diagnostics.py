@@ -80,6 +80,32 @@ def _terminal_failure_cause(
     return "other-agent-terminal-failure"
 
 
+def _retrieval_truncation_state(retrieval: Any) -> str:
+    """Use only truncation metadata reported by the task-evidence packet."""
+    if not isinstance(retrieval, dict):
+        return "unknown"
+    bounds = retrieval.get("bounds")
+    canonical = bounds.get("canonical_truncation") if isinstance(bounds, dict) else None
+    if isinstance(bounds, dict) and "canonical_truncation" in bounds:
+        if not isinstance(canonical, str) or canonical not in {
+            "complete", "truncated", "unknown"
+        }:
+            return "unknown"
+        legacy = retrieval.get("truncated")
+        if "truncated" in retrieval:
+            if not isinstance(legacy, bool):
+                return "unknown"
+            if canonical != "unknown" and legacy != (canonical == "truncated"):
+                return "unknown"
+        return canonical
+    if "truncated" in retrieval:
+        legacy = retrieval["truncated"]
+        if isinstance(legacy, bool):
+            return "truncated" if legacy else "complete"
+        return "unknown"
+    return "not-reported"
+
+
 def _hashmarks_evidence(output: Any, expected: dict[str, str] | None) -> dict[str, Any]:
     try:
         packet = json.loads(output) if isinstance(output, str) else output
@@ -106,9 +132,7 @@ def _hashmarks_evidence(output: Any, expected: dict[str, str] | None) -> dict[st
         "packet_status": "parsed",
         "schema": packet.get("schema"),
         "retrieval_count": len(results) if isinstance(results, list) else None,
-        "retrieval_truncated": (
-            retrieval.get("truncated") if isinstance(retrieval, dict) else None
-        ),
+        "retrieval_truncation_state": _retrieval_truncation_state(retrieval),
         "canonical_omitted_results": (
             retrieval.get("canonical_omitted_results")
             if isinstance(retrieval, dict) else None
@@ -551,14 +575,9 @@ def _repository_intelligence_quality(
         if isinstance(call["evidence"].get("ownership_status"), str)
     )
     truncation = Counter(
-        str(value).lower()
+        call["evidence"].get("retrieval_truncation_state", "unknown")
         for call in hashmarks_calls
-        if isinstance(
-            (value := call["evidence"].get("retrieval_truncated")),
-            bool,
-        )
     )
-    truncation["unknown"] = len(hashmarks_calls) - sum(truncation.values())
     canonical_omitted = [
         int(value)
         for call in hashmarks_calls
@@ -628,9 +647,10 @@ def _repository_intelligence_quality(
                 "candidate_set_size": _numeric_summary(retrieval_counts),
                 "result_payload_bytes": _numeric_summary(result_sizes),
                 "retrieval_truncation": {
-                    "true": truncation.get("true", 0),
-                    "false": truncation.get("false", 0),
+                    "complete": truncation.get("complete", 0),
+                    "truncated": truncation.get("truncated", 0),
                     "unknown": truncation.get("unknown", 0),
+                    "not-reported": truncation.get("not-reported", 0),
                 },
                 "canonical_omission": {
                     "calls_with_omission": sum(value > 0 for value in canonical_omitted),
@@ -1443,7 +1463,7 @@ def build_trace_diagnostics(results_root: Path) -> dict[str, Any]:
             ):
                 target_absences[str(row["task_id"])] += 1
     return {
-        "schema": "agents-cookbook-trace-diagnostics.v5",
+        "schema": "agents-cookbook-trace-diagnostics.v6",
         "authority": {"derived_only": True, "source": "verified-result-bundles"},
         "trials": rows,
         "summary": {
