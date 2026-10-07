@@ -26,7 +26,7 @@ The result receipt keeps execution evidence separate from the score projection. 
 
 Reports expose `semantic_success_rate`, `semantic_gradeable_rate`, semantic-status counts, and `format_compliance_rate` independently over valid localization outcomes. Missing observations remain unknown with a zero denominator and a null rate; they are never converted to zero performance. Task PASS for localization follows semantic success; formatting remains a separate instruction-following signal.
 
-Trace diagnostics keep terminal execution failures separate from agent answers. `terminal_failure_cause` distinguishes an observed permission denial or context overflow from an unexplained missing final answer; all remain `INCOMPLETE`. Hashmarks retrieval diagnostics report `canonical_omitted_results` and `supplemental_results` separately from `retrieval_truncation`: presentation omission does not prove that the underlying repository search was complete or truncated.
+Trace diagnostics keep terminal execution failures separate from agent answers. `terminal_failure_cause` distinguishes an observed permission denial, context overflow, or retryable provider connection failure from an unexplained missing final answer; all remain `INCOMPLETE`. Hashmarks retrieval diagnostics report `canonical_omitted_results` and `supplemental_results` separately from `retrieval_truncation`: presentation omission does not prove that the underlying repository search was complete or truncated.
 
 A complete campaign with legitimate candidate FAIL outcomes can still be qualified evidence. Campaign qualification is lost by missing, incomplete, invalid, or contaminated execution evidence, not by the candidate simply answering incorrectly.
 
@@ -211,7 +211,7 @@ For a faster natural-use check after run `000012`, keep the frozen tasks and all
 
 ```sh
 ./benchmark run --new --env-file .env \
-  --root .benchmark-runs/heldout-v1-focus-000012 \
+  --root ".benchmark-runs/heldout-v1-focus-v4-$(date -u +%Y%m%dT%H%M%SZ)" \
   --agent opencode-native \
   --subject none --subject hashmarks --subject enola \
   --task locate-prefix-path-enumerator \
@@ -221,7 +221,22 @@ For a faster natural-use check after run `000012`, keep the frozen tasks and all
   --no-json-results
 ```
 
-Use the Enola required-tool probe to diagnose whether `enola_explore` works when explicitly requested. Its prompted observations do not establish natural adoption. Check the focused run's saved `status.json` and `trace-diagnostics.json` for zero incomplete receipts and at least one successful natural `enola_explore` result before starting another 108-trial campaign. A focused run is diagnostic evidence, not the full held-out score.
+Use the Enola required-tool probe to diagnose whether `enola_explore` works when explicitly requested. Its prompted observations do not establish natural adoption. Check the focused run's saved `status.json` and `trace-diagnostics.json` for zero incomplete receipts and at least one successful natural `enola_explore` result before starting another 108-trial campaign. If the model provider is unavailable, preserve that run's receipts and retry with a fresh root after connectivity returns. A focused run is diagnostic evidence, not the full held-out score.
+
+The 2026-10-07 focused v4 run at `.benchmark-runs/heldout-v1-focus-v4-20261007T041148Z/runs/000001` completed 36/36 PASS with no incomplete receipts. Hashmarks was invoked in 9/12 trials and Enola in 0/12, so subject exposure failed and a full MCP-only campaign is not ready. The separate prompted Enola probe returned successful `enola_explore` results in 3/3 trials, but met its stricter before-native-search routing gate in only 2/3. This proves the prompted tool path works; it does not establish natural routing. `enola install -dry-run -hooks -targets opencode` shows that Enola's native OpenCode integration adds instructions and a plugin that redirects initial searches. An experiment using that integration needs its own declared treatment and fresh authority; it cannot be mixed with these MCP-only receipts or described as natural MCP adoption.
+
+The three Hashmarks non-use trials in that run had complete subject observability and a configured MCP. On `locate-resource-invalidation`, replicates 6201 and 6203 used `grep` then `read`; replicate 6202 used `task_evidence` then `read`. On `repair-partial-receipt-regression`, replicate 6202 used native search and editing, while 6201 and 6203 called `task_evidence`. These traces show differing agent routes, not an observed MCP startup failure. Hashmarks already describes `task_evidence` as the first choice for unknown-path behavior, so these three observations alone do not justify a product change.
+
+For a qualified natural-use result while Enola remains unused, run the same frozen suite with the bare and Hashmarks OpenCode conditions only. This is a 72-trial campaign; it does not claim Enola treatment efficacy. Use a fresh root and retain every task and replicate:
+
+```sh
+./benchmark run --new --env-file .env \
+  --root ".benchmark-runs/heldout-v1-hashmarks-opencode-v4-$(date -u +%Y%m%dT%H%M%SZ)" \
+  --agent opencode-native --subject none --subject hashmarks \
+  --no-json-results
+```
+
+Use `benchmark status --require-qualified` and `benchmark score` against the root printed by that run. Enola and Hashmarks already use the same OpenCode MCP overlay. Enola's resolved executable and binary hash are recorded in campaign authority, so an additional explicit Enola path setting is unnecessary for this comparison.
 
 For a scoring-only change to a complete campaign recorded under the current normalization and execution-evidence contracts, run offline scoring without editing the source bundles:
 

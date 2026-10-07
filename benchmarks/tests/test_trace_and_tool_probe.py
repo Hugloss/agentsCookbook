@@ -828,6 +828,14 @@ class TraceAndToolProbeTests(unittest.TestCase):
             _terminal_failure_cause(receipt, None),
             "context-overflow",
         )
+        receipt["execution"]["agent_terminal"]["reason"] = (
+            'OpenCode run exited: APIError {"message":"Cannot connect to API",'
+            '"isRetryable":true}'
+        )
+        self.assertEqual(
+            _terminal_failure_cause(receipt, None),
+            "provider-connection-failed",
+        )
         receipt["status"] = "PASS"
         self.assertIsNone(_terminal_failure_cause(receipt, None))
 
