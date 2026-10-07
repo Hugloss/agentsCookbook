@@ -8,7 +8,9 @@ import json
 import os
 import tempfile
 import time
+import traceback
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
 
@@ -27,6 +29,18 @@ from .suite import SuiteDefinition
 
 class CampaignAuthorityError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class AuthorityEpochBinding:
+    """One accepted participant-authority epoch for a trial condition."""
+
+    epoch: int
+    epoch_id: str
+    authority: dict[str, Any]
+    transitioned: bool
+    changed_components: tuple[str, ...] = ()
+    changed_fields: tuple[str, ...] = ()
 
 
 def campaign_suite_identity(suite: SuiteDefinition) -> str:
@@ -244,6 +258,316 @@ def _publish_once(path: Path, payload: bytes, scratch: Path) -> None:
         _fsync_directory(path.parent)
     finally:
         Path(temporary).unlink(missing_ok=True)
+
+
+def _authority_diff_fields(
+    before: Any,
+    after: Any,
+    *,
+    prefix: str = "",
+) -> list[str]:
+    """Return deterministic leaf paths whose observable authority changed."""
+    if isinstance(before, dict) and isinstance(after, dict):
+        changed: list[str] = []
+        for key in sorted(set(before) | set(after)):
+            child = f"{prefix}.{key}" if prefix else str(key)
+            if key not in before or key not in after:
+                changed.append(child)
+                continue
+            changed.extend(
+                _authority_diff_fields(
+                    before[key],
+                    after[key],
+                    prefix=child,
+                )
+            )
+        return changed
+    return [] if before == after else [prefix or "<root>"]
+
+
+def _base_authority_epoch_id(
+    *,
+    campaign: Mapping[str, Any],
+    task_id: str,
+    condition_id: str,
+    authority: Mapping[str, Any],
+) -> str:
+    return digest(
+        {
+            "contract": "benchmark-authority-epoch-base.v1",
+            "campaign_id": campaign["campaign_id"],
+            "task_id": task_id,
+            "condition_id": condition_id,
+            "epoch": 1,
+            "authority": authority,
+        }
+    )
+
+
+def _authority_epoch_key(task_id: str, condition_id: str) -> str:
+    return digest({"task_id": task_id, "condition_id": condition_id})
+
+
+def _authority_epoch_root(results_root: Path) -> Path:
+    return results_root / ".campaign" / "authority-epochs"
+
+
+def read_authority_epochs(
+    results_root: Path,
+    campaign_id: str,
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    """Read and verify immutable participant-authority transition evidence."""
+    root = _authority_epoch_root(results_root)
+    if not root.exists():
+        return {}
+    if root.is_symlink() or not root.is_dir():
+        raise CampaignAuthorityError("authority epoch directory is invalid")
+
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for condition_dir in sorted(root.iterdir()):
+        if condition_dir.is_symlink() or not condition_dir.is_dir():
+            raise CampaignAuthorityError(
+                f"unexpected authority epoch entry: {condition_dir}"
+            )
+        records: list[dict[str, Any]] = []
+        prior_epoch_id: str | None = None
+        task_id: str | None = None
+        condition_id: str | None = None
+        for expected_epoch, record_path in enumerate(
+            sorted(condition_dir.iterdir()),
+            start=2,
+        ):
+            if (
+                record_path.name != f"{expected_epoch:06d}.json"
+                or record_path.is_symlink()
+                or not record_path.is_file()
+            ):
+                raise CampaignAuthorityError(
+                    f"authority epoch sequence is invalid: {record_path}"
+                )
+            try:
+                raw = record_path.read_bytes()
+                record = json.loads(raw)
+            except (OSError, ValueError) as exc:
+                raise CampaignAuthorityError(
+                    f"corrupt authority epoch: {record_path}"
+                ) from exc
+            required = {
+                "contract",
+                "campaign_id",
+                "task_id",
+                "condition_id",
+                "epoch",
+                "previous_epoch_id",
+                "authority",
+                "changed_components",
+                "changed_fields",
+                "detected_at_ns",
+                "trigger",
+                "participant_observation",
+                "epoch_id",
+            }
+            if (
+                not isinstance(record, dict)
+                or canonical_json(record) != raw
+                or set(record) != required
+                or record.get("contract") != "benchmark-authority-epoch.v1"
+                or record.get("campaign_id") != campaign_id
+                or record.get("epoch") != expected_epoch
+                or not isinstance(record.get("task_id"), str)
+                or not record["task_id"]
+                or not isinstance(record.get("condition_id"), str)
+                or not record["condition_id"]
+                or not isinstance(record.get("authority"), dict)
+                or not isinstance(record.get("changed_components"), list)
+                or not record["changed_components"]
+                or any(
+                    value not in {"agent", "subject"}
+                    for value in record["changed_components"]
+                )
+                or not isinstance(record.get("changed_fields"), list)
+                or any(
+                    not isinstance(value, str) or not value
+                    for value in record["changed_fields"]
+                )
+                or type(record.get("detected_at_ns")) is not int
+                or record["detected_at_ns"] < 0
+                or not isinstance(record.get("trigger"), dict)
+                or not isinstance(record.get("participant_observation"), dict)
+                or not isinstance(record.get("epoch_id"), str)
+            ):
+                raise CampaignAuthorityError(
+                    f"authority epoch identity mismatch: {record_path}"
+                )
+            identity = record["epoch_id"]
+            expected_identity = digest(
+                {key: value for key, value in record.items() if key != "epoch_id"}
+            )
+            if identity != expected_identity:
+                raise CampaignAuthorityError(
+                    f"authority epoch digest mismatch: {record_path}"
+                )
+            current_task = record["task_id"]
+            current_condition = record["condition_id"]
+            if task_id is None:
+                task_id = current_task
+                condition_id = current_condition
+                if condition_dir.name != _authority_epoch_key(
+                    current_task,
+                    current_condition,
+                ):
+                    raise CampaignAuthorityError(
+                        f"authority epoch directory identity mismatch: {condition_dir}"
+                    )
+            elif (current_task, current_condition) != (task_id, condition_id):
+                raise CampaignAuthorityError(
+                    f"authority epoch condition changed within lineage: {record_path}"
+                )
+            if prior_epoch_id is not None and record["previous_epoch_id"] != prior_epoch_id:
+                raise CampaignAuthorityError(
+                    f"authority epoch predecessor mismatch: {record_path}"
+                )
+            prior_epoch_id = identity
+            records.append(record)
+
+        if records:
+            assert task_id is not None and condition_id is not None
+            grouped[(task_id, condition_id)] = records
+    return grouped
+
+
+def bind_authority_epoch(
+    *,
+    results_root: Path,
+    campaign: dict[str, Any],
+    task_id: str,
+    condition_id: str,
+    observed_authority: dict[str, Any],
+    participant_observation: Mapping[str, Any] | None = None,
+) -> AuthorityEpochBinding:
+    """Accept recoverable participant drift as an immutable new evidence epoch.
+
+    Only agent/subject authority may roll. Any other condition-authority change
+    still invalidates campaign execution.
+    """
+    base_authority = (
+        campaign.get("task_conditions", {})
+        .get(task_id, {})
+        .get(condition_id)
+    )
+    if not isinstance(base_authority, dict):
+        raise CampaignAuthorityError(
+            f"saved campaign lacks authority for {task_id}/{condition_id}"
+        )
+
+    campaign_dir = results_root / ".campaign"
+    with _locked(campaign_dir):
+        if _read_manifest(campaign_dir) != campaign:
+            raise CampaignAuthorityError("campaign authority receipt changed")
+        epochs = read_authority_epochs(
+            results_root,
+            str(campaign["campaign_id"]),
+        ).get((task_id, condition_id), [])
+        if epochs:
+            previous = epochs[-1]
+            active_authority = previous["authority"]
+            active_epoch = int(previous["epoch"])
+            active_epoch_id = str(previous["epoch_id"])
+        else:
+            active_authority = base_authority
+            active_epoch = 1
+            active_epoch_id = _base_authority_epoch_id(
+                campaign=campaign,
+                task_id=task_id,
+                condition_id=condition_id,
+                authority=base_authority,
+            )
+
+        if active_authority == observed_authority:
+            return AuthorityEpochBinding(
+                epoch=active_epoch,
+                epoch_id=active_epoch_id,
+                authority=dict(active_authority),
+                transitioned=False,
+            )
+
+        changed_components = tuple(
+            key
+            for key in ("agent", "subject")
+            if active_authority.get(key) != observed_authority.get(key)
+        )
+        nonrecoverable = tuple(
+            sorted(
+                key
+                for key in set(active_authority) | set(observed_authority)
+                if key not in {"agent", "subject"}
+                and active_authority.get(key) != observed_authority.get(key)
+            )
+        )
+        if nonrecoverable:
+            raise CampaignAuthorityError(
+                "non-recoverable trial authority changed before inference: "
+                + ", ".join(nonrecoverable)
+            )
+        if not changed_components:
+            raise CampaignAuthorityError(
+                "trial authority changed outside recoverable participant authority"
+            )
+
+        changed_fields = tuple(
+            _authority_diff_fields(active_authority, observed_authority)
+        )
+        epoch = active_epoch + 1
+        trigger = {
+            "reason_code": "participant-authority-drift",
+            "message": (
+                "observed trial participant authority drifted before inference"
+            ),
+            "stack": "".join(traceback.format_stack(limit=16)),
+        }
+        payload: dict[str, Any] = {
+            "contract": "benchmark-authority-epoch.v1",
+            "campaign_id": campaign["campaign_id"],
+            "task_id": task_id,
+            "condition_id": condition_id,
+            "epoch": epoch,
+            "previous_epoch_id": active_epoch_id,
+            "authority": observed_authority,
+            "changed_components": list(changed_components),
+            "changed_fields": list(changed_fields),
+            "detected_at_ns": time.time_ns(),
+            "trigger": trigger,
+            "participant_observation": dict(participant_observation or {}),
+        }
+        payload["epoch_id"] = digest(payload)
+
+        directory = _authority_epoch_root(results_root) / _authority_epoch_key(
+            task_id,
+            condition_id,
+        )
+        directory.mkdir(parents=True, exist_ok=True)
+        _fsync_directory(directory.parent)
+        _fsync_directory(directory)
+        path = directory / f"{epoch:06d}.json"
+        try:
+            _publish_once(
+                path,
+                canonical_json(payload),
+                campaign_dir / "scratch",
+            )
+        except FileExistsError as exc:
+            raise CampaignAuthorityError(
+                f"authority epoch already exists: {task_id}/{condition_id}/{epoch}"
+            ) from exc
+
+        return AuthorityEpochBinding(
+            epoch=epoch,
+            epoch_id=str(payload["epoch_id"]),
+            authority=dict(observed_authority),
+            transitioned=True,
+            changed_components=changed_components,
+            changed_fields=changed_fields,
+        )
 
 
 def active_event_path(results_root: Path, definition_id: str, attempt: int) -> Path:
@@ -820,14 +1144,15 @@ def campaign_trial_id(
     *,
     campaign: dict[str, Any],
     admission: TrialAdmission,
+    condition_authority_binding: Mapping[str, Any] | None = None,
 ) -> str:
-    """Derive durable trial identity only from frozen campaign authority."""
-    expected = (
+    """Derive durable trial identity from the accepted condition-authority epoch."""
+    expected = condition_authority_binding or (
         campaign.get("task_conditions", {})
         .get(str(admission.task["id"]), {})
         .get(str(admission.condition["id"]))
     )
-    if not isinstance(expected, dict):
+    if not isinstance(expected, Mapping):
         raise CampaignAuthorityError(
             "trial is outside frozen campaign condition authority"
         )
@@ -847,7 +1172,7 @@ def verify_trial_authority(
     results_root: Path,
     campaign: dict[str, Any],
     admission: TrialAdmission,
-) -> None:
+) -> AuthorityEpochBinding:
     observed = _read_manifest(results_root / ".campaign")
     if observed != campaign:
         raise CampaignAuthorityError("campaign authority receipt changed")
@@ -864,15 +1189,7 @@ def verify_trial_authority(
         raise CampaignAuthorityError("oracle review authority changed before inference")
     if admission.definition_id not in observed["selected_definitions"]:
         raise CampaignAuthorityError("trial is outside frozen campaign selection")
-    expected = (
-        observed["task_conditions"]
-        .get(str(admission.task["id"]), {})
-        .get(str(admission.condition["id"]))
-    )
-    if expected != condition_authority(admission):
-        raise CampaignAuthorityError(
-            "observed trial authority drifted before inference"
-        )
+
     inputs = digest(
         {
             "workspace": admission.admitted_state,
@@ -881,8 +1198,28 @@ def verify_trial_authority(
             "budgets": admission.task["budgets"],
         }
     )
-    if observed["task_inputs"].get(str(admission.task["id"])) != inputs:
+    task_id = str(admission.task["id"])
+    condition_id = str(admission.condition["id"])
+    if observed["task_inputs"].get(task_id) != inputs:
         raise CampaignAuthorityError("trial inputs differ from admitted campaign")
+
+    participant_observation: dict[str, Any] = {}
+    for name, prepared in (
+        ("agent", admission.agent_prepare),
+        ("subject", admission.subject_prepare),
+    ):
+        value = prepared.payload.get("observed_identity")
+        if isinstance(value, dict):
+            participant_observation[name] = value
+
+    return bind_authority_epoch(
+        results_root=results_root,
+        campaign=campaign,
+        task_id=task_id,
+        condition_id=condition_id,
+        observed_authority=condition_authority(admission),
+        participant_observation=participant_observation,
+    )
 
 
 def claim_launch(
@@ -930,7 +1267,7 @@ def record_interrupted_attempt(
     results_root: Path,
     campaign: dict[str, Any],
     definition_id: str,
-    trial_id: str,
+    trial_id: str | None,
 ) -> int:
     """Retire one crashed active launch into immutable interruption evidence."""
     campaign_dir = results_root / ".campaign"
@@ -947,9 +1284,10 @@ def record_interrupted_attempt(
             campaign_id=campaign["campaign_id"],
             definition_id=definition_id,
         )
-        if claim["trial_id"] != trial_id:
+        if trial_id is not None and claim["trial_id"] != trial_id:
             raise CampaignAuthorityError("trial launch claim identity mismatch")
-        final_dir = results_root / trial_id
+        interrupted_trial_id = str(claim["trial_id"])
+        final_dir = results_root / interrupted_trial_id
         if final_dir.exists():
             raise CampaignAuthorityError(
                 "existing trial bundle cannot be retired as interrupted"
@@ -986,7 +1324,7 @@ def record_interrupted_attempt(
                 "contract": "benchmark-interruption-attempt.v2",
                 "campaign_id": campaign["campaign_id"],
                 "definition_id": definition_id,
-                "trial_id": trial_id,
+                "trial_id": interrupted_trial_id,
                 "attempt": attempt,
                 "status": "INTERRUPTED",
                 "events_sha256": events_sha256,
@@ -1022,7 +1360,12 @@ def launch_state(
         definition_id=definition_id,
     )
     if claim["trial_id"] != trial_id:
-        raise CampaignAuthorityError("trial launch claim identity mismatch")
+        prior_final = results_root / str(claim["trial_id"])
+        if prior_final.exists():
+            raise CampaignAuthorityError(
+                "stale launch claim points at an existing prior-authority result"
+            )
+        return "STALE_INTERRUPTED"
     final_dir = results_root / trial_id
     if final_dir.exists():
         valid, _reason = verify_bundle(final_dir)
