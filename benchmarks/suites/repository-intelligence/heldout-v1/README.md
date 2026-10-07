@@ -26,7 +26,7 @@ The result receipt keeps execution evidence separate from the score projection. 
 
 Reports expose `semantic_success_rate`, `semantic_gradeable_rate`, semantic-status counts, and `format_compliance_rate` independently over valid localization outcomes. Missing observations remain unknown with a zero denominator and a null rate; they are never converted to zero performance. Task PASS for localization follows semantic success; formatting remains a separate instruction-following signal.
 
-Trace diagnostics keep terminal execution failures separate from agent answers. `terminal_failure_cause` distinguishes an observed permission denial, context overflow, or retryable provider connection failure from an unexplained missing final answer; all remain `INCOMPLETE`. Trace-diagnostics v6 reports Hashmarks retrieval truncation as `complete`, `truncated`, `unknown`, or `not-reported`; it never infers completeness from the result count. The current `task_evidence` v4 packets do not report truncation, even though a different Hashmarks operation has a `canonical_truncation` field. `canonical_omitted_results` and `supplemental_results` describe presentation separately and do not prove whether the underlying repository search was complete.
+Trace diagnostics keep terminal execution failures separate from agent answers. `terminal_failure_cause` distinguishes an observed permission denial, context overflow, or retryable provider connection failure from an unexplained missing final answer; all remain `INCOMPLETE`. Hashmarks retrieval diagnostics report `canonical_omitted_results` and `supplemental_results` separately from `retrieval_truncation`: presentation omission does not prove that the underlying repository search was complete or truncated.
 
 A complete campaign with legitimate candidate FAIL outcomes can still be qualified evidence. Campaign qualification is lost by missing, incomplete, invalid, or contaminated execution evidence, not by the candidate simply answering incorrectly.
 
@@ -237,10 +237,6 @@ For a qualified natural-use result while Enola remains unused, run the same froz
 ```
 
 Use `benchmark status --require-qualified` and `benchmark score` against the root printed by that run. Enola and Hashmarks already use the same OpenCode MCP overlay. Enola's resolved executable and binary hash are recorded in campaign authority, so an additional explicit Enola path setting is unnecessary for this comparison.
-
-The 2026-10-07 bare-plus-Hashmarks OpenCode run at `.benchmark-runs/heldout-v1-hashmarks-opencode-v4-20261007T055504Z/runs/000001` is qualified for its selected 72 trials: 72/72 verified, 71 PASS, one bare-arm semantic FAIL, and no incomplete receipts. Hashmarks was configured in 36/36 assisted trials, invoked in 24/36, and returned successful nonempty `task_evidence` in 22/36. Those 22 contracted paired treatments had one gain, 21 preserved outcomes, and no regressions. The single gain is one replicate of `locate-prefix-path-enumerator`; it does not establish a general winner. Enola was not selected, so this run says nothing about its treatment effect or natural adoption.
-
-All 66 localization answers in the two selected arms used a JSON fence: strict bare-JSON format compliance was 0/33 in each arm, while the answers remained semantically gradeable. This shared agent output behavior is separate from the localization PASS/FAIL result and is not attributable to Hashmarks. Keep the frozen prompts and oracle unchanged when interpreting this run. In the saved trace diagnostics, all 22 Hashmarks `task_evidence` calls have no reported retrieval truncation; a v6 offline derivation must classify them as `not-reported` without rewriting the sealed receipts or original reports.
 
 For a scoring-only change to a complete campaign recorded under the current normalization and execution-evidence contracts, run offline scoring without editing the source bundles:
 
