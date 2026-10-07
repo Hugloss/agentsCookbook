@@ -1332,6 +1332,27 @@
       "kind": "confusion",
       "expected": "CLEAN",
       "scenario": "Ruff, Pyright, and ty all pass for the repository-owned scope. A parser has weak test coverage for malformed external input, but no static-analysis repair is pending. Determine whether this skill should report that general coverage gap as its own finding."
+    },
+    {
+      "id": "requirements-lifecycle-closure-positive-partial-binding",
+      "skill": "requirements-lifecycle-closure-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "scenario": "A proposed execution specification says RUN_BINDING_FAILED guarantees steps_started=0 and work_mutated=0. Run binding may already create a sandbox, mount a workspace, and materialize a credential before a later bind fails. The document does not define ownership of those partial resources, teardown, what happens if teardown cannot be proven, or how recovery discovers them after the binder crashes. Review whether the requirements lifecycle is closed."
+    },
+    {
+      "id": "requirements-lifecycle-closure-control-closed-binding",
+      "skill": "requirements-lifecycle-closure-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "A specification declares binding as an effectful phase. Durable ownership intent is recorded before each resource creation; partial bind failure enters a sequenced teardown envelope; successful teardown preserves RUN_BINDING_FAILED with steps_started=0 and step_work_mutated=0; unproven teardown becomes CONTAINMENT_FAILED; loss of the controller before a terminal receipt becomes JOURNAL_UNRESOLVED; and recovery is a separately admitted run over the exact residual resource set. The sequencing, evidence, and acceptance tests are explicit."
+    },
+    {
+      "id": "requirements-lifecycle-closure-confusion-implementation-resource-leak",
+      "skill": "requirements-lifecycle-closure-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "The requirements explicitly define request-scoped temporary-directory ownership, child-process completion, cleanup ordering, and crash recovery. The implementation nevertheless deletes the directory in the request handler while a spawned child still reads it. Determine whether this requirements-closure skill should report the implementation defect as its own finding."
     }
   ]
 }
