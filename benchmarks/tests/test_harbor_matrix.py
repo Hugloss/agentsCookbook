@@ -211,10 +211,17 @@ class HarborMatrixTests(unittest.TestCase):
 
         with (
             mock.patch(
-                "benchmarks.harbor_matrix._git_clean_identity",
+                "benchmarks.harbor_matrix._hashmarks_identity",
                 return_value={
                     "commit": "a" * 40,
                     "tree": "b" * 40,
+                    "working_copy_sha256": "c" * 64,
+                    "working_copy_clean": True,
+                    "executable": {
+                        "path": "/hashmarks/.venv/bin/hashmarks",
+                        "sha256": "d" * 64,
+                        "version": "hashmarks version 0.test",
+                    },
                 },
             ),
             mock.patch(
@@ -244,6 +251,10 @@ class HarborMatrixTests(unittest.TestCase):
         self.assertEqual(
             receipt["hashmarks"]["mcp_contract_identity"],
             "sha256:mcp",
+        )
+        self.assertEqual(
+            receipt["hashmarks"]["executable"]["sha256"],
+            "d" * 64,
         )
         self.assertEqual(
             receipt["trials"],
