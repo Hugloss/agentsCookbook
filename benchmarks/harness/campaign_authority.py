@@ -317,6 +317,9 @@ def read_authority_epochs(
     campaign_id: str,
 ) -> dict[tuple[str, str], list[dict[str, Any]]]:
     """Read and verify immutable participant-authority transition evidence."""
+    campaign = _read_manifest(results_root / ".campaign")
+    if campaign.get("campaign_id") != campaign_id:
+        raise CampaignAuthorityError("authority epoch campaign identity mismatch")
     root = _authority_epoch_root(results_root)
     if not root.exists():
         return {}
@@ -418,6 +421,25 @@ def read_authority_epochs(
                 ):
                     raise CampaignAuthorityError(
                         f"authority epoch directory identity mismatch: {condition_dir}"
+                    )
+                base_authority = (
+                    campaign.get("task_conditions", {})
+                    .get(current_task, {})
+                    .get(current_condition)
+                )
+                if not isinstance(base_authority, dict):
+                    raise CampaignAuthorityError(
+                        f"authority epoch has no campaign base: {record_path}"
+                    )
+                expected_predecessor = _base_authority_epoch_id(
+                    campaign=campaign,
+                    task_id=current_task,
+                    condition_id=current_condition,
+                    authority=base_authority,
+                )
+                if record["previous_epoch_id"] != expected_predecessor:
+                    raise CampaignAuthorityError(
+                        f"authority epoch predecessor mismatch: {record_path}"
                     )
             elif (current_task, current_condition) != (task_id, condition_id):
                 raise CampaignAuthorityError(
