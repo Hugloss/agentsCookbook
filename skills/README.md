@@ -25,7 +25,6 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `validation-gap-finder` — Design decisive validation and recovery proof.
 - `coverage-design-review` — Check whether tests prove real production behavior.
 - `implementation-dry-run` — Simulate implementation to find missing steps and sequencing.
-- `requirements-lifecycle-closure-review` — Find stateful/effectful requirements that leave partial failure, races, teardown, crash, unresolved, or recovery semantics open.
 - `fact-grounding-auditor` — Verify repo-specific claims and uncertainty.
 - `repository-improvement-scout` — Find evidence-backed repository signals worth investigating next.
 - `codebase-finding-derivation` — Turn inspected code paths into defensible evidence-backed findings.
@@ -45,6 +44,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `retry-idempotency-review` — Find replay/retry paths that can repeat one-shot effects.
 - `resource-lifetime-review` — Find resources that leak, close too early, or outlive their owner.
 - `failure-contract-review` — Find failure meaning or recovery contracts that diverge across layers.
+- `requirements-lifecycle-closure-review` — Find stateful/effectful requirements that leave partial failure, races, teardown, crash, unresolved, or recovery semantics open.
 - `dogfood-saturation-loop` — Drive one repair surface through repeated post-patch dogfood until fresh probing yields no qualifying defect.
 - `adversarial-repair-campaign` — Feed reproduced defects back into one mutable campaign candidate and repeatedly attack each repaired candidate before saturation.
 - `python-static-analysis-repair` — Make Ruff, Pyright, and ty clean while protecting behavior before semantic repairs.
