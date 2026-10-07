@@ -489,7 +489,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 mock.patch(
                     "benchmarks.__main__.build_trace_diagnostics",
                     return_value={
-                        "schema": "agents-cookbook-trace-diagnostics.v5",
+                        "schema": "agents-cookbook-trace-diagnostics.v6",
                         "trials": [],
                         "summary": {
                             "repository_intelligence_quality": {

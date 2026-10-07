@@ -131,12 +131,13 @@ class TraceAndToolProbeTests(unittest.TestCase):
             SHELL,
         )
 
-    def test_hashmarks_trace_projection_reads_compact_v3_symbol_locator(self) -> None:
+    def test_hashmarks_trace_projection_reads_compact_v4_symbol_locator(self) -> None:
         evidence = _hashmarks_evidence(
             {
-                "schema": "hashmarks.task-evidence.v3",
+                "schema": "hashmarks.task-evidence.v4",
                 "retrieval": {
                     "presentation": "compact-locators-v1",
+                    "bounds": {"limit": 20, "per_role": 3},
                     "canonical_omitted_results": 2,
                     "supplemental_results": 2,
                     "results": [
@@ -160,11 +161,11 @@ class TraceAndToolProbeTests(unittest.TestCase):
             {"path": "owner.py", "symbol": "owner"},
         )
 
-        self.assertEqual(evidence["schema"], "hashmarks.task-evidence.v3")
+        self.assertEqual(evidence["schema"], "hashmarks.task-evidence.v4")
         self.assertEqual(evidence["expected_target_rank"], 1)
         self.assertEqual(evidence["canonical_omitted_results"], 2)
         self.assertEqual(evidence["supplemental_results"], 2)
-        self.assertIsNone(evidence["retrieval_truncated"])
+        self.assertEqual(evidence["retrieval_truncation_state"], "not-reported")
         self.assertEqual(evidence["expected_target_observability"], "observed")
         self.assertEqual(evidence["ownership_status"], "ambiguous")
         self.assertEqual(evidence["next_read_path"], "owner.py")
@@ -176,6 +177,29 @@ class TraceAndToolProbeTests(unittest.TestCase):
             evidence["next_read_authority"],
             "non-authoritative-discrimination",
         )
+
+    def test_hashmarks_truncation_requires_reported_metadata(self) -> None:
+        cases = (
+            ({"bounds": {"canonical_truncation": "complete"}}, "complete"),
+            ({"bounds": {"canonical_truncation": "truncated"}}, "truncated"),
+            ({"bounds": {"canonical_truncation": "unknown"}}, "unknown"),
+            ({"truncated": False}, "complete"),
+            ({"truncated": True}, "truncated"),
+            ({"bounds": {"canonical_truncation": []}}, "unknown"),
+            ({"truncated": "false"}, "unknown"),
+            (
+                {"bounds": {"canonical_truncation": "complete"}, "truncated": True},
+                "unknown",
+            ),
+            ({"bounds": {"limit": 20}, "results": [{}] * 20}, "not-reported"),
+        )
+        for retrieval, state in cases:
+            with self.subTest(retrieval=retrieval):
+                evidence = _hashmarks_evidence(
+                    {"schema": "hashmarks.task-evidence.v4", "retrieval": retrieval},
+                    None,
+                )
+                self.assertEqual(evidence["retrieval_truncation_state"], state)
 
     def test_evidence_to_action_uses_subject_candidates_not_oracle(self) -> None:
         packet = {
@@ -657,7 +681,7 @@ class TraceAndToolProbeTests(unittest.TestCase):
                             "packet_status": "parsed",
                             "schema": "hashmarks.task-evidence.v3",
                             "retrieval_count": 20,
-                            "retrieval_truncated": False,
+                            "retrieval_truncation_state": "complete",
                             "expected_target_rank": 19,
                             "expected_target_observability": "observed",
                             "ownership_status": "ambiguous",
@@ -673,7 +697,7 @@ class TraceAndToolProbeTests(unittest.TestCase):
                             "packet_status": "parsed",
                             "schema": "hashmarks.task-evidence.v3",
                             "retrieval_count": 10,
-                            "retrieval_truncated": False,
+                            "retrieval_truncation_state": "complete",
                             "expected_target_rank": None,
                             "expected_target_observability": (
                                 "absent-from-returned-candidates"
@@ -691,7 +715,7 @@ class TraceAndToolProbeTests(unittest.TestCase):
                             "packet_status": "parsed",
                             "schema": "hashmarks.task-evidence.v3",
                             "retrieval_count": 17,
-                            "retrieval_truncated": True,
+                            "retrieval_truncation_state": "truncated",
                             "expected_target_rank": 14,
                             "expected_target_observability": "observed",
                             "ownership_status": "ambiguous",
@@ -735,7 +759,7 @@ class TraceAndToolProbeTests(unittest.TestCase):
         )
         self.assertEqual(
             subject["retrieval_truncation"],
-            {"true": 1, "false": 2, "unknown": 1},
+            {"complete": 2, "truncated": 1, "unknown": 1, "not-reported": 0},
         )
         self.assertEqual(
             subject["canonical_omission"],
@@ -791,7 +815,7 @@ class TraceAndToolProbeTests(unittest.TestCase):
             "hashmarks_evidence": {
                 "packet_status": "parsed",
                 "retrieval_count": 20,
-                "retrieval_truncated": None,
+                "retrieval_truncation_state": "not-reported",
                 "canonical_omitted_results": 2,
                 "supplemental_results": 2,
                 "expected_target_observability": "observed",
@@ -800,7 +824,7 @@ class TraceAndToolProbeTests(unittest.TestCase):
             },
         }]}])
         subject = quality["subjects"][0]
-        self.assertEqual(subject["retrieval_truncation"]["unknown"], 1)
+        self.assertEqual(subject["retrieval_truncation"]["not-reported"], 1)
         self.assertEqual(subject["canonical_omission"]["calls_with_omission"], 1)
         self.assertEqual(subject["canonical_omission"]["omitted_results"]["mean"], 2)
         self.assertEqual(subject["supplemental_results"]["mean"], 2)
