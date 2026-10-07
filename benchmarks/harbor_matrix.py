@@ -613,7 +613,11 @@ def _task_toml(
         )
     )
     return (
-        'version = "1.0"\n\n'
+        'schema_version = "1.4"\n\n'
+        "[task]\n"
+        f'name = "agentscookbook/{task["id"]}"\n'
+        'version = "1.0.0"\n'
+        'description = "Read-only repository localization projection"\n\n'
         "[metadata]\n"
         'category = "repository-intelligence"\n'
         f'tags = ["agentscookbook", "harbor", "{task["family"]}"]\n\n'
