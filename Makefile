@@ -1,4 +1,4 @@
-BENCHMARK_TARGETS := benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood benchmark-context-invariance benchmark-context-invariance-check benchmark-context-invariance-check-all benchmark-context-invariance-qualify-check benchmark-context-invariance-qualify benchmark-context-invariance-qualify-resume benchmark-context-invariance-qualify-status benchmark-context-invariance-new benchmark-context-invariance-resume benchmark-context-invariance-runs benchmark-context-invariance-status benchmark-context-invariance-reports
+BENCHMARK_TARGETS := benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood benchmark-context-invariance benchmark-context-invariance-check benchmark-context-invariance-check-all benchmark-context-invariance-qualify-check benchmark-context-invariance-qualify benchmark-context-invariance-qualify-resume benchmark-context-invariance-qualify-status benchmark-context-invariance-new benchmark-context-invariance-resume benchmark-context-invariance-runs benchmark-context-invariance-status benchmark-context-invariance-reports benchmark-harness-check benchmark-harness benchmark-harness-report
 .PHONY: $(BENCHMARK_TARGETS)
 
 BENCHMARK_REQUESTED_GOALS := $(filter benchmark benchmark-%,$(MAKECMDGOALS))
@@ -27,6 +27,20 @@ PROBE_SMOKE = $(PROBE_DIR)/smoke
 
 OPENAI_ROUTING_ENV ?= .env
 CONTEXT_INVARIANCE_ENV ?= .env.context-invariance
+HARBOR_MATRIX ?= benchmarks/harbor/repository-intelligence-v1.json
+HARBOR_MODE ?= smoke
+
+benchmark-harness-check:
+	@uv run --no-project python -m benchmarks.harbor_matrix check \
+		--env-file .env --matrix "$(HARBOR_MATRIX)" --mode "$(HARBOR_MODE)"
+
+benchmark-harness:
+	@uv run --no-project python -m benchmarks.harbor_matrix run \
+		--env-file .env --matrix "$(HARBOR_MATRIX)" --mode "$(HARBOR_MODE)"
+
+benchmark-harness-report:
+	@uv run --no-project python -m benchmarks.harbor_matrix report \
+		--env-file .env --matrix "$(HARBOR_MATRIX)" --mode "$(HARBOR_MODE)"
 
 benchmark-context-invariance:
 	@./benchmark run --auto --env-file "$(CONTEXT_INVARIANCE_ENV)"
