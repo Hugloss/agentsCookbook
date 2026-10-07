@@ -1818,6 +1818,16 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
         if unresolved
         else ""
     )
+    authority_transitions = int(
+        initial_status.get("authority_epoch_transitions", 0)
+    )
+    authority_detail = (
+        " | evidence TAINTED | "
+        f"authority transitions {authority_transitions} | "
+        "continuing diagnostic evidence"
+        if authority_transitions
+        else ""
+    )
     print(
         f"RUN {paths.run_id} ({paths.root}) | CAMPAIGN {len(rows)} trials | "
         f"verified {initial_status['complete_trials']} | "
@@ -1825,7 +1835,7 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
         f"interrupted {initial_status['interrupted_trials']} | "
         "completed receipts will be reused; interrupted launches will be "
         "preserved and retried as numbered attempts"
-        f"{qualification_detail}",
+        f"{qualification_detail}{authority_detail}",
         file=sys.stderr,
         flush=True,
     )
@@ -1890,6 +1900,20 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
                 (result.result_dir / "result.json").read_text(encoding="utf-8")
             )
             result = bind_result_to_receipt(result, receipt)
+            epoch = receipt.get("execution", {}).get("authority_epoch")
+            if isinstance(epoch, dict) and epoch.get("transitioned") is True:
+                changed = ",".join(
+                    str(value)
+                    for value in epoch.get("changed_components", [])
+                ) or "participant"
+                print(
+                    "AUTHORITY EPOCH "
+                    f"{row['task_id']} / {row['condition_id']} | "
+                    f"epoch {epoch.get('epoch')} | changed {changed} | "
+                    "campaign evidence TAINTED | continuing",
+                    file=sys.stderr,
+                    flush=True,
+                )
             summary = live_matrix.record(row, receipt)
         except Exception as exc:
             print(
@@ -1986,6 +2010,8 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
         f"RUN SUMMARY processed {len(results)}/{len(rows)} | "
         f"verified {final_status['complete_trials']}/{len(rows)} | "
         f"outcomes {json.dumps(final_status['outcomes'], sort_keys=True)} | "
+        f"evidence {'TAINTED' if final_status.get('evidence_tainted') else 'CLEAN'} | "
+        f"authority transitions {final_status.get('authority_epoch_transitions', 0)} | "
         f"qualified {final_status['qualified']} | "
         f"run elapsed {int(time.monotonic() - run_started)}s",
         file=sys.stderr,
@@ -2047,6 +2073,12 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
             )
             if final_status.get(key)
         )
+        if final_status.get("evidence_tainted"):
+            blockers.append(
+                "participant authority transitions "
+                f"{final_status.get('authority_epoch_transitions', 0)} "
+                "(evidence preserved across immutable epochs)"
+            )
         exposure = final_status.get("subject_exposure_qualification")
         if isinstance(exposure, dict) and exposure.get("qualified") is False:
             failures = [
