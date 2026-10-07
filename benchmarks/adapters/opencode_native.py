@@ -38,6 +38,11 @@ from scripts.agent_economics.bounded_process import ProcessLimits, run_bounded
 _RUNTIME_SCRIPT = (
     Path(__file__).resolve().parents[2] / "scripts" / "opencode-runtime.js"
 )
+_SCRATCH_INSTRUCTION = (
+    "Benchmark execution note: put temporary files outside the repository only "
+    "under $TMPDIR, and remove them before finishing. Other external scratch "
+    "paths are unavailable.\n\n"
+)
 
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -108,12 +113,15 @@ def _run_failure_reason(
     *,
     export_error: str | None,
     final_text: str | None,
+    recovered_context_overflow: bool = False,
 ) -> str | None:
     if run_evidence is None:
         return export_error or "OpenCode runtime emitted no run result"
 
     run_status = run_evidence.get("status")
     if run_status != 0:
+        if recovered_context_overflow and export_error is None and final_text:
+            return None
         if run_status is None:
             reason = "OpenCode runtime emitted no run status"
         else:
@@ -287,8 +295,12 @@ def _native_environment(context: TrialContext) -> dict[str, str]:
     resolved = resolve_native_executable(context, "opencode")
     if resolved is None:
         raise ValueError("opencode is not available on the native PATH")
+    bwrap = resolve_native_executable(context, "bwrap")
+    if bwrap is None:
+        raise ValueError("bubblewrap is required for isolated OpenCode trial scratch")
     environment = {
         "OPENCODE_BIN": resolved,
+        "BWRAP_BIN": bwrap,
         "HOME": context.environment["BENCHMARK_NATIVE_HOME"],
         "XDG_CONFIG_HOME": context.environment["BENCHMARK_NATIVE_XDG_CONFIG_HOME"],
         "OPENCODE_DISABLE_AUTOUPDATE": "1",
@@ -593,10 +605,29 @@ def _runtime_call(
     timeout_seconds: float,
     max_stdout_bytes: int,
 ) -> tuple[dict[str, Any] | None, Any]:
+    scratch = context.control_root / "_environment" / "tmp"
+    if Path(environment["TMPDIR"]).resolve() != scratch.resolve():
+        raise ValueError("OpenCode trial scratch does not match control root")
+    argv = (
+        environment["BWRAP_BIN"],
+        "--die-with-parent",
+        "--bind", "/", "/",
+        "--bind", str(scratch), "/tmp",
+        # Readiness uses a workspace and control root below host /tmp. Preserve
+        # those two paths after the private bind; other host /tmp paths stay hidden.
+        *(("--bind", str(context.workspace), str(context.workspace))
+          if context.workspace.is_relative_to("/tmp") else ()),
+        *(("--bind", str(context.control_root), str(context.control_root))
+          if context.control_root.is_relative_to("/tmp") else ()),
+        "--proc", "/proc",
+        "--dev-bind", "/dev", "/dev",
+        "--",
+        "node", str(_RUNTIME_SCRIPT), *args,
+    )
     result = run_bounded(
         repository_root=context.workspace,
-        argv=("node", str(_RUNTIME_SCRIPT), *args),
-        environment=environment,
+        argv=argv,
+        environment={**environment, "BENCHMARK_PRIVATE_TMP": "1"},
         limits=ProcessLimits(
             timeout_seconds=timeout_seconds,
             max_stdout_bytes=max_stdout_bytes,
@@ -639,8 +670,8 @@ class OpenCodeNativeAgent:
             {
                 "configuration": "native-opencode",
                 "model_provider": "native-opencode",
-                "runtime_overlay": "benchmark-subject-exposure+tool-gating-only",
-                "surface": "shared-opencode-runtime-v4",
+                "runtime_overlay": "benchmark-subject-exposure+tool-gating+scratch+compaction",
+                "surface": "shared-opencode-runtime-v5",
             },
         )
 
@@ -703,6 +734,8 @@ class OpenCodeNativeAgent:
             "inspect-config",
             "--repo",
             str(context.workspace),
+            "--benchmark-control-root",
+            str(context.control_root),
             "--agent",
             context.environment["BENCHMARK_OPENCODE_AGENT"],
             "--benchmark-subject",
@@ -856,12 +889,15 @@ class OpenCodeNativeAgent:
             "method": workspace_binding.get("method"),
             "reason_code": workspace_binding.get("reason_code"),
         }
+        bwrap_path = Path(_native_environment(context)["BWRAP_BIN"])
         evidence = {
-            "runtime_contract": "agents-cookbook-opencode-runtime/v4",
+            "runtime_contract": "agents-cookbook-opencode-runtime/v7",
             "opencode_executable_path": executable.payload.get("resolved_path"),
             "opencode_executable_sha256": executable.payload.get("executable_sha256"),
             "opencode_version": executable.payload.get("version"),
             "opencode_executable_metadata": executable.payload.get("file_metadata"),
+            "bubblewrap_executable_path": str(bwrap_path),
+            "bubblewrap_executable_sha256": _sha256_file(bwrap_path),
             "native_config_sha256": inspection.get("config_sha256"),
             "model": model,
             "provider": provider,
@@ -880,6 +916,9 @@ class OpenCodeNativeAgent:
             "native_server_conflict": overlay_identity.get("native_server_conflict"),
             "overlay_sha256": hashlib.sha256(
                 canonical_json(overlay_identity)
+            ).hexdigest(),
+            "prompt_policy_sha256": hashlib.sha256(
+                _SCRATCH_INSTRUCTION.encode("utf-8")
             ).hexdigest(),
         }
         (context.control_root / "opencode-native-evidence.json").write_bytes(
@@ -977,6 +1016,17 @@ class OpenCodeNativeAgent:
                 "benchmark subject source authority changed after admission"
             )
         current_opencode_path = str(Path(environment["OPENCODE_BIN"]).resolve())
+        if evidence.get("runtime_contract") in {
+            "agents-cookbook-opencode-runtime/v6",
+            "agents-cookbook-opencode-runtime/v7",
+        }:
+            current_bwrap_path = str(Path(environment["BWRAP_BIN"]).resolve())
+            if (
+                current_bwrap_path != evidence.get("bubblewrap_executable_path")
+                or _sha256_file(Path(current_bwrap_path))
+                != evidence.get("bubblewrap_executable_sha256")
+            ):
+                raise ValueError("bubblewrap executable authority changed after admission")
         admitted_opencode_path = evidence.get("opencode_executable_path")
         admitted_opencode_sha256 = evidence.get("opencode_executable_sha256")
         try:
@@ -1027,11 +1077,13 @@ class OpenCodeNativeAgent:
                 "evidence before answering. The tool call is required even if you "
                 "believe you already know the answer.\n\n" + prompt
             )
-        prompt_path.write_text(prompt, encoding="utf-8")
+        prompt_path.write_text(_SCRATCH_INSTRUCTION + prompt, encoding="utf-8")
         run_args = (
             "run-export",
             "--repo",
             str(context.workspace),
+            "--benchmark-control-root",
+            str(context.control_root),
             "--agent",
             context.environment["BENCHMARK_OPENCODE_AGENT"],
             "--title",
@@ -1168,6 +1220,11 @@ class OpenCodeNativeAgent:
         export_attempts = envelope.get("export_attempts") if isinstance(envelope, dict) else None
         if type(export_attempts) is int and export_attempts >= 0:
             metrics["session_export_attempts"] = export_attempts
+        recovered_context_overflow = (
+            isinstance(envelope, dict)
+            and envelope.get("recovered_context_overflow") is True
+        )
+        metrics["recovered_context_overflow"] = recovered_context_overflow
         metrics["duration_ms"] = result.elapsed_ms
         metrics["stdout_bytes"] = len(result.stdout)
         metrics["stderr_bytes"] = len(result.stderr)
@@ -1196,6 +1253,7 @@ class OpenCodeNativeAgent:
             run_evidence,
             export_error=export_error,
             final_text=final_text,
+            recovered_context_overflow=recovered_context_overflow,
         )
         runtime_stderr = result.stderr.decode(
             "utf-8",

@@ -918,26 +918,40 @@ def render_trial_failure(
 
 
 
-def render_run_blockers(failures: list[str]) -> str | None:
-    """Repeat qualification-blocking failures at the end of a long run."""
+def render_run_blockers(
+    failures: list[dict[str, Any]], trace_diagnostics: dict[str, Any] | None = None
+) -> str | None:
+    """Keep the cause and receipt visible without repeating raw diagnostics."""
     if not failures:
         return None
+    trials = (
+        trace_diagnostics.get("trials", [])
+        if isinstance(trace_diagnostics, dict)
+        else []
+    )
+    causes = {
+        row.get("trial_id"): row.get("terminal_failure_cause")
+        for row in trials
+        if isinstance(row, dict)
+    }
+    cause_counts = Counter(
+        causes.get(failure.get("trial_id")) or failure.get("reason_code") or "unknown"
+        for failure in failures
+    )
     label = "failure" if len(failures) == 1 else "failures"
     lines = [
         "",
         f"RUN BLOCKERS {len(failures)} operational {label}",
-        (
-            "Repeated at end of run so the actionable diagnostic remains visible; "
-            "durable raw detail is in each result receipt shown below, while "
-            "derived summaries are in the reports directory."
+        "Causes: " + ", ".join(
+            f"{cause} {count}" for cause, count in sorted(cause_counts.items())
         ),
+        "Full diagnostics remain in each receipt and trace-diagnostics.json.",
     ]
-    for index, failure in enumerate(failures, start=1):
-        lines.extend(
-            [
-                "",
-                f"--- blocker {index}/{len(failures)} ---",
-                failure.lstrip(),
-            ]
+    for failure in failures:
+        cause = causes.get(failure.get("trial_id")) or failure.get("reason_code") or "unknown"
+        lines.append(
+            f"- {failure['task_id']} / {failure['condition_id']} / "
+            f"replicate {failure['replicate_id']}: {cause} | "
+            f"receipt {failure['receipt']}"
         )
     return "\n".join(lines)

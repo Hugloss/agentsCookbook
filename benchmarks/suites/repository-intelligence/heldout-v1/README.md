@@ -225,18 +225,22 @@ Use the Enola required-tool probe to diagnose whether `enola_explore` works when
 
 The 2026-10-07 focused v4 run at `.benchmark-runs/heldout-v1-focus-v4-20261007T041148Z/runs/000001` completed 36/36 PASS with no incomplete receipts. Hashmarks was invoked in 9/12 trials and Enola in 0/12, so subject exposure failed and a full MCP-only campaign is not ready. The separate prompted Enola probe returned successful `enola_explore` results in 3/3 trials, but met its stricter before-native-search routing gate in only 2/3. This proves the prompted tool path works; it does not establish natural routing. `enola install -dry-run -hooks -targets opencode` shows that Enola's native OpenCode integration adds instructions and a plugin that redirects initial searches. An experiment using that integration needs its own declared treatment and fresh authority; it cannot be mixed with these MCP-only receipts or described as natural MCP adoption.
 
+Run `000014` is reviewed for the internal team in `docs/benchmark-run-000014-review.md`. It uses the earlier OpenCode execution policy and is not comparable with new compaction and private-scratch runs. The focused v5 repair run still had two `/tmp` permission denials when agents used literal paths; the v7 policy binds `/tmp` to each trial's scratch directory. A partial v6 full run also exposed a recovered compaction turn that had final text despite a nonzero CLI exit; v7 recognizes that narrowly verified sequence.
+
 The three Hashmarks non-use trials in that run had complete subject observability and a configured MCP. On `locate-resource-invalidation`, replicates 6201 and 6203 used `grep` then `read`; replicate 6202 used `task_evidence` then `read`. On `repair-partial-receipt-regression`, replicate 6202 used native search and editing, while 6201 and 6203 called `task_evidence`. These traces show differing agent routes, not an observed MCP startup failure. Hashmarks already describes `task_evidence` as the first choice for unknown-path behavior, so these three observations alone do not justify a product change.
 
-For a qualified natural-use result while Enola remains unused, run the same frozen suite with the bare and Hashmarks OpenCode conditions only. This is a 72-trial campaign; it does not claim Enola treatment efficacy. Use a fresh root and retain every task and replicate:
+The qualified bare-plus-Hashmarks v7 campaign is saved at `.benchmark-runs/heldout-v1-hashmarks-opencode-v7-implementation/runs/000001`: 72/72 receipts, 71 PASS, one semantic FAIL, zero INCOMPLETE. Hashmarks had one gain and 35 preserved paired outcomes, with `task_evidence` returning a successful nonempty result in 28/36 assisted trials. Both arms were strictly format noncompliant on all 33 localization trials. The internal review and limitations are in `docs/benchmark-run-000014-review.md`.
+
+To repeat a qualified natural-use run while Enola remains unused, run the same frozen suite with the bare and Hashmarks OpenCode conditions only. This is a 72-trial campaign; it does not claim Enola treatment efficacy. Use a fresh root and retain every task and replicate:
 
 ```sh
 ./benchmark run --new --env-file .env \
-  --root ".benchmark-runs/heldout-v1-hashmarks-opencode-v4-$(date -u +%Y%m%dT%H%M%SZ)" \
+  --root ".benchmark-runs/heldout-v1-hashmarks-opencode-v7-$(date -u +%Y%m%dT%H%M%SZ)" \
   --agent opencode-native --subject none --subject hashmarks \
   --no-json-results
 ```
 
-Use `benchmark status --require-qualified` and `benchmark score` against the root printed by that run. Enola and Hashmarks already use the same OpenCode MCP overlay. Enola's resolved executable and binary hash are recorded in campaign authority, so an additional explicit Enola path setting is unnecessary for this comparison.
+Use `benchmark status --agent opencode-native --subject none --subject hashmarks --require-qualified` and `benchmark score --agent opencode-native` against the root printed by that run. The status selectors must match the frozen campaign selection. Enola and Hashmarks already use the same OpenCode MCP overlay. Enola's resolved executable and binary hash are recorded in campaign authority, so an additional explicit Enola path setting is unnecessary for this comparison.
 
 For a scoring-only change to a complete campaign recorded under the current normalization and execution-evidence contracts, run offline scoring without editing the source bundles:
 

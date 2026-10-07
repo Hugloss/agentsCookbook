@@ -8,6 +8,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const RUNTIME_SCHEMA = 'agents-cookbook-opencode-runtime/v3';
+const BENCHMARK_COMPACTION_RESERVE = 10000;
 const SECRET_KEYS = new Set([
   'api_key',
   'apikey',
@@ -222,9 +223,15 @@ function inspectMcp(config) {
 function inspectConfig(config, agentName = null) {
   const model = configuredModel(config, agentName);
   const mcp = inspectMcp(config);
+  const [provider, modelId] = typeof model === 'string'
+    ? model.split('/', 2) : [];
+  const modelLimits = config.provider?.[provider]?.models?.[modelId]?.limit;
   return {
     model,
     provider: providerFromModel(model),
+    model_limits: modelLimits && typeof modelLimits === 'object'
+      ? { context: modelLimits.context, output: modelLimits.output }
+      : null,
     config_sha256: sha256Text(canonicalJson(sanitize(config))),
     mcp_shape: mcp.shape,
     mcp_servers: mcp.servers,
@@ -339,7 +346,34 @@ function mcpEntries(config, shape) {
   return shape === 'nested-servers' ? (mcp.servers || {}) : mcp;
 }
 
-function benchmarkOverlay(config, subjectExposure, agentName) {
+function benchmarkScratch(repoDir, env, controlRoot) {
+  if (!controlRoot || !env.TMPDIR) {
+    throw new Error('benchmark OpenCode trial scratch directory is unavailable');
+  }
+  const control = fs.realpathSync.native(controlRoot);
+  const scratch = fs.realpathSync.native(env.TMPDIR);
+  const relativeToWorkspace = path.relative(
+    fs.realpathSync.native(repoDir), scratch,
+  );
+  if (control !== path.resolve(controlRoot) ||
+      scratch !== path.resolve(env.TMPDIR) ||
+      path.relative(control, scratch) !== path.join('_environment', 'tmp') ||
+      !(relativeToWorkspace === '..' ||
+        relativeToWorkspace.startsWith(`..${path.sep}`))) {
+    throw new Error('benchmark OpenCode trial scratch directory is outside control root');
+  }
+  if (env.BENCHMARK_PRIVATE_TMP === '1') {
+    const privateTmp = fs.statSync('/tmp');
+    const trialScratch = fs.statSync(scratch);
+    if (privateTmp.dev !== trialScratch.dev ||
+        privateTmp.ino !== trialScratch.ino) {
+      throw new Error('benchmark private /tmp is not bound to trial scratch');
+    }
+  }
+  return scratch;
+}
+
+function benchmarkOverlay(config, subjectExposure, agentName, scratch, privateTmp) {
   const inspected = inspectMcp(config);
   const nested = inspected.shape === 'nested-servers';
   const source = mcpEntries(config, inspected.shape);
@@ -395,7 +429,14 @@ function benchmarkOverlay(config, subjectExposure, agentName) {
       ? sha256Text(canonicalJson(subjectExposure))
       : null,
     config: {
-      compaction: { auto: false },
+      compaction: { auto: true, reserved: BENCHMARK_COMPACTION_RESERVE },
+      permission: {
+        external_directory: {
+          [scratch]: 'allow',
+          [`${scratch}/**`]: 'allow',
+          ...(privateTmp ? { '/tmp': 'allow', '/tmp/**': 'allow' } : {}),
+        },
+      },
       mcp: nested ? { servers } : servers,
       ...(nested ? {} : {
         tools,
@@ -416,11 +457,19 @@ function verifyBenchmarkConfig(
   const resolved = inspectConfig(effective, agentName);
   if (
     !effective.compaction ||
-    effective.compaction.auto !== false
+    effective.compaction.auto !== true ||
+    effective.compaction.reserved !== BENCHMARK_COMPACTION_RESERVE
   ) {
     throw new Error(
-      'benchmark OpenCode auto-compaction must be disabled for single-turn trials',
+      'benchmark OpenCode auto-compaction reserve did not resolve',
     );
+  }
+  for (const [pattern, action] of Object.entries(
+    overlay.config.permission.external_directory,
+  )) {
+    if (effective.permission?.external_directory?.[pattern] !== action) {
+      throw new Error('benchmark OpenCode trial scratch permission did not resolve');
+    }
   }
   if (original.model !== resolved.model || original.provider !== resolved.provider) {
     throw new Error('benchmark overlay changed native OpenCode model/provider');
@@ -1064,6 +1113,7 @@ function prepareBenchmarkConfig({
   pure = true,
   probe = true,
   agentName,
+  controlRoot,
 }) {
   if (typeof agentName !== 'string' || !agentName) {
     throw new Error('benchmark OpenCode agent name is required');
@@ -1101,7 +1151,21 @@ function prepareBenchmarkConfig({
     if (!selectedSubject && subjectExposure) {
       throw new Error('bare benchmark must not expose a subject');
     }
-    const overlay = benchmarkOverlay(base.config, subjectExposure, agentName);
+    const limits = base.inspection.model_limits;
+    if (!limits || !Number.isSafeInteger(limits.context) ||
+        !Number.isSafeInteger(limits.output) ||
+        limits.output <= 0 ||
+        limits.context <= limits.output + BENCHMARK_COMPACTION_RESERVE) {
+      throw new Error(
+        'native OpenCode model limits leave no usable prompt budget; '
+        + 'correct provider model limit.context and limit.output before running',
+      );
+    }
+    const scratch = benchmarkScratch(repoDir, env, controlRoot);
+    const privateTmp = env.BENCHMARK_PRIVATE_TMP === '1';
+    const overlay = benchmarkOverlay(
+      base.config, subjectExposure, agentName, scratch, privateTmp,
+    );
     const content = mergeObjects(inlineConfig(env), overlay.config);
     const commandEnv = {
       ...env,
@@ -1171,7 +1235,10 @@ function prepareBenchmarkConfig({
       native_subject_identity: subjectExecutable,
       overlay_identity: {
         shape: overlay.shape,
-        compaction_auto: false,
+        compaction_auto: true,
+        compaction_reserved: BENCHMARK_COMPACTION_RESERVE,
+        scratch_path: scratch,
+        private_tmp: privateTmp,
         selected_subject: selectedSubject,
         subject_definition_source:
           selectedSubject ? 'benchmark-subject-exposure' : null,
@@ -1282,6 +1349,40 @@ function runSession({
   return { startedAt, command };
 }
 
+function recoveredContextOverflow(run, exported, finalText) {
+  if (run.status !== 1 || run.error || run.signal || run.stderr ||
+      exported?.status !== 0 || !finalText) return false;
+  let events;
+  let exportData;
+  try {
+    events = run.stdout.trim().split('\n').map((line) => JSON.parse(line));
+    exportData = JSON.parse(exported.stdout);
+  } catch {
+    return false;
+  }
+  const messages = exportData.messages;
+  const lastAssistant = Array.isArray(messages)
+    ? messages.filter((message) => message?.info?.role === 'assistant').at(-1)
+    : null;
+  if (lastAssistant?.info?.finish !== 'stop') return false;
+  const errorIndex = events.findLastIndex((event) => event.type === 'error');
+  if (errorIndex < 0 || events[errorIndex].error?.name !== 'ContextOverflowError') {
+    return false;
+  }
+  const continuationIndex = events.findIndex((event, index) =>
+    index > errorIndex && event.type === 'text' &&
+    event.part?.metadata?.compaction_continue === true);
+  if (continuationIndex < 0) return false;
+  const finalIndex = events.findLastIndex((event) =>
+    event.type === 'text' && event.part?.text?.trim() === finalText);
+  if (finalIndex <= continuationIndex) return false;
+  const finish = events.find((event, index) =>
+    index > finalIndex && event.type === 'step_finish' &&
+    event.part?.reason === 'stop' &&
+    event.part?.messageID === events[finalIndex].part?.messageID);
+  return Boolean(finish);
+}
+
 async function runSessionAndExport({
   opencodeBin = process.env.OPENCODE_BIN || 'opencode',
   repoDir,
@@ -1371,6 +1472,7 @@ async function runSessionAndExport({
     final_text: finalText,
     export_parse_error: exportParseError,
     export_diagnostic: exportDiagnostic,
+    recovered_context_overflow: recoveredContextOverflow(run, exported, finalText),
     delete: deleted,
   };
 }
@@ -1423,6 +1525,7 @@ async function main(argv) {
         selectedSubject,
         subjectExposure,
         agentName: options.agent,
+        controlRoot: options['benchmark-control-root'],
       })
       : resolveNativeConfig({ repoDir, env: process.env });
     const { environment, ...safe } = result;
@@ -1453,6 +1556,7 @@ async function main(argv) {
         selectedSubject,
         subjectExposure,
         agentName: options.agent,
+        controlRoot: options['benchmark-control-root'],
       });
       const authorityFailure = benchmarkAuthorityFailure({
         prepared,
@@ -1491,6 +1595,7 @@ async function main(argv) {
         selectedSubject,
         subjectExposure,
         agentName: options.agent,
+        controlRoot: options['benchmark-control-root'],
         probe: false,
       });
       const authorityFailure = benchmarkAuthorityFailure({
@@ -1549,6 +1654,7 @@ module.exports = {
   runCommandToFile,
   runSession,
   runSessionAndExport,
+  recoveredContextOverflow,
   sanitize,
   verifyWorkspaceBinding,
   nativeSubjectExecutableIdentity,

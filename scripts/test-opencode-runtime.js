@@ -338,6 +338,9 @@ async function testSharedLifecycle() {
   const root = fs.mkdtempSync(
     path.join(os.tmpdir(), 'agents-cookbook-opencode-runtime-'),
   );
+  const controlRoot = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'agents-cookbook-opencode-control-'),
+  );
   try {
     const fake = [process.execPath, writeFakeOpenCode(root)];
     const fakeOpenCodeSha256 = crypto.createHash('sha256')
@@ -349,10 +352,17 @@ async function testSharedLifecycle() {
       fs.chmodSync(executable, 0o755);
     }
     const statePath = path.join(root, 'state.json');
+    const scratch = path.join(controlRoot, '_environment', 'tmp');
+    fs.mkdirSync(scratch, { recursive: true });
     const env = {
       FAKE_OPENCODE_STATE: statePath,
       PATH: root + path.delimiter + (process.env.PATH || ''),
+      TMPDIR: scratch,
     };
+    const prepare = (options) => runtime.prepareBenchmarkConfig({
+      controlRoot,
+      ...options,
+    });
     const projectConfigPath = path.join(root, 'opencode.json');
     const projectConfigText =
       '{"mcp":{"hashmarks":{"command":["ambient-hashmarks"]}}}\n';
@@ -368,7 +378,7 @@ async function testSharedLifecycle() {
     assert.ok(!JSON.stringify(resolved).includes('must-not-leak'));
 
     const cachedExposure = subjectExposure(root, 'hashmarks');
-    const staleSnapshotRejected = runtime.prepareBenchmarkConfig({
+    const staleSnapshotRejected = prepare({
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
@@ -383,7 +393,7 @@ async function testSharedLifecycle() {
       /native OpenCode config could not be resolved/,
     );
 
-    const enabledNativeRegistration = runtime.prepareBenchmarkConfig({
+    const enabledNativeRegistration = prepare({
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
@@ -412,7 +422,7 @@ async function testSharedLifecycle() {
 
     for (const shape of ['flat', 'nested']) {
       const exposure = subjectExposure(root, 'hashmarks');
-      const prepared = runtime.prepareBenchmarkConfig({
+      const prepared = prepare({
         opencodeBin: fake,
         repoDir: root,
         agentName: 'build',
@@ -443,6 +453,17 @@ async function testSharedLifecycle() {
       );
       const content = JSON.parse(prepared.environment.OPENCODE_CONFIG_CONTENT);
       const servers = shape === 'nested' ? content.mcp.servers : content.mcp;
+      assert.deepStrictEqual(content.compaction, {
+        auto: true,
+        reserved: 10000,
+      });
+      assert.deepStrictEqual(content.permission.external_directory, {
+        [scratch]: 'allow',
+        [`${scratch}/**`]: 'allow',
+      });
+      assert.strictEqual(prepared.overlay_identity.scratch_path, scratch);
+      assert.strictEqual(prepared.overlay_identity.private_tmp, false);
+      assert.strictEqual(prepared.overlay_identity.compaction_auto, true);
       assert.strictEqual(content.provider.liteLLM.options.apiKey, 'inline-secret');
       assert.strictEqual(content.permission.bash, 'deny');
       assert.deepStrictEqual(servers.hashmarks.command, exposure.command);
@@ -475,7 +496,7 @@ async function testSharedLifecycle() {
     }
 
     const exposure = subjectExposure(root, 'hashmarks');
-    const firstHashmarksIdentity = runtime.prepareBenchmarkConfig({
+    const firstHashmarksIdentity = prepare({
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
@@ -484,7 +505,7 @@ async function testSharedLifecycle() {
       subjectExposure: exposure,
     }).native_subject_identity;
     fs.appendFileSync(path.join(root, 'hashmarks'), '# changed\n', 'utf8');
-    const secondHashmarksIdentity = runtime.prepareBenchmarkConfig({
+    const secondHashmarksIdentity = prepare({
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
@@ -499,7 +520,7 @@ async function testSharedLifecycle() {
       secondHashmarksIdentity.executable_sha256,
     );
 
-    const withoutProjectRegistration = runtime.prepareBenchmarkConfig({
+    const withoutProjectRegistration = prepare({
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
@@ -518,7 +539,7 @@ async function testSharedLifecycle() {
     );
 
     const enolaExposure = subjectExposure(root, 'enola');
-    const enola = runtime.prepareBenchmarkConfig({
+    const enola = prepare({
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
@@ -539,7 +560,7 @@ async function testSharedLifecycle() {
       'enola-explicit-config-repository',
     );
 
-    const bare = runtime.prepareBenchmarkConfig({
+    const bare = prepare({
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
@@ -547,12 +568,36 @@ async function testSharedLifecycle() {
     });
     assert.strictEqual(bare.status, 'completed', bare.reason);
     assert.strictEqual(bare.selected_server, null);
+    const badLimits = prepare({
+      opencodeBin: fake,
+      repoDir: root,
+      agentName: 'build',
+      env: { ...env, FAKE_BAD_MODEL_LIMITS: '1' },
+    });
+    assert.strictEqual(badLimits.status, 'failed');
+    assert.match(badLimits.reason, /no usable prompt budget/);
+    const outsideScratch = prepare({
+      opencodeBin: fake,
+      repoDir: root,
+      agentName: 'build',
+      env: { ...env, TMPDIR: os.tmpdir() },
+    });
+    assert.strictEqual(outsideScratch.status, 'failed');
+    assert.match(outsideScratch.reason, /outside control root/);
+    const unboundPrivateTmp = prepare({
+      opencodeBin: fake,
+      repoDir: root,
+      agentName: 'build',
+      env: { ...env, BENCHMARK_PRIVATE_TMP: '1' },
+    });
+    assert.strictEqual(unboundPrivateTmp.status, 'failed');
+    assert.match(unboundPrivateTmp.reason, /private \/tmp is not bound/);
     assert.strictEqual(
       JSON.parse(bare.environment.OPENCODE_CONFIG_CONTENT).mcp.hashmarks.enabled,
       false,
     );
 
-    const disconnected = runtime.prepareBenchmarkConfig({
+    const disconnected = prepare({
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
@@ -589,7 +634,7 @@ async function testSharedLifecycle() {
       /Hashmarks MCP support requires the optional extra/,
     );
 
-    const nativeTree = runtime.prepareBenchmarkConfig({
+    const nativeTree = prepare({
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
@@ -600,7 +645,7 @@ async function testSharedLifecycle() {
     assert.strictEqual(nativeTree.status, 'completed', nativeTree.reason);
 
     for (const status of ['disconnected', 'not connected']) {
-      const misleading = runtime.prepareBenchmarkConfig({
+      const misleading = prepare({
         opencodeBin: fake,
         repoDir: root,
         agentName: 'build',
@@ -616,7 +661,7 @@ async function testSharedLifecycle() {
       assert.strictEqual(misleading.status, 'failed');
     }
 
-    const drifted = runtime.prepareBenchmarkConfig({
+    const drifted = prepare({
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
@@ -632,7 +677,7 @@ async function testSharedLifecycle() {
     assert.strictEqual(drifted.failure_stage, undefined);
     assert.match(drifted.reason, /effective benchmark MCP definition changed/);
 
-    const wrongExecutable = runtime.prepareBenchmarkConfig({
+    const wrongExecutable = prepare({
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
@@ -655,7 +700,7 @@ async function testSharedLifecycle() {
     fs.writeFileSync(exposurePath, JSON.stringify(exposure), 'utf8');
     const promptFile = path.join(root, 'prompt.txt');
     fs.writeFileSync(promptFile, 'hello', 'utf8');
-    const admitted = runtime.prepareBenchmarkConfig({
+    const admitted = prepare({
       opencodeBin: fake,
       repoDir: root,
       agentName: 'build',
@@ -670,6 +715,8 @@ async function testSharedLifecycle() {
         'run-export',
         '--repo',
         root,
+        '--benchmark-control-root',
+        controlRoot,
         '--agent',
         'build',
         '--title',
@@ -704,6 +751,8 @@ async function testSharedLifecycle() {
         'run-export',
         '--repo',
         root,
+        '--benchmark-control-root',
+        controlRoot,
         '--agent',
         'build',
         '--title',
@@ -755,6 +804,8 @@ async function testSharedLifecycle() {
         'run-export',
         '--repo',
         root,
+        '--benchmark-control-root',
+        controlRoot,
         '--agent',
         'build',
         '--title',
@@ -806,6 +857,8 @@ async function testSharedLifecycle() {
         'run-export',
         '--repo',
         root,
+        '--benchmark-control-root',
+        controlRoot,
         '--agent',
         'build',
         '--title',
@@ -952,6 +1005,7 @@ async function testSharedLifecycle() {
     assert.strictEqual(legacyState.pure, false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(controlRoot, { recursive: true, force: true });
   }
 }
 
@@ -968,6 +1022,16 @@ async function main() {
     }),
   );
   assert.strictEqual(parsed.text, 'final');
+  const compacted = runtime.extractFinalAnswer(JSON.stringify({
+    messages: [
+      { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'summary' }] },
+      { info: { role: 'assistant' }, parts: [
+        { type: 'tool', tool: 'read' },
+        { type: 'text', text: 'final after compaction' },
+      ] },
+    ],
+  }));
+  assert.strictEqual(compacted.text, 'final after compaction');
   assert.throws(() => runtime.extractFinalAnswer(JSON.stringify({
     messages: [{ info: { role: 'assistant' }, parts: [{ type: 'tool' }] }],
   })), /no final text/);
@@ -983,6 +1047,38 @@ async function main() {
       { info: { role: 'assistant' }, parts: [] },
     ],
   })), /no final text/);
+  const recoveredEvents = [
+    { type: 'error', error: { name: 'ContextOverflowError' } },
+    { type: 'text', part: { metadata: { compaction_continue: true } } },
+    { type: 'text', part: { messageID: 'final-message', text: 'final' } },
+    { type: 'step_finish', part: { messageID: 'final-message', reason: 'stop' } },
+  ];
+  const recoveredRun = {
+    status: 1,
+    stdout: recoveredEvents.map(JSON.stringify).join('\n'),
+    stderr: '',
+    error: null,
+    signal: null,
+  };
+  const recoveredExport = { status: 0, stdout: JSON.stringify({
+    messages: [{ info: { role: 'assistant', finish: 'stop' },
+      parts: [{ type: 'text', text: 'final' }] }],
+  }) };
+  assert.strictEqual(runtime.recoveredContextOverflow(
+    recoveredRun, recoveredExport, 'final',
+  ), true);
+  assert.strictEqual(runtime.recoveredContextOverflow(
+    { ...recoveredRun, stdout: `${recoveredRun.stdout}\n${JSON.stringify({
+      type: 'error', error: { name: 'OtherError' },
+    })}` }, recoveredExport, 'final',
+  ), false);
+  assert.strictEqual(runtime.recoveredContextOverflow(
+    { ...recoveredRun, stdout: recoveredRun.stdout.replace('ContextOverflowError', 'OtherError') },
+    recoveredExport, 'final',
+  ), false);
+  assert.strictEqual(runtime.recoveredContextOverflow(
+    recoveredRun, recoveredExport, 'stale answer',
+  ), false);
   await testSharedLifecycle();
   process.stdout.write('opencode-runtime tests: PASS\n');
 }

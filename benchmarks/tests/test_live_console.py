@@ -528,28 +528,27 @@ class LiveTaskMatrixTests(unittest.TestCase):
         self.assertIn("execution ETA 10m30s", recovered)
 
     def test_run_blockers_repeat_operational_diagnostic_at_end(self) -> None:
-        failure = (
-            "\nFAILURE locate-prefix-path-enumerator\n"
-            "Status: INCOMPLETE\n"
-            "Stage: agent-execution\n"
-            "Reason code: agent-terminal-failed\n"
-            "Evidence: /tmp/evidence\n"
-            "Receipt: /tmp/evidence/result.json\n\n"
-            "--- diagnostic ---\n"
-            "Traceback (most recent call last):\nValueError: boom"
-        )
+        failure = {
+            "trial_id": "trial-one",
+            "task_id": "locate-prefix-path-enumerator",
+            "condition_id": "none-opencode-native",
+            "replicate_id": 6201,
+            "reason_code": "agent-terminal-failed",
+            "receipt": "/tmp/evidence/result.json",
+        }
+        trace = {"trials": [{
+            "trial_id": "trial-one",
+            "terminal_failure_cause": "context-overflow",
+        }]}
 
-        rendered = render_run_blockers([failure])
+        rendered = render_run_blockers([failure], trace)
 
         assert rendered is not None
         self.assertIn("RUN BLOCKERS 1 operational failure", rendered)
-        self.assertIn("Repeated at end of run", rendered)
-        self.assertIn("durable raw detail is in each result receipt", rendered)
-        self.assertIn("derived summaries are in the reports directory", rendered)
-        self.assertIn("--- blocker 1/1 ---", rendered)
-        self.assertIn("Status: INCOMPLETE", rendered)
-        self.assertIn("Evidence: /tmp/evidence", rendered)
-        self.assertTrue(rendered.endswith("ValueError: boom"))
+        self.assertIn("Causes: context-overflow 1", rendered)
+        self.assertIn("replicate 6201: context-overflow", rendered)
+        self.assertTrue(rendered.endswith("receipt /tmp/evidence/result.json"))
+        self.assertNotIn("Traceback", rendered)
 
     def test_failure_envelope_is_agent_readable_and_preserves_diagnostic(self) -> None:
         suite, rows = self._prefix_opencode_rows()

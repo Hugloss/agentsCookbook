@@ -3,7 +3,7 @@
   "adapter": "opencode-native",
   "identity": {
     "id": "opencode-native",
-    "version": "native-config-v4"
+    "version": "native-config-v7"
   },
   "capabilities": [
     "shell",

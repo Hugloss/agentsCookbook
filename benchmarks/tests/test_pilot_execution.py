@@ -109,6 +109,9 @@ def _opencode_trial_environment(control: Path, root: Path) -> dict[str, str]:
     executable = bin_dir / "opencode"
     executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     executable.chmod(0o755)
+    bwrap = bin_dir / "bwrap"
+    bwrap.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    bwrap.chmod(0o755)
     environment.update(
         {
             "PATH": str(bin_dir),
@@ -1141,6 +1144,8 @@ class PilotExecutionTests(unittest.TestCase):
                     "inspect-config",
                     "--repo",
                     str(workspace),
+                    "--benchmark-control-root",
+                    str(control),
                     "--agent",
                     "build",
                     "--benchmark-subject",
@@ -1271,6 +1276,8 @@ class PilotExecutionTests(unittest.TestCase):
                     "inspect-config",
                     "--repo",
                     str(workspace),
+                    "--benchmark-control-root",
+                    str(control),
                     "--agent",
                     "build",
                     "--benchmark-subject",
