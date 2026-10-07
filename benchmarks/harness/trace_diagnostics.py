@@ -71,6 +71,8 @@ def _terminal_failure_cause(
     reason = str(terminal.get("reason") or "")
     if "ContextOverflowError" in reason or "ContextWindowExceededError" in reason:
         return "context-overflow"
+    if "Cannot connect to API" in reason and "isRetryable" in reason:
+        return "provider-connection-failed"
     if terminal_tool_failure == "permission-denied":
         return "permission-denied"
     if "terminal assistant message has no final text" in reason:
