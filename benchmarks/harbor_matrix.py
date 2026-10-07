@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -19,7 +20,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from benchmarks.adapters.hashmarks import HashmarksSubject
+from benchmarks.adapters.runtime import observe_executable
 from benchmarks.config import load_env_values
+from benchmarks.harness.model import TrialContext
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.suite import SuiteDefinition, load_suite
 
@@ -335,74 +339,83 @@ def _require_command(
     ).strip()
 
 
-def _git_clean_identity(
-    source: Path,
-) -> dict[str, str]:
-    if not source.is_dir():
-        raise HarborMatrixError(
-            "Hashmarks source does not exist: "
-            f"{source}"
+def _hashmarks_identity(
+    settings: HarborSettings,
+    host: Mapping[str, str],
+) -> dict[str, Any]:
+    """Reuse the canonical subject adapter to bind source and executable identity."""
+    with tempfile.TemporaryDirectory(
+        prefix="agentscookbook-harbor-hashmarks-"
+    ) as tmp:
+        control_root = Path(tmp).resolve()
+        environment = dict(host)
+        environment["HASHMARKS_BENCH_SOURCE"] = str(
+            settings.hashmarks_source
         )
-
-    def git(
-        *args: str,
-    ) -> str:
-        result = _run(
-            [
-                "git",
-                "-C",
-                str(source),
-                *args,
-            ],
-            timeout=30,
+        context = TrialContext(
+            workspace=settings.hashmarks_source,
+            control_root=control_root,
+            environment=environment,
         )
-        if result.returncode:
+        subject = HashmarksSubject()
+        source_identity, error = subject.source_identity(context)
+        if error or not source_identity:
             raise HarborMatrixError(
-                "cannot establish Hashmarks "
-                "source identity: "
-                + result.stderr.strip()
+                error or "cannot establish Hashmarks source identity"
             )
-        return result.stdout.strip()
-
-    if git(
-        "status",
-        "--porcelain=v1",
-        "--untracked-files=normal",
-    ):
-        raise HarborMatrixError(
-            "Hashmarks Harbor subject source "
-            "must be a clean committed checkout"
+        exposure = subject.mcp_exposure(context)
+        observed = observe_executable(
+            context,
+            exposure.command,
+            version_args=("version",),
+            environment=environment,
         )
-    return {
-        "commit": git(
-            "rev-parse",
-            "HEAD",
-        ),
-        "tree": git(
-            "rev-parse",
-            "HEAD^{tree}",
-        ),
-    }
+        if observed.payload.get("available") is not True:
+            reason = observed.payload.get("reason")
+            stderr = observed.payload.get("stderr")
+            detail = (
+                str(reason)
+                if reason
+                else str(stderr).strip()
+                if stderr
+                else "executable identity probe failed"
+            )
+            raise HarborMatrixError(
+                f"Hashmarks executable identity unavailable: {detail}"
+            )
+        resolved_path = observed.payload.get("resolved_path")
+        executable_sha256 = observed.payload.get("executable_sha256")
+        version = observed.payload.get("version")
+        if not (
+            isinstance(resolved_path, str)
+            and resolved_path
+            and isinstance(executable_sha256, str)
+            and executable_sha256
+            and isinstance(version, str)
+            and version
+        ):
+            raise HarborMatrixError(
+                "Hashmarks executable identity probe was incomplete"
+            )
+        return {
+            **source_identity,
+            "executable": {
+                "path": resolved_path,
+                "sha256": executable_sha256,
+                "version": version,
+            },
+        }
 
 
 def _hashmarks_probe(
     settings: HarborSettings,
     host: Mapping[str, str],
+    *,
+    executable: str,
 ) -> dict[str, Any]:
-    executable = (
-        settings.hashmarks_source
-        / ".venv"
-        / "bin"
-        / "hashmarks"
-    )
-    if not executable.is_file():
-        raise HarborMatrixError(
-            "Hashmarks executable does not exist: "
-            f"{executable}"
-        )
     result = _run(
         [
-            str(executable),
+            executable,
             "--workspace",
             str(settings.hashmarks_source),
             "doctor",
@@ -475,12 +488,24 @@ def preflight(
         harnesses=harnesses,
         tasks=tasks,
     )
-    source_identity = _git_clean_identity(
-        settings.hashmarks_source
+    hashmarks_identity = _hashmarks_identity(
+        settings,
+        host,
     )
+    executable = hashmarks_identity.get("executable")
+    if not isinstance(executable, dict):
+        raise HarborMatrixError(
+            "Hashmarks executable identity is missing"
+        )
+    executable_path = executable.get("path")
+    if not isinstance(executable_path, str) or not executable_path:
+        raise HarborMatrixError(
+            "Hashmarks executable path is missing"
+        )
     mcp = _hashmarks_probe(
         settings,
         host,
+        executable=executable_path,
     )
     harbor_version = _require_command(
         [
@@ -520,7 +545,7 @@ def preflight(
             "server_version": docker_version,
         },
         "hashmarks": {
-            **source_identity,
+            **hashmarks_identity,
             "mcp_contract_identity": mcp.get(
                 "contract_identity"
             ),
