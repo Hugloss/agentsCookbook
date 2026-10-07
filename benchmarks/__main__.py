@@ -1791,7 +1791,7 @@ def _persist_completed_run_reports(
 
 def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> int:
     results = []
-    blocking_failures: list[str] = []
+    blocking_failures: list[dict[str, object]] = []
     assert paths.results is not None
     live_matrix = LiveTaskMatrix(suite, rows)
     run_started = time.monotonic()
@@ -1979,7 +1979,14 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
         if failure is not None:
             print(failure, file=sys.stderr, flush=True)
             if result.status not in {"PASS", "FAIL", "NO_QUALIFYING_DEFECT"}:
-                blocking_failures.append(failure)
+                blocking_failures.append({
+                    "trial_id": result.trial_id,
+                    "task_id": row["task_id"],
+                    "condition_id": row["condition_id"],
+                    "replicate_id": row.get("replicate_id", row.get("seed", "unknown")),
+                    "reason_code": result.reason_code,
+                    "receipt": str(result.result_dir / "result.json"),
+                })
         print(
             live_progress.finish_line(
                 result,
@@ -2115,7 +2122,13 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
             file=sys.stderr,
             flush=True,
         )
-    blocker_summary = render_run_blockers(blocking_failures)
+    try:
+        trace_diagnostics = json.loads(
+            report_paths["trace_diagnostics"].read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        trace_diagnostics = None
+    blocker_summary = render_run_blockers(blocking_failures, trace_diagnostics)
     if blocker_summary is not None:
         print(blocker_summary, file=sys.stderr, flush=True)
     _emit_run_results(results, enabled=not getattr(args, "no_json_results", False))
