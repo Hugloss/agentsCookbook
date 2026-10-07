@@ -25,6 +25,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `validation-gap-finder` — Design decisive validation and recovery proof.
 - `coverage-design-review` — Check whether tests prove real production behavior.
 - `implementation-dry-run` — Simulate implementation to find missing steps and sequencing.
+- `requirements-lifecycle-closure-review` — Find stateful/effectful requirements that leave partial failure, races, teardown, crash, unresolved, or recovery semantics open.
 - `fact-grounding-auditor` — Verify repo-specific claims and uncertainty.
 - `repository-improvement-scout` — Find evidence-backed repository signals worth investigating next.
 - `codebase-finding-derivation` — Turn inspected code paths into defensible evidence-backed findings.
@@ -133,6 +134,7 @@ Use the narrowest skill that owns the question:
 - `empirical-benchmark-campaign` owns **executing and resuming a frozen benchmark definition set from preflight through qualified evidence**; `measurement-comparability-review` owns **whether separately produced measurements may be compared**; `adversarial-repair-campaign` owns **repairing reproducible defects that the campaign exposes**.
 - `repository-improvement-scout` asks **what repository signals are worth investigating next**; `codebase-finding-derivation` asks **whether one investigated signal is proven enough to become a finding**; `architecture-risk-triage` asks **which narrow specialist should inspect an evidence-backed architecture hotspot**.
 - `codebase-finding-derivation` asks **whether inspected code evidence justifies a finding at all**; `fact-grounding-auditor` asks **whether an existing repository-specific claim is supported**.
+- `requirements-lifecycle-closure-review` asks **whether an effectful specification can represent every reachable partial transition, race, crash, teardown, unresolved state, and recovery path deterministically**; `plan-gap-scout` asks **what implementation work is missing**; `implementation-dry-run` asks **where carrying out the proposed work would require guessing**; `failure-contract-review`, `resource-lifetime-review`, and `atomic-operation-review` own corresponding defects in implemented behavior rather than an open requirements lifecycle.
 - `coverage-design-review` asks **what real behavior is not proved**; `test-contract-coupling-review` asks **what tests freeze private implementation**.
 - `code-performance-optimization-audit` asks **where runtime cost scales badly**; `test-work-amplification-review` starts from measured slow tests; `single-observation-review` asks whether one logical operation observes the same input world twice.
 - `semantic-redecision-review` catches the same semantic answer being made repeatedly; `resolved-fact-regression-review` catches a resolved answer being discarded so downstream code returns to raw facts.
