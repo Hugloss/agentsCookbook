@@ -11,6 +11,7 @@ from typing import Any
 from .bundle import verify_bundle
 from .campaign_authority import (
     CampaignAuthorityError,
+    read_authority_epochs,
     read_campaign,
     read_interrupted_attempts,
     read_launch_details,
@@ -144,6 +145,7 @@ def campaign_status(
     launch_claims: dict[str, str] = {}
     launch_details: dict[str, dict[str, Any]] = {}
     interrupted_attempts: dict[str, list[dict[str, Any]]] = {}
+    authority_epoch_rows: list[dict[str, Any]] = []
     if new_contract:
         try:
             manifest = read_campaign(results_root)
@@ -160,6 +162,31 @@ def campaign_status(
                 results_root,
                 manifest["campaign_id"],
             )
+            selected_pairs = {
+                (str(row["task_id"]), str(row["condition_id"]))
+                for row in definitions.values()
+            }
+            epoch_records = read_authority_epochs(
+                results_root,
+                manifest["campaign_id"],
+            )
+            authority_epoch_rows = [
+                {
+                    "task_id": task_id,
+                    "condition_id": condition_id,
+                    "epoch": int(record["epoch"]),
+                    "epoch_id": str(record["epoch_id"]),
+                    "previous_epoch_id": str(record["previous_epoch_id"]),
+                    "changed_components": list(record["changed_components"]),
+                    "changed_fields": list(record["changed_fields"]),
+                    "detected_at_ns": int(record["detected_at_ns"]),
+                }
+                for (task_id, condition_id), records in sorted(
+                    epoch_records.items()
+                )
+                if (task_id, condition_id) in selected_pairs
+                for record in records
+            ]
             claims = set(launch_claims)
             if not claims.issubset(set(manifest["selected_definitions"])):
                 raise CampaignAuthorityError("launch claim exceeds campaign selection")
@@ -302,12 +329,14 @@ def campaign_status(
         expected_rows=definitions.values(),
         receipts=completed_receipts,
     )
+    evidence_tainted = bool(authority_epoch_rows)
     qualification_ok = (
         integrity_ok
         and completeness_ok
         and unresolved_outcomes == 0
         and comparability_error is None
         and exposure_qualification["qualified"]
+        and not evidence_tainted
     )
 
     return {
@@ -330,6 +359,9 @@ def campaign_status(
         ),
         "qualified": qualification_ok,
         "unresolved_outcome_trials": unresolved_outcomes,
+        "evidence_tainted": evidence_tainted,
+        "authority_epoch_transitions": len(authority_epoch_rows),
+        "authority_epochs": authority_epoch_rows,
         "subject_exposure_qualification": exposure_qualification,
         "recovered_interruption_attempts": sum(
             len(values)
@@ -346,6 +378,16 @@ def campaign_status(
                 *[f"foreign bundle: {item['directory']}" for item in foreign],
                 *[f"conflicting receipts: {item['definition_id']}" for item in rows if item["state"] == "CONFLICT"],
                 *([comparability_error] if comparability_error else []),
+                *(
+                    [
+                        "participant authority changed across "
+                        f"{len(authority_epoch_rows)} immutable epoch "
+                        f"{'transition' if len(authority_epoch_rows) == 1 else 'transitions'}; "
+                        "evidence remains preserved but cannot qualify as one stable campaign"
+                    ]
+                    if authority_epoch_rows
+                    else []
+                ),
                 *subject_exposure_issues(exposure_qualification),
             ],
         },
