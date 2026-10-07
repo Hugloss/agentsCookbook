@@ -1,10 +1,7 @@
-"""Experimental Harbor-backed cross-harness benchmark bridge.
+"""Harbor-backed cross-harness benchmark projection.
 
-agentsCookbook remains the experiment authority. This module projects a small,
-read-only subset of an admitted repository-intelligence suite into disposable
-Harbor tasks so harnesses can be compared with and without one trial-scoped MCP
-subject. Harbor is execution infrastructure, not a second source of benchmark
-semantics.
+agentsCookbook owns experiment semantics; Harbor is execution infrastructure.
+Only read-only repository-location tasks are projected by this v1 bridge.
 """
 
 from __future__ import annotations
@@ -26,11 +23,9 @@ from benchmarks.config import load_env_values
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.suite import SuiteDefinition, load_suite
 
-
 MATRIX_SCHEMA = "agentscookbook.harbor-harness-matrix.v1"
 RESULT_SCHEMA = "agentscookbook.harbor-harness-trial.v1"
 REPORT_SCHEMA = "agentscookbook.harbor-harness-report.v1"
-
 HARBOR_ENV_KEYS = frozenset(
     {
         "HASHMARKS_BENCH_SOURCE",
@@ -61,9 +56,9 @@ class MatrixMode:
     attempts: int
 
 
-def _comma_values(raw: str) -> tuple[str, ...]:
+def _csv(raw: str) -> tuple[str, ...]:
     return tuple(
-        dict.fromkeys(value.strip() for value in raw.split(",") if value.strip())
+        dict.fromkeys(part.strip() for part in raw.split(",") if part.strip())
     )
 
 
@@ -80,7 +75,7 @@ def load_settings(
         raise HarborMatrixError("HASHMARKS_BENCH_SOURCE is required")
     if not model:
         raise HarborMatrixError("BENCHMARK_HARBOR_MODEL is required")
-    passthrough = _comma_values(
+    passthrough = _csv(
         values.get("BENCHMARK_HARBOR_PASSTHROUGH_ENV_KEYS", "")
     )
     missing = sorted(key for key in passthrough if not host.get(key))
@@ -105,107 +100,133 @@ def load_matrix(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise HarborMatrixError(f"cannot load Harbor matrix {path}: {exc}") from exc
+        raise HarborMatrixError(
+            f"cannot load Harbor matrix {path}: {exc}"
+        ) from exc
     if not isinstance(value, dict) or value.get("schema") != MATRIX_SCHEMA:
-        raise HarborMatrixError(f"invalid Harbor matrix schema in {path}")
-    harnesses = value.get("harnesses")
-    subjects = value.get("subjects")
-    modes = value.get("modes")
-    if (
-        not isinstance(harnesses, list)
-        or not harnesses
-        or not all(isinstance(item, str) and item for item in harnesses)
+        raise HarborMatrixError(
+            f"invalid Harbor matrix schema in {path}"
+        )
+    if not isinstance(value.get("harnesses"), list) or not value["harnesses"]:
+        raise HarborMatrixError(
+            "Harbor matrix needs non-empty harnesses"
+        )
+    if not all(
+        isinstance(item, str) and item
+        for item in value["harnesses"]
     ):
-        raise HarborMatrixError("Harbor matrix needs non-empty harnesses")
-    if subjects != ["none", "hashmarks"]:
+        raise HarborMatrixError(
+            "Harbor matrix harness ids must be non-empty strings"
+        )
+    if value.get("subjects") != ["none", "hashmarks"]:
         raise HarborMatrixError(
             "Harbor matrix subjects must be exactly none, hashmarks"
         )
-    if not isinstance(modes, dict) or not modes:
-        raise HarborMatrixError("Harbor matrix needs at least one mode")
+    if not isinstance(value.get("modes"), dict) or not value["modes"]:
+        raise HarborMatrixError(
+            "Harbor matrix needs at least one mode"
+        )
     return value
 
 
-def mode_contract(matrix: Mapping[str, Any], name: str) -> MatrixMode:
+def mode_contract(
+    matrix: Mapping[str, Any],
+    name: str,
+) -> MatrixMode:
     raw = matrix.get("modes", {}).get(name)
     if not isinstance(raw, dict):
-        raise HarborMatrixError(f"unknown Harbor matrix mode: {name}")
+        raise HarborMatrixError(
+            f"unknown Harbor matrix mode: {name}"
+        )
     tasks = raw.get("tasks")
     attempts = raw.get("attempts")
     if (
         not isinstance(tasks, list)
         or not tasks
-        or not all(isinstance(item, str) and item for item in tasks)
+        or not all(
+            isinstance(item, str) and item
+            for item in tasks
+        )
     ):
-        raise HarborMatrixError(f"Harbor mode {name} needs non-empty tasks")
+        raise HarborMatrixError(
+            f"Harbor mode {name} needs non-empty tasks"
+        )
     if (
         isinstance(attempts, bool)
         or not isinstance(attempts, int)
         or attempts < 1
     ):
-        raise HarborMatrixError(f"Harbor mode {name} attempts must be >= 1")
-    return MatrixMode(tuple(tasks), attempts)
-
-
-def _selected_harnesses(
-    matrix: Mapping[str, Any],
-    requested: Iterable[str],
-) -> tuple[str, ...]:
-    available = tuple(str(item) for item in matrix["harnesses"])
-    selected = tuple(dict.fromkeys(requested)) or available
-    unknown = sorted(set(selected) - set(available))
-    if unknown:
         raise HarborMatrixError(
-            "unknown Harbor harness(es): " + ", ".join(unknown)
+            f"Harbor mode {name} attempts must be >= 1"
         )
-    return selected
+    return MatrixMode(
+        tuple(tasks),
+        attempts,
+    )
 
 
-def _selected_tasks(
-    mode: MatrixMode,
+def _select(
+    available: Iterable[str],
     requested: Iterable[str],
+    *,
+    label: str,
 ) -> tuple[str, ...]:
-    selected = tuple(dict.fromkeys(requested)) or mode.tasks
-    unknown = sorted(set(selected) - set(mode.tasks))
+    available_tuple = tuple(available)
+    selected = tuple(
+        dict.fromkeys(requested)
+    ) or available_tuple
+    unknown = sorted(
+        set(selected)
+        - set(available_tuple)
+    )
     if unknown:
         raise HarborMatrixError(
-            "task(s) are not part of selected Harbor mode: "
+            f"unknown Harbor {label}(s): "
             + ", ".join(unknown)
         )
     return selected
 
 
-def _task_expected(task: Mapping[str, Any]) -> dict[str, str]:
-    if task.get("mode") != "read_only" or task.get("mutation") is not None:
+def _task_expected(
+    task: Mapping[str, Any],
+) -> dict[str, str]:
+    if (
+        task.get("mode") != "read_only"
+        or task.get("mutation") is not None
+    ):
         raise HarborMatrixError(
-            "Harbor v1 bridge only admits read-only unmutated tasks: "
-            f"{task.get('id')}"
+            "Harbor v1 bridge only admits read-only "
+            f"unmutated tasks: {task.get('id')}"
         )
     oracle = task.get("oracle")
     if (
         not isinstance(oracle, dict)
-        or oracle.get("adapter") != "repository-location-json"
+        or oracle.get("adapter")
+        != "repository-location-json"
     ):
         raise HarborMatrixError(
-            "Harbor v1 bridge requires repository-location-json oracle: "
+            "Harbor v1 bridge requires "
+            "repository-location-json oracle: "
             f"{task.get('id')}"
         )
-    configuration = oracle.get("configuration")
+    config = oracle.get("configuration")
     expected = (
-        configuration.get("expected")
-        if isinstance(configuration, dict)
+        config.get("expected")
+        if isinstance(config, dict)
         else None
     )
     if (
         not isinstance(expected, dict)
         or set(expected) != {"path", "symbol"}
         or not all(
-            isinstance(expected.get(key), str) and expected[key]
+            isinstance(expected.get(key), str)
+            and expected[key]
             for key in expected
         )
     ):
         raise HarborMatrixError(
-            f"invalid repository-location oracle: {task.get('id')}"
+            "invalid repository-location oracle: "
+            f"{task.get('id')}"
         )
     return {
         "path": str(expected["path"]),
@@ -221,20 +242,24 @@ def validate_projection(
     harnesses: tuple[str, ...],
     tasks: tuple[str, ...],
 ) -> None:
-    if Path(str(matrix["suite"])).resolve() != suite.root:
+    if (
+        Path(str(matrix["suite"])).resolve()
+        != suite.root
+    ):
         raise HarborMatrixError(
-            "matrix suite path does not match loaded suite: "
-            f"{matrix['suite']} != {suite.root}"
+            "matrix suite path does not match loaded suite"
         )
     for task_id in tasks:
         task = suite.tasks.get(task_id)
         if not isinstance(task, dict):
-            raise HarborMatrixError(f"unknown suite task: {task_id}")
+            raise HarborMatrixError(
+                f"unknown suite task: {task_id}"
+            )
         _task_expected(task)
-    if not harnesses:
-        raise HarborMatrixError("Harbor projection selected no harnesses")
-    if mode.attempts < 1:
-        raise HarborMatrixError("Harbor projection selected no attempts")
+    if not harnesses or mode.attempts < 1:
+        raise HarborMatrixError(
+            "Harbor projection is empty"
+        )
 
 
 def plan_rows(
@@ -243,33 +268,35 @@ def plan_rows(
     tasks: tuple[str, ...],
     attempts: int,
 ) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
-    for task_id in tasks:
-        for harness in harnesses:
-            for subject in ("none", "hashmarks"):
-                for attempt in range(1, attempts + 1):
-                    rows.append(
-                        {
-                            "task": task_id,
-                            "harness": harness,
-                            "subject": subject,
-                            "attempt": attempt,
-                        }
-                    )
-    return rows
+    return [
+        {
+            "task": task,
+            "harness": harness,
+            "subject": subject,
+            "attempt": attempt,
+        }
+        for task in tasks
+        for harness in harnesses
+        for subject in (
+            "none",
+            "hashmarks",
+        )
+        for attempt in range(
+            1,
+            attempts + 1,
+        )
+    ]
 
 
 def _run(
     argv: list[str],
     *,
-    cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
-    timeout: float = 60.0,
+    timeout: float = 60,
 ) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             argv,
-            cwd=cwd,
             env=None if env is None else dict(env),
             text=True,
             stdout=subprocess.PIPE,
@@ -277,49 +304,84 @@ def _run(
             timeout=timeout,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+    ) as exc:
         raise HarborMatrixError(
-            f"command failed to start: {argv[0]}: {exc}"
+            "command failed to start: "
+            f"{argv[0]}: {exc}"
         ) from exc
 
 
-def _require_command(argv: list[str], *, label: str) -> str:
+def _require_command(
+    argv: list[str],
+    *,
+    label: str,
+) -> str:
     result = _run(argv)
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip()[-1200:]
+    if result.returncode:
+        detail = (
+            result.stderr
+            or result.stdout
+        ).strip()[-1200:]
         raise HarborMatrixError(
-            f"{label} unavailable: {detail or 'non-zero exit'}"
+            f"{label} unavailable: "
+            f"{detail or 'non-zero exit'}"
         )
-    return (result.stdout or result.stderr).strip()
+    return (
+        result.stdout
+        or result.stderr
+    ).strip()
 
 
-def _git_clean_identity(source: Path) -> dict[str, str]:
+def _git_clean_identity(
+    source: Path,
+) -> dict[str, str]:
     if not source.is_dir():
         raise HarborMatrixError(
-            f"Hashmarks source does not exist: {source}"
+            "Hashmarks source does not exist: "
+            f"{source}"
         )
 
-    def git(*args: str) -> str:
-        result = _run(["git", "-C", str(source), *args], timeout=30)
-        if result.returncode != 0:
+    def git(
+        *args: str,
+    ) -> str:
+        result = _run(
+            [
+                "git",
+                "-C",
+                str(source),
+                *args,
+            ],
+            timeout=30,
+        )
+        if result.returncode:
             raise HarborMatrixError(
-                "cannot establish Hashmarks source identity: "
+                "cannot establish Hashmarks "
+                "source identity: "
                 + result.stderr.strip()
             )
         return result.stdout.strip()
 
-    status = git(
+    if git(
         "status",
         "--porcelain=v1",
         "--untracked-files=normal",
-    )
-    if status:
+    ):
         raise HarborMatrixError(
-            "Hashmarks Harbor subject source must be a clean committed checkout"
+            "Hashmarks Harbor subject source "
+            "must be a clean committed checkout"
         )
     return {
-        "commit": git("rev-parse", "HEAD"),
-        "tree": git("rev-parse", "HEAD^{tree}"),
+        "commit": git(
+            "rev-parse",
+            "HEAD",
+        ),
+        "tree": git(
+            "rev-parse",
+            "HEAD^{tree}",
+        ),
     }
 
 
@@ -335,7 +397,8 @@ def _hashmarks_probe(
     )
     if not executable.is_file():
         raise HarborMatrixError(
-            f"Hashmarks executable does not exist: {executable}"
+            "Hashmarks executable does not exist: "
+            f"{executable}"
         )
     result = _run(
         [
@@ -348,27 +411,44 @@ def _hashmarks_probe(
         env=host,
         timeout=60,
     )
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip()[-1600:]
+    if result.returncode:
+        detail = (
+            result.stderr
+            or result.stdout
+        ).strip()[-1600:]
         raise HarborMatrixError(
-            f"Hashmarks MCP readiness failed: {detail}"
+            "Hashmarks MCP readiness failed: "
+            f"{detail}"
         )
     try:
-        payload = json.loads(result.stdout)
+        payload = json.loads(
+            result.stdout
+        )
     except json.JSONDecodeError as exc:
         raise HarborMatrixError(
-            "Hashmarks doctor --mcp did not emit JSON"
+            "Hashmarks doctor --mcp "
+            "did not emit JSON"
         ) from exc
-    mcp = payload.get("mcp") if isinstance(payload, dict) else None
-    if (
-        not isinstance(mcp, dict)
-        or mcp.get("schema") != "hashmarks.mcp-readiness.v1"
-        or mcp.get("ready") is not True
-        or mcp.get("authority") != "diagnostic-only"
-        or mcp.get("consumer_verification_required") is not True
+    mcp = (
+        payload.get("mcp")
+        if isinstance(payload, dict)
+        else None
+    )
+    if not (
+        isinstance(mcp, dict)
+        and mcp.get("schema")
+        == "hashmarks.mcp-readiness.v1"
+        and mcp.get("ready") is True
+        and mcp.get("authority")
+        == "diagnostic-only"
+        and mcp.get(
+            "consumer_verification_required"
+        )
+        is True
     ):
         raise HarborMatrixError(
-            "Hashmarks doctor --mcp did not prove local MCP readiness"
+            "Hashmarks doctor --mcp did not "
+            "prove local MCP readiness"
         )
     return mcp
 
@@ -383,7 +463,11 @@ def preflight(
     tasks: tuple[str, ...],
     host: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    host = os.environ if host is None else host
+    host = (
+        os.environ
+        if host is None
+        else host
+    )
     validate_projection(
         matrix=matrix,
         suite=suite,
@@ -394,9 +478,15 @@ def preflight(
     source_identity = _git_clean_identity(
         settings.hashmarks_source
     )
-    mcp = _hashmarks_probe(settings, host)
+    mcp = _hashmarks_probe(
+        settings,
+        host,
+    )
     harbor_version = _require_command(
-        [settings.executable, "--version"],
+        [
+            settings.executable,
+            "--version",
+        ],
         label="Harbor",
     )
     docker_version = _require_command(
@@ -437,7 +527,9 @@ def preflight(
             "operation_contract_identity": mcp.get(
                 "operation_contract_identity"
             ),
-            "tool_count": mcp.get("tool_count"),
+            "tool_count": mcp.get(
+                "tool_count"
+            ),
         },
         "passthrough_env_keys": list(
             settings.passthrough_env_keys
@@ -460,7 +552,7 @@ def _copy_tracked_tree(
         ],
         timeout=30,
     )
-    if result.returncode != 0:
+    if result.returncode:
         raise HarborMatrixError(
             "cannot enumerate Hashmarks source: "
             + result.stderr.strip()
@@ -473,19 +565,25 @@ def _copy_tracked_tree(
         if not raw:
             continue
         relative = Path(raw)
-        src = source / relative
+        src = source / raw
         dst = destination / relative
         dst.parent.mkdir(
             parents=True,
             exist_ok=True,
         )
         if src.is_symlink():
-            dst.symlink_to(os.readlink(src))
+            dst.symlink_to(
+                os.readlink(src)
+            )
         elif src.is_file():
-            shutil.copy2(src, dst)
+            shutil.copy2(
+                src,
+                dst,
+            )
         else:
             raise HarborMatrixError(
-                "unsupported tracked Hashmarks entry: "
+                "unsupported tracked "
+                "Hashmarks entry: "
                 f"{relative}"
             )
 
@@ -538,9 +636,10 @@ def _instruction(
     return (
         str(task["prompt"]).rstrip()
         + "\n\n"
-        + "For this Harbor evaluation, also write that exact JSON object to "
-        + "/workspace/.agentscookbook-answer.json. Do not modify tracked "
-        + "repository files.\n"
+        + "For this Harbor evaluation, also write "
+        + "that exact JSON object to "
+        + "/workspace/.agentscookbook-answer.json. "
+        + "Do not modify tracked repository files.\n"
     )
 
 
@@ -587,11 +686,21 @@ def prepare_task(
     hashmarks_source: Path,
 ) -> Path:
     task = suite.tasks[task_id]
-    expected = _task_expected(task)
+    expected = _task_expected(
+        task
+    )
     if destination.exists():
-        shutil.rmtree(destination)
-    environment = destination / "environment"
-    tests = destination / "tests"
+        shutil.rmtree(
+            destination
+        )
+    environment = (
+        destination
+        / "environment"
+    )
+    tests = (
+        destination
+        / "tests"
+    )
     environment.mkdir(
         parents=True,
     )
@@ -600,31 +709,49 @@ def prepare_task(
     )
     materialize_repository(
         repository=task["repository"],
-        destination=environment / "workspace",
+        destination=(
+            environment
+            / "workspace"
+        ),
         cache_root=cache_root,
     )
     _copy_tracked_tree(
         hashmarks_source,
-        environment / "hashmarks-source",
+        environment
+        / "hashmarks-source",
     )
-    (environment / "Dockerfile").write_text(
+    (
+        environment
+        / "Dockerfile"
+    ).write_text(
         _dockerfile(),
         encoding="utf-8",
     )
-    (destination / "instruction.md").write_text(
+    (
+        destination
+        / "instruction.md"
+    ).write_text(
         _instruction(task),
         encoding="utf-8",
     )
-    (destination / "task.toml").write_text(
+    (
+        destination
+        / "task.toml"
+    ).write_text(
         _task_toml(task),
         encoding="utf-8",
     )
-    verifier = tests / "test.sh"
+    verifier = (
+        tests
+        / "test.sh"
+    )
     verifier.write_text(
         _verifier(expected),
         encoding="utf-8",
     )
-    verifier.chmod(0o755)
+    verifier.chmod(
+        0o755
+    )
     return destination
 
 
@@ -669,7 +796,10 @@ def _credential_file(
 ) -> Path | None:
     if not keys:
         return None
-    path = run_root / ".harbor-env"
+    path = (
+        run_root
+        / ".harbor-env"
+    )
     with path.open(
         "w",
         encoding="utf-8",
@@ -677,13 +807,21 @@ def _credential_file(
         for key in keys:
             value = (
                 host[key]
-                .replace("\\", "\\\\")
-                .replace("\n", "\\n")
+                .replace(
+                    "\\",
+                    "\\\\",
+                )
+                .replace(
+                    "\n",
+                    "\\n",
+                )
             )
             stream.write(
                 f"{key}={value}\n"
             )
-    path.chmod(0o600)
+    path.chmod(
+        0o600
+    )
     return path
 
 
@@ -733,7 +871,7 @@ def harbor_argv(
     return argv
 
 
-def _reward_from_file(
+def _reward(
     path: Path,
 ) -> float | None:
     try:
@@ -760,43 +898,74 @@ def _reward_from_file(
     ):
         return float(value)
     if isinstance(value, dict):
-        reward = value.get("reward")
+        nested = value.get(
+            "reward"
+        )
         if (
-            isinstance(reward, (int, float))
-            and not isinstance(reward, bool)
+            isinstance(
+                nested,
+                (int, float),
+            )
+            and not isinstance(
+                nested,
+                bool,
+            )
         ):
-            return float(reward)
+            return float(
+                nested
+            )
     return None
 
 
 def find_reward(
     job_root: Path,
 ) -> tuple[float | None, str | None]:
-    candidates = sorted(
-        job_root.rglob("reward.txt")
-    ) + sorted(
-        job_root.rglob("reward.json")
+    candidates = (
+        sorted(
+            job_root.rglob(
+                "reward.txt"
+            )
+        )
+        + sorted(
+            job_root.rglob(
+                "reward.json"
+            )
+        )
     )
-    observations = [
-        (value, path)
+    observed = [
+        (
+            value,
+            path,
+        )
         for path in candidates
         if (
-            value := _reward_from_file(path)
+            value := _reward(path)
         )
         is not None
     ]
-    if len(observations) == 1:
-        value, path = observations[0]
-        return value, str(path)
-    if len(observations) > 1:
-        unique = {
-            value
-            for value, _path in observations
-        }
-        if len(unique) == 1:
-            value, path = observations[-1]
-            return value, str(path)
-    return None, None
+    if (
+        len(observed) == 1
+        or (
+            observed
+            and len(
+                {
+                    value
+                    for value, _path
+                    in observed
+                }
+            )
+            == 1
+        )
+    ):
+        value, path = observed[-1]
+        return (
+            value,
+            str(path),
+        )
+    return (
+        None,
+        None,
+    )
 
 
 def _trial_id(
@@ -818,21 +987,29 @@ def execute_trial(
     mcp_config: Path,
     host: Mapping[str, str],
 ) -> dict[str, Any]:
-    trial_id = _trial_id(row)
-    jobs_root = run_root / "jobs"
+    trial_id = _trial_id(
+        row
+    )
+    jobs_root = (
+        run_root
+        / "jobs"
+    )
     jobs_root.mkdir(
         parents=True,
         exist_ok=True,
     )
     selected_mcp = (
         mcp_config
-        if row["subject"] == "hashmarks"
+        if row["subject"]
+        == "hashmarks"
         else None
     )
     argv = harbor_argv(
         settings=settings,
         task_path=task_path,
-        harness=str(row["harness"]),
+        harness=str(
+            row["harness"]
+        ),
         trial_id=trial_id,
         jobs_root=jobs_root,
         credential_file=credential_file,
@@ -845,23 +1022,19 @@ def execute_trial(
             env=host,
             timeout=1800,
         )
-        return_code = result.returncode
-        stderr_tail = result.stderr.strip()[-4000:]
+        return_code = (
+            result.returncode
+        )
+        stderr = (
+            result.stderr
+            .strip()[-4000:]
+        )
     except HarborMatrixError as exc:
         return_code = 127
-        stderr_tail = str(exc)
-    duration_ms = int(
-        round(
-            (
-                time.monotonic()
-                - started
-            )
-            * 1000
-        )
-    )
-    job_root = jobs_root / trial_id
+        stderr = str(exc)
     reward, reward_path = find_reward(
-        job_root
+        jobs_root
+        / trial_id
     )
     status = (
         "COMPLETE"
@@ -871,10 +1044,15 @@ def execute_trial(
     return {
         "schema": RESULT_SCHEMA,
         "trial_id": trial_id,
-        "task": row["task"],
-        "harness": row["harness"],
-        "subject": row["subject"],
-        "attempt": row["attempt"],
+        **{
+            key: row[key]
+            for key in (
+                "task",
+                "harness",
+                "subject",
+                "attempt",
+            )
+        },
         "model": settings.model,
         "status": status,
         "success": (
@@ -882,14 +1060,29 @@ def execute_trial(
             and reward > 0
         ),
         "reward": reward,
-        "duration_ms": duration_ms,
+        "duration_ms": int(
+            round(
+                (
+                    time.monotonic()
+                    - started
+                )
+                * 1000
+            )
+        ),
         "harbor_return_code": return_code,
-        "harbor_job_root": str(job_root),
+        "harbor_job_root": str(
+            jobs_root
+            / trial_id
+        ),
         "reward_path": reward_path,
-        "mcp_exposed": selected_mcp is not None,
+        "mcp_exposed": (
+            selected_mcp
+            is not None
+        ),
         "stderr_tail": (
-            stderr_tail
-            if status == "INCOMPLETE"
+            stderr
+            if status
+            == "INCOMPLETE"
             else ""
         ),
     }
@@ -898,7 +1091,7 @@ def execute_trial(
 def _new_run_root(
     root: Path,
 ) -> Path:
-    base = datetime.now(
+    stem = datetime.now(
         timezone.utc
     ).strftime(
         "%Y%m%dT%H%M%SZ"
@@ -906,15 +1099,15 @@ def _new_run_root(
     candidate = (
         root
         / "runs"
-        / base
+        / stem
     )
-    index = 1
+    suffix = 1
     while candidate.exists():
-        index += 1
+        suffix += 1
         candidate = (
             root
             / "runs"
-            / f"{base}-{index}"
+            / f"{stem}-{suffix}"
         )
     candidate.mkdir(
         parents=True,
@@ -925,7 +1118,10 @@ def _new_run_root(
 def _latest_run(
     root: Path,
 ) -> Path:
-    runs = root / "runs"
+    runs = (
+        root
+        / "runs"
+    )
     candidates = (
         sorted(
             path
@@ -945,19 +1141,22 @@ def _latest_run(
 def _rate(
     rows: list[Mapping[str, Any]],
 ) -> float | None:
-    complete = [
+    completed = [
         row
         for row in rows
-        if row.get("status") == "COMPLETE"
+        if row.get("status")
+        == "COMPLETE"
     ]
-    if not complete:
-        return None
     return (
         sum(
-            bool(row.get("success"))
-            for row in complete
+            bool(
+                row.get("success")
+            )
+            for row in completed
         )
-        / len(complete)
+        / len(completed)
+        if completed
+        else None
     )
 
 
@@ -975,16 +1174,14 @@ def build_report(
                 str(row["subject"]),
             )
         ].append(row)
-
-    summaries: list[
-        dict[str, Any]
-    ] = []
     harnesses = sorted(
         {
-            key[0]
-            for key in groups
+            harness
+            for harness, _subject
+            in groups
         }
     )
+    summaries = []
     for harness in harnesses:
         for subject in (
             "none",
@@ -997,31 +1194,36 @@ def build_report(
                 ),
                 [],
             )
-            rate = _rate(selected)
             summaries.append(
                 {
                     "harness": harness,
                     "subject": subject,
-                    "trials": len(selected),
+                    "trials": len(
+                        selected
+                    ),
                     "complete": sum(
                         row.get("status")
                         == "COMPLETE"
                         for row in selected
                     ),
                     "successes": sum(
-                        bool(row.get("success"))
+                        bool(
+                            row.get(
+                                "success"
+                            )
+                        )
                         for row in selected
-                        if row.get("status")
+                        if row.get(
+                            "status"
+                        )
                         == "COMPLETE"
                     ),
-                    "success_rate": rate,
+                    "success_rate": _rate(
+                        selected
+                    ),
                 }
             )
-
-    uplift: dict[
-        str,
-        float | None,
-    ] = {}
+    uplift = {}
     for harness in harnesses:
         bare = _rate(
             groups.get(
@@ -1053,7 +1255,7 @@ def build_report(
     def spread(
         subject: str,
     ) -> float | None:
-        rates = [
+        values = [
             rate
             for harness in harnesses
             if (
@@ -1070,35 +1272,26 @@ def build_report(
             is not None
         ]
         return (
-            max(rates) - min(rates)
-            if len(rates) >= 2
+            max(values)
+            - min(values)
+            if len(values) >= 2
             else None
         )
 
-    bare_spread = spread("none")
-    hashmarks_spread = spread(
+    bare_spread = spread(
+        "none"
+    )
+    treated_spread = spread(
         "hashmarks"
     )
     reduction = (
         None
         if (
             bare_spread is None
-            or hashmarks_spread is None
+            or treated_spread is None
         )
         else bare_spread
-        - hashmarks_spread
-    )
-    reduction_fraction = (
-        None
-        if (
-            reduction is None
-            or bare_spread in (
-                None,
-                0,
-            )
-        )
-        else reduction
-        / bare_spread
+        - treated_spread
     )
     return {
         "schema": REPORT_SCHEMA,
@@ -1117,25 +1310,32 @@ def build_report(
         "hashmarks_uplift": uplift,
         "harness_spread": {
             "bare": bare_spread,
-            "hashmarks": hashmarks_spread,
+            "hashmarks": treated_spread,
             "reduction": reduction,
             "reduction_fraction": (
-                reduction_fraction
+                None
+                if (
+                    reduction is None
+                    or bare_spread
+                    in (
+                        None,
+                        0,
+                    )
+                )
+                else reduction
+                / bare_spread
             ),
         },
     }
 
 
-def _load_trial_rows(
+def _load_rows(
     run_root: Path,
 ) -> list[dict[str, Any]]:
     directory = (
         run_root
         / "trials"
     )
-    rows: list[
-        dict[str, Any]
-    ] = []
     paths = (
         sorted(
             directory.glob(
@@ -1145,30 +1345,30 @@ def _load_trial_rows(
         if directory.is_dir()
         else []
     )
-    for path in paths:
-        value = json.loads(
+    rows = [
+        json.loads(
             path.read_text(
                 encoding="utf-8"
             )
         )
-        if (
+        for path in paths
+    ]
+    if (
+        not rows
+        or any(
             not isinstance(
-                value,
+                row,
                 dict,
             )
-            or value.get(
+            or row.get(
                 "schema"
             )
             != RESULT_SCHEMA
-        ):
-            raise HarborMatrixError(
-                "invalid Harbor trial receipt: "
-                f"{path}"
-            )
-        rows.append(value)
-    if not rows:
+            for row in rows
+        )
+    ):
         raise HarborMatrixError(
-            "no Harbor trial receipts under "
+            "no valid Harbor trial receipts under "
             f"{directory}"
         )
     return rows
@@ -1190,7 +1390,9 @@ def _parser() -> argparse.ArgumentParser:
         "run",
         "report",
     ):
-        command = sub.add_parser(name)
+        command = sub.add_parser(
+            name
+        )
         command.add_argument(
             "--env-file",
             type=Path,
@@ -1226,61 +1428,93 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _selection(
+    args: argparse.Namespace,
+) -> tuple[
+    HarborSettings,
+    dict[str, Any],
+    SuiteDefinition,
+    MatrixMode,
+    tuple[str, ...],
+    tuple[str, ...],
+]:
+    settings = load_settings(
+        args.env_file
+    )
+    matrix = load_matrix(
+        args.matrix
+    )
+    suite = load_suite(
+        Path(
+            str(
+                matrix["suite"]
+            )
+        )
+    )
+    mode = mode_contract(
+        matrix,
+        args.mode,
+    )
+    harnesses = _select(
+        matrix["harnesses"],
+        args.harness,
+        label="harness",
+    )
+    tasks = _select(
+        mode.tasks,
+        args.task,
+        label="task",
+    )
+    validate_projection(
+        matrix=matrix,
+        suite=suite,
+        mode=mode,
+        harnesses=harnesses,
+        tasks=tasks,
+    )
+    return (
+        settings,
+        matrix,
+        suite,
+        mode,
+        harnesses,
+        tasks,
+    )
+
+
 def main(
     argv: list[str] | None = None,
 ) -> int:
-    args = _parser().parse_args(argv)
+    args = _parser().parse_args(
+        argv
+    )
     try:
-        settings = load_settings(
-            args.env_file
-        )
-        matrix = load_matrix(
-            args.matrix
-        )
-        suite = load_suite(
-            Path(
-                str(
-                    matrix["suite"]
-                )
-            )
-        )
-        mode = mode_contract(
+        (
+            settings,
             matrix,
-            args.mode,
-        )
-        harnesses = _selected_harnesses(
-            matrix,
-            args.harness,
-        )
-        tasks = _selected_tasks(
+            suite,
             mode,
-            args.task,
-        )
-        validate_projection(
-            matrix=matrix,
-            suite=suite,
-            mode=mode,
-            harnesses=harnesses,
-            tasks=tasks,
+            harnesses,
+            tasks,
+        ) = _selection(
+            args
         )
         if args.command == "check":
-            receipt = preflight(
-                settings=settings,
-                matrix=matrix,
-                suite=suite,
-                mode=mode,
-                harnesses=harnesses,
-                tasks=tasks,
-            )
             print(
                 json.dumps(
-                    receipt,
+                    preflight(
+                        settings=settings,
+                        matrix=matrix,
+                        suite=suite,
+                        mode=mode,
+                        harnesses=harnesses,
+                        tasks=tasks,
+                    ),
                     indent=2,
                     sort_keys=True,
                 )
             )
             return 0
-
         if args.command == "report":
             run_root = (
                 args.run
@@ -1288,19 +1522,20 @@ def main(
                     settings.root
                 )
             )
-            report = build_report(
-                _load_trial_rows(
+            report = {
+                **build_report(
+                    _load_rows(
+                        run_root
+                    )
+                ),
+                "run_root": str(
                     run_root
-                )
-            )
-            report[
-                "run_root"
-            ] = str(run_root)
-            destination = (
+                ),
+            }
+            (
                 run_root
                 / "report.json"
-            )
-            destination.write_text(
+            ).write_text(
                 json.dumps(
                     report,
                     indent=2,
@@ -1318,7 +1553,9 @@ def main(
             )
             return (
                 0
-                if report["incomplete"]
+                if report[
+                    "incomplete"
+                ]
                 == 0
                 else 2
             )
@@ -1388,9 +1625,7 @@ def main(
             / "trials"
         )
         trials_dir.mkdir()
-        results: list[
-            dict[str, Any]
-        ] = []
+        results = []
         for index, row in enumerate(
             rows,
             1,
@@ -1421,7 +1656,9 @@ def main(
                 mcp_config=mcp_config,
                 host=os.environ,
             )
-            results.append(result)
+            results.append(
+                result
+            )
             (
                 trials_dir
                 / (
@@ -1437,12 +1674,14 @@ def main(
                 + "\n",
                 encoding="utf-8",
             )
-        report = build_report(
-            results
-        )
-        report[
-            "run_root"
-        ] = str(run_root)
+        report = {
+            **build_report(
+                results
+            ),
+            "run_root": str(
+                run_root
+            ),
+        }
         (
             run_root
             / "report.json"
@@ -1464,11 +1703,17 @@ def main(
         )
         return (
             0
-            if report["incomplete"]
+            if report[
+                "incomplete"
+            ]
             == 0
             else 2
         )
-    except HarborMatrixError as exc:
+    except (
+        HarborMatrixError,
+        ValueError,
+        OSError,
+    ) as exc:
         raise SystemExit(
             "Harbor harness benchmark unavailable: "
             f"{exc}"
