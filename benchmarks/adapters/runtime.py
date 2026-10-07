@@ -19,6 +19,22 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def executable_file_metadata(path: Path) -> dict[str, int] | None:
+    """Return cheap filesystem identity fields for forensic authority diffs."""
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return {
+        "device": int(stat.st_dev),
+        "inode": int(stat.st_ino),
+        "size": int(stat.st_size),
+        "mode": int(stat.st_mode),
+        "mtime_ns": int(stat.st_mtime_ns),
+        "ctime_ns": int(stat.st_ctime_ns),
+    }
+
+
 def resolve_native_executable(
     context: TrialContext,
     command: str,
@@ -98,6 +114,9 @@ def observe_executable(
                 errors="replace",
             ).strip(),
             "executable_sha256": executable_sha256,
+            "file_metadata": (
+                executable_file_metadata(path) if path is not None else None
+            ),
             "process": result.metrics(),
             "stderr": result.stderr.decode(
                 "utf-8",

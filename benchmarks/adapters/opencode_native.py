@@ -10,12 +10,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import traceback
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from benchmarks.adapters.runtime import observe_executable, resolve_native_executable
+from benchmarks.adapters.runtime import (
+    executable_file_metadata,
+    observe_executable,
+    resolve_native_executable,
+)
 from benchmarks.harness.identity import canonical_json
 from benchmarks.harness.runtime_authority import PROCESS_SUBSTRATE_ENV_KEYS
 from benchmarks.harness.tool_results import result_bytes, tool_result_evidence
@@ -141,8 +146,23 @@ def _run_failure_diagnostic(
     *,
     export_diagnostic: str | None,
     runtime_stderr: str | None,
+    authority_revalidation: dict[str, Any] | None = None,
 ) -> str | None:
     details: list[str] = []
+
+    if (
+        isinstance(authority_revalidation, dict)
+        and authority_revalidation.get("status") == "failed"
+    ):
+        details.append(
+            "OpenCode authority revalidation:\n"
+            + json.dumps(
+                authority_revalidation,
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+        )
 
     export = _bounded_diagnostic(export_diagnostic)
     if export:
@@ -168,6 +188,88 @@ def _run_failure_diagnostic(
         details.append(f"Shared OpenCode runtime stderr:\n{runtime}")
 
     return "\n\n".join(details) or None
+
+
+def _authority_changed_fields(
+    before: Any,
+    after: Any,
+    *,
+    prefix: str = "",
+) -> list[str]:
+    if isinstance(before, dict) and isinstance(after, dict):
+        changed: list[str] = []
+        for key in sorted(set(before) | set(after)):
+            child = f"{prefix}.{key}" if prefix else str(key)
+            if key not in before or key not in after:
+                changed.append(child)
+                continue
+            changed.extend(
+                _authority_changed_fields(
+                    before[key],
+                    after[key],
+                    prefix=child,
+                )
+            )
+        return changed
+    return [] if before == after else [prefix or "<root>"]
+
+
+def _enrich_authority_revalidation(
+    *,
+    revalidation: dict[str, Any],
+    context: TrialContext,
+    environment: dict[str, str],
+    evidence: dict[str, Any],
+) -> dict[str, Any]:
+    """Add durable forensic context without changing the runtime verdict."""
+    reason = str(revalidation.get("reason") or "participant authority changed")
+    if "subject" in reason.lower() or "workspace binding" in reason.lower():
+        reason_code = "subject-authority-drift"
+        authority_kind = "subject-runtime"
+    else:
+        reason_code = "execution-authority-drift"
+        authority_kind = (
+            "opencode-executable"
+            if "executable" in reason.lower()
+            else "opencode-config"
+            if "configuration" in reason.lower()
+            else "opencode-runtime"
+        )
+
+    baseline: dict[str, Any] | None = None
+    observed: dict[str, Any] | None = None
+    changed_fields: list[str] = []
+    if authority_kind == "opencode-executable":
+        baseline = {
+            "resolved_path": evidence.get("opencode_executable_path"),
+            "sha256": evidence.get("opencode_executable_sha256"),
+            "version": evidence.get("opencode_version"),
+            "file_metadata": evidence.get("opencode_executable_metadata"),
+        }
+        current = _observe_opencode_executable(context, environment)
+        observed = {
+            "resolved_path": current.payload.get("resolved_path"),
+            "sha256": current.payload.get("executable_sha256"),
+            "version": current.payload.get("version"),
+            "file_metadata": current.payload.get("file_metadata"),
+            "executable_stable": current.payload.get("executable_stable"),
+        }
+        changed_fields = _authority_changed_fields(baseline, observed)
+    elif authority_kind == "opencode-config":
+        baseline = {
+            "config_sha256": evidence.get("native_config_sha256"),
+        }
+
+    return {
+        **revalidation,
+        "reason_code": reason_code,
+        "authority_kind": authority_kind,
+        "reason": reason,
+        "changed_fields": changed_fields,
+        "baseline": baseline,
+        "observed": observed,
+        "diagnostic": "".join(traceback.format_stack(limit=16)),
+    }
 
 
 def _native_environment(context: TrialContext) -> dict[str, str]:
@@ -758,6 +860,8 @@ class OpenCodeNativeAgent:
             "runtime_contract": "agents-cookbook-opencode-runtime/v4",
             "opencode_executable_path": executable.payload.get("resolved_path"),
             "opencode_executable_sha256": executable.payload.get("executable_sha256"),
+            "opencode_version": executable.payload.get("version"),
+            "opencode_executable_metadata": executable.payload.get("file_metadata"),
             "native_config_sha256": inspection.get("config_sha256"),
             "model": model,
             "provider": provider,
@@ -877,6 +981,9 @@ class OpenCodeNativeAgent:
         admitted_opencode_sha256 = evidence.get("opencode_executable_sha256")
         try:
             current_opencode_sha256 = _sha256_file(Path(current_opencode_path))
+            current_opencode_metadata = executable_file_metadata(
+                Path(current_opencode_path)
+            )
         except OSError as exc:
             raise ValueError(
                 "OpenCode executable authority cannot be revalidated before inference"
@@ -885,8 +992,31 @@ class OpenCodeNativeAgent:
             current_opencode_path != admitted_opencode_path
             or current_opencode_sha256 != admitted_opencode_sha256
         ):
+            baseline = {
+                "resolved_path": admitted_opencode_path,
+                "sha256": admitted_opencode_sha256,
+                "version": evidence.get("opencode_version"),
+                "file_metadata": evidence.get("opencode_executable_metadata"),
+            }
+            observed = {
+                "resolved_path": current_opencode_path,
+                "sha256": current_opencode_sha256,
+                "file_metadata": current_opencode_metadata,
+            }
             raise ValueError(
-                "OpenCode executable authority changed after admission"
+                "OpenCode executable authority changed after admission: "
+                + json.dumps(
+                    {
+                        "changed_fields": _authority_changed_fields(
+                            baseline,
+                            observed,
+                        ),
+                        "baseline": baseline,
+                        "observed": observed,
+                    },
+                    sort_keys=True,
+                    ensure_ascii=False,
+                )
             )
         title = "agents-cookbook-benchmark:" + context.control_root.parent.name
         prompt_path = context.control_root / "opencode-prompt.txt"
@@ -975,6 +1105,16 @@ class OpenCodeNativeAgent:
             authority_revalidation = (
                 revalidation if isinstance(revalidation, dict) else None
             )
+            if (
+                isinstance(authority_revalidation, dict)
+                and authority_revalidation.get("status") == "failed"
+            ):
+                authority_revalidation = _enrich_authority_revalidation(
+                    revalidation=authority_revalidation,
+                    context=context,
+                    environment=environment,
+                    evidence=evidence,
+                )
             run_value = envelope.get("run")
             run_evidence = run_value if isinstance(run_value, dict) else None
             runtime_error = envelope.get("error")
@@ -1066,6 +1206,7 @@ class OpenCodeNativeAgent:
                 run_evidence,
                 export_diagnostic=export_diagnostic,
                 runtime_stderr=runtime_stderr,
+                authority_revalidation=authority_revalidation,
             )
             if failure_reason is not None
             else None

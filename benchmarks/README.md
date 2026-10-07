@@ -512,7 +512,23 @@ The same selectors should be used across preflight, run, status, and report. Bar
 
 ### Immutable outcomes and interruption evidence
 
-A published `INCOMPLETE`, `INVALID`, or `CONTAMINATED` receipt is evidence and is never deleted or silently overwritten. A process interruption before any complete receipt exists is different: it is preserved as immutable numbered attempt evidence and the unfinished definition may resume with a new explicit attempt. If the underlying infrastructure problem is corrected but observed execution authority does not change, start a new saved run instead of mutating the old evidence. If observed tool/config authority changes, execution identity changes naturally and the new execution can coexist.
+A published `INCOMPLETE`, `INVALID`, or `CONTAMINATED` receipt is evidence and is never deleted or silently overwritten. A process interruption before any complete receipt exists is different: it is preserved as immutable numbered attempt evidence and the unfinished definition may resume with a new explicit attempt.
+
+Long unattended campaigns treat **participant authority drift as evidence, not as a campaign-wide crash**. If the native agent/runtime or selected subject authority changes after the campaign was admitted, the harness:
+
+1. preserves the affected attempt/result exactly as observed;
+2. records an immutable authority-epoch transition with old/new participant authority, changed fields, timestamp, and detection call stack;
+3. derives subsequent execution identity from the new accepted epoch;
+4. retires any stale pre-transition launch as numbered interruption evidence;
+5. marks campaign evidence `TAINTED` and keeps collecting the remaining diagnostic evidence.
+
+Epochs never silently restore comparability. Any participant-authority transition blocks qualification for that saved campaign even when execution reaches every planned definition; status and the final run summary expose the transition count. Start a fresh campaign under one stable authority when qualification is required.
+
+This recovery boundary does **not** weaken benchmark authority. Frozen suite/oracle/task inputs, harness authority, environment authority, campaign receipt integrity, or evidence corruption remain hard failures because subsequent results could no longer be interpreted or trusted. Participant instability can be preserved and segmented; benchmark-definition or evidence-authority instability cannot.
+
+For OpenCode executable drift, the durable failure diagnostic includes the admitted and observed path/digest/version/filesystem metadata where available, a field-level diff, and the detection call stack. This is deliberately diagnostic provenance rather than a second scoring authority.
+
+If the underlying infrastructure problem is corrected but observed execution authority does not change, start a new saved run instead of mutating old evidence. If participant authority changes, the current saved run may continue collecting tainted evidence through the epoch mechanism while a new saved run remains the path to a clean comparable qualification campaign.
 
 `--root` selects the run store; each numbered run owns its `cache/`, `work/`, and `results/`. A legacy single-directory campaign remains selectable as `--run-id legacy`. Frozen suite definitions and verified per-trial receipts remain authority.
 

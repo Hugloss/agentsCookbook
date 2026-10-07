@@ -50,6 +50,7 @@ from benchmarks.harness.campaign import (
     campaign_status,
     resolve_campaign_paths,
 )
+from benchmarks.harness.campaign_authority import AuthorityEpochBinding
 from benchmarks.harness.contamination import classify_contamination
 from benchmarks.harness.identity import digest
 from benchmarks.harness.model import (
@@ -3564,7 +3565,20 @@ class PilotExecutionTests(unittest.TestCase):
                     "benchmarks.harness.runner.admit_trial",
                     return_value=nullcontext(admission),
                 ),
-                mock.patch("benchmarks.harness.runner.verify_trial_authority"),
+                mock.patch(
+                    "benchmarks.harness.runner.verify_trial_authority",
+                    return_value=AuthorityEpochBinding(
+                        epoch=1,
+                        epoch_id="e" * 64,
+                        authority={
+                            "subject": admission.subject_authority,
+                            "agent": admission.agent_authority,
+                            "harness": admission.harness_authority,
+                            "environment": admission.environment_authority,
+                        },
+                        transitioned=False,
+                    ),
+                ),
                 mock.patch(
                     "benchmarks.harness.runner.campaign_trial_id",
                     return_value=admission.trial_id,

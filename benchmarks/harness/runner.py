@@ -309,6 +309,16 @@ def _oracle_failure_diagnostic(grade: Observation) -> tuple[str, str]:
 
 
 def _agent_failure(observation: Observation) -> tuple[str, str] | None:
+    revalidation = observation.payload.get("authority_revalidation")
+    if isinstance(revalidation, dict) and revalidation.get("status") == "failed":
+        reason_code = revalidation.get("reason_code")
+        if not isinstance(reason_code, str) or not reason_code:
+            reason_code = "execution-authority-drift"
+        reason = revalidation.get("reason")
+        if not isinstance(reason, str) or not reason:
+            reason = "participant execution authority changed during inference"
+        return reason_code, reason
+
     process = observation.payload.get("process")
     if isinstance(process, dict):
         if process.get("executable_missing"):
@@ -441,12 +451,14 @@ def run_trial(
             mutation_authority = admission.mutation_authority
             auth_mode = admission.auth_mode
             recovered_interruption_attempt: int | None = None
+            recovered_interruption_reason: str | None = None
+            authority_epoch_binding = None
             if not admission.legacy_seed:
                 if campaign is None:
                     raise TrialRunnerError(
                         "replicate trial requires campaign authority"
                     )
-                verify_trial_authority(
+                authority_epoch_binding = verify_trial_authority(
                     results_root=results_root,
                     campaign=campaign,
                     admission=admission,
@@ -454,6 +466,7 @@ def run_trial(
                 trial_id = campaign_trial_id(
                     campaign=campaign,
                     admission=admission,
+                    condition_authority_binding=authority_epoch_binding.authority,
                 )
                 final_dir = results_root / trial_id
                 state = launch_state(
@@ -462,13 +475,20 @@ def run_trial(
                     definition_id=definition,
                     trial_id=trial_id,
                 )
-                if state == "INTERRUPTED":
+                if state in {"INTERRUPTED", "STALE_INTERRUPTED"}:
                     emit_stage("recovery")
                     recovered_interruption_attempt = record_interrupted_attempt(
                         results_root=results_root,
                         campaign=campaign,
                         definition_id=definition,
-                        trial_id=trial_id,
+                        trial_id=(
+                            None if state == "STALE_INTERRUPTED" else trial_id
+                        ),
+                    )
+                    recovered_interruption_reason = (
+                        "authority-epoch-transition"
+                        if state == "STALE_INTERRUPTED"
+                        else "interrupted-launch"
                     )
                 if state == "CORRUPT":
                     raise TrialRunnerError(f"existing trial bundle is corrupt: {final_dir}")
@@ -528,13 +548,30 @@ def run_trial(
                 {**agent_prepare.payload, "auth_mode": auth_mode},
             )
             emit("oracle.health", oracle_health.payload)
+            if authority_epoch_binding is not None:
+                emit(
+                    "authority.epoch",
+                    {
+                        "epoch": authority_epoch_binding.epoch,
+                        "epoch_id": authority_epoch_binding.epoch_id,
+                        "transitioned": authority_epoch_binding.transitioned,
+                        "changed_components": list(
+                            authority_epoch_binding.changed_components
+                        ),
+                        "changed_fields": list(
+                            authority_epoch_binding.changed_fields
+                        ),
+                    },
+                )
             if recovered_interruption_attempt is not None:
                 emit(
                     "trial.recovered_interruption",
                     {
                         "definition_id": definition,
                         "attempt": recovered_interruption_attempt,
-                        "reason_code": "interrupted-launch",
+                        "reason_code": (
+                            recovered_interruption_reason or "interrupted-launch"
+                        ),
                     },
                 )
 
@@ -823,6 +860,23 @@ def run_trial(
                         else {}
                     ),
                     "trial_index": trial_index,
+                    **(
+                        {
+                            "authority_epoch": {
+                                "epoch": authority_epoch_binding.epoch,
+                                "epoch_id": authority_epoch_binding.epoch_id,
+                                "transitioned": authority_epoch_binding.transitioned,
+                                "changed_components": list(
+                                    authority_epoch_binding.changed_components
+                                ),
+                                "changed_fields": list(
+                                    authority_epoch_binding.changed_fields
+                                ),
+                            }
+                        }
+                        if authority_epoch_binding is not None
+                        else {}
+                    ),
                     "events": event_evidence,
                     "agent_terminal": agent_observation.payload.get("terminal_event"),
                     "agent_answer": agent_answer,
