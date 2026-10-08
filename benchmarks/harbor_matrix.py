@@ -622,26 +622,51 @@ def _verifier(
     return f"""#!/bin/sh
 set -eu
 mkdir -p /logs/verifier
-reward=0
+clean=0
 if git -C /workspace diff --quiet -- . && git -C /workspace diff --cached --quiet -- .; then
-  if python3 - <<'PY'
-import json
-from pathlib import Path
-expected = {expected_json}
-path = Path("/workspace/.agentscookbook-answer.json")
-if not path.is_file():
-    raise SystemExit(1)
-try:
-    observed = json.loads(path.read_text(encoding="utf-8"))
-except (OSError, json.JSONDecodeError):
-    raise SystemExit(1)
-raise SystemExit(0 if observed == expected else 1)
-PY
-  then
-    reward=1
-  fi
+  clean=1
 fi
-printf '%s\\n' "$reward" > /logs/verifier/reward.txt
+export clean
+python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+expected = {expected_json}
+source = Path("/workspace/.agentscookbook-answer.json")
+observed = None
+error = None
+try:
+    if source.is_file():
+        value = json.loads(source.read_text(encoding="utf-8"))
+        if isinstance(value, dict):
+            observed = value
+        else:
+            error = "answer-not-object"
+    else:
+        error = "answer-missing"
+except (OSError, json.JSONDecodeError):
+    error = "answer-invalid-json"
+
+tracked_clean = os.environ.get("clean") == "1"
+match = observed == expected
+evidence = {{
+    "schema": "agentscookbook.harbor-answer-evidence.v1",
+    "observed": observed,
+    "expected": expected,
+    "match": match,
+    "tracked_clean": tracked_clean,
+    "error": error,
+}}
+Path("/logs/verifier/answer.json").write_text(
+    json.dumps(evidence, sort_keys=True) + "\\n",
+    encoding="utf-8",
+)
+Path("/logs/verifier/reward.txt").write_text(
+    "1\\n" if match and tracked_clean else "0\\n",
+    encoding="utf-8",
+)
+PY
 exit 0
 """
 
@@ -925,6 +950,20 @@ def find_reward(
     )
 
 
+def _single_job_artifact(
+    job_root: Path,
+    *,
+    name: str,
+    parent: str,
+) -> str | None:
+    candidates = sorted(
+        path
+        for path in job_root.rglob(name)
+        if path.parent.name == parent and path.is_file() and not path.is_symlink()
+    )
+    return str(candidates[0]) if len(candidates) == 1 else None
+
+
 def execute_trial(
     *,
     settings: HarborSettings,
@@ -979,9 +1018,19 @@ def execute_trial(
     except HarborMatrixError as exc:
         return_code = 127
         stderr = str(exc)
+    job_root = jobs_root / trial_id
     reward, reward_path = find_reward(
-        jobs_root
-        / trial_id
+        job_root
+    )
+    trajectory_path = _single_job_artifact(
+        job_root,
+        name="trajectory.json",
+        parent="agent",
+    )
+    answer_evidence_path = _single_job_artifact(
+        job_root,
+        name="answer.json",
+        parent="verifier",
     )
     status = (
         "COMPLETE"
@@ -1019,6 +1068,8 @@ def execute_trial(
             / trial_id
         ),
         "reward_path": reward_path,
+        "trajectory_path": trajectory_path,
+        "answer_evidence_path": answer_evidence_path,
         "mcp_exposed": (
             selected_mcp
             is not None
