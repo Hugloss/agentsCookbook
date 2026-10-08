@@ -90,6 +90,17 @@ class HarborSharedCampaignTests(unittest.TestCase):
                 self.assertEqual(code, 0)
                 self.assertEqual(report["expected_trials"], 6)
                 self.assertTrue(report["qualified"])
+                self.assertEqual(
+                    report["mechanism_attribution"]["summary"]["paired_observations"],
+                    3,
+                )
+                code, mechanism = self._call(
+                    "explain", "--matrix", "harbor-smoke", "--root", str(root),
+                )
+                self.assertEqual(code, 0)
+                self.assertTrue(mechanism["campaign_qualified"])
+                self.assertEqual(mechanism["summary"]["paired_observations"], 3)
+                self.assertEqual(execute.call_count, 6)
                 code, _ = self._call(
                     "run", "--resume", "--run-id", "000001",
                     "--matrix", "harbor-smoke", "--env-file", str(env),
@@ -99,6 +110,7 @@ class HarborSharedCampaignTests(unittest.TestCase):
                 self.assertEqual(execute.call_count, 6)
             self.assertTrue((root / "runs/000001/results/.campaign/authority.json").is_file())
             self.assertTrue((root / "runs/000001/reports/report.json").is_file())
+            self.assertTrue((root / "runs/000001/reports/mechanism.json").is_file())
 
     def test_interrupted_launch_gets_new_job_name_on_resume(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
