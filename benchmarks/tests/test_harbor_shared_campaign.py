@@ -196,7 +196,21 @@ class HarborSharedCampaignTests(unittest.TestCase):
                 self.assertEqual(report["summary"]["matched_quartets"], 3)
                 self.assertEqual(
                     report["summary"]["classification"],
-                    {"REDUNDANT_OR_OTHER_HASHMARKS_PATH": 3},
+                    {"UNQUALIFIED_TREATMENT_AUTHORITY": 3},
+                )
+                self.assertTrue(
+                    all(
+                        row["treatment_authority_error"].endswith(
+                            "UNQUALIFIED_TRACE_INCOMPLETE"
+                        )
+                        for row in report["quartets"]
+                    )
+                )
+                self.assertTrue(
+                    all(
+                        row["observed_catalog_advertisement_proven"] is False
+                        for row in report["quartets"]
+                    )
                 )
                 self.assertEqual(execute.call_count, 12)
 
