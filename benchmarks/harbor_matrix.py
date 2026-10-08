@@ -875,16 +875,11 @@ def prepare_task(
     return destination
 
 
-def write_mcp_config(
-    path: Path,
+def mcp_config_payload(
     *,
     tool_names: tuple[str, ...] | list[str] | None = None,
-) -> Path:
-    path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-    payload = {
+) -> dict[str, object]:
+    return {
         "mcpServers": {
             "hashmarks": {
                 "command": "hashmarks",
@@ -903,9 +898,20 @@ def write_mcp_config(
             }
         }
     }
+
+
+def write_mcp_config(
+    path: Path,
+    *,
+    tool_names: tuple[str, ...] | list[str] | None = None,
+) -> Path:
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
     path.write_text(
         json.dumps(
-            payload,
+            mcp_config_payload(tool_names=tool_names),
             indent=2,
             sort_keys=True,
         )
