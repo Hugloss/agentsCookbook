@@ -14,6 +14,7 @@ from benchmarks.harbor_matrix import (
     HarborSettings,
     build_report as build_harbor_report,
     execute_trial,
+    mcp_config_payload,
     mode_contract,
     preflight,
     prepare_task,
@@ -145,6 +146,15 @@ def admit_harbor_run(
             hashmarks_source=settings.hashmarks_source,
         )
         task_digests[str(task_id)] = _tree_identity(task_path)
+    configs = mcp_configs(
+        staged,
+        preflight_receipt=preflight_receipt,
+    )
+    mcp_config_digests = {
+        subject: hashlib.sha256(path.read_bytes()).hexdigest()
+        for subject, path in configs.items()
+        if path is not None
+    }
     payload = {
         "contract": "benchmark-campaign-authority.v6",
         "backend": "harbor",
@@ -154,6 +164,7 @@ def admit_harbor_run(
         "selected_definitions": sorted(str(row["definition_id"]) for row in rows),
         "preflight": dict(preflight_receipt),
         "task_digests": task_digests,
+        "mcp_config_digests": mcp_config_digests,
     }
     return publish_campaign_authority(staged / "results", payload)
 
@@ -176,6 +187,22 @@ def verify_harbor_run(
         or campaign.get("preflight") != dict(preflight_receipt)
     ):
         raise HarborBackendError("saved Harbor run authority changed; start a new run")
+    expected_configs = campaign.get("mcp_config_digests")
+    if not isinstance(expected_configs, dict):
+        raise HarborBackendError("saved Harbor MCP config authority is missing")
+    configs = mcp_configs(
+        run_root,
+        preflight_receipt=preflight_receipt,
+    )
+    observed_configs = {
+        subject: hashlib.sha256(path.read_bytes()).hexdigest()
+        for subject, path in configs.items()
+        if path is not None
+    }
+    if observed_configs != expected_configs:
+        raise HarborBackendError(
+            "saved Harbor MCP treatment configuration changed; start a new run"
+        )
     expected = campaign.get("task_digests")
     if not isinstance(expected, dict):
         raise HarborBackendError("saved Harbor task authority is missing")
@@ -191,6 +218,23 @@ def credential_file(
     host: Mapping[str, str],
 ) -> Path | None:
     return _credential_file(run_root, keys=settings.passthrough_env_keys, host=host)
+
+
+def _mcp_config_bytes(
+    *,
+    tools: list[str],
+    full_contract: bool,
+) -> bytes:
+    return (
+        json.dumps(
+            mcp_config_payload(
+                tool_names=None if full_contract else tuple(tools)
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
 
 
 def mcp_configs(
@@ -222,10 +266,20 @@ def mcp_configs(
             raise HarborBackendError(
                 f"Harbor preflight treatment is incomplete: {subject}"
             )
-        configs[subject] = write_mcp_config(
-            run_root / f"{subject}.mcp.json",
-            tool_names=None if full_contract else tuple(tools),
+        path = run_root / f"{subject}.mcp.json"
+        expected = _mcp_config_bytes(
+            tools=tools,
+            full_contract=full_contract,
         )
+        if path.exists():
+            if path.is_symlink() or not path.is_file() or path.read_bytes() != expected:
+                raise HarborBackendError(
+                    f"Harbor MCP treatment config changed: {subject}"
+                )
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(expected)
+        configs[subject] = path
     return configs
 
 
