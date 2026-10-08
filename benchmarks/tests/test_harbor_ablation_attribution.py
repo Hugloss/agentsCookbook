@@ -62,7 +62,7 @@ def _projection(
         if task_evidence_invoked
         else (
             ["mcp__hashmarks__find"]
-            if subject != "none"
+            if subject not in ("none", "hashmarks-task-evidence-only")
             else []
         )
     )
@@ -82,6 +82,7 @@ def _projection(
         },
         "trace": {
             "available": True,
+            "tool_order_complete": True,
             "subject_tools": tools,
         },
         "answer": None,
@@ -200,6 +201,95 @@ class HarborAblationAttributionTests(unittest.TestCase):
             result["sufficiency"],
             "UNQUALIFIED_TREATMENT_AUTHORITY",
         )
+
+    def test_frozen_projection_does_not_prove_host_advertised_catalog(self) -> None:
+        result = quartet_projection(_quartet())
+        self.assertTrue(result["treatment_authority_valid"])
+        self.assertFalse(result["observed_catalog_advertisement_proven"])
+        for observed in result["observed_call_projection"].values():
+            self.assertEqual(observed["status"], "NO_DISALLOWED_CALL_OBSERVED")
+            self.assertFalse(observed["catalog_advertisement_proven"])
+
+    def test_removal_arm_invoking_withheld_task_evidence_invalidates_contrast(
+        self,
+    ) -> None:
+        arms = _quartet()
+        arms["hashmarks-no-task-evidence"]["trace"]["subject_tools"] = [
+            "mcp__hashmarks__task_evidence"
+        ]
+        result = quartet_projection(arms)
+        self.assertFalse(result["treatment_authority_valid"])
+        self.assertIn(
+            "UNQUALIFIED_DISALLOWED_CALL",
+            result["treatment_authority_error"],
+        )
+        self.assertEqual(
+            result["observed_call_projection"]["hashmarks-no-task-evidence"][
+                "disallowed_calls"
+            ],
+            ["mcp__hashmarks__task_evidence"],
+        )
+        self.assertEqual(
+            result["classification"], "UNQUALIFIED_TREATMENT_AUTHORITY"
+        )
+        self.assertFalse(result["positive_causal_proof_claimed"])
+
+    def test_task_evidence_only_arm_calling_find_invalidates_contrast(self) -> None:
+        arms = _quartet()
+        arms["hashmarks-task-evidence-only"]["trace"]["subject_tools"] = [
+            "mcp__hashmarks__task_evidence",
+            "mcp__hashmarks__find",
+        ]
+        result = quartet_projection(arms)
+        self.assertFalse(result["treatment_authority_valid"])
+        self.assertIn(
+            "hashmarks-task-evidence-only",
+            result["treatment_authority_error"],
+        )
+        self.assertEqual(
+            result["sufficiency"], "UNQUALIFIED_TREATMENT_AUTHORITY"
+        )
+
+    def test_bare_arm_hashmarks_call_is_not_an_admitted_control(self) -> None:
+        arms = _quartet()
+        arms["none"]["trace"]["subject_tools"] = ["mcp__hashmarks__find"]
+        result = quartet_projection(arms)
+        self.assertFalse(result["treatment_authority_valid"])
+        self.assertIn("none", result["treatment_authority_error"])
+
+    def test_unknown_hashmarks_call_is_not_assumed_to_be_allowed(self) -> None:
+        arms = _quartet()
+        arms["hashmarks"]["trace"]["subject_tools"] = [
+            "mcp__hashmarks__mystery",
+            "mcp__hashmarks__task_evidence",
+        ]
+        result = quartet_projection(arms)
+        self.assertFalse(result["treatment_authority_valid"])
+        self.assertEqual(
+            result["observed_call_projection"]["hashmarks"]["status"],
+            "UNQUALIFIED_UNRESOLVED_CALL",
+        )
+        self.assertEqual(
+            result["observed_call_projection"]["hashmarks"]["unresolved_calls"],
+            ["mcp__hashmarks__mystery"],
+        )
+
+    def test_missing_or_partial_trace_cannot_admit_a_positive_ablation(self) -> None:
+        for trace in (
+            {"available": False},
+            {"available": True, "subject_tools": []},
+            {"available": True, "tool_order_complete": False, "subject_tools": []},
+        ):
+            arms = _quartet()
+            arms["hashmarks-no-task-evidence"]["trace"] = trace
+            result = quartet_projection(arms)
+            self.assertFalse(result["treatment_authority_valid"])
+            self.assertEqual(
+                result["observed_call_projection"][
+                    "hashmarks-no-task-evidence"
+                ]["status"],
+                "UNQUALIFIED_TRACE_INCOMPLETE",
+            )
 
     def test_ordinary_two_arm_results_are_not_an_ablation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

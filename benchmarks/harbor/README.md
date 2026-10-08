@@ -133,6 +133,19 @@ Hashmarks readiness for every restricted catalog and freezes the canonical
 source-contract identity, exact projected tools, independently observed catalog,
 and projection identity before model work.
 
+For every completed matched quartet, the report now also checks **observed
+Hashmarks invocations** from the ATIF trace against the exact frozen tools in
+each arm. A bare arm calling Hashmarks, a removal arm invoking
+`task_evidence`, or an only arm invoking a different Hashmarks operation
+invalidates treatment qualification; unknown tool spellings or unavailable
+tool-order evidence remain explicitly unqualified. These are negative
+checks on observable calls, **not** proof of which MCP tools the host
+advertised. The report carries `observed_catalog_advertisement_proven=false`
+and per-arm `observed_call_projection` diagnostics; only a separate
+host-catalog capture could justify affirmative exposed-tool claims. Such
+unqualified quartets cannot receive positive necessity/sufficiency
+classifications or be counted as causal proof.
+
 The generated Harbor MCP config bytes are also checksum-bound into campaign
 authority. A same-path config replacement therefore fails resume before another
 model trial instead of being silently regenerated.
