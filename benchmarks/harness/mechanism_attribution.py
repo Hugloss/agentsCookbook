@@ -131,20 +131,45 @@ def _path_values(value: object, *, key: str | None = None) -> set[str]:
     if isinstance(value, dict):
         for child_key, child in value.items():
             normalized = str(child_key).strip().lower()
-            if normalized in _PATH_KEYS:
-                found.update(_path_values(child, key=normalized))
-            elif isinstance(child, (dict, list)):
-                found.update(_path_values(child))
+            found.update(
+                _path_values(
+                    child,
+                    key=normalized if normalized in _PATH_KEYS else None,
+                )
+            )
         return found
     if isinstance(value, list):
         for child in value:
             found.update(_path_values(child, key=key))
         return found
-    if isinstance(value, str) and key in _PATH_KEYS:
-        candidate = value.strip().replace("\\", "/")
-        if candidate and "\n" not in candidate and len(candidate) <= 500:
-            found.add(candidate)
+    if isinstance(value, str):
+        candidate = value.strip()
+        if key in _PATH_KEYS:
+            normalized_path = candidate.replace("\\", "/")
+            if (
+                normalized_path
+                and "\n" not in normalized_path
+                and len(normalized_path) <= 500
+            ):
+                found.add(normalized_path)
+        if candidate.startswith(("{", "[")) and candidate.endswith(("}", "]")):
+            try:
+                decoded = json.loads(candidate)
+            except json.JSONDecodeError:
+                decoded = None
+            if isinstance(decoded, (dict, list)):
+                found.update(_path_values(decoded))
     return found
+
+
+def _result_size(value: object) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, str) and not value.strip():
+        return 0
+    if isinstance(value, (list, dict)) and not value:
+        return 0
+    return _encoded_size(value)
 
 
 def _input_strings(value: object) -> tuple[str, ...]:
@@ -215,7 +240,7 @@ def project_atif(path: Path, *, subject: str = "hashmarks") -> dict[str, Any]:
                 "tool": name,
                 "input": arguments,
                 "status": "completed" if content is not None else "unknown",
-                "result_bytes": _encoded_size(content) if content is not None else None,
+                "result_bytes": _result_size(content) if content is not None else None,
             }
             calls.append(row)
             if (
@@ -586,6 +611,17 @@ def pair_projection(
         tool_delta=tool_delta,
         token_delta=token_delta,
     )
+    same_answer = _same_answer(
+        bare.get("answer"),
+        treated.get("answer"),
+    )
+    native_read_delta = _delta(
+        bare_trace,
+        treated_trace,
+        "native_read_calls",
+    )
+    if same_answer is True and native_read_delta is not None and native_read_delta < 0:
+        tags.append("SAME_ANSWER_FEWER_READS")
     return {
         "task": bare_receipt["task_id"],
         "harness": bare_receipt["harness"],
@@ -593,10 +629,7 @@ def pair_projection(
         "replicate_id": bare_receipt["replicate_id"],
         "outcome_transition": outcome,
         "answer_transition": answer_transition,
-        "same_observed_answer": _same_answer(
-            bare.get("answer"),
-            treated.get("answer"),
-        ),
+        "same_observed_answer": same_answer,
         "treatment": treated_trace.get("treatment"),
         "routing": treated_trace.get("subject_routing_timing"),
         "subject_target_followthrough": treated_trace.get(
@@ -609,14 +642,17 @@ def pair_projection(
             treated_trace,
             "native_search_calls",
         ),
-        "native_read_delta": _delta(
-            bare_trace,
-            treated_trace,
-            "native_read_calls",
-        ),
+        "native_read_delta": native_read_delta,
         "tool_call_delta": tool_delta,
         "token_delta": token_delta,
         "mechanism_tags": tags,
+        "attribution_result": (
+            ATTRIBUTION_NOT_ATTRIBUTABLE
+            if interpretation == "not-attributable-subject-never-invoked"
+            else "SUPPORTED_ASSOCIATION"
+            if strength == ATTRIBUTION_SUPPORTED
+            else ATTRIBUTION_UNPROVEN
+        ),
         "attribution_strength": strength,
         "attribution_interpretation": interpretation,
         "positive_causal_proof_claimed": False,
@@ -685,6 +721,7 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
     treatment_counts = Counter(str(pair["treatment"]) for pair in pairs)
     routing_counts = Counter(str(pair["routing"]) for pair in pairs)
     strength_counts = Counter(str(pair["attribution_strength"]) for pair in pairs)
+    attribution_counts = Counter(str(pair["attribution_result"]) for pair in pairs)
     tag_counts = Counter(
         str(tag)
         for pair in pairs
@@ -701,6 +738,7 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
             "treatment": dict(sorted(treatment_counts.items())),
             "routing": dict(sorted(routing_counts.items())),
             "attribution_strength": dict(sorted(strength_counts.items())),
+            "attribution_result": dict(sorted(attribution_counts.items())),
             "mechanism_tags": dict(sorted(tag_counts.items())),
             "fail_to_pass_supported": sum(
                 pair["outcome_transition"] == "FAIL_TO_PASS"
