@@ -20,7 +20,7 @@ from benchmarks.harness.harbor_backend import (
     admit_harbor_run,
     credential_file,
     harbor_report,
-    mcp_config,
+    mcp_configs,
     observed_preflight,
     run_harbor_trial,
     settings_from_config,
@@ -72,7 +72,7 @@ def _inspect(run_root: Path, run_id: str, suite, selected: set[str]) -> tuple[di
 def run_harbor_command(args, profile: MatrixProfile) -> int:
     if args.command not in {
         "check", "doctor", "plan", "preflight", "campaign-audit",
-        "run", "runs", "status", "report", "explain", "reports", "score",
+        "run", "runs", "status", "report", "explain", "ablation", "reports", "score",
     }:
         raise HarborBackendError(f"{args.command} is unavailable for Harbor matrices")
     if getattr(args, "task", []) or getattr(args, "subject", []) or getattr(args, "condition", None):
@@ -165,7 +165,10 @@ def run_harbor_command(args, profile: MatrixProfile) -> int:
                 flush=True,
             )
             credentials = credential_file(saved.root, settings=settings, host=config.host)
-            mcp = mcp_config(saved.root)
+            mcp = mcp_configs(
+                saved.root,
+                preflight_receipt=campaign["preflight"],
+            )
             _, initial = _inspect(saved.root, saved.run_id, suite, selected)
             initial_rows = {row["definition_id"]: row for row in initial["rows"]}
             results = []
@@ -228,10 +231,17 @@ def run_harbor_command(args, profile: MatrixProfile) -> int:
                     "mechanism.json",
                     report["mechanism_attribution"],
                 )
+                if report["component_ablation"]["applicable"]:
+                    _write_report(
+                        saved.root,
+                        "ablation.json",
+                        report["component_ablation"],
+                    )
             else:
                 (saved.root / "reports/report.json").unlink(missing_ok=True)
                 (saved.root / "reports/score.json").unlink(missing_ok=True)
                 (saved.root / "reports/mechanism.json").unlink(missing_ok=True)
+                (saved.root / "reports/ablation.json").unlink(missing_ok=True)
             print(
                 f"RUN SUMMARY verified {status['complete_trials']}/{status['expected_trials']} | "
                 f"outcomes {json.dumps(status['outcomes'], sort_keys=True)} | qualified {status['qualified']}",
@@ -255,6 +265,7 @@ def run_harbor_command(args, profile: MatrixProfile) -> int:
                     (saved.root / "reports/report.json").unlink(missing_ok=True)
                     (saved.root / "reports/score.json").unlink(missing_ok=True)
                     (saved.root / "reports/mechanism.json").unlink(missing_ok=True)
+                    (saved.root / "reports/ablation.json").unlink(missing_ok=True)
         print(json.dumps(status, indent=2, sort_keys=True))
         return 2 if (
             status["conflicting_trials"]
@@ -285,12 +296,19 @@ def run_harbor_command(args, profile: MatrixProfile) -> int:
                     "mechanism.json",
                     report["mechanism_attribution"],
                 )
+                if report["component_ablation"]["applicable"]:
+                    _write_report(
+                        saved.root,
+                        "ablation.json",
+                        report["component_ablation"],
+                    )
                 if args.command in {"score", "reports"}:
                     _write_report(saved.root, "score.json", report)
             else:
                 (saved.root / "reports/report.json").unlink(missing_ok=True)
                 (saved.root / "reports/score.json").unlink(missing_ok=True)
                 (saved.root / "reports/mechanism.json").unlink(missing_ok=True)
+                (saved.root / "reports/ablation.json").unlink(missing_ok=True)
     if args.command == "explain":
         mechanism = {
             **report["mechanism_attribution"],
@@ -300,6 +318,23 @@ def run_harbor_command(args, profile: MatrixProfile) -> int:
             "campaign_qualified": status["qualified"],
         }
         print(json.dumps(mechanism, indent=2, sort_keys=True))
+        return 0 if status["qualified"] or getattr(
+            args, "allow_incomplete", False
+        ) else 2
+    if args.command == "ablation":
+        component = report["component_ablation"]
+        if component.get("applicable") is not True:
+            raise HarborBackendError(
+                "selected Harbor matrix has no task_evidence ablation arms"
+            )
+        ablation = {
+            **component,
+            "run_id": saved.run_id,
+            "run_root": str(saved.root),
+            "matrix": profile.name,
+            "campaign_qualified": status["qualified"],
+        }
+        print(json.dumps(ablation, indent=2, sort_keys=True))
         return 0 if status["qualified"] or getattr(
             args, "allow_incomplete", False
         ) else 2

@@ -66,6 +66,7 @@ def harbor_suite(profile: MatrixProfile) -> tuple[SuiteDefinition, dict[str, Any
         harnesses=harnesses,
         tasks=tasks,
     )
+    subjects = tuple(str(value) for value in projection["subjects"])
     conditions = [
         {
             "id": f"{subject}-{harness}",
@@ -75,7 +76,7 @@ def harbor_suite(profile: MatrixProfile) -> tuple[SuiteDefinition, dict[str, Any
             "replicate_ids": list(range(1, mode.attempts + 1)),
         }
         for harness in harnesses
-        for subject in ("none", "hashmarks")
+        for subject in subjects
     ]
     experiment = {
         "id": f"harbor-{profile.name}",
@@ -95,7 +96,24 @@ def harbor_suite(profile: MatrixProfile) -> tuple[SuiteDefinition, dict[str, Any
         root=source.root,
         experiment=experiment,
         tasks={task: source.tasks[task] for task in tasks},
-        subjects={key: source.subjects[key] for key in ("none", "hashmarks")},
+        subjects={
+            subject: (
+                source.subjects[subject]
+                if subject in source.subjects
+                else {
+                    **source.subjects["hashmarks"],
+                    "id": subject,
+                    "identity": {
+                        **source.subjects["hashmarks"]["identity"],
+                        "id": subject,
+                    },
+                    "configuration": {
+                        **source.subjects["hashmarks"].get("configuration", {}),
+                    },
+                }
+            )
+            for subject in subjects
+        },
         agents={
             harness: {"id": harness, "adapter": "harbor", "configuration": {"harness": harness}}
             for harness in harnesses

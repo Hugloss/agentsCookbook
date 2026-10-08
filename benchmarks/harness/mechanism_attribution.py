@@ -275,6 +275,11 @@ def project_atif(path: Path, *, subject: str = "hashmarks") -> dict[str, Any]:
         for call in normalized
         if call.get("tool_class") == SUBJECT_REPOSITORY_INTELLIGENCE
     ]
+    subject_tools = [
+        str(call["tool"])
+        for call in subject_rows
+        if isinstance(call.get("tool"), str)
+    ]
     if not subject_rows:
         treatment = TREATMENT_NEVER_INVOKED
     elif any(
@@ -361,6 +366,7 @@ def project_atif(path: Path, *, subject: str = "hashmarks") -> dict[str, Any]:
         "native_discovery_before_subject": before,
         "native_discovery_after_subject": after,
         "subject_tool_calls": len(subject_rows),
+        "subject_tools": subject_tools,
         "subject_first_tool_call_ordinal": first_subject,
         "subject_routing_timing": routing,
         "treatment": treatment,
@@ -412,7 +418,7 @@ def read_answer_evidence(path: Path) -> dict[str, Any] | None:
     }
 
 
-def _bundle_projection(directory: Path) -> dict[str, Any]:
+def load_harbor_bundle_projection(directory: Path) -> dict[str, Any]:
     valid, reason = verify_bundle(directory)
     if not valid:
         raise MechanismAttributionError(
@@ -690,7 +696,7 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
             if not directory.is_dir() or directory.name.startswith("."):
                 continue
             try:
-                projection = _bundle_projection(directory)
+                projection = load_harbor_bundle_projection(directory)
             except (MechanismAttributionError, OSError, json.JSONDecodeError) as exc:
                 unavailable_bundles.append(
                     {"directory": str(directory), "reason": str(exc)}

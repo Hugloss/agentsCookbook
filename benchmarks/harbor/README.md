@@ -115,6 +115,82 @@ delta. Partial campaigns may be inspected with `./benchmark explain
 --allow-incomplete`, but their mechanism evidence is marked
 `INSPECTION_ONLY` and is not persisted as a qualified mechanism report.
 
+### Controlled `task_evidence` ablation
+
+The separate `harbor-ablation-*` matrices isolate the first Hashmarks component
+without changing the model, task image, repository authority, harness, or
+replicate. Each matched quartet contains:
+
+- `none`: native harness tools only;
+- `hashmarks`: the complete canonical Hashmarks MCP contract;
+- `hashmarks-no-task-evidence`: the same canonical contract with only
+  `task_evidence` withheld;
+- `hashmarks-task-evidence-only`: only `task_evidence` advertised.
+
+Hashmarks owns the generic server-side projection mechanism. agentsCookbook owns
+which projection constitutes an experimental arm. Model-free preflight calls
+Hashmarks readiness for every restricted catalog and freezes the canonical
+source-contract identity, exact projected tools, independently observed catalog,
+and projection identity before model work.
+
+For every completed matched quartet, the report now also checks **observed
+Hashmarks invocations** from the ATIF trace against the exact frozen tools in
+each arm. A bare arm calling Hashmarks, a removal arm invoking
+`task_evidence`, or an only arm invoking a different Hashmarks operation
+invalidates treatment qualification; unknown tool spellings or unavailable
+tool-order evidence remain explicitly unqualified. These are negative
+checks on observable calls, **not** proof of which MCP tools the host
+advertised. The report carries `observed_catalog_advertisement_proven=false`
+and per-arm `observed_call_projection` diagnostics; only a separate
+host-catalog capture could justify affirmative exposed-tool claims. Such
+unqualified quartets cannot receive positive necessity/sufficiency
+classifications or be counted as causal proof.
+
+The generated Harbor MCP config bytes are also checksum-bound into campaign
+authority. A same-path config replacement therefore fails resume before another
+model trial instead of being silently regenerated.
+
+Run the one-task smoke first:
+
+```sh
+make benchmark-check MATRIX=harbor-ablation-smoke
+make benchmark-new MATRIX=harbor-ablation-smoke
+```
+
+Then run the full three-task / three-replicate campaign:
+
+```sh
+make benchmark-check MATRIX=harbor-ablation-full
+make benchmark-new MATRIX=harbor-ablation-full
+```
+
+Inspect the qualified component analysis without another model invocation:
+
+```sh
+make benchmark-harness-ablation
+make benchmark-harness-ablation RUN_ID=000001
+```
+
+Qualified ablation campaigns persist `reports/ablation.json`.
+
+The report deliberately separates two contrasts:
+
+- **necessity-style:** full Hashmarks versus full Hashmarks minus
+  `task_evidence`;
+- **sufficiency-style:** bare versus `task_evidence` only.
+
+A positive contrast is credited to `task_evidence` only when ATIF proves that
+the relevant full or only arm actually invoked that operation. For example,
+full PASS + removal FAIL is only `SUPPORTED_NECESSITY_CONTRAST` when the full
+arm visibly called `task_evidence`; otherwise it is marked unattributable.
+Likewise, bare FAIL + task-evidence-only PASS requires an observed
+`task_evidence` call before it becomes `SUPPORTED_SUFFICIENCY_CONTRAST`.
+
+These are controlled replicate-level contrasts, not universal causal proof.
+The report always keeps `positive_causal_proof_claimed=false`; repeated results
+across tasks, replicates, and harnesses are the evidence for deciding whether a
+component effect generalizes.
+
 ## Boundary
 
 Harbor uses the same numbered run store, durable launch claims, checksum-bound

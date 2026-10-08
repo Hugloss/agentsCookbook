@@ -18,10 +18,15 @@ from benchmarks.harbor_matrix import (
     load_matrix,
     plan_rows,
     preflight,
+    subject_tool_projection,
     write_mcp_config,
 )
 from benchmarks.config import BenchmarkConfig
-from benchmarks.harness.harbor_backend import credential_file, settings_from_config
+from benchmarks.harness.harbor_backend import (
+    credential_file,
+    mcp_configs,
+    settings_from_config,
+)
 from benchmarks.matrix_profiles import load_profile
 from benchmarks.harness.suite import load_suite
 
@@ -32,6 +37,12 @@ MATRIX = (
     / "benchmarks"
     / "harbor"
     / "repository-intelligence-v1.json"
+)
+ABLATION_MATRIX = (
+    ROOT
+    / "benchmarks"
+    / "harbor"
+    / "repository-intelligence-ablation-v1.json"
 )
 SUITE = (
     ROOT
@@ -68,6 +79,67 @@ class HarborMatrixTests(unittest.TestCase):
         self.assertEqual(
             matrix["modes"]["matrix"]["attempts"],
             3,
+        )
+
+    def test_checked_in_ablation_matrix_has_four_controlled_arms(self) -> None:
+        matrix = load_matrix(ABLATION_MATRIX)
+
+        self.assertEqual(
+            matrix["subjects"],
+            [
+                "none",
+                "hashmarks",
+                "hashmarks-no-task-evidence",
+                "hashmarks-task-evidence-only",
+            ],
+        )
+        self.assertEqual(
+            matrix["tool_projections"],
+            {
+                "hashmarks-no-task-evidence": {
+                    "exclude": ["task_evidence"],
+                },
+                "hashmarks-task-evidence-only": {
+                    "include": ["task_evidence"],
+                },
+            },
+        )
+
+    def test_task_evidence_ablation_projects_exact_canonical_tool_sets(self) -> None:
+        matrix = load_matrix(ABLATION_MATRIX)
+        canonical = (
+            "repository_context",
+            "find",
+            "task_evidence",
+            "change_impact",
+        )
+
+        self.assertEqual(
+            subject_tool_projection(
+                matrix,
+                "hashmarks-no-task-evidence",
+                canonical,
+            ),
+            (
+                "repository_context",
+                "find",
+                "change_impact",
+            ),
+        )
+        self.assertEqual(
+            subject_tool_projection(
+                matrix,
+                "hashmarks-task-evidence-only",
+                canonical,
+            ),
+            ("task_evidence",),
+        )
+        self.assertEqual(
+            subject_tool_projection(matrix, "hashmarks", canonical),
+            canonical,
+        )
+        self.assertIsNone(
+            subject_tool_projection(matrix, "none", canonical)
         )
 
     def test_plan_pairs_bare_and_hashmarks_per_harness(self) -> None:
@@ -167,6 +239,53 @@ class HarborMatrixTests(unittest.TestCase):
             },
         )
 
+    def test_mcp_config_can_freeze_one_projected_tool_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = write_mcp_config(
+                root / "task-evidence-only.mcp.json",
+                tool_names=("task_evidence",),
+            )
+            value = json.loads(path.read_text(encoding="utf-8"))
+            configs = mcp_configs(
+                root,
+                preflight_receipt={
+                    "hashmarks": {
+                        "treatments": {
+                            "hashmarks": {
+                                "tools": ["find", "task_evidence"],
+                                "projection_identity": "sha256:full",
+                                "source_contract_identity": "sha256:full",
+                                "full_contract": True,
+                            },
+                            "hashmarks-task-evidence-only": {
+                                "tools": ["task_evidence"],
+                                "projection_identity": "sha256:only",
+                                "source_contract_identity": "sha256:full",
+                                "full_contract": False,
+                            },
+                        }
+                    }
+                },
+            )
+
+            self.assertEqual(
+                value["mcpServers"]["hashmarks"]["args"][-3:],
+                ["mcp", "--tool", "task_evidence"],
+            )
+            self.assertIsNone(configs["none"])
+            self.assertIn("hashmarks", configs)
+            self.assertIn("hashmarks-task-evidence-only", configs)
+            projected = json.loads(
+                configs["hashmarks-task-evidence-only"].read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                projected["mcpServers"]["hashmarks"]["args"][-3:],
+                ["mcp", "--tool", "task_evidence"],
+            )
+
     def test_settings_keep_secret_values_out_of_env_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -260,7 +379,13 @@ class HarborMatrixTests(unittest.TestCase):
                 return_value={
                     "contract_identity": "sha256:mcp",
                     "operation_contract_identity": "sha256:ops",
-                    "tool_count": 8,
+                    "tool_count": 4,
+                    "tools": [
+                        "repository_context",
+                        "find",
+                        "task_evidence",
+                        "change_impact",
+                    ],
                 },
             ),
             mock.patch(
@@ -301,6 +426,112 @@ class HarborMatrixTests(unittest.TestCase):
         self.assertEqual(
             command.call_count,
             2,
+        )
+
+    def test_ablation_preflight_binds_projection_identity_and_observed_tools(
+        self,
+    ) -> None:
+        suite = load_suite(SUITE)
+        settings = HarborSettings(
+            executable="harbor",
+            model="provider/model",
+            root=Path("/runs"),
+            hashmarks_source=Path("/hashmarks"),
+            passthrough_env_keys=(),
+        )
+        matrix = load_matrix(ABLATION_MATRIX)
+        mode = MatrixMode(
+            tasks=("locate-prefix-path-enumerator",),
+            attempts=1,
+        )
+        canonical = [
+            "repository_context",
+            "find",
+            "task_evidence",
+            "change_impact",
+        ]
+
+        def probe(_settings, _host, *, executable, tool_names=None):
+            self.assertEqual(executable, "/hashmarks/.venv/bin/hashmarks")
+            if tool_names is None:
+                return {
+                    "contract_identity": "sha256:mcp",
+                    "operation_contract_identity": "sha256:ops",
+                    "tool_count": len(canonical),
+                    "tools": canonical,
+                }
+            selected = list(tool_names)
+            return {
+                "contract_identity": "sha256:mcp",
+                "operation_contract_identity": "sha256:ops",
+                "tool_count": len(canonical),
+                "tools": canonical,
+                "projection": {
+                    "source_contract_identity": "sha256:mcp",
+                    "tools": selected,
+                    "observed_tools": selected,
+                    "projection_identity": "sha256:" + "-".join(selected),
+                },
+            }
+
+        with (
+            mock.patch(
+                "benchmarks.harbor_matrix._hashmarks_identity",
+                return_value={
+                    "commit": "a" * 40,
+                    "tree": "b" * 40,
+                    "working_copy_sha256": "c" * 64,
+                    "working_copy_clean": True,
+                    "executable": {
+                        "path": "/hashmarks/.venv/bin/hashmarks",
+                        "sha256": "d" * 64,
+                        "version": "hashmarks version 0.test",
+                    },
+                },
+            ),
+            mock.patch(
+                "benchmarks.harbor_matrix._hashmarks_probe",
+                side_effect=probe,
+            ),
+            mock.patch(
+                "benchmarks.harbor_matrix._require_command",
+                side_effect=("harbor 0.test", "27.0"),
+            ),
+        ):
+            receipt = preflight(
+                settings=settings,
+                matrix=matrix,
+                suite=suite,
+                mode=mode,
+                harnesses=("opencode",),
+                tasks=("locate-prefix-path-enumerator",),
+                host={},
+            )
+
+        treatments = receipt["hashmarks"]["treatments"]
+        self.assertEqual(receipt["trials"], 4)
+        self.assertTrue(treatments["hashmarks"]["full_contract"])
+        self.assertEqual(
+            treatments["hashmarks-no-task-evidence"]["tools"],
+            [
+                "repository_context",
+                "find",
+                "change_impact",
+            ],
+        )
+        self.assertEqual(
+            treatments["hashmarks-task-evidence-only"]["tools"],
+            ["task_evidence"],
+        )
+        self.assertFalse(
+            treatments["hashmarks-task-evidence-only"]["full_contract"]
+        )
+        self.assertTrue(
+            str(
+                treatments["hashmarks-task-evidence-only"][
+                    "projection_identity"
+                ]
+            ).startswith("sha256:")
         )
 
     def test_report_calculates_hashmarks_uplift_and_harness_spread(self) -> None:

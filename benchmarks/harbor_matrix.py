@@ -70,10 +70,46 @@ def load_matrix(path: Path) -> dict[str, Any]:
         raise HarborMatrixError(
             "Harbor matrix harness ids must be non-empty strings"
         )
-    if value.get("subjects") != ["none", "hashmarks"]:
+    subjects = value.get("subjects")
+    if (
+        not isinstance(subjects, list)
+        or len(subjects) < 2
+        or subjects[0] != "none"
+        or "hashmarks" not in subjects
+        or not all(isinstance(item, str) and item for item in subjects)
+        or len(set(subjects)) != len(subjects)
+    ):
         raise HarborMatrixError(
-            "Harbor matrix subjects must be exactly none, hashmarks"
+            "Harbor matrix subjects must be unique strings starting with none "
+            "and include hashmarks"
         )
+    projections = value.get("tool_projections", {})
+    if not isinstance(projections, dict):
+        raise HarborMatrixError("Harbor tool_projections must be an object")
+    unknown_projection_subjects = sorted(set(projections) - set(subjects))
+    if unknown_projection_subjects:
+        raise HarborMatrixError(
+            "Harbor tool projection names unknown subject(s): "
+            + ", ".join(unknown_projection_subjects)
+        )
+    for subject in subjects:
+        if subject in {"none", "hashmarks"}:
+            continue
+        spec = projections.get(subject)
+        if not isinstance(spec, dict) or set(spec) not in ({"include"}, {"exclude"}):
+            raise HarborMatrixError(
+                f"Harbor subject {subject} needs exactly one include/exclude tool projection"
+            )
+        values = next(iter(spec.values()))
+        if (
+            not isinstance(values, list)
+            or not values
+            or not all(isinstance(item, str) and item for item in values)
+            or len(set(values)) != len(values)
+        ):
+            raise HarborMatrixError(
+                f"Harbor subject {subject} tool projection must be unique non-empty strings"
+            )
     if not isinstance(value.get("modes"), dict) or not value["modes"]:
         raise HarborMatrixError(
             "Harbor matrix needs at least one mode"
@@ -115,6 +151,45 @@ def mode_contract(
         tuple(tasks),
         attempts,
     )
+
+
+def matrix_subjects(matrix: Mapping[str, Any]) -> tuple[str, ...]:
+    subjects = matrix.get("subjects")
+    if not isinstance(subjects, list):
+        raise HarborMatrixError("Harbor matrix subjects are unavailable")
+    return tuple(str(value) for value in subjects)
+
+
+def subject_tool_projection(
+    matrix: Mapping[str, Any],
+    subject: str,
+    canonical_tools: tuple[str, ...],
+) -> tuple[str, ...] | None:
+    if subject == "none":
+        return None
+    if subject == "hashmarks":
+        return canonical_tools
+    projections = matrix.get("tool_projections")
+    spec = projections.get(subject) if isinstance(projections, dict) else None
+    if not isinstance(spec, dict):
+        raise HarborMatrixError(f"Harbor subject {subject} has no tool projection")
+    known = set(canonical_tools)
+    key = "include" if "include" in spec else "exclude"
+    requested = tuple(str(value) for value in spec[key])
+    unknown = sorted(set(requested) - known)
+    if unknown:
+        raise HarborMatrixError(
+            f"Harbor subject {subject} references unknown Hashmarks tool(s): "
+            + ", ".join(unknown)
+        )
+    selected = (
+        tuple(name for name in canonical_tools if name in set(requested))
+        if key == "include"
+        else tuple(name for name in canonical_tools if name not in set(requested))
+    )
+    if not selected:
+        raise HarborMatrixError(f"Harbor subject {subject} projects an empty tool catalog")
+    return selected
 
 
 def _select(
@@ -218,6 +293,7 @@ def plan_rows(
     *,
     harnesses: tuple[str, ...],
     tasks: tuple[str, ...],
+    subjects: tuple[str, ...] = ("none", "hashmarks"),
     attempts: int,
 ) -> list[dict[str, object]]:
     return [
@@ -229,10 +305,7 @@ def plan_rows(
         }
         for task in tasks
         for harness in harnesses
-        for subject in (
-            "none",
-            "hashmarks",
-        )
+        for subject in subjects
         for attempt in range(
             1,
             attempts + 1,
@@ -360,15 +433,19 @@ def _hashmarks_probe(
     host: Mapping[str, str],
     *,
     executable: str,
+    tool_names: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
+    argv = [
+        executable,
+        "--workspace",
+        str(settings.hashmarks_source),
+        "doctor",
+        "--mcp",
+    ]
+    for name in tool_names or ():
+        argv.extend(("--mcp-tool", name))
     result = _run(
-        [
-            executable,
-            "--workspace",
-            str(settings.hashmarks_source),
-            "doctor",
-            "--mcp",
-        ],
+        argv,
         env=host,
         timeout=60,
     )
@@ -463,6 +540,52 @@ def preflight(
         host,
         executable=executable_path,
     )
+    raw_tools = mcp.get("tools")
+    canonical_tools = (
+        tuple(str(value) for value in raw_tools)
+        if isinstance(raw_tools, list)
+        else ()
+    )
+    if not canonical_tools:
+        raise HarborMatrixError("Hashmarks canonical MCP tool catalog is unavailable")
+    subjects = matrix_subjects(matrix)
+    treatments: dict[str, dict[str, Any]] = {}
+    for subject in subjects:
+        if subject == "none":
+            continue
+        selected = subject_tool_projection(matrix, subject, canonical_tools)
+        assert selected is not None
+        if subject == "hashmarks" and selected == canonical_tools:
+            treatments[subject] = {
+                "tools": list(canonical_tools),
+                "projection_identity": mcp.get("contract_identity"),
+                "source_contract_identity": mcp.get("contract_identity"),
+                "full_contract": True,
+            }
+            continue
+        projected = _hashmarks_probe(
+            settings,
+            host,
+            executable=executable_path,
+            tool_names=selected,
+        )
+        projection = projected.get("projection")
+        if not (
+            isinstance(projection, dict)
+            and projection.get("source_contract_identity") == mcp.get("contract_identity")
+            and projection.get("tools") == list(selected)
+            and projection.get("observed_tools") == list(selected)
+            and isinstance(projection.get("projection_identity"), str)
+        ):
+            raise HarborMatrixError(
+                f"Hashmarks MCP projection qualification failed for {subject}"
+            )
+        treatments[subject] = {
+            "tools": list(selected),
+            "projection_identity": projection["projection_identity"],
+            "source_contract_identity": projection["source_contract_identity"],
+            "full_contract": False,
+        }
     return {
         "schema": MATRIX_SCHEMA,
         "ready": True,
@@ -474,6 +597,7 @@ def preflight(
             plan_rows(
                 harnesses=harnesses,
                 tasks=tasks,
+                subjects=subjects,
                 attempts=mode.attempts,
             )
         ),
@@ -495,6 +619,8 @@ def preflight(
             "tool_count": mcp.get(
                 "tool_count"
             ),
+            "canonical_tools": list(canonical_tools),
+            "treatments": treatments,
         },
         "passthrough_env_keys": list(
             settings.passthrough_env_keys
@@ -749,14 +875,11 @@ def prepare_task(
     return destination
 
 
-def write_mcp_config(
-    path: Path,
-) -> Path:
-    path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-    payload = {
+def mcp_config_payload(
+    *,
+    tool_names: tuple[str, ...] | list[str] | None = None,
+) -> dict[str, object]:
+    return {
         "mcpServers": {
             "hashmarks": {
                 "command": "hashmarks",
@@ -766,13 +889,29 @@ def write_mcp_config(
                     "--state-dir",
                     "/tmp/hashmarks-state",
                     "mcp",
+                    *[
+                        value
+                        for name in (tool_names or ())
+                        for value in ("--tool", str(name))
+                    ],
                 ],
             }
         }
     }
+
+
+def write_mcp_config(
+    path: Path,
+    *,
+    tool_names: tuple[str, ...] | list[str] | None = None,
+) -> Path:
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
     path.write_text(
         json.dumps(
-            payload,
+            mcp_config_payload(tool_names=tool_names),
             indent=2,
             sort_keys=True,
         )
@@ -976,7 +1115,7 @@ def execute_trial(
     task_path: Path,
     run_root: Path,
     credential_file: Path | None,
-    mcp_config: Path,
+    mcp_config: Path | None,
     host: Mapping[str, str],
     job_name: str,
 ) -> dict[str, Any]:
@@ -989,12 +1128,7 @@ def execute_trial(
         parents=True,
         exist_ok=True,
     )
-    selected_mcp = (
-        mcp_config
-        if row["subject"]
-        == "hashmarks"
-        else None
-    )
+    selected_mcp = mcp_config
     argv = harbor_argv(
         settings=settings,
         task_path=task_path,
@@ -1131,12 +1265,13 @@ def build_report(
             in groups
         }
     )
+    subjects = sorted(
+        {subject for _harness, subject in groups},
+        key=lambda value: (value != "none", value != "hashmarks", value),
+    )
     summaries = []
     for harness in harnesses:
-        for subject in (
-            "none",
-            "hashmarks",
-        ):
+        for subject in subjects:
             selected = groups.get(
                 (
                     harness,

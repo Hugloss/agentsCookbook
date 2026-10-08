@@ -374,6 +374,19 @@ def _parser() -> argparse.ArgumentParser:
         help="inspect mechanism evidence before the full Harbor matrix qualifies",
     )
 
+    ablation = sub.add_parser(
+        "ablation",
+        help="report controlled Harbor component-ablation contrasts",
+    )
+    ablation.add_argument("--env-file", type=Path)
+    ablation.add_argument("--root", type=Path)
+    ablation.add_argument("--run-id")
+    ablation.add_argument(
+        "--allow-incomplete",
+        action="store_true",
+        help="inspect ablation evidence before the full Harbor matrix qualifies",
+    )
+
     reports = sub.add_parser("reports")
     reports.add_argument("--suite", type=Path)
     reports.add_argument("--env-file", type=Path, required=True)
@@ -409,6 +422,7 @@ def _parser() -> argparse.ArgumentParser:
         status,
         report,
         explain,
+        ablation,
         reports,
         score,
     ):
@@ -886,9 +900,9 @@ def main(argv: list[str] | None = None) -> int:
         matrix_profile = load_profile(getattr(args, "matrix", "heldout"))
         if matrix_profile.backend == "harbor":
             return run_harbor_command(args, matrix_profile)
-        if args.command == "explain":
+        if args.command in {"explain", "ablation"}:
             raise MatrixProfileError(
-                "explain is available only for Harbor matrices"
+                f"{args.command} is available only for Harbor matrices"
             )
     except (MatrixProfileError, HarborBackendError, RunStoreError, CampaignAuthorityError, OSError, ValueError) as exc:
         raise SystemExit(f"benchmark matrix unavailable: {exc}") from exc

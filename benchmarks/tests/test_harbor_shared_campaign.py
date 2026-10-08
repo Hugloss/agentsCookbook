@@ -16,13 +16,18 @@ from benchmarks.matrix_profiles import harbor_suite, load_profile
 
 
 class HarborSharedCampaignTests(unittest.TestCase):
-    def test_registry_projects_six_and_fifty_four_trials(self) -> None:
-        for name, count in (("harbor-smoke", 6), ("harbor-full", 54)):
+    def test_registry_projects_canonical_and_ablation_trial_counts(self) -> None:
+        for name, count in (
+            ("harbor-smoke", 6),
+            ("harbor-full", 54),
+            ("harbor-ablation-smoke", 12),
+            ("harbor-ablation-full", 108),
+        ):
             with self.subTest(name=name):
                 suite, _ = harbor_suite(load_profile(name))
                 self.assertEqual(len(suite.trial_definitions()), count)
 
-    def _environment(self, root: Path):
+    def _environment(self, root: Path, *, ablation: bool = False):
         env = root / ".env"
         env.write_text("HASHMARKS_BENCH_SOURCE=/unused\nBENCHMARK_HARBOR_MODEL=provider/model\n")
         settings = HarborSettings(
@@ -39,10 +44,53 @@ class HarborSharedCampaignTests(unittest.TestCase):
             (destination / "task.txt").write_text("frozen", encoding="utf-8")
             return destination
 
+        full_tools = ["repository_context", "find", "task_evidence"]
+        treatments = {
+            "hashmarks": {
+                "tools": full_tools,
+                "projection_identity": "sha256:full",
+                "source_contract_identity": "sha256:full",
+                "full_contract": True,
+            },
+        }
+        if ablation:
+            treatments.update(
+                {
+                    "hashmarks-no-task-evidence": {
+                        "tools": ["repository_context", "find"],
+                        "projection_identity": "sha256:no-task-evidence",
+                        "source_contract_identity": "sha256:full",
+                        "full_contract": False,
+                    },
+                    "hashmarks-task-evidence-only": {
+                        "tools": ["task_evidence"],
+                        "projection_identity": "sha256:task-evidence-only",
+                        "source_contract_identity": "sha256:full",
+                        "full_contract": False,
+                    },
+                }
+            )
+        observed = {
+            "ready": True,
+            "hashmarks": {
+                "mcp_contract_identity": "sha256:full",
+                "canonical_tools": full_tools,
+                "treatments": treatments,
+            },
+        }
         patches = (
-            mock.patch("benchmarks.harbor_commands.settings_from_config", return_value=settings),
-            mock.patch("benchmarks.harbor_commands.observed_preflight", return_value={"ready": True}),
-            mock.patch("benchmarks.harness.harbor_backend.prepare_task", side_effect=prepare),
+            mock.patch(
+                "benchmarks.harbor_commands.settings_from_config",
+                return_value=settings,
+            ),
+            mock.patch(
+                "benchmarks.harbor_commands.observed_preflight",
+                return_value=observed,
+            ),
+            mock.patch(
+                "benchmarks.harness.harbor_backend.prepare_task",
+                side_effect=prepare,
+            ),
         )
         return env, patches
 
@@ -111,6 +159,66 @@ class HarborSharedCampaignTests(unittest.TestCase):
             self.assertTrue((root / "runs/000001/results/.campaign/authority.json").is_file())
             self.assertTrue((root / "runs/000001/reports/report.json").is_file())
             self.assertTrue((root / "runs/000001/reports/mechanism.json").is_file())
+            self.assertFalse((root / "runs/000001/reports/ablation.json").exists())
+
+    def test_ablation_run_persists_and_reports_matched_quartets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            env, patches = self._environment(root, ablation=True)
+            with patches[0], patches[1], patches[2], mock.patch(
+                "benchmarks.harness.harbor_backend.execute_trial",
+                side_effect=self._reward_trial,
+            ) as execute:
+                code, _ = self._call(
+                    "run",
+                    "--new",
+                    "--matrix",
+                    "harbor-ablation-smoke",
+                    "--env-file",
+                    str(env),
+                    "--root",
+                    str(root),
+                    "--no-json-results",
+                )
+                self.assertEqual(code, 0)
+                self.assertEqual(execute.call_count, 12)
+
+                code, report = self._call(
+                    "ablation",
+                    "--matrix",
+                    "harbor-ablation-smoke",
+                    "--root",
+                    str(root),
+                )
+                self.assertEqual(code, 0)
+                self.assertTrue(report["applicable"])
+                self.assertTrue(report["campaign_qualified"])
+                self.assertEqual(report["summary"]["matched_quartets"], 3)
+                self.assertEqual(
+                    report["summary"]["classification"],
+                    {"UNQUALIFIED_TREATMENT_AUTHORITY": 3},
+                )
+                self.assertTrue(
+                    all(
+                        row["treatment_authority_error"].endswith(
+                            "UNQUALIFIED_TRACE_INCOMPLETE"
+                        )
+                        for row in report["quartets"]
+                    )
+                )
+                self.assertTrue(
+                    all(
+                        row["observed_catalog_advertisement_proven"] is False
+                        for row in report["quartets"]
+                    )
+                )
+                self.assertEqual(execute.call_count, 12)
+
+            ablation_path = root / "runs/000001/reports/ablation.json"
+            self.assertTrue(ablation_path.is_file())
+            stored = json.loads(ablation_path.read_text(encoding="utf-8"))
+            self.assertEqual(stored["schema"], "agentscookbook.harbor-ablation-report.v1")
+            self.assertEqual(stored["summary"]["matched_quartets"], 3)
 
     def test_interrupted_launch_gets_new_job_name_on_resume(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -202,9 +310,33 @@ class HarborSharedCampaignTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             env, patches = self._environment(root)
+            admitted = {
+                "ready": True,
+                "hashmarks": {
+                    "mcp_contract_identity": "sha256:full",
+                    "canonical_tools": [
+                        "repository_context",
+                        "find",
+                        "task_evidence",
+                    ],
+                    "treatments": {
+                        "hashmarks": {
+                            "tools": [
+                                "repository_context",
+                                "find",
+                                "task_evidence",
+                            ],
+                            "projection_identity": "sha256:full",
+                            "source_contract_identity": "sha256:full",
+                            "full_contract": True,
+                        }
+                    },
+                },
+            }
+            changed = {**admitted, "harbor": "changed"}
             with patches[0], patches[2], mock.patch(
                 "benchmarks.harbor_commands.observed_preflight",
-                side_effect=({"ready": True}, {"ready": True, "harbor": "changed"}),
+                side_effect=(admitted, changed),
             ), mock.patch(
                 "benchmarks.harness.harbor_backend.execute_trial",
                 side_effect=self._reward_trial,
@@ -218,6 +350,52 @@ class HarborSharedCampaignTests(unittest.TestCase):
                         "run", "--resume", "--run-id", "000001",
                         "--matrix", "harbor-smoke", "--env-file", str(env),
                         "--root", str(root), "--no-json-results",
+                    )
+                self.assertEqual(execute.call_count, 6)
+
+    def test_resume_rejects_tampered_mcp_treatment_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            env, patches = self._environment(root)
+            with patches[0], patches[1], patches[2], mock.patch(
+                "benchmarks.harness.harbor_backend.execute_trial",
+                side_effect=self._reward_trial,
+            ) as execute:
+                self.assertEqual(
+                    self._call(
+                        "run",
+                        "--new",
+                        "--matrix",
+                        "harbor-smoke",
+                        "--env-file",
+                        str(env),
+                        "--root",
+                        str(root),
+                        "--no-json-results",
+                    )[0],
+                    0,
+                )
+                self.assertEqual(execute.call_count, 6)
+
+                config = root / "runs/000001/hashmarks.mcp.json"
+                config.write_text("{}\n", encoding="utf-8")
+
+                with self.assertRaisesRegex(
+                    SystemExit,
+                    "MCP treatment config changed",
+                ):
+                    self._call(
+                        "run",
+                        "--resume",
+                        "--run-id",
+                        "000001",
+                        "--matrix",
+                        "harbor-smoke",
+                        "--env-file",
+                        str(env),
+                        "--root",
+                        str(root),
+                        "--no-json-results",
                     )
                 self.assertEqual(execute.call_count, 6)
 

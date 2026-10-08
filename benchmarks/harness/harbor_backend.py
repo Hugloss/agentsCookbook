@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -14,14 +15,15 @@ from benchmarks.harbor_matrix import (
     HarborSettings,
     build_report as build_harbor_report,
     execute_trial,
+    mcp_config_payload,
     mode_contract,
     preflight,
     prepare_task,
-    write_mcp_config,
     _credential_file,
 )
 from benchmarks.matrix_profiles import MatrixProfile
 
+from .ablation_attribution import build_ablation_report
 from .bundle import verify_bundle
 from .bundle_writer import BundlePublicationError, publish_bundle
 from .campaign import campaign_status
@@ -144,6 +146,15 @@ def admit_harbor_run(
             hashmarks_source=settings.hashmarks_source,
         )
         task_digests[str(task_id)] = _tree_identity(task_path)
+    configs = mcp_configs(
+        staged,
+        preflight_receipt=preflight_receipt,
+    )
+    mcp_config_digests = {
+        subject: hashlib.sha256(path.read_bytes()).hexdigest()
+        for subject, path in configs.items()
+        if path is not None
+    }
     payload = {
         "contract": "benchmark-campaign-authority.v6",
         "backend": "harbor",
@@ -153,6 +164,7 @@ def admit_harbor_run(
         "selected_definitions": sorted(str(row["definition_id"]) for row in rows),
         "preflight": dict(preflight_receipt),
         "task_digests": task_digests,
+        "mcp_config_digests": mcp_config_digests,
     }
     return publish_campaign_authority(staged / "results", payload)
 
@@ -175,6 +187,22 @@ def verify_harbor_run(
         or campaign.get("preflight") != dict(preflight_receipt)
     ):
         raise HarborBackendError("saved Harbor run authority changed; start a new run")
+    expected_configs = campaign.get("mcp_config_digests")
+    if not isinstance(expected_configs, dict):
+        raise HarborBackendError("saved Harbor MCP config authority is missing")
+    configs = mcp_configs(
+        run_root,
+        preflight_receipt=preflight_receipt,
+    )
+    observed_configs = {
+        subject: hashlib.sha256(path.read_bytes()).hexdigest()
+        for subject, path in configs.items()
+        if path is not None
+    }
+    if observed_configs != expected_configs:
+        raise HarborBackendError(
+            "saved Harbor MCP treatment configuration changed; start a new run"
+        )
     expected = campaign.get("task_digests")
     if not isinstance(expected, dict):
         raise HarborBackendError("saved Harbor task authority is missing")
@@ -192,8 +220,67 @@ def credential_file(
     return _credential_file(run_root, keys=settings.passthrough_env_keys, host=host)
 
 
-def mcp_config(run_root: Path) -> Path:
-    return write_mcp_config(run_root / "hashmarks.mcp.json")
+def _mcp_config_bytes(
+    *,
+    tools: list[str],
+    full_contract: bool,
+) -> bytes:
+    return (
+        json.dumps(
+            mcp_config_payload(
+                tool_names=None if full_contract else tuple(tools)
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def mcp_configs(
+    run_root: Path,
+    *,
+    preflight_receipt: Mapping[str, Any],
+) -> dict[str, Path | None]:
+    hashmarks = preflight_receipt.get("hashmarks")
+    treatments = hashmarks.get("treatments") if isinstance(hashmarks, dict) else None
+    if not isinstance(treatments, dict) or "hashmarks" not in treatments:
+        raise HarborBackendError("Harbor preflight has no Hashmarks treatment authority")
+    configs: dict[str, Path | None] = {"none": None}
+    for subject, raw in sorted(treatments.items()):
+        if (
+            not isinstance(subject, str)
+            or not subject
+            or Path(subject).name != subject
+            or not isinstance(raw, dict)
+        ):
+            raise HarborBackendError("Harbor preflight contains invalid treatment identity")
+        tools = raw.get("tools")
+        full_contract = raw.get("full_contract")
+        if (
+            not isinstance(tools, list)
+            or not tools
+            or not all(isinstance(value, str) and value for value in tools)
+            or not isinstance(full_contract, bool)
+        ):
+            raise HarborBackendError(
+                f"Harbor preflight treatment is incomplete: {subject}"
+            )
+        path = run_root / f"{subject}.mcp.json"
+        expected = _mcp_config_bytes(
+            tools=tools,
+            full_contract=full_contract,
+        )
+        if path.exists():
+            if path.is_symlink() or not path.is_file() or path.read_bytes() != expected:
+                raise HarborBackendError(
+                    f"Harbor MCP treatment config changed: {subject}"
+                )
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(expected)
+        configs[subject] = path
+    return configs
 
 
 def _redact(value: str, settings: HarborSettings, host: Mapping[str, str]) -> str:
@@ -233,7 +320,7 @@ def run_harbor_trial(
     settings: HarborSettings,
     host: Mapping[str, str],
     credentials: Path | None,
-    mcp: Path,
+    mcp: Mapping[str, Path | None],
 ) -> TrialRunResult:
     definition = str(row["definition_id"])
     trial_id = digest({"campaign_id": campaign["campaign_id"], "definition_id": definition})
@@ -278,18 +365,23 @@ def run_harbor_trial(
     jobs_root = run_root / "jobs"
     if jobs_root.is_symlink() or (jobs_root / job_name).is_symlink():
         raise HarborBackendError("Harbor job directory must not be a symlink")
+    subject = str(condition["subject"])
+    if subject not in mcp:
+        raise HarborBackendError(
+            f"Harbor treatment has no admitted MCP config: {subject}"
+        )
     observed = execute_trial(
         settings=settings,
         row={
             "task": task_id,
             "harness": condition["agent"],
-            "subject": condition["subject"],
+            "subject": subject,
             "attempt": int(row["trial"]) + 1,
         },
         task_path=run_root / "tasks" / task_id,
         run_root=run_root,
         credential_file=credentials,
-        mcp_config=mcp,
+        mcp_config=mcp[subject],
         host=host,
         job_name=job_name,
     )
@@ -351,6 +443,12 @@ def run_harbor_trial(
             "campaign_id": campaign["campaign_id"],
             "launch_attempt": launch_attempt,
             "job_name": job_name,
+            "mcp_treatment": (
+                campaign.get("preflight", {})
+                .get("hashmarks", {})
+                .get("treatments", {})
+                .get(subject)
+            ),
         },
     }
     artifacts = {"harbor_result": ("harbor-result.json", canonical_json(observed))}
@@ -415,6 +513,11 @@ def harbor_report(
     mechanism["interpretation_state"] = (
         "QUALIFIED" if status["qualified"] else "INSPECTION_ONLY"
     )
+    ablation = build_ablation_report(results_root)
+    ablation["campaign_qualified"] = status["qualified"]
+    ablation["interpretation_state"] = (
+        "QUALIFIED" if status["qualified"] else "INSPECTION_ONLY"
+    )
     report.update({
         "backend": "harbor",
         "expected_trials": status["expected_trials"],
@@ -423,6 +526,7 @@ def harbor_report(
         "interrupted_trials": status["interrupted_trials"],
         "qualified": status["qualified"],
         "mechanism_attribution": mechanism,
+        "component_ablation": ablation,
     })
     if not status["qualified"]:
         report["hashmarks_uplift"] = {
