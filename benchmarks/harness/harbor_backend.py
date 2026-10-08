@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -18,7 +19,6 @@ from benchmarks.harbor_matrix import (
     mode_contract,
     preflight,
     prepare_task,
-    write_mcp_config,
     _credential_file,
 )
 from benchmarks.matrix_profiles import MatrixProfile
