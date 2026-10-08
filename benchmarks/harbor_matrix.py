@@ -6,23 +6,20 @@ Only read-only repository-location tasks are projected by this v1 bridge.
 
 from __future__ import annotations
 
-import argparse
 import json
+import math
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from benchmarks.adapters.hashmarks import HashmarksSubject
 from benchmarks.adapters.runtime import observe_executable
-from benchmarks.config import load_env_values
 from benchmarks.harness.model import TrialContext
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.suite import SuiteDefinition, load_suite
@@ -30,15 +27,6 @@ from benchmarks.harness.suite import SuiteDefinition, load_suite
 MATRIX_SCHEMA = "agentscookbook.harbor-harness-matrix.v1"
 RESULT_SCHEMA = "agentscookbook.harbor-harness-trial.v1"
 REPORT_SCHEMA = "agentscookbook.harbor-harness-report.v1"
-HARBOR_ENV_KEYS = frozenset(
-    {
-        "HASHMARKS_BENCH_SOURCE",
-        "BENCHMARK_HARBOR_EXECUTABLE",
-        "BENCHMARK_HARBOR_MODEL",
-        "BENCHMARK_HARBOR_ROOT",
-        "BENCHMARK_HARBOR_PASSTHROUGH_ENV_KEYS",
-    }
-)
 
 
 class HarborMatrixError(ValueError):
@@ -58,46 +46,6 @@ class HarborSettings:
 class MatrixMode:
     tasks: tuple[str, ...]
     attempts: int
-
-
-def _csv(raw: str) -> tuple[str, ...]:
-    return tuple(
-        dict.fromkeys(part.strip() for part in raw.split(",") if part.strip())
-    )
-
-
-def load_settings(
-    env_file: Path,
-    *,
-    host: Mapping[str, str] | None = None,
-) -> HarborSettings:
-    host = os.environ if host is None else host
-    values = load_env_values(env_file, allowed_keys=HARBOR_ENV_KEYS)
-    source = values.get("HASHMARKS_BENCH_SOURCE")
-    model = values.get("BENCHMARK_HARBOR_MODEL")
-    if not source:
-        raise HarborMatrixError("HASHMARKS_BENCH_SOURCE is required")
-    if not model:
-        raise HarborMatrixError("BENCHMARK_HARBOR_MODEL is required")
-    passthrough = _csv(
-        values.get("BENCHMARK_HARBOR_PASSTHROUGH_ENV_KEYS", "")
-    )
-    missing = sorted(key for key in passthrough if not host.get(key))
-    if missing:
-        raise HarborMatrixError(
-            "missing host environment value(s) selected for Harbor: "
-            + ", ".join(missing)
-        )
-    return HarborSettings(
-        executable=values.get("BENCHMARK_HARBOR_EXECUTABLE") or "harbor",
-        model=model,
-        root=Path(
-            values.get("BENCHMARK_HARBOR_ROOT")
-            or ".benchmark-runs/harbor-harness-v1"
-        ),
-        hashmarks_source=Path(source).expanduser().resolve(),
-        passthrough_env_keys=passthrough,
-    )
 
 
 def load_matrix(path: Path) -> dict[str, Any]:
@@ -488,6 +436,14 @@ def preflight(
         harnesses=harnesses,
         tasks=tasks,
     )
+    harbor_version = _require_command(
+        [settings.executable, "--version"],
+        label="Harbor",
+    )
+    docker_version = _require_command(
+        ["docker", "version", "--format", "{{.Server.Version}}"],
+        label="Docker",
+    )
     hashmarks_identity = _hashmarks_identity(
         settings,
         host,
@@ -506,22 +462,6 @@ def preflight(
         settings,
         host,
         executable=executable_path,
-    )
-    harbor_version = _require_command(
-        [
-            settings.executable,
-            "--version",
-        ],
-        label="Harbor",
-    )
-    docker_version = _require_command(
-        [
-            "docker",
-            "version",
-            "--format",
-            "{{.Server.Version}}",
-        ],
-        label="Docker",
     )
     return {
         "schema": MATRIX_SCHEMA,
@@ -829,28 +769,21 @@ def _credential_file(
         run_root
         / ".harbor-env"
     )
-    with path.open(
-        "w",
-        encoding="utf-8",
-    ) as stream:
-        for key in keys:
-            value = (
-                host[key]
-                .replace(
-                    "\\",
-                    "\\\\",
+    fd, temporary = tempfile.mkstemp(prefix=".harbor-env-", dir=run_root)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            for key in keys:
+                value = (
+                    host[key]
+                    .replace("\\", "\\\\")
+                    .replace("\n", "\\n")
                 )
-                .replace(
-                    "\n",
-                    "\\n",
-                )
-            )
-            stream.write(
-                f"{key}={value}\n"
-            )
-    path.chmod(
-        0o600
-    )
+                stream.write(f"{key}={value}\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
     return path
 
 
@@ -905,11 +838,8 @@ def _reward(
 ) -> float | None:
     try:
         if path.name == "reward.txt":
-            return float(
-                path.read_text(
-                    encoding="utf-8",
-                ).strip()
-            )
+            value = float(path.read_text(encoding="utf-8").strip())
+            return value if math.isfinite(value) and 0 <= value <= 1 else None
         value = json.loads(
             path.read_text(
                 encoding="utf-8",
@@ -925,7 +855,7 @@ def _reward(
         isinstance(value, (int, float))
         and not isinstance(value, bool)
     ):
-        return float(value)
+        return float(value) if math.isfinite(value) and 0 <= value <= 1 else None
     if isinstance(value, dict):
         nested = value.get(
             "reward"
@@ -940,9 +870,7 @@ def _reward(
                 bool,
             )
         ):
-            return float(
-                nested
-            )
+            return float(nested) if math.isfinite(nested) and 0 <= nested <= 1 else None
     return None
 
 
@@ -997,15 +925,6 @@ def find_reward(
     )
 
 
-def _trial_id(
-    row: Mapping[str, object],
-) -> str:
-    return (
-        f'{row["task"]}--{row["harness"]}--{row["subject"]}'
-        f'--{int(row["attempt"]):02d}'
-    )
-
-
 def execute_trial(
     *,
     settings: HarborSettings,
@@ -1015,10 +934,9 @@ def execute_trial(
     credential_file: Path | None,
     mcp_config: Path,
     host: Mapping[str, str],
+    job_name: str,
 ) -> dict[str, Any]:
-    trial_id = _trial_id(
-        row
-    )
+    trial_id = job_name
     jobs_root = (
         run_root
         / "jobs"
@@ -1067,7 +985,7 @@ def execute_trial(
     )
     status = (
         "COMPLETE"
-        if reward is not None
+        if reward is not None and return_code == 0
         else "INCOMPLETE"
     )
     return {
@@ -1084,10 +1002,7 @@ def execute_trial(
         },
         "model": settings.model,
         "status": status,
-        "success": (
-            reward is not None
-            and reward > 0
-        ),
+        "success": status == "COMPLETE" and reward > 0,
         "reward": reward,
         "duration_ms": int(
             round(
@@ -1115,56 +1030,6 @@ def execute_trial(
             else ""
         ),
     }
-
-
-def _new_run_root(
-    root: Path,
-) -> Path:
-    stem = datetime.now(
-        timezone.utc
-    ).strftime(
-        "%Y%m%dT%H%M%SZ"
-    )
-    candidate = (
-        root
-        / "runs"
-        / stem
-    )
-    suffix = 1
-    while candidate.exists():
-        suffix += 1
-        candidate = (
-            root
-            / "runs"
-            / f"{stem}-{suffix}"
-        )
-    candidate.mkdir(
-        parents=True,
-    )
-    return candidate
-
-
-def _latest_run(
-    root: Path,
-) -> Path:
-    runs = (
-        root
-        / "runs"
-    )
-    candidates = (
-        sorted(
-            path
-            for path in runs.iterdir()
-            if path.is_dir()
-        )
-        if runs.is_dir()
-        else []
-    )
-    if not candidates:
-        raise HarborMatrixError(
-            f"no Harbor runs under {runs}"
-        )
-    return candidates[-1]
 
 
 def _rate(
@@ -1356,398 +1221,3 @@ def build_report(
             ),
         },
     }
-
-
-def _load_rows(
-    run_root: Path,
-) -> list[dict[str, Any]]:
-    directory = (
-        run_root
-        / "trials"
-    )
-    paths = (
-        sorted(
-            directory.glob(
-                "*.json"
-            )
-        )
-        if directory.is_dir()
-        else []
-    )
-    rows = [
-        json.loads(
-            path.read_text(
-                encoding="utf-8"
-            )
-        )
-        for path in paths
-    ]
-    if (
-        not rows
-        or any(
-            not isinstance(
-                row,
-                dict,
-            )
-            or row.get(
-                "schema"
-            )
-            != RESULT_SCHEMA
-            for row in rows
-        )
-    ):
-        raise HarborMatrixError(
-            "no valid Harbor trial receipts under "
-            f"{directory}"
-        )
-    return rows
-
-
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog=(
-            "python -m "
-            "benchmarks.harbor_matrix"
-        )
-    )
-    sub = parser.add_subparsers(
-        dest="command",
-        required=True,
-    )
-    for name in (
-        "check",
-        "run",
-        "report",
-    ):
-        command = sub.add_parser(
-            name
-        )
-        command.add_argument(
-            "--env-file",
-            type=Path,
-            default=Path(".env"),
-        )
-        command.add_argument(
-            "--matrix",
-            type=Path,
-            default=Path(
-                "benchmarks/harbor/"
-                "repository-intelligence-v1.json"
-            ),
-        )
-        command.add_argument(
-            "--mode",
-            default="smoke",
-        )
-        command.add_argument(
-            "--harness",
-            action="append",
-            default=[],
-        )
-        command.add_argument(
-            "--task",
-            action="append",
-            default=[],
-        )
-        if name == "report":
-            command.add_argument(
-                "--run",
-                type=Path,
-            )
-    return parser
-
-
-def _selection(
-    args: argparse.Namespace,
-) -> tuple[
-    HarborSettings,
-    dict[str, Any],
-    SuiteDefinition,
-    MatrixMode,
-    tuple[str, ...],
-    tuple[str, ...],
-]:
-    settings = load_settings(
-        args.env_file
-    )
-    matrix = load_matrix(
-        args.matrix
-    )
-    suite = load_suite(
-        Path(
-            str(
-                matrix["suite"]
-            )
-        )
-    )
-    mode = mode_contract(
-        matrix,
-        args.mode,
-    )
-    harnesses = _select(
-        matrix["harnesses"],
-        args.harness,
-        label="harness",
-    )
-    tasks = _select(
-        mode.tasks,
-        args.task,
-        label="task",
-    )
-    validate_projection(
-        matrix=matrix,
-        suite=suite,
-        mode=mode,
-        harnesses=harnesses,
-        tasks=tasks,
-    )
-    return (
-        settings,
-        matrix,
-        suite,
-        mode,
-        harnesses,
-        tasks,
-    )
-
-
-def main(
-    argv: list[str] | None = None,
-) -> int:
-    args = _parser().parse_args(
-        argv
-    )
-    try:
-        (
-            settings,
-            matrix,
-            suite,
-            mode,
-            harnesses,
-            tasks,
-        ) = _selection(
-            args
-        )
-        if args.command == "check":
-            print(
-                json.dumps(
-                    preflight(
-                        settings=settings,
-                        matrix=matrix,
-                        suite=suite,
-                        mode=mode,
-                        harnesses=harnesses,
-                        tasks=tasks,
-                    ),
-                    indent=2,
-                    sort_keys=True,
-                )
-            )
-            return 0
-        if args.command == "report":
-            run_root = (
-                args.run
-                or _latest_run(
-                    settings.root
-                )
-            )
-            report = {
-                **build_report(
-                    _load_rows(
-                        run_root
-                    )
-                ),
-                "run_root": str(
-                    run_root
-                ),
-            }
-            (
-                run_root
-                / "report.json"
-            ).write_text(
-                json.dumps(
-                    report,
-                    indent=2,
-                    sort_keys=True,
-                )
-                + "\n",
-                encoding="utf-8",
-            )
-            print(
-                json.dumps(
-                    report,
-                    indent=2,
-                    sort_keys=True,
-                )
-            )
-            return (
-                0
-                if report[
-                    "incomplete"
-                ]
-                == 0
-                else 2
-            )
-
-        preflight_receipt = preflight(
-            settings=settings,
-            matrix=matrix,
-            suite=suite,
-            mode=mode,
-            harnesses=harnesses,
-            tasks=tasks,
-        )
-        run_root = _new_run_root(
-            settings.root
-        )
-        (
-            run_root
-            / "preflight.json"
-        ).write_text(
-            json.dumps(
-                preflight_receipt,
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        task_root = (
-            run_root
-            / "tasks"
-        )
-        cache_root = (
-            settings.root
-            / "cache"
-        )
-        for task_id in tasks:
-            prepare_task(
-                suite=suite,
-                task_id=task_id,
-                destination=(
-                    task_root
-                    / task_id
-                ),
-                cache_root=cache_root,
-                hashmarks_source=(
-                    settings.hashmarks_source
-                ),
-            )
-        mcp_config = write_mcp_config(
-            run_root
-            / "hashmarks.mcp.json"
-        )
-        credential_file = _credential_file(
-            run_root,
-            keys=(
-                settings.passthrough_env_keys
-            ),
-            host=os.environ,
-        )
-        rows = plan_rows(
-            harnesses=harnesses,
-            tasks=tasks,
-            attempts=mode.attempts,
-        )
-        trials_dir = (
-            run_root
-            / "trials"
-        )
-        trials_dir.mkdir()
-        results = []
-        for index, row in enumerate(
-            rows,
-            1,
-        ):
-            print(
-                "HARBOR "
-                f"{index}/{len(rows)} | "
-                f"{row['task']} | "
-                f"{row['harness']} | "
-                f"{row['subject']} | "
-                f"attempt {row['attempt']}",
-                file=sys.stderr,
-                flush=True,
-            )
-            result = execute_trial(
-                settings=settings,
-                row=row,
-                task_path=(
-                    task_root
-                    / str(
-                        row["task"]
-                    )
-                ),
-                run_root=run_root,
-                credential_file=(
-                    credential_file
-                ),
-                mcp_config=mcp_config,
-                host=os.environ,
-            )
-            results.append(
-                result
-            )
-            (
-                trials_dir
-                / (
-                    f"{result['trial_id']}"
-                    ".json"
-                )
-            ).write_text(
-                json.dumps(
-                    result,
-                    indent=2,
-                    sort_keys=True,
-                )
-                + "\n",
-                encoding="utf-8",
-            )
-        report = {
-            **build_report(
-                results
-            ),
-            "run_root": str(
-                run_root
-            ),
-        }
-        (
-            run_root
-            / "report.json"
-        ).write_text(
-            json.dumps(
-                report,
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        print(
-            json.dumps(
-                report,
-                indent=2,
-                sort_keys=True,
-            )
-        )
-        return (
-            0
-            if report[
-                "incomplete"
-            ]
-            == 0
-            else 2
-        )
-    except (
-        HarborMatrixError,
-        ValueError,
-        OSError,
-    ) as exc:
-        raise SystemExit(
-            "Harbor harness benchmark unavailable: "
-            f"{exc}"
-        ) from exc
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

@@ -46,7 +46,7 @@ class BenchmarkRunOutputTests(unittest.TestCase):
     def test_benchmark_new_make_target_suppresses_raw_json(self) -> None:
         makefile = Path("Makefile").read_text(encoding="utf-8")
         self.assertIn(
-            "./benchmark run --new --env-file .env --no-json-results",
+            './benchmark run --new --env-file "$(BENCHMARK_ENV)" --matrix "$(MATRIX)" --no-json-results',
             makefile,
         )
 

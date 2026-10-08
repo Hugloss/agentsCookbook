@@ -142,10 +142,11 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             ("benchmark-score", "score"),
         ):
             with self.subTest(target=target):
-                self.assertIn(
-                    f"{target}:\n\t@./benchmark {command} --env-file .env",
-                    makefile,
-                )
+                self.assertIn(f"{target}:\n", makefile)
+                self.assertIn(f"./benchmark {command}", makefile)
+        self.assertIn('MATRIX ?= heldout', makefile)
+        self.assertIn('--matrix "$(MATRIX)"', makefile)
+        self.assertIn('run --resume --run-id "$(RUN_ID)"', makefile)
         self.assertIn("benchmark-oracle-review:", makefile)
         self.assertIn(
             "./benchmark oracle-review \\\n"
@@ -396,7 +397,8 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 check=False,
             )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("--env-file .env", result.stdout)
+        self.assertIn('--env-file ".env"', result.stdout)
+        self.assertIn('--matrix "heldout"', result.stdout)
         self.assertNotIn("private-suite", result.stdout)
         self.assertNotIn("codex-native", result.stdout)
 
@@ -431,7 +433,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 SystemExit, "benchmark env file does not exist"
             ):
-                main(["run", "--resume", "--env-file", str(file)])
+                main(["run", "--resume", "--run-id", "000001", "--env-file", str(file)])
             self.assertEqual(list(Path(tmp).iterdir()), [])
 
     def test_status_and_report_are_persisted_in_shareable_reports_dir(self) -> None:
@@ -780,7 +782,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 redirect_stderr(stderr),
             ):
                 exit_code = main([
-                    "run", "--resume", "--env-file", str(root / "unused.env"),
+                    "run", "--resume", "--run-id", "000001", "--env-file", str(root / "unused.env"),
                     "--suite", str(suite_path), "--root", str(root),
                     "--harness-root", str(ROOT), "--task", "locate-prefix-path-enumerator",
                     "--agent", "opencode-native", "--condition", "hashmarks-opencode-native",
@@ -883,7 +885,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 redirect_stderr(stderr),
             ):
                 exit_code = main([
-                    "run", "--resume", "--env-file", str(root / "unused.env"),
+                    "run", "--resume", "--run-id", "000001", "--env-file", str(root / "unused.env"),
                     "--suite", str(suite_path), "--root", str(root),
                     "--harness-root", str(ROOT), "--task", "locate-prefix-path-enumerator",
                     "--agent", "opencode-native", "--condition", "hashmarks-opencode-native",
@@ -951,7 +953,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 redirect_stderr(stderr),
             ):
                 exit_code = main([
-                    "run", "--resume", "--env-file", str(root / "unused.env"),
+                    "run", "--resume", "--run-id", "000001", "--env-file", str(root / "unused.env"),
                     "--suite", str(suite_path), "--root", str(root),
                     "--harness-root", str(ROOT), "--task", "locate-prefix-path-enumerator",
                     "--agent", "opencode-native", "--condition", "hashmarks-opencode-native",
@@ -997,4 +999,4 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(SystemExit, "BENCHMARK_AGENT"):
-                main(["run", "--resume", "--env-file", str(file), "--agent", "codex-native"])
+                main(["run", "--resume", "--run-id", "000001", "--env-file", str(file), "--agent", "codex-native"])

@@ -11,6 +11,7 @@ from benchmarks.harness.identity import (
     REPLICATE_EVIDENCE_CONTRACT,
     REPLICATE_SCORE_CONTRACT,
     canonical_json,
+    digest,
     execution_evidence_id,
     score_projection_id,
 )
@@ -79,6 +80,9 @@ def verify_bundle(directory: Path) -> tuple[bool, str | None]:
     actual_files = {path.name for path in directory.iterdir()}
     if actual_files != declared_files:
         return False, "result bundle contains undeclared or missing files"
+
+    if receipt.get("backend") == "harbor":
+        return _verify_harbor_bundle(receipt, loaded)
 
     events_evidence = execution.get("events")
     if not isinstance(events_evidence, dict):
@@ -165,4 +169,80 @@ def verify_bundle(directory: Path) -> tuple[bool, str | None]:
             return False, "execution evidence identity mismatch"
         if scoring.get("projection_identity") != projection_identity:
             return False, "score projection identity mismatch"
+    return True, None
+
+
+def _verify_harbor_bundle(
+    receipt: dict[str, object],
+    loaded: dict[str, bytes],
+) -> tuple[bool, str | None]:
+    """Verify Harbor reward evidence without applying native receipt semantics."""
+    execution = receipt.get("execution")
+    result = receipt.get("harbor")
+    if not isinstance(execution, dict) or not isinstance(result, dict):
+        return False, "Harbor receipt lacks execution evidence"
+    if (
+        not isinstance(execution.get("campaign_id"), str)
+        or not isinstance(receipt.get("definition_id"), str)
+        or type(execution.get("launch_attempt")) is not int
+        or execution["launch_attempt"] < 1
+    ):
+        return False, "Harbor receipt identity is invalid"
+    if receipt.get("trial_id") != digest({
+        "campaign_id": execution["campaign_id"],
+        "definition_id": receipt["definition_id"],
+    }):
+        return False, "Harbor trial identity does not bind campaign and definition"
+    if execution.get("job_name") != (
+        f"h{str(receipt['trial_id'])[:24]}-a{execution['launch_attempt']:06d}"
+    ):
+        return False, "Harbor job name does not bind launch attempt"
+    raw = loaded.get("harbor_result")
+    if raw is None or raw != canonical_json(result):
+        return False, "Harbor result artifact differs from receipt"
+    for receipt_key, result_key in (
+        ("task_id", "task"),
+        ("harness", "harness"),
+        ("subject", "subject"),
+        ("model", "model"),
+    ):
+        if receipt.get(receipt_key) != result.get(result_key):
+            return False, f"Harbor {receipt_key} differs from job result"
+    if receipt.get("replicate_id") != result.get("attempt"):
+        return False, "Harbor replicate differs from job result"
+    reward = result.get("reward")
+    return_code = result.get("harbor_return_code")
+    if result.get("status") not in {"COMPLETE", "INCOMPLETE"}:
+        return False, "Harbor result has invalid status"
+    completed = result.get("status") == "COMPLETE"
+    expected_success = completed and type(reward) in {int, float} and reward > 0
+    if "success" in result and result["success"] is not expected_success:
+        return False, "Harbor success flag disagrees with completed reward"
+    if completed:
+        if (
+            type(return_code) is not int
+            or return_code != 0
+            or type(reward) not in {int, float}
+            or not 0 <= reward <= 1
+        ):
+            return False, "Harbor completed result has invalid reward or exit status"
+        if receipt.get("status") != ("PASS" if reward > 0 else "FAIL"):
+            return False, "Harbor reward and receipt outcome disagree"
+        reward_bytes = loaded.get("reward")
+        if reward_bytes is None:
+            return False, "Harbor reward artifact is missing"
+        try:
+            observed = float(reward_bytes.decode("utf-8").strip())
+        except (UnicodeDecodeError, ValueError):
+            try:
+                value = json.loads(reward_bytes)
+                observed = float(value.get("reward") if isinstance(value, dict) else value)
+            except (UnicodeDecodeError, ValueError, TypeError, AttributeError):
+                return False, "Harbor reward artifact is invalid"
+        if observed != reward:
+            return False, "Harbor reward artifact differs from receipt"
+    elif receipt.get("status") != "INCOMPLETE":
+        return False, "Harbor incomplete result has a completed outcome"
+    if result.get("trial_id") != execution.get("job_name"):
+        return False, "Harbor job identity differs from receipt"
     return True, None

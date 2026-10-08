@@ -146,11 +146,20 @@ make benchmark
 If there is no unfinished run with the same frozen selection, this creates a new numbered run and executes the full population selected by `BENCHMARK_AGENT`. If the latest matching run is unfinished, it refuses to guess and tells you to choose explicitly:
 
 ```sh
-make benchmark-resume  # continue the frozen run
+make benchmark-runs    # find the frozen run ID
+make benchmark-resume RUN_ID=000014
 make benchmark-new     # intentionally start a separate fresh run
 ```
 
-`benchmark-new` also executes immediately; it does not stop after preparation. `benchmark-resume` requires the current `BENCHMARK_AGENT` population and selected definitions to match the run's frozen campaign before expensive admission or any model work. Before preflight, preparation, or execution can begin, the harness also verifies that the selected suite scorer exists, belongs to that suite, accepts the exact frozen-definition interface (`--results`, `--output`, `--agent`, repeated `--definition-id`), and has a canonical score filename suitable for the run's `reports/` directory. Scoring enforces the same frozen agent set.
+`benchmark-new` also executes immediately; it does not stop after preparation. `benchmark-resume` requires `RUN_ID` and the current `BENCHMARK_AGENT` population and selected definitions to match the run's frozen campaign before expensive admission or any model work. Before preflight, preparation, or execution can begin, the harness also verifies that the selected suite scorer exists, belongs to that suite, accepts the exact frozen-definition interface (`--results`, `--output`, `--agent`, repeated `--definition-id`), and has a canonical score filename suitable for the run's `reports/` directory. Scoring enforces the same frozen agent set.
+
+`MATRIX` selects the execution matrix through the same Make targets and numbered
+campaign store. The default is `heldout`; `harbor-smoke` projects one task across
+three harnesses and two subjects (6 trials), and `harbor-full` projects three
+tasks with three attempts (54 trials). For example, run
+`make benchmark-check MATRIX=harbor-full`, then
+`make benchmark-new MATRIX=harbor-full`. See the
+[Harbor matrix guide](harbor/README.md) for model and credential setup.
 
 The remaining targets are optional diagnostics or advanced controls:
 

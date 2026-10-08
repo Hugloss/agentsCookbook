@@ -45,7 +45,8 @@ from benchmarks.harness.run_store import (
 )
 from benchmarks.harness.receipt import is_complete_receipt
 from benchmarks.harness.report import ReportError
-from benchmarks.harness.runner import TrialRunResult, _fsync_path, _publish_bundle
+from benchmarks.harness.bundle_writer import _sync
+from benchmarks.harness.runner import TrialRunResult, _publish_bundle
 from scripts.agent_economics.bounded_process import retain_lock_in_subprocesses, run_bounded
 
 
@@ -216,7 +217,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
                     side_effect=[status, status],
                 ),
                 mock.patch(
-                    "benchmarks.__main__.reuse_completed_trial",
+                    "benchmarks.harness.campaign_execution.reuse_completed_trial",
                     return_value=reused,
                 ) as reuse,
                 mock.patch(
@@ -352,7 +353,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
                     side_effect=[status, status],
                 ),
                 mock.patch(
-                    "benchmarks.__main__.reuse_completed_trial",
+                    "benchmarks.harness.campaign_execution.reuse_completed_trial",
                     return_value=stale,
                 ),
                 mock.patch(
@@ -1160,12 +1161,12 @@ class SavedRunRecoveryTests(unittest.TestCase):
             def sync(path: Path) -> None:
                 if path == root:
                     raise OSError("simulated directory sync failure")
-                _fsync_path(path)
+                _sync(path)
 
             with (
                 mock.patch("benchmarks.harness.runner._validate_result_receipt"),
-                mock.patch("benchmarks.harness.runner.verify_bundle", return_value=(True, None)),
-                mock.patch("benchmarks.harness.runner._fsync_path", side_effect=sync),
+                mock.patch("benchmarks.harness.bundle_writer.verify_bundle", return_value=(True, None)),
+                mock.patch("benchmarks.harness.bundle_writer._sync", side_effect=sync),
             ):
                 with self.assertRaisesRegex(OSError, "simulated directory sync failure"):
                     _publish_bundle(

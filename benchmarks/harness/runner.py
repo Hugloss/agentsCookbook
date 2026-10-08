@@ -4,9 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import shutil
-import tempfile
 import traceback
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -15,6 +12,7 @@ from typing import Any, Callable
 
 from benchmarks.harness.admission import TrialAdmissionError, admit_trial
 from benchmarks.harness.bundle import verify_bundle
+from benchmarks.harness.bundle_writer import BundlePublicationError, publish_bundle
 from benchmarks.harness.campaign_authority import (
     CampaignAuthorityError,
     campaign_trial_id,
@@ -35,7 +33,6 @@ from benchmarks.harness.identity import (
 )
 from benchmarks.adapters.oracles import RepositoryLocationOracle
 from benchmarks.harness.model import Observation, TrialStatus
-from benchmarks.harness.receipt import write_receipt
 from benchmarks.harness.schema_validation import (
     SchemaValidationError,
     validate_instance,
@@ -183,23 +180,6 @@ def _validate_result_receipt(receipt: dict[str, Any]) -> None:
         ) from exc
 
 
-def _artifact(path: Path) -> dict[str, Any]:
-    payload = path.read_bytes()
-    return {
-        "path": path.name,
-        "sha256": hashlib.sha256(payload).hexdigest(),
-        "bytes": len(payload),
-    }
-
-
-def _fsync_path(path: Path) -> None:
-    fd = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-
-
 def _publish_bundle(
     *,
     results_root: Path,
@@ -209,44 +189,20 @@ def _publish_bundle(
     agent_trace: str,
     receipt: dict[str, Any],
 ) -> Path:
-    results_root.mkdir(parents=True, exist_ok=True)
-    final_dir = results_root / trial_id
-    if final_dir.exists():
-        valid, reason = verify_bundle(final_dir)
-        if valid:
-            return final_dir
-        raise TrialRunnerError(
-            f"published trial bundle is invalid: {final_dir}: {reason}"
-        )
-    bundle = Path(tempfile.mkdtemp(prefix=f".{trial_id}.bundle-", dir=results_root))
     try:
-        shutil.copy2(event_path, bundle / "events.jsonl")
-        shutil.copy2(event_seal_path, bundle / "events.jsonl.seal.json")
-        (bundle / "agent-trace.jsonl").write_text(
-            agent_trace,
-            encoding="utf-8",
+        return publish_bundle(
+            results_root=results_root,
+            trial_id=trial_id,
+            artifacts={
+                "events": ("events.jsonl", event_path.read_bytes()),
+                "events_seal": ("events.jsonl.seal.json", event_seal_path.read_bytes()),
+                "agent_trace": ("agent-trace.jsonl", agent_trace.encode("utf-8")),
+            },
+            receipt=receipt,
+            validate=_validate_result_receipt,
         )
-        for name in ("events.jsonl", "events.jsonl.seal.json", "agent-trace.jsonl"):
-            _fsync_path(bundle / name)
-        receipt["execution"]["artifacts"] = {
-            "events": _artifact(bundle / "events.jsonl"),
-            "events_seal": _artifact(bundle / "events.jsonl.seal.json"),
-            "agent_trace": _artifact(bundle / "agent-trace.jsonl"),
-        }
-        _validate_result_receipt(receipt)
-        write_receipt(bundle, receipt)
-        _fsync_path(bundle)
-        os.rename(bundle, final_dir)
-        valid, reason = verify_bundle(final_dir)
-        if not valid:
-            raise TrialRunnerError(
-                f"published trial bundle failed verification: {reason}"
-            )
-        _fsync_path(results_root)
-    except BaseException:
-        shutil.rmtree(bundle, ignore_errors=True)
-        raise
-    return final_dir
+    except BundlePublicationError as exc:
+        raise TrialRunnerError(str(exc)) from exc
 
 
 def _bounded_preview(value: Any, *, limit: int = 240) -> str | None:

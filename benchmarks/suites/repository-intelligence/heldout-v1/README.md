@@ -189,10 +189,10 @@ make benchmark-oracle-review
 make benchmark-oracle-review-check
 make benchmark-check
 make benchmark-new
+make benchmark-runs
 # Optional individual trial preflight:
 make benchmark-check-all
-make benchmark-resume
-make benchmark-runs
+make benchmark-resume RUN_ID=000001
 make benchmark-report
 make benchmark-score
 ```
@@ -202,7 +202,7 @@ make benchmark-score
 - `benchmark-check` tests all six distinct agent/subject pairs once: each agent with bare tools, Hashmarks, and Enola. It uses one disposable smoke workspace, invokes no model, creates no trial, and exits.
 - `benchmark-campaign-audit` observes every selected task/condition and checks cross-task runtime identity and paired input equivalence before inference. It publishes no campaign authority or launch claim. It reports `ready_for_campaign: false` and exits 2 while independent oracle reviews are pending; it cannot waive the run gate. Run it after changing the suite, runtime, or model selection and before a costly campaign.
 - `benchmark-check-all` preflights 108 frozen definitions for one selected agent or 216 for both. It can be slow and is never run implicitly.
-- `benchmark-new` saves a new numbered campaign without model calls; `benchmark-resume` executes or resumes the latest one. The plain `benchmark` target prints the required choice.
+- `benchmark-new` saves and executes a new numbered campaign; `benchmark-resume RUN_ID=...` continues the selected frozen run. The plain `benchmark` target prints the required choice for an unfinished run.
 - `benchmark-report` is the generic framework report.
 - `benchmark-score` runs this suite's explicit language-separated held-out scorer.
 - Before a new full campaign after benchmark-authority changes, run `make benchmark-oracle-review-check` and `make benchmark-qualify-localization`. Do not buy a second review for every task by default: only tasks with recorded escalation evidence require it. The localization qualification then exercises five Python localization cases and one TypeScript case, including repository-content-identity, across bare, Hashmarks, and Enola for every selected agent. It is qualification evidence, not the full score.

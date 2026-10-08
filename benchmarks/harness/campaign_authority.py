@@ -195,6 +195,7 @@ def _read_manifest(directory: Path) -> dict[str, Any]:
         "benchmark-campaign-authority.v3",
         "benchmark-campaign-authority.v4",
         "benchmark-campaign-authority.v5",
+        "benchmark-campaign-authority.v6",
     }:
         raise CampaignAuthorityError("unsupported campaign authority contract")
     identity = value.get("campaign_id")
@@ -207,6 +208,18 @@ def _read_manifest(directory: Path) -> dict[str, Any]:
 
 def read_campaign(results_root: Path) -> dict[str, Any]:
     return _read_manifest(results_root / ".campaign")
+
+
+def publish_campaign_authority(results_root: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    """Seal a backend-specific campaign through the shared authority store."""
+    if payload.get("contract") != "benchmark-campaign-authority.v6":
+        raise CampaignAuthorityError("unsupported campaign authority publication")
+    authority = dict(payload)
+    authority["campaign_id"] = digest(authority)
+    directory = results_root / ".campaign"
+    with _locked(directory):
+        _write_manifest(directory, authority)
+    return authority
 
 
 def _read_launch_claim(

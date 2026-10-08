@@ -1,0 +1,20 @@
+{
+  "schema": "agentscookbook.benchmark-matrices.v1",
+  "profiles": {
+    "heldout": {
+      "backend": "native"
+    },
+    "harbor-smoke": {
+      "backend": "harbor",
+      "projection": "benchmarks/harbor/repository-intelligence-v1.json",
+      "mode": "smoke",
+      "root": ".benchmark-runs/harbor-harness-v1/smoke"
+    },
+    "harbor-full": {
+      "backend": "harbor",
+      "projection": "benchmarks/harbor/repository-intelligence-v1.json",
+      "mode": "matrix",
+      "root": ".benchmark-runs/harbor-harness-v1/full"
+    }
+  }
+}

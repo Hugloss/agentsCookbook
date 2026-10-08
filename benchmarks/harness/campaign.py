@@ -140,6 +140,7 @@ def campaign_status(
             "status selection contains definitions outside frozen suite"
         )
     new_contract = any("replicate_id" in row for row in definitions.values())
+    backend = "native"
     campaign_error = None
     claims: set[str] = set()
     launch_claims: dict[str, str] = {}
@@ -149,6 +150,7 @@ def campaign_status(
     if new_contract:
         try:
             manifest = read_campaign(results_root)
+            backend = str(manifest.get("backend", "native"))
             if not selected_definitions.issubset(set(manifest["selected_definitions"])):
                 raise CampaignAuthorityError(
                     "status selection exceeds campaign selection"
@@ -224,6 +226,24 @@ def campaign_status(
                 )
                 continue
             if definition in definitions:
+                if backend == "harbor":
+                    expected = definitions[definition]
+                    if any(
+                        value.get(field) != expected.get(expected_field)
+                        for field, expected_field in (
+                            ("task_id", "task_id"),
+                            ("condition_id", "condition_id"),
+                            ("trial", "trial"),
+                            ("replicate_id", "replicate_id"),
+                        )
+                    ):
+                        corrupt.append(
+                            {
+                                "directory": str(directory),
+                                "reason": "Harbor receipt row differs from frozen definition",
+                            }
+                        )
+                        continue
                 if (
                     new_contract
                     and campaign_error is None
@@ -308,10 +328,11 @@ def campaign_status(
 
     completed_receipts = [values[0] for values in receipts.values() if len(values) == 1]
     comparability_error = None
-    try:
-        validate_comparability(completed_receipts)
-    except ReportError as exc:
-        comparability_error = str(exc)
+    if backend != "harbor":
+        try:
+            validate_comparability(completed_receipts)
+        except ReportError as exc:
+            comparability_error = str(exc)
 
     valid_outcomes = {"PASS", "FAIL", "NO_QUALIFYING_DEFECT"}
     unresolved_outcomes = sum(
@@ -324,10 +345,21 @@ def campaign_status(
         and campaign_error is None
     )
     completeness_ok = state_counts["COMPLETE"] == len(definitions)
-    exposure_qualification = subject_exposure_qualification(
-        suite=suite,
-        expected_rows=definitions.values(),
-        receipts=completed_receipts,
+    exposure_qualification = (
+        {
+            "status": "NOT_APPLICABLE",
+            "qualified": True,
+            "policy": "Harbor reward does not certify subject invocation",
+            "conditions": [],
+            "failed_conditions": 0,
+            "pending_conditions": 0,
+        }
+        if backend == "harbor"
+        else subject_exposure_qualification(
+            suite=suite,
+            expected_rows=definitions.values(),
+            receipts=completed_receipts,
+        )
     )
     evidence_tainted = bool(authority_epoch_rows)
     qualification_ok = (

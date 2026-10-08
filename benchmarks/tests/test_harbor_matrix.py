@@ -16,11 +16,13 @@ from benchmarks.harbor_matrix import (
     build_report,
     harbor_argv,
     load_matrix,
-    load_settings,
     plan_rows,
     preflight,
     write_mcp_config,
 )
+from benchmarks.config import BenchmarkConfig
+from benchmarks.harness.harbor_backend import credential_file, settings_from_config
+from benchmarks.matrix_profiles import load_profile
 from benchmarks.harness.suite import load_suite
 
 
@@ -174,16 +176,23 @@ class HarborMatrixTests(unittest.TestCase):
                     (
                         f"HASHMARKS_BENCH_SOURCE={root / 'Hashmarks'}",
                         "BENCHMARK_HARBOR_MODEL=provider/model",
-                        "BENCHMARK_HARBOR_PASSTHROUGH_ENV_KEYS=OPENAI_API_KEY",
+                        "BENCHMARK_PASSTHROUGH_ENV_KEYS=OPENAI_API_KEY",
                     )
                 )
                 + "\n",
                 encoding="utf-8",
             )
-            settings = load_settings(
-                env,
-                host={"OPENAI_API_KEY": "secret-value"},
-            )
+            with mock.patch(
+                "benchmarks.harness.harbor_backend.shutil.which",
+                return_value="/usr/bin/tool",
+            ):
+                settings = settings_from_config(
+                    BenchmarkConfig.load(
+                        env,
+                        host={"OPENAI_API_KEY": "secret-value", "PATH": "/bin"},
+                    ),
+                    load_profile("harbor-smoke"),
+                )
 
         self.assertEqual(
             settings.passthrough_env_keys,
@@ -193,6 +202,28 @@ class HarborMatrixTests(unittest.TestCase):
             "secret-value",
             repr(settings),
         )
+
+    def test_harbor_credential_file_is_private_and_replaced_on_resume(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            settings = HarborSettings(
+                executable="harbor",
+                model="provider/model",
+                root=root,
+                hashmarks_source=root,
+                passthrough_env_keys=("OPENAI_API_KEY",),
+            )
+            first = credential_file(
+                root, settings=settings, host={"OPENAI_API_KEY": "first"},
+            )
+            self.assertEqual(first.stat().st_mode & 0o777, 0o600)
+            self.assertIn("first", first.read_text(encoding="utf-8"))
+            second = credential_file(
+                root, settings=settings, host={"OPENAI_API_KEY": "second"},
+            )
+            self.assertEqual(second, first)
+            self.assertEqual(second.stat().st_mode & 0o777, 0o600)
+            self.assertNotIn("first", second.read_text(encoding="utf-8"))
 
     def test_preflight_is_model_free_and_binds_hashmarks_contract(self) -> None:
         suite = load_suite(SUITE)

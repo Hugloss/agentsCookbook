@@ -146,7 +146,7 @@ make benchmark-tool-probe PROBE_SUBJECT=hashmarks
 Repeat for each selected non-control subject. `benchmark-tool-probe` checks the saved
 smoke gate before the full run. Heldout campaign admission separately requires every
 selected non-control subject to carry this frozen exposure-probe contract, and completed
-campaign qualification still requires actual observed subject use. Use `benchmark-tool-probe-resume`, `-status`, and `-score` for a
+campaign qualification still requires actual observed subject use. Use `benchmark-tool-probe-resume RUN_ID=...`, `-status`, and `-score` for a
 saved full run. The v2 score records required-call attempt and nonempty completion,
 whether that call preceded native file search, and unknown observations independently
 of semantic correctness. A complete nested Code Mode call without visible output

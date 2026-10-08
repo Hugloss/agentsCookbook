@@ -14,6 +14,9 @@ from dataclasses import replace
 from pathlib import Path
 
 from benchmarks.config import BenchmarkConfig, BenchmarkConfigError
+from benchmarks.harbor_commands import run_harbor_command
+from benchmarks.harness.harbor_backend import HarborBackendError
+from benchmarks.matrix_profiles import MatrixProfileError, load_profile
 from benchmarks.diagnostic import DiagnosticError, prepare_diagnostic_suite
 from benchmarks.tool_probe import ToolProbeError, prepare_tool_probe_suite
 from benchmarks.tool_probe_score import smoke_gate
@@ -77,14 +80,12 @@ from benchmarks.harness.trace_diagnostics import (
 )
 from benchmarks.harness.runner import (
     TrialRunnerError,
-    bind_result_to_receipt,
-    reuse_completed_trial,
     run_trial,
 )
+from benchmarks.harness.campaign_execution import run_campaign_rows
 from benchmarks.harness.run_store import (
     RunStoreError,
     active_definition,
-    active_trial,
     exclusive_store,
     list_saved_runs,
     prepare_saved_run,
@@ -298,7 +299,7 @@ def _parser() -> argparse.ArgumentParser:
     )
 
     plan = sub.add_parser("plan")
-    plan.add_argument("--suite", type=Path, required=True)
+    plan.add_argument("--suite", type=Path)
     _add_selectors(plan)
 
     preflight = sub.add_parser("preflight")
@@ -383,6 +384,13 @@ def _parser() -> argparse.ArgumentParser:
             "analysis_evidence.evidence_state=minimum-evidence-observed"
         ),
     )
+
+    for command in (check, plan, preflight, audit, prepare, run, runs, status, report, reports, score):
+        command.add_argument(
+            "--matrix",
+            default="heldout",
+            help="committed benchmark matrix id (default: heldout)",
+        )
 
     regrade_score = sub.add_parser("regrade-score")
     regrade_score.add_argument("--suite", type=Path, required=True)
@@ -846,6 +854,14 @@ def _guard_automatic_start(
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "run" and args.resume and not args.run_id:
+        raise SystemExit("run --resume requires --run-id; list saved runs first")
+    try:
+        matrix_profile = load_profile(getattr(args, "matrix", "heldout"))
+        if matrix_profile.backend == "harbor":
+            return run_harbor_command(args, matrix_profile)
+    except (MatrixProfileError, HarborBackendError, RunStoreError, CampaignAuthorityError, OSError, ValueError) as exc:
+        raise SystemExit(f"benchmark matrix unavailable: {exc}") from exc
     explicit_score_output = getattr(args, "output", None) is not None
     if args.command == "trace-diagnostics":
         try:
@@ -1839,7 +1855,11 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
         file=sys.stderr,
         flush=True,
     )
-    for row in rows:
+    active_heartbeat = None
+    trial_started = run_started
+
+    def on_start(row, _index):
+        nonlocal active_heartbeat, trial_started
         print(
             live_progress.start_line(
                 row,
@@ -1849,106 +1869,80 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
             flush=True,
         )
         trial_started = time.monotonic()
-        heartbeat = TrialHeartbeat(
+        active_heartbeat = TrialHeartbeat(
             progress=live_progress,
             row=row,
             run_started=run_started,
             emit=lambda line: print(line, file=sys.stderr, flush=True),
         )
+        return active_heartbeat
+
+    def run_one(row):
+        assert active_heartbeat is not None
+        return run_trial(
+            suite=suite,
+            task_id=str(row["task_id"]),
+            condition_id=str(row["condition_id"]),
+            trial_index=int(row["trial"]),
+            harness_root=args.harness_root,
+            cache_root=paths.cache,
+            results_root=paths.results,
+            work_root=paths.work,
+            local_source=args.source,
+            codex_auth=args.codex_auth,
+            source=runtime_source,
+            campaign=campaign,
+            on_progress=active_heartbeat.update_stage,
+        )
+
+    def on_error(row, exc):
+        print(
+            live_progress.abort_line(
+                row,
+                stage=active_heartbeat.stage if active_heartbeat is not None else "start",
+                elapsed=time.monotonic() - run_started,
+                error=exc,
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
         try:
-            frozen_status = initial_rows.get(str(row["definition_id"]))
-            if (
-                isinstance(frozen_status, dict)
-                and frozen_status.get("state") == "COMPLETE"
-            ):
-                trial_ids = frozen_status.get("trial_ids")
-                if (
-                    not isinstance(trial_ids, list)
-                    or len(trial_ids) != 1
-                    or not isinstance(trial_ids[0], str)
-                ):
-                    raise TrialRunnerError(
-                        "completed campaign row has invalid trial identity"
-                    )
-                result = reuse_completed_trial(
-                    results_root=paths.results,
-                    definition_id=str(row["definition_id"]),
-                    trial_id=trial_ids[0],
-                )
-            else:
-                with heartbeat, active_trial(
-                    args.root,
-                    paths.run_id,
-                    str(row["definition_id"]),
-                ):
-                    result = run_trial(
-                        suite=suite,
-                        task_id=str(row["task_id"]),
-                        condition_id=str(row["condition_id"]),
-                        trial_index=int(row["trial"]),
-                        harness_root=args.harness_root,
-                        cache_root=paths.cache,
-                        results_root=paths.results,
-                        work_root=paths.work,
-                        local_source=args.source,
-                        codex_auth=args.codex_auth,
-                        source=runtime_source,
-                        campaign=campaign,
-                        on_progress=heartbeat.update_stage,
-                    )
-            receipt = json.loads(
-                (result.result_dir / "result.json").read_text(encoding="utf-8")
+            observed = campaign_status(
+                suite=suite,
+                results_root=paths.results,
+                selected_definitions=selected_definitions,
             )
-            result = bind_result_to_receipt(result, receipt)
-            epoch = receipt.get("execution", {}).get("authority_epoch")
-            if isinstance(epoch, dict) and epoch.get("transitioned") is True:
-                changed = ",".join(
-                    str(value)
-                    for value in epoch.get("changed_components", [])
-                ) or "participant"
-                print(
-                    "AUTHORITY EPOCH "
-                    f"{row['task_id']} / {row['condition_id']} | "
-                    f"epoch {epoch.get('epoch')} | changed {changed} | "
-                    "campaign evidence TAINTED | continuing",
-                    file=sys.stderr,
-                    flush=True,
-                )
-            summary = live_matrix.record(row, receipt)
-        except Exception as exc:
             print(
-                live_progress.abort_line(
-                    row,
-                    stage=heartbeat.stage,
-                    elapsed=time.monotonic() - run_started,
-                    error=exc,
-                ),
+                f"CAMPAIGN verified {observed['complete_trials']}/{len(rows)} | "
+                f"pending {observed['pending_trials']} | "
+                f"interrupted {observed['interrupted_trials']} | "
+                f"qualified {observed['qualified']}",
                 file=sys.stderr,
                 flush=True,
             )
-            try:
-                observed = campaign_status(
-                    suite=suite,
-                    results_root=paths.results,
-                    selected_definitions=selected_definitions,
-                )
-                print(
-                    f"CAMPAIGN verified {observed['complete_trials']}/{len(rows)} | "
-                    f"pending {observed['pending_trials']} | "
-                    f"interrupted {observed['interrupted_trials']} | "
-                    f"qualified {observed['qualified']}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-            except Exception as status_exc:
-                print(
-                    f"CAMPAIGN status unavailable after abort: {status_exc}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-            if isinstance(exc, (TrialRunnerError, ReportError, CampaignError, OSError, ValueError)):
-                return 2
-            raise
+        except Exception as status_exc:
+            print(
+                f"CAMPAIGN status unavailable after abort: {status_exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+    def on_result(row, result, receipt):
+        epoch = receipt.get("execution", {}).get("authority_epoch")
+        if isinstance(epoch, dict) and epoch.get("transitioned") is True:
+            changed = ",".join(
+                str(value)
+                for value in epoch.get("changed_components", [])
+            ) or "participant"
+            print(
+                "AUTHORITY EPOCH "
+                f"{row['task_id']} / {row['condition_id']} | "
+                f"epoch {epoch.get('epoch')} | changed {changed} | "
+                "campaign evidence TAINTED | continuing",
+                file=sys.stderr,
+                flush=True,
+            )
+        summary = live_matrix.record(row, receipt)
         results.append(
             {
                 "trial_id": result.trial_id,
@@ -1998,6 +1992,23 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
         )
         if summary is not None:
             print(summary, file=sys.stderr, flush=True)
+
+    try:
+        run_campaign_rows(
+            rows=rows,
+            initial_rows=initial_rows,
+            results_root=paths.results,
+            store_root=args.root,
+            run_id=paths.run_id,
+            run_one=run_one,
+            on_start=on_start,
+            on_result=on_result,
+            on_error=on_error,
+        )
+    except Exception as exc:
+        if isinstance(exc, (TrialRunnerError, ReportError, CampaignError, OSError, ValueError)):
+            return 2
+        raise
 
     try:
         final_status = campaign_status(

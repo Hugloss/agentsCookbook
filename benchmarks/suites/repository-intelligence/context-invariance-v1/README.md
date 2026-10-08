@@ -119,7 +119,7 @@ Choose explicitly when needed:
 
 ```bash
 make benchmark-context-invariance-new
-make benchmark-context-invariance-resume
+make benchmark-context-invariance-resume RUN_ID=000001
 ```
 
 Inspect or refresh evidence without invoking a model:
