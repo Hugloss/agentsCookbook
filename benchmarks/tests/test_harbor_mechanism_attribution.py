@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from benchmarks.harness.bundle_writer import publish_bundle
-from benchmarks.harness.identity import canonical_json
+from benchmarks.harness.identity import canonical_json, digest
 from benchmarks.harness.mechanism_attribution import (
     ANSWER_EVIDENCE_SCHEMA,
     ATTRIBUTION_PROVEN,
@@ -300,28 +300,62 @@ class HarborMechanismAttributionTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for subject, trial_id in (("none", "bare"), ("hashmarks", "treated")):
+            campaign_id = "campaign"
+            for subject in ("none", "hashmarks"):
+                definition_id = f"definition-{subject}"
+                trial_id = digest(
+                    {
+                        "campaign_id": campaign_id,
+                        "definition_id": definition_id,
+                    }
+                )
+                job_name = f"h{trial_id[:24]}-a000001"
+                harbor_result = {
+                    "schema": "agentscookbook.harbor-harness-trial.v1",
+                    "trial_id": job_name,
+                    "task": "localize-owner",
+                    "harness": "codex",
+                    "subject": subject,
+                    "attempt": 1,
+                    "model": "provider/model",
+                    "status": "COMPLETE",
+                    "success": True,
+                    "reward": 1.0,
+                    "duration_ms": 1,
+                    "harbor_return_code": 0,
+                    "harbor_job_root": f"/jobs/{job_name}",
+                    "reward_path": f"/jobs/{job_name}/reward.txt",
+                    "mcp_exposed": subject == "hashmarks",
+                    "stderr_tail": "",
+                }
                 receipt = {
                     "backend": "harbor",
-                    "definition_id": f"definition-{subject}",
+                    "definition_id": definition_id,
                     "trial_id": trial_id,
                     "task_id": "localize-owner",
                     "condition_id": f"{subject}-codex",
                     "trial": 0,
-                    "replicate_id": 6201,
+                    "replicate_id": 1,
                     "harness": "codex",
                     "subject": subject,
                     "model": "provider/model",
                     "status": "PASS",
+                    "harbor": harbor_result,
                     "execution": {
-                        "campaign_id": "campaign",
+                        "campaign_id": campaign_id,
                         "launch_attempt": 1,
+                        "job_name": job_name,
                     },
                 }
                 publish_bundle(
                     results_root=root,
                     trial_id=trial_id,
                     artifacts={
+                        "harbor_result": (
+                            "harbor-result.json",
+                            canonical_json(harbor_result),
+                        ),
+                        "reward": ("reward.txt", b"1\n"),
                         "trajectory": ("trajectory.json", canonical_json(atif)),
                         "answer": ("answer.json", canonical_json(answer)),
                     },
