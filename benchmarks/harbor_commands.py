@@ -266,7 +266,6 @@ def run_harbor_command(args, profile: MatrixProfile) -> int:
                     (saved.root / "reports/score.json").unlink(missing_ok=True)
                     (saved.root / "reports/mechanism.json").unlink(missing_ok=True)
                     (saved.root / "reports/ablation.json").unlink(missing_ok=True)
-                (saved.root / "reports/ablation.json").unlink(missing_ok=True)
         print(json.dumps(status, indent=2, sort_keys=True))
         return 2 if (
             status["conflicting_trials"]
