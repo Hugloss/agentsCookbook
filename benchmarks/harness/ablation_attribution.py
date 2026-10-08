@@ -320,7 +320,14 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
             "task_evidence_only_uplift_vs_bare": _contrast(only, bare),
         }
 
-    applicable = bool(grouped)
+    applicable = any(
+        subject in {
+            "hashmarks-no-task-evidence",
+            "hashmarks-task-evidence-only",
+        }
+        for arms in grouped.values()
+        for subject in arms
+    )
     return {
         "schema": ABLATION_REPORT_SCHEMA,
         "applicable": applicable,
