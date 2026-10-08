@@ -2,11 +2,12 @@
 
 ## Task for the agent/runtime team
 
-Determine when the native OpenCode agent receives and chooses Hashmarks
-`task_evidence` for an unknown-path behavior question. Preserve the distinction
-between MCP availability, the agent's tool choice, a successful nonempty tool
-result, and correctness of the final answer. Keep Hashmarks as a repository
-observer; any change to agent tool choice belongs to the agent/runtime owner.
+Build a frozen natural-use diagnostic that combines unknown-path behavior
+questions with measured bare-control headroom. Preserve the distinction
+between MCP availability, the agent's tool choice, a successful nonempty
+`task_evidence` result, and correctness of the final answer. Keep Hashmarks as
+a repository observer; any change to agent tool choice belongs to the
+agent/runtime owner.
 
 ## Frozen evidence to start from
 
@@ -27,12 +28,29 @@ observer; any change to agent tool choice belongs to the agent/runtime owner.
   6/6 PASS. Its Hashmarks trials used `find` twice and no Hashmarks tool once.
   The exact `task_evidence` exposure contract was not met. See
   `.benchmark-runs/heldout-v1-task-evidence-post-v5/runs/000001/reports/`.
+- A fresh paired heldout follow-up on the unknown-path
+  `repair-partial-receipt-regression` task completed 6/6 PASS and qualified.
+  All three assisted trials called `task_evidence` once with a successful
+  nonempty result. In run `000015`, v4 packets emitted `next_read` paths into
+  unrelated scripts in all three replicates; the agent read the actual receipt
+  owner instead. In the v5 follow-up, those unsupported `next_read` values are
+  absent, retrieval truncation is reported, and the agent again read the
+  receipt owner. Both bare and assisted arms passed 3/3, so this task measures
+  packet use and preservation, not a correctness gain. Mean agent duration was
+  57.5 seconds bare and 101.3 seconds assisted in this small follow-up. See
+  `.benchmark-runs/heldout-v1-unknown-path-post-v5/runs/000001/reports/`.
 - Hashmarks commit `c9da51e` repaired the packet itself. On the pinned heldout
   source, the old v4 packet resolved the enclosing class and omitted the
   requested method; v5 preserves ambiguity, returns the method at rank 19,
   and reports incomplete, truncated canonical retrieval. The class name in
   `locate-mcp-task-evidence` is explicit, so `find` is a defensible choice
   under the current MCP routing contract.
+
+The two follow-ups show a task-dependent route: the named-class question
+selected `find`, while the unknown-path repair selected `task_evidence` 3/3.
+They do not establish a general MCP exposure failure or an agent routing
+defect. The remaining evidence gap is a task population with both natural
+`task_evidence` use and bare semantic headroom.
 
 ## Investigation and experiment contract
 
