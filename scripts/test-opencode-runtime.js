@@ -93,9 +93,25 @@ function config() {
     },
   };
   if (process.env.FAKE_NO_HASHMARKS === '1') delete servers.hashmarks;
+  const modelLimit = process.env.FAKE_BAD_MODEL_LIMITS === '1'
+    ? { context: 12000, output: 4000 }
+    : { context: 131072, output: 32768 };
   const base = {
     model: 'liteLLM/gemma4',
-    provider: { liteLLM: { options: { apiKey: 'must-not-leak' } } },
+    provider: {
+      liteLLM: {
+        options: { apiKey: 'must-not-leak' },
+        ...(
+          process.env.FAKE_MISSING_MODEL_LIMITS === '1'
+            ? {}
+            : {
+                models: {
+                  gemma4: { limit: modelLimit },
+                },
+              }
+        ),
+      },
+    },
     mcp: nested ? { servers } : servers,
   };
   if (
@@ -568,6 +584,14 @@ async function testSharedLifecycle() {
     });
     assert.strictEqual(bare.status, 'completed', bare.reason);
     assert.strictEqual(bare.selected_server, null);
+    const missingLimits = prepare({
+      opencodeBin: fake,
+      repoDir: root,
+      agentName: 'build',
+      env: { ...env, FAKE_MISSING_MODEL_LIMITS: '1' },
+    });
+    assert.strictEqual(missingLimits.status, 'failed');
+    assert.match(missingLimits.reason, /no usable prompt budget/);
     const badLimits = prepare({
       opencodeBin: fake,
       repoDir: root,

@@ -72,7 +72,7 @@ def _inspect(run_root: Path, run_id: str, suite, selected: set[str]) -> tuple[di
 def run_harbor_command(args, profile: MatrixProfile) -> int:
     if args.command not in {
         "check", "doctor", "plan", "preflight", "campaign-audit",
-        "run", "runs", "status", "report", "reports", "score",
+        "run", "runs", "status", "report", "explain", "reports", "score",
     }:
         raise HarborBackendError(f"{args.command} is unavailable for Harbor matrices")
     if getattr(args, "task", []) or getattr(args, "subject", []) or getattr(args, "condition", None):
@@ -223,9 +223,15 @@ def run_harbor_command(args, profile: MatrixProfile) -> int:
             if status["qualified"]:
                 _write_report(saved.root, "report.json", report)
                 _write_report(saved.root, "score.json", report)
+                _write_report(
+                    saved.root,
+                    "mechanism.json",
+                    report["mechanism_attribution"],
+                )
             else:
                 (saved.root / "reports/report.json").unlink(missing_ok=True)
                 (saved.root / "reports/score.json").unlink(missing_ok=True)
+                (saved.root / "reports/mechanism.json").unlink(missing_ok=True)
             print(
                 f"RUN SUMMARY verified {status['complete_trials']}/{status['expected_trials']} | "
                 f"outcomes {json.dumps(status['outcomes'], sort_keys=True)} | qualified {status['qualified']}",
@@ -248,6 +254,7 @@ def run_harbor_command(args, profile: MatrixProfile) -> int:
                 if not status["qualified"]:
                     (saved.root / "reports/report.json").unlink(missing_ok=True)
                     (saved.root / "reports/score.json").unlink(missing_ok=True)
+                    (saved.root / "reports/mechanism.json").unlink(missing_ok=True)
         print(json.dumps(status, indent=2, sort_keys=True))
         return 2 if (
             status["conflicting_trials"]
@@ -273,11 +280,29 @@ def run_harbor_command(args, profile: MatrixProfile) -> int:
             _write_report(saved.root, "status.json", status)
             if status["qualified"]:
                 _write_report(saved.root, "report.json", report)
+                _write_report(
+                    saved.root,
+                    "mechanism.json",
+                    report["mechanism_attribution"],
+                )
                 if args.command in {"score", "reports"}:
                     _write_report(saved.root, "score.json", report)
             else:
                 (saved.root / "reports/report.json").unlink(missing_ok=True)
                 (saved.root / "reports/score.json").unlink(missing_ok=True)
+                (saved.root / "reports/mechanism.json").unlink(missing_ok=True)
+    if args.command == "explain":
+        mechanism = {
+            **report["mechanism_attribution"],
+            "run_id": saved.run_id,
+            "run_root": str(saved.root),
+            "matrix": profile.name,
+            "campaign_qualified": status["qualified"],
+        }
+        print(json.dumps(mechanism, indent=2, sort_keys=True))
+        return 0 if status["qualified"] or getattr(
+            args, "allow_incomplete", False
+        ) else 2
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0 if status["qualified"] or (
         args.command == "report" and getattr(args, "allow_incomplete", False)

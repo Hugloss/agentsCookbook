@@ -145,7 +145,14 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 self.assertIn(f"{target}:\n", makefile)
                 self.assertIn(f"./benchmark {command}", makefile)
         self.assertIn('MATRIX ?= heldout', makefile)
+        self.assertIn('HARBOR_MATRIX ?= harbor-full', makefile)
         self.assertIn('--matrix "$(MATRIX)"', makefile)
+        self.assertIn("benchmark-harness-explain:\n", makefile)
+        self.assertIn(
+            './benchmark explain --env-file "$(BENCHMARK_ENV)"',
+            makefile,
+        )
+        self.assertIn('--matrix "$(HARBOR_MATRIX)"', makefile)
         self.assertIn('run --resume --run-id "$(RUN_ID)"', makefile)
         self.assertIn("benchmark-oracle-review:", makefile)
         self.assertIn(

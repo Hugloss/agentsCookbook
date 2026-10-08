@@ -361,6 +361,19 @@ def _parser() -> argparse.ArgumentParser:
         help="report available valid receipts without requiring every frozen definition",
     )
 
+    explain = sub.add_parser(
+        "explain",
+        help="explain paired Harbor outcome changes from observable mechanism evidence",
+    )
+    explain.add_argument("--env-file", type=Path)
+    explain.add_argument("--root", type=Path)
+    explain.add_argument("--run-id")
+    explain.add_argument(
+        "--allow-incomplete",
+        action="store_true",
+        help="inspect mechanism evidence before the full Harbor matrix qualifies",
+    )
+
     reports = sub.add_parser("reports")
     reports.add_argument("--suite", type=Path)
     reports.add_argument("--env-file", type=Path, required=True)
@@ -385,7 +398,20 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
 
-    for command in (check, plan, preflight, audit, prepare, run, runs, status, report, reports, score):
+    for command in (
+        check,
+        plan,
+        preflight,
+        audit,
+        prepare,
+        run,
+        runs,
+        status,
+        report,
+        explain,
+        reports,
+        score,
+    ):
         command.add_argument(
             "--matrix",
             default="heldout",
@@ -860,6 +886,10 @@ def main(argv: list[str] | None = None) -> int:
         matrix_profile = load_profile(getattr(args, "matrix", "heldout"))
         if matrix_profile.backend == "harbor":
             return run_harbor_command(args, matrix_profile)
+        if args.command == "explain":
+            raise MatrixProfileError(
+                "explain is available only for Harbor matrices"
+            )
     except (MatrixProfileError, HarborBackendError, RunStoreError, CampaignAuthorityError, OSError, ValueError) as exc:
         raise SystemExit(f"benchmark matrix unavailable: {exc}") from exc
     explicit_score_output = getattr(args, "output", None) is not None
