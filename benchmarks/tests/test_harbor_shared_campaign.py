@@ -296,9 +296,33 @@ class HarborSharedCampaignTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             env, patches = self._environment(root)
+            admitted = {
+                "ready": True,
+                "hashmarks": {
+                    "mcp_contract_identity": "sha256:full",
+                    "canonical_tools": [
+                        "repository_context",
+                        "find",
+                        "task_evidence",
+                    ],
+                    "treatments": {
+                        "hashmarks": {
+                            "tools": [
+                                "repository_context",
+                                "find",
+                                "task_evidence",
+                            ],
+                            "projection_identity": "sha256:full",
+                            "source_contract_identity": "sha256:full",
+                            "full_contract": True,
+                        }
+                    },
+                },
+            }
+            changed = {**admitted, "harbor": "changed"}
             with patches[0], patches[2], mock.patch(
                 "benchmarks.harbor_commands.observed_preflight",
-                side_effect=({"ready": True}, {"ready": True, "harbor": "changed"}),
+                side_effect=(admitted, changed),
             ), mock.patch(
                 "benchmarks.harness.harbor_backend.execute_trial",
                 side_effect=self._reward_trial,
