@@ -339,6 +339,52 @@ class HarborSharedCampaignTests(unittest.TestCase):
                     )
                 self.assertEqual(execute.call_count, 6)
 
+    def test_resume_rejects_tampered_mcp_treatment_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            env, patches = self._environment(root)
+            with patches[0], patches[1], patches[2], mock.patch(
+                "benchmarks.harness.harbor_backend.execute_trial",
+                side_effect=self._reward_trial,
+            ) as execute:
+                self.assertEqual(
+                    self._call(
+                        "run",
+                        "--new",
+                        "--matrix",
+                        "harbor-smoke",
+                        "--env-file",
+                        str(env),
+                        "--root",
+                        str(root),
+                        "--no-json-results",
+                    )[0],
+                    0,
+                )
+                self.assertEqual(execute.call_count, 6)
+
+                config = root / "runs/000001/hashmarks.mcp.json"
+                config.write_text("{}\n", encoding="utf-8")
+
+                with self.assertRaisesRegex(
+                    SystemExit,
+                    "MCP treatment config changed",
+                ):
+                    self._call(
+                        "run",
+                        "--resume",
+                        "--run-id",
+                        "000001",
+                        "--matrix",
+                        "harbor-smoke",
+                        "--env-file",
+                        str(env),
+                        "--root",
+                        str(root),
+                        "--no-json-results",
+                    )
+                self.assertEqual(execute.call_count, 6)
+
     def test_corrupt_reward_blocks_status_and_comparison(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
