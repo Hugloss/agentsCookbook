@@ -410,6 +410,11 @@ def harbor_report(
             "success": outcome == "PASS",
         })
     report = build_harbor_report(rows)
+    mechanism = build_mechanism_report(results_root)
+    mechanism["campaign_qualified"] = status["qualified"]
+    mechanism["interpretation_state"] = (
+        "QUALIFIED" if status["qualified"] else "INSPECTION_ONLY"
+    )
     report.update({
         "backend": "harbor",
         "expected_trials": status["expected_trials"],
@@ -417,7 +422,7 @@ def harbor_report(
         "pending_trials": status["pending_trials"],
         "interrupted_trials": status["interrupted_trials"],
         "qualified": status["qualified"],
-        "mechanism_attribution": build_mechanism_report(results_root),
+        "mechanism_attribution": mechanism,
     })
     if not status["qualified"]:
         report["hashmarks_uplift"] = {
