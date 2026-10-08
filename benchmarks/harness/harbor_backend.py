@@ -33,6 +33,7 @@ from .campaign_authority import (
     record_interrupted_attempt,
 )
 from .identity import canonical_json, digest
+from .mechanism_attribution import build_mechanism_report
 from .runner import TrialRunResult, reuse_completed_trial
 from .suite import SuiteDefinition
 
@@ -201,6 +202,28 @@ def _redact(value: str, settings: HarborSettings, host: Mapping[str, str]) -> st
     return value
 
 
+def _captured_job_artifact(
+    observed: Mapping[str, Any],
+    *,
+    key: str,
+    job_root: Path,
+    label: str,
+) -> bytes | None:
+    value = observed.get(key)
+    if value is None:
+        return None
+    path = Path(str(value))
+    if path.is_symlink() or not path.is_file():
+        raise HarborBackendError(f"Harbor {label} path is missing or invalid")
+    try:
+        path.resolve().relative_to(job_root)
+    except ValueError as exc:
+        raise HarborBackendError(
+            f"Harbor {label} escaped its job directory"
+        ) from exc
+    return path.read_bytes()
+
+
 def run_harbor_trial(
     *,
     suite: SuiteDefinition,
@@ -272,18 +295,32 @@ def run_harbor_trial(
     )
     observed["stderr_tail"] = _redact(str(observed.get("stderr_tail") or ""), settings, host)
     reward_bytes = None
+    trajectory_bytes = None
+    answer_bytes = None
     if observed["status"] == "COMPLETE":
-        reward_path = Path(str(observed["reward_path"]))
         if jobs_root.is_symlink() or (jobs_root / job_name).is_symlink():
             raise HarborBackendError("Harbor job directory must not be a symlink")
         job_root = (jobs_root / job_name).resolve()
-        if reward_path.is_symlink() or not reward_path.is_file():
-            raise HarborBackendError("Harbor reward path is missing or invalid")
-        try:
-            reward_path.resolve().relative_to(job_root)
-        except ValueError as exc:
-            raise HarborBackendError("Harbor reward escaped its job directory") from exc
-        reward_bytes = reward_path.read_bytes()
+        reward_bytes = _captured_job_artifact(
+            observed,
+            key="reward_path",
+            job_root=job_root,
+            label="reward",
+        )
+        if reward_bytes is None:
+            raise HarborBackendError("Harbor reward path is missing")
+        trajectory_bytes = _captured_job_artifact(
+            observed,
+            key="trajectory_path",
+            job_root=job_root,
+            label="ATIF trajectory",
+        )
+        answer_bytes = _captured_job_artifact(
+            observed,
+            key="answer_evidence_path",
+            job_root=job_root,
+            label="answer evidence",
+        )
     status = (
         "PASS" if observed["reward"] > 0 else "FAIL"
     ) if observed["status"] == "COMPLETE" else "INCOMPLETE"
@@ -319,6 +356,10 @@ def run_harbor_trial(
     artifacts = {"harbor_result": ("harbor-result.json", canonical_json(observed))}
     if reward_bytes is not None:
         artifacts["reward"] = ("reward" + Path(str(observed["reward_path"])).suffix, reward_bytes)
+    if trajectory_bytes is not None:
+        artifacts["trajectory"] = ("trajectory.json", trajectory_bytes)
+    if answer_bytes is not None:
+        artifacts["answer"] = ("answer.json", answer_bytes)
     try:
         result_dir = publish_bundle(
             results_root=results_root,
@@ -376,6 +417,7 @@ def harbor_report(
         "pending_trials": status["pending_trials"],
         "interrupted_trials": status["interrupted_trials"],
         "qualified": status["qualified"],
+        "mechanism_attribution": build_mechanism_report(results_root),
     })
     if not status["qualified"]:
         report["hashmarks_uplift"] = {
