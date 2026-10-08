@@ -269,20 +269,22 @@ class HarborMatrixTests(unittest.TestCase):
                 },
             )
 
-        self.assertEqual(
-            value["mcpServers"]["hashmarks"]["args"][-3:],
-            ["mcp", "--tool", "task_evidence"],
-        )
-        self.assertIsNone(configs["none"])
-        self.assertIn("hashmarks", configs)
-        self.assertIn("hashmarks-task-evidence-only", configs)
-        projected = json.loads(
-            configs["hashmarks-task-evidence-only"].read_text(encoding="utf-8")
-        )
-        self.assertEqual(
-            projected["mcpServers"]["hashmarks"]["args"][-3:],
-            ["mcp", "--tool", "task_evidence"],
-        )
+            self.assertEqual(
+                value["mcpServers"]["hashmarks"]["args"][-3:],
+                ["mcp", "--tool", "task_evidence"],
+            )
+            self.assertIsNone(configs["none"])
+            self.assertIn("hashmarks", configs)
+            self.assertIn("hashmarks-task-evidence-only", configs)
+            projected = json.loads(
+                configs["hashmarks-task-evidence-only"].read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                projected["mcpServers"]["hashmarks"]["args"][-3:],
+                ["mcp", "--tool", "task_evidence"],
+            )
 
     def test_settings_keep_secret_values_out_of_env_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
