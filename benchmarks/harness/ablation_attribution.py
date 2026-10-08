@@ -18,13 +18,17 @@ from .mechanism_attribution import (
     load_harbor_bundle_projection,
 )
 
-ABLATION_REPORT_SCHEMA = "agentscookbook.harbor-ablation-report.v1"
-ABLATION_SUBJECTS = (
-    "none",
-    "hashmarks",
-    "hashmarks-no-task-evidence",
-    "hashmarks-task-evidence-only",
-)
+ABLATION_REPORT_SCHEMA = "agentscookbook.harbor-ablation-report.v2"
+ABLATION_ROLES = ("bare", "full", "remove", "only")
+LEGACY_TASK_EVIDENCE_CONTRACT = {
+    "component": "task_evidence",
+    "arms": {
+        "bare": "none",
+        "full": "hashmarks",
+        "remove": "hashmarks-no-task-evidence",
+        "only": "hashmarks-task-evidence-only",
+    },
+}
 
 
 def _pair_key(receipt: Mapping[str, Any]) -> tuple[object, ...]:
@@ -48,7 +52,47 @@ def _status(projection: Mapping[str, Any]) -> str:
     return str(value) if value in {"PASS", "FAIL"} else "INCOMPLETE"
 
 
-def _task_evidence_invoked(projection: Mapping[str, Any]) -> bool | None:
+def _normalize_ablation_contract(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, Mapping):
+        return None
+    component = value.get("component")
+    arms = value.get("arms")
+    if (
+        not isinstance(component, str)
+        or not component
+        or not isinstance(arms, Mapping)
+        or set(arms) != set(ABLATION_ROLES)
+    ):
+        return None
+    normalized_arms = {
+        role: str(arms[role])
+        for role in ABLATION_ROLES
+        if isinstance(arms.get(role), str) and arms.get(role)
+    }
+    if (
+        len(normalized_arms) != len(ABLATION_ROLES)
+        or len(set(normalized_arms.values())) != len(ABLATION_ROLES)
+    ):
+        return None
+    return {
+        "component": component,
+        "arms": normalized_arms,
+    }
+
+
+def _receipt_ablation_contract(
+    receipt: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    execution = receipt.get("execution")
+    value = execution.get("ablation") if isinstance(execution, Mapping) else None
+    return _normalize_ablation_contract(value)
+
+
+def _component_invoked(
+    projection: Mapping[str, Any],
+    *,
+    component: str,
+) -> bool | None:
     trace = projection.get("trace")
     if not isinstance(trace, dict) or trace.get("available") is not True:
         return None
@@ -59,7 +103,7 @@ def _task_evidence_invoked(projection: Mapping[str, Any]) -> bool | None:
         matches_subject_operation(
             name,
             subject="hashmarks",
-            operation="task_evidence",
+            operation=component,
         )
         for name in tools
     )
@@ -72,15 +116,20 @@ def _treatment(receipt: Mapping[str, Any]) -> Mapping[str, Any] | None:
         if isinstance(execution, dict)
         else None
     )
-    return value if isinstance(value, dict) else None
+    return value if isinstance(value, Mapping) else None
 
 
 def _validate_quartet_authority(
     arms: Mapping[str, Mapping[str, Any]],
+    *,
+    contract: Mapping[str, Any],
 ) -> tuple[bool, str | None]:
-    full = _treatment(arms["hashmarks"]["receipt"])
-    removed = _treatment(arms["hashmarks-no-task-evidence"]["receipt"])
-    only = _treatment(arms["hashmarks-task-evidence-only"]["receipt"])
+    if set(arms) != set(ABLATION_ROLES):
+        return False, "missing-ablation-arm"
+    component = str(contract["component"])
+    full = _treatment(arms["full"]["receipt"])
+    removed = _treatment(arms["remove"]["receipt"])
+    only = _treatment(arms["only"]["receipt"])
     if not all(isinstance(value, Mapping) for value in (full, removed, only)):
         return False, "missing-frozen-mcp-treatment"
     assert full is not None and removed is not None and only is not None
@@ -96,21 +145,21 @@ def _validate_quartet_authority(
     if not (
         full.get("full_contract") is True
         and isinstance(full_tools, list)
-        and "task_evidence" in full_tools
+        and component in full_tools
     ):
         return False, "full-arm-not-canonical"
     if not (
         removed.get("full_contract") is False
         and isinstance(removed_tools, list)
-        and "task_evidence" not in removed_tools
-        and set(removed_tools) == set(full_tools) - {"task_evidence"}
+        and component not in removed_tools
+        and set(removed_tools) == set(full_tools) - {component}
     ):
         return False, "removal-arm-not-single-tool-ablation"
     if not (
         only.get("full_contract") is False
-        and only_tools == ["task_evidence"]
+        and only_tools == [component]
     ):
-        return False, "only-arm-not-task-evidence-only"
+        return False, "only-arm-not-component-only"
     return True, None
 
 
@@ -124,6 +173,7 @@ def _observed_tool_projection(
     ATIF records invocations, not the advertised MCP catalog. Missing or
     unrecognized calls must never be promoted to proof of exposed tools.
     """
+
     receipt = arm["receipt"]
     trace = arm.get("trace")
     treatment = _treatment(receipt)
@@ -158,7 +208,9 @@ def _observed_tool_projection(
             operation
             for operation in canonical_tools
             if matches_subject_operation(
-                raw, subject="hashmarks", operation=operation
+                raw,
+                subject="hashmarks",
+                operation=operation,
             )
         ]
         if len(candidates) != 1:
@@ -184,17 +236,20 @@ def _observed_tool_projection(
 def _quartet_call_audits(
     arms: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, dict[str, Any]]:
-    full = _treatment(arms["hashmarks"]["receipt"])
+    full = _treatment(arms["full"]["receipt"])
     canonical_tools = (
-        full.get("tools") if isinstance(full, Mapping) else None
+        full.get("tools")
+        if isinstance(full, Mapping)
+        else None
     )
     if not isinstance(canonical_tools, list):
         canonical_tools = []
     return {
-        subject: _observed_tool_projection(
-            arms[subject], canonical_tools=canonical_tools
+        role: _observed_tool_projection(
+            arms[role],
+            canonical_tools=canonical_tools,
         )
-        for subject in ABLATION_SUBJECTS
+        for role in ABLATION_ROLES
     }
 
 
@@ -213,8 +268,8 @@ def _necessity(
     if full_invoked is True:
         return "SUPPORTED_NECESSITY_CONTRAST"
     if full_invoked is False:
-        return "UNATTRIBUTABLE_FULL_NEVER_INVOKED_TASK_EVIDENCE"
-    return "UNKNOWN_TASK_EVIDENCE_INVOCATION"
+        return "UNATTRIBUTABLE_FULL_NEVER_INVOKED_COMPONENT"
+    return "UNKNOWN_COMPONENT_INVOCATION"
 
 
 def _sufficiency(
@@ -236,8 +291,8 @@ def _sufficiency(
     if only_invoked is True:
         return "SUPPORTED_SUFFICIENCY_CONTRAST"
     if only_invoked is False:
-        return "UNATTRIBUTABLE_ONLY_ARM_NEVER_INVOKED_TASK_EVIDENCE"
-    return "UNKNOWN_TASK_EVIDENCE_INVOCATION"
+        return "UNATTRIBUTABLE_ONLY_ARM_NEVER_INVOKED_COMPONENT"
+    return "UNKNOWN_COMPONENT_INVOCATION"
 
 
 def _combined(necessity: str, sufficiency: str) -> str:
@@ -251,41 +306,55 @@ def _combined(necessity: str, sufficiency: str) -> str:
         return "SUFFICIENCY_SIGNAL"
     if necessity == "NOT_NECESSARY_IN_THIS_REPLICATE":
         return "REDUNDANT_OR_OTHER_HASHMARKS_PATH"
-    return "NO_ISOLATED_TASK_EVIDENCE_SIGNAL"
+    return "NO_ISOLATED_COMPONENT_SIGNAL"
 
 
 def quartet_projection(
     arms: Mapping[str, Mapping[str, Any]],
+    *,
+    contract: Mapping[str, Any] | None = None,
+    contract_source: str = "receipt",
 ) -> dict[str, Any]:
-    valid, authority_error = _validate_quartet_authority(arms)
+    normalized = (
+        _normalize_ablation_contract(contract)
+        if contract is not None
+        else dict(LEGACY_TASK_EVIDENCE_CONTRACT)
+    )
+    if normalized is None:
+        raise MechanismAttributionError("invalid component-ablation contract")
+    component = str(normalized["component"])
+    valid, authority_error = _validate_quartet_authority(
+        arms,
+        contract=normalized,
+    )
     call_audits = _quartet_call_audits(arms)
     if valid:
-        for subject in ABLATION_SUBJECTS:
-            if call_audits[subject]["status"] != "NO_DISALLOWED_CALL_OBSERVED":
+        for role in ABLATION_ROLES:
+            if call_audits[role]["status"] != "NO_DISALLOWED_CALL_OBSERVED":
                 valid = False
                 authority_error = (
                     "observed-mcp-call-not-qualified:"
-                    + subject
+                    + role
                     + ":"
-                    + str(call_audits[subject]["status"])
+                    + str(call_audits[role]["status"])
                 )
                 break
-    bare = arms["none"]
-    full = arms["hashmarks"]
-    removed = arms["hashmarks-no-task-evidence"]
-    only = arms["hashmarks-task-evidence-only"]
     statuses = {
-        "none": _status(bare),
-        "hashmarks": _status(full),
-        "hashmarks-no-task-evidence": _status(removed),
-        "hashmarks-task-evidence-only": _status(only),
+        role: _status(arms[role])
+        for role in ABLATION_ROLES
     }
-    full_invoked = _task_evidence_invoked(full)
-    only_invoked = _task_evidence_invoked(only)
+    full_invoked = _component_invoked(
+        arms["full"],
+        component=component,
+    )
+    only_invoked = _component_invoked(
+        arms["only"],
+        component=component,
+    )
     necessity = (
         _necessity(
-            full_status=statuses["hashmarks"],
-            removed_status=statuses["hashmarks-no-task-evidence"],
+            full_status=statuses["full"],
+            removed_status=statuses["remove"],
             full_invoked=full_invoked,
         )
         if valid
@@ -293,25 +362,28 @@ def quartet_projection(
     )
     sufficiency = (
         _sufficiency(
-            bare_status=statuses["none"],
-            only_status=statuses["hashmarks-task-evidence-only"],
+            bare_status=statuses["bare"],
+            only_status=statuses["only"],
             only_invoked=only_invoked,
         )
         if valid
         else "UNQUALIFIED_TREATMENT_AUTHORITY"
     )
-    receipt = bare["receipt"]
+    receipt = arms["bare"]["receipt"]
     return {
         "task": receipt.get("task_id"),
         "harness": receipt.get("harness"),
         "model": receipt.get("model"),
         "replicate_id": receipt.get("replicate_id"),
+        "component": component,
+        "subjects": dict(normalized["arms"]),
+        "contract_source": contract_source,
         "statuses": statuses,
         "treatment_authority_valid": valid,
         "treatment_authority_error": authority_error,
         "observed_call_projection": call_audits,
         "observed_catalog_advertisement_proven": False,
-        "task_evidence_invoked": {
+        "component_invoked": {
             "full": full_invoked,
             "only": only_invoked,
         },
@@ -338,28 +410,86 @@ def _contrast(left: float | None, right: float | None) -> float | None:
     return None if left is None or right is None else left - right
 
 
-def build_ablation_report(results_root: Path) -> dict[str, Any]:
-    grouped: dict[
-        tuple[object, ...],
-        dict[str, list[dict[str, Any]]],
-    ] = defaultdict(lambda: defaultdict(list))
-    unavailable: list[dict[str, str]] = []
+def _legacy_contract_needed(
+    projections: list[dict[str, Any]],
+) -> bool:
+    legacy_specific = {
+        LEGACY_TASK_EVIDENCE_CONTRACT["arms"]["remove"],
+        LEGACY_TASK_EVIDENCE_CONTRACT["arms"]["only"],
+    }
+    return any(
+        _receipt_ablation_contract(projection["receipt"]) is None
+        and str(projection["receipt"].get("subject")) in legacy_specific
+        for projection in projections
+    )
 
+
+def build_ablation_report(results_root: Path) -> dict[str, Any]:
+    projections: list[dict[str, Any]] = []
+    unavailable: list[dict[str, str]] = []
     if results_root.is_dir():
         for directory in sorted(results_root.iterdir()):
             if not directory.is_dir() or directory.name.startswith("."):
                 continue
             try:
-                projection = load_harbor_bundle_projection(directory)
+                projections.append(load_harbor_bundle_projection(directory))
             except (MechanismAttributionError, OSError, ValueError) as exc:
                 unavailable.append(
                     {"directory": str(directory), "reason": str(exc)}
                 )
-                continue
-            receipt = projection["receipt"]
+
+    legacy_enabled = _legacy_contract_needed(projections)
+    grouped: dict[
+        tuple[object, ...],
+        dict[str, list[dict[str, Any]]],
+    ] = defaultdict(lambda: defaultdict(list))
+    contracts: dict[tuple[object, ...], dict[str, Any]] = {}
+    contract_sources: dict[tuple[object, ...], set[str]] = defaultdict(set)
+    eligible: list[tuple[dict[str, Any], dict[str, Any], str]] = []
+
+    for projection in projections:
+        receipt = projection["receipt"]
+        contract = _receipt_ablation_contract(receipt)
+        source = "receipt"
+        if contract is None and legacy_enabled:
             subject = str(receipt.get("subject"))
-            if subject in ABLATION_SUBJECTS:
-                grouped[_pair_key(receipt)][subject].append(projection)
+            if subject in LEGACY_TASK_EVIDENCE_CONTRACT["arms"].values():
+                contract = dict(LEGACY_TASK_EVIDENCE_CONTRACT)
+                source = "legacy-task-evidence-subjects"
+        if contract is None:
+            continue
+        subject = str(receipt.get("subject"))
+        role = next(
+            (
+                role_name
+                for role_name, role_subject in contract["arms"].items()
+                if role_subject == subject
+            ),
+            None,
+        )
+        if role is None:
+            continue
+        key = (
+            *_pair_key(receipt),
+            contract["component"],
+            tuple(
+                (role_name, contract["arms"][role_name])
+                for role_name in ABLATION_ROLES
+            ),
+        )
+        grouped[key][role].append(projection)
+        contracts[key] = contract
+        contract_sources[key].add(source)
+        eligible.append((projection, contract, role))
+
+    components = {
+        str(contract["component"])
+        for contract in contracts.values()
+    }
+    if len(components) > 1:
+        raise MechanismAttributionError(
+            "mixed component-ablation contracts in one Harbor result set"
+        )
 
     quartets: list[dict[str, Any]] = []
     incomplete_groups: list[dict[str, Any]] = []
@@ -367,74 +497,85 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
         grouped.items(),
         key=lambda item: tuple(str(value) for value in item[0]),
     ):
-        if any(len(arms.get(subject, [])) != 1 for subject in ABLATION_SUBJECTS):
+        contract = contracts[key]
+        if any(len(arms.get(role, [])) != 1 for role in ABLATION_ROLES):
             incomplete_groups.append(
                 {
                     "pair_key": [
-                        str(value) if value is not None else None for value in key
+                        str(value) if value is not None else None
+                        for value in key[:5]
                     ],
+                    "component": contract["component"],
                     "arm_counts": {
-                        subject: len(arms.get(subject, []))
-                        for subject in ABLATION_SUBJECTS
+                        role: len(arms.get(role, []))
+                        for role in ABLATION_ROLES
                     },
                 }
             )
             continue
+        sources = contract_sources[key]
         quartets.append(
             quartet_projection(
-                {subject: arms[subject][0] for subject in ABLATION_SUBJECTS}
+                {role: arms[role][0] for role in ABLATION_ROLES},
+                contract=contract,
+                contract_source=(
+                    next(iter(sources))
+                    if len(sources) == 1
+                    else "mixed-compatible"
+                ),
             )
         )
 
     classifications = Counter(
-        str(row["classification"]) for row in quartets
+        str(row["classification"])
+        for row in quartets
     )
     necessity = Counter(str(row["necessity"]) for row in quartets)
     sufficiency = Counter(str(row["sufficiency"]) for row in quartets)
 
+    component = next(iter(components)) if components else None
+    arms = (
+        dict(next(iter(contracts.values()))["arms"])
+        if contracts
+        else {}
+    )
     by_harness: dict[str, dict[str, Any]] = {}
     harnesses = sorted(
         {
-            str(row["receipt"].get("harness"))
-            for arms in grouped.values()
-            for values in arms.values()
-            for row in values
+            str(projection["receipt"].get("harness"))
+            for projection, _contract, _role in eligible
         }
     )
     for harness in harnesses:
-        per_subject: dict[str, float | None] = {}
-        for subject in ABLATION_SUBJECTS:
+        per_role: dict[str, float | None] = {}
+        for role in ABLATION_ROLES:
             selected = [
                 projection
-                for arms in grouped.values()
-                for projection in arms.get(subject, [])
-                if str(projection["receipt"].get("harness")) == harness
+                for projection, _contract, observed_role in eligible
+                if observed_role == role
+                and str(projection["receipt"].get("harness")) == harness
             ]
-            per_subject[subject] = _rate(selected)
-        bare = per_subject["none"]
-        full = per_subject["hashmarks"]
-        removed = per_subject["hashmarks-no-task-evidence"]
-        only = per_subject["hashmarks-task-evidence-only"]
+            per_role[role] = _rate(selected)
+        bare = per_role["bare"]
+        full = per_role["full"]
+        removed = per_role["remove"]
+        only = per_role["only"]
         by_harness[harness] = {
-            "success_rate": per_subject,
-            "full_uplift_vs_bare": _contrast(full, bare),
-            "task_evidence_removal_drop": _contrast(full, removed),
-            "task_evidence_only_uplift_vs_bare": _contrast(only, bare),
+            "subjects": arms,
+            "success_rate": per_role,
+            "contrasts": {
+                "full_uplift_vs_bare": _contrast(full, bare),
+                "removal_drop": _contrast(full, removed),
+                "only_uplift_vs_bare": _contrast(only, bare),
+            },
         }
 
-    applicable = any(
-        subject in {
-            "hashmarks-no-task-evidence",
-            "hashmarks-task-evidence-only",
-        }
-        for arms in grouped.values()
-        for subject in arms
-    )
+    applicable = bool(contracts)
     return {
         "schema": ABLATION_REPORT_SCHEMA,
         "applicable": applicable,
-        "component": "task_evidence",
-        "arms": list(ABLATION_SUBJECTS),
+        "component": component,
+        "arms": arms,
         "quartets": quartets,
         "summary": {
             "matched_quartets": len(quartets),
@@ -451,12 +592,16 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
         "method": {
             "design": (
                 "same campaign + task + harness + model + replicate across "
-                "bare/full/remove-task_evidence/task_evidence-only arms"
+                "bare/full/remove-component/component-only arms"
             ),
-            "necessity_contrast": "full Hashmarks versus full minus task_evidence",
-            "sufficiency_contrast": "bare versus task_evidence-only",
+            "necessity_contrast": (
+                "full Hashmarks versus full Hashmarks minus the declared component"
+            ),
+            "sufficiency_contrast": (
+                "bare versus the declared component as the only Hashmarks tool"
+            ),
             "invocation_gate": (
-                "positive task_evidence attribution requires observable invocation "
+                "positive component attribution requires observable invocation "
                 "in the relevant full or only arm"
             ),
             "call_projection_limit": (
