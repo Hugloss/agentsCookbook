@@ -129,7 +129,7 @@ def _validate_quartet_authority(
     component = str(contract["component"])
     full = _treatment(arms["full"]["receipt"])
     removed = _treatment(arms["remove"]["receipt"])
-    only = _treatment(normalized_arms["only"]["receipt"])
+    only = _treatment(arms["only"]["receipt"])
     if not all(isinstance(value, Mapping) for value in (full, removed, only)):
         return False, "missing-frozen-mcp-treatment"
     assert full is not None and removed is not None and only is not None
@@ -362,7 +362,7 @@ def quartet_projection(
                 )
                 break
     statuses = {
-        role: _status(arms[role])
+        role: _status(normalized_arms[role])
         for role in ABLATION_ROLES
     }
     full_invoked = _component_invoked(
