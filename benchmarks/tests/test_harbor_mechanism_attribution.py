@@ -1,0 +1,341 @@
+"""Focused regressions for paired Harbor mechanism attribution."""
+
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from benchmarks.harness.bundle_writer import publish_bundle
+from benchmarks.harness.identity import canonical_json
+from benchmarks.harness.mechanism_attribution import (
+    ANSWER_EVIDENCE_SCHEMA,
+    ATTRIBUTION_PROVEN,
+    ATTRIBUTION_SUPPORTED,
+    FOLLOWED,
+    TREATMENT_NEVER_INVOKED,
+    TREATMENT_SUCCESS,
+    build_mechanism_report,
+    pair_projection,
+    project_atif,
+)
+
+
+def _trace(
+    *,
+    available: bool = True,
+    treatment: str = TREATMENT_SUCCESS,
+    routing: str = "FIRST_CHOICE",
+    native_search: int = 0,
+    native_read: int = 0,
+    native_discovery: int = 0,
+    tool_calls: int = 1,
+    tokens: int = 100,
+    followthrough: str = FOLLOWED,
+) -> dict[str, object]:
+    return {
+        "available": available,
+        "treatment": treatment,
+        "subject_routing_timing": routing,
+        "native_search_calls": native_search,
+        "native_read_calls": native_read,
+        "native_discovery_calls": native_discovery,
+        "tool_calls": tool_calls,
+        "total_tokens": tokens,
+        "subject_target_followthrough": followthrough,
+    }
+
+
+def _projection(
+    *,
+    status: str,
+    subject: str,
+    trace: dict[str, object],
+    observed: dict[str, str] | None,
+    match: bool | None,
+) -> dict[str, object]:
+    answer = (
+        None
+        if match is None
+        else {
+            "match": match,
+            "observed": observed,
+            "expected": {"path": "src/owner.py", "symbol": "resolve"},
+            "tracked_clean": True,
+        }
+    )
+    return {
+        "receipt": {
+            "task_id": "localize-owner",
+            "harness": "codex",
+            "subject": subject,
+            "model": "provider/model",
+            "replicate_id": 6201,
+            "status": status,
+            "execution": {"campaign_id": "campaign"},
+        },
+        "trace": trace,
+        "answer": answer,
+    }
+
+
+class HarborMechanismAttributionTests(unittest.TestCase):
+    def test_atif_projection_reuses_tool_vocabulary_without_reasoning(self) -> None:
+        trajectory = {
+            "schema_version": "ATIF-v1.8",
+            "agent": {"name": "codex", "version": "test"},
+            "steps": [
+                {
+                    "step_id": 1,
+                    "source": "agent",
+                    "message": "do not inspect this message",
+                    "reasoning_content": "private reasoning must not be consumed",
+                    "tool_calls": [
+                        {
+                            "tool_call_id": "hm-1",
+                            "function_name": "mcp__hashmarks__task_evidence",
+                            "arguments": {"task": "find owner"},
+                        }
+                    ],
+                    "observation": {
+                        "results": [
+                            {
+                                "source_call_id": "hm-1",
+                                "content": json.dumps(
+                                    {
+                                        "owner": {
+                                            "path": "src/owner.py",
+                                            "symbol": "resolve",
+                                        }
+                                    }
+                                ),
+                            }
+                        ]
+                    },
+                    "metrics": {
+                        "prompt_tokens": 100,
+                        "completion_tokens": 20,
+                        "cached_tokens": 10,
+                    },
+                    "llm_call_count": 1,
+                },
+                {
+                    "step_id": 2,
+                    "source": "agent",
+                    "message": "",
+                    "tool_calls": [
+                        {
+                            "tool_call_id": "read-1",
+                            "function_name": "read_file",
+                            "arguments": {"path": "src/owner.py"},
+                        }
+                    ],
+                    "observation": {
+                        "results": [
+                            {
+                                "source_call_id": "read-1",
+                                "content": "def resolve(): ...",
+                            }
+                        ]
+                    },
+                    "metrics": {
+                        "prompt_tokens": 50,
+                        "completion_tokens": 10,
+                    },
+                    "llm_call_count": 1,
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "trajectory.json"
+            path.write_text(json.dumps(trajectory), encoding="utf-8")
+            projection = project_atif(path)
+
+        self.assertTrue(projection["available"])
+        self.assertEqual(projection["treatment"], TREATMENT_SUCCESS)
+        self.assertEqual(projection["subject_routing_timing"], "FIRST_CHOICE")
+        self.assertEqual(projection["subject_target_followthrough"], FOLLOWED)
+        self.assertEqual(projection["subject_target_count"], 1)
+        self.assertEqual(projection["native_read_calls"], 1)
+        self.assertEqual(projection["native_search_calls"], 0)
+        self.assertEqual(projection["total_tokens"], 180)
+        self.assertFalse(projection["reasoning_content_consumed"])
+        self.assertFalse(projection["message_content_consumed"])
+
+    def test_never_invoked_fail_to_pass_is_explicitly_not_attributable(self) -> None:
+        bare = _projection(
+            status="FAIL",
+            subject="none",
+            trace=_trace(
+                treatment=TREATMENT_NEVER_INVOKED,
+                routing="NEVER_INVOKED",
+            ),
+            observed={"path": "wrong.py", "symbol": "wrong"},
+            match=False,
+        )
+        treated = _projection(
+            status="PASS",
+            subject="hashmarks",
+            trace=_trace(
+                treatment=TREATMENT_NEVER_INVOKED,
+                routing="NEVER_INVOKED",
+            ),
+            observed={"path": "src/owner.py", "symbol": "resolve"},
+            match=True,
+        )
+
+        pair = pair_projection(bare, treated)
+
+        self.assertEqual(pair["outcome_transition"], "FAIL_TO_PASS")
+        self.assertEqual(pair["attribution_result"], "NOT_ATTRIBUTABLE")
+        self.assertEqual(pair["attribution_strength"], ATTRIBUTION_PROVEN)
+        self.assertEqual(
+            pair["attribution_interpretation"],
+            "not-attributable-subject-never-invoked",
+        )
+        self.assertIn("SUBJECT_NEVER_INVOKED", pair["mechanism_tags"])
+        self.assertFalse(pair["positive_causal_proof_claimed"])
+
+    def test_fail_to_pass_first_choice_with_reduced_discovery_is_supported(self) -> None:
+        bare = _projection(
+            status="FAIL",
+            subject="none",
+            trace=_trace(
+                treatment=TREATMENT_NEVER_INVOKED,
+                routing="NOT_CONFIGURED",
+                native_search=3,
+                native_read=2,
+                native_discovery=5,
+                tool_calls=7,
+                tokens=1200,
+                followthrough="FOLLOWTHROUGH_UNKNOWN",
+            ),
+            observed={"path": "wrong.py", "symbol": "wrong"},
+            match=False,
+        )
+        treated = _projection(
+            status="PASS",
+            subject="hashmarks",
+            trace=_trace(
+                native_search=0,
+                native_read=1,
+                native_discovery=1,
+                tool_calls=3,
+                tokens=700,
+            ),
+            observed={"path": "src/owner.py", "symbol": "resolve"},
+            match=True,
+        )
+
+        pair = pair_projection(bare, treated)
+
+        self.assertEqual(pair["answer_transition"], "WRONG_TO_CORRECT")
+        self.assertEqual(pair["native_discovery_change"], "REDUCED")
+        self.assertEqual(pair["native_discovery_delta"], -4)
+        self.assertEqual(pair["tool_call_delta"], -4)
+        self.assertEqual(pair["token_delta"], -500)
+        self.assertEqual(pair["attribution_strength"], ATTRIBUTION_SUPPORTED)
+        self.assertEqual(pair["attribution_result"], "SUPPORTED_ASSOCIATION")
+        self.assertIn("FIRST_CHOICE_LOCALIZATION", pair["mechanism_tags"])
+        self.assertIn("NATIVE_DISCOVERY_REDUCED", pair["mechanism_tags"])
+        self.assertIn("WRONG_TO_CORRECT_ANSWER", pair["mechanism_tags"])
+        self.assertIn(FOLLOWED, pair["mechanism_tags"])
+
+    def test_same_answer_with_fewer_reads_is_classified(self) -> None:
+        observed = {"path": "src/owner.py", "symbol": "resolve"}
+        bare = _projection(
+            status="PASS",
+            subject="none",
+            trace=_trace(
+                treatment=TREATMENT_NEVER_INVOKED,
+                routing="NOT_CONFIGURED",
+                native_read=4,
+                native_discovery=4,
+                tool_calls=5,
+            ),
+            observed=observed,
+            match=True,
+        )
+        treated = _projection(
+            status="PASS",
+            subject="hashmarks",
+            trace=_trace(
+                native_read=1,
+                native_discovery=1,
+                tool_calls=3,
+            ),
+            observed=observed,
+            match=True,
+        )
+
+        pair = pair_projection(bare, treated)
+
+        self.assertTrue(pair["same_observed_answer"])
+        self.assertEqual(pair["native_read_delta"], -3)
+        self.assertIn("SAME_ANSWER_FEWER_READS", pair["mechanism_tags"])
+
+    def test_report_pairs_only_matching_campaign_task_harness_model_replicate(self) -> None:
+        atif = {
+            "schema_version": "ATIF-v1.8",
+            "agent": {"name": "codex", "version": "test"},
+            "steps": [
+                {
+                    "step_id": 1,
+                    "source": "agent",
+                    "message": "",
+                    "tool_calls": [],
+                    "metrics": {"prompt_tokens": 10, "completion_tokens": 2},
+                }
+            ],
+        }
+        answer = {
+            "schema": ANSWER_EVIDENCE_SCHEMA,
+            "observed": {"path": "src/owner.py", "symbol": "resolve"},
+            "expected": {"path": "src/owner.py", "symbol": "resolve"},
+            "match": True,
+            "tracked_clean": True,
+            "error": None,
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for subject, trial_id in (("none", "bare"), ("hashmarks", "treated")):
+                receipt = {
+                    "backend": "harbor",
+                    "definition_id": f"definition-{subject}",
+                    "trial_id": trial_id,
+                    "task_id": "localize-owner",
+                    "condition_id": f"{subject}-codex",
+                    "trial": 0,
+                    "replicate_id": 6201,
+                    "harness": "codex",
+                    "subject": subject,
+                    "model": "provider/model",
+                    "status": "PASS",
+                    "execution": {
+                        "campaign_id": "campaign",
+                        "launch_attempt": 1,
+                    },
+                }
+                publish_bundle(
+                    results_root=root,
+                    trial_id=trial_id,
+                    artifacts={
+                        "trajectory": ("trajectory.json", canonical_json(atif)),
+                        "answer": ("answer.json", canonical_json(answer)),
+                    },
+                    receipt=receipt,
+                )
+
+            report = build_mechanism_report(root)
+
+        self.assertEqual(report["summary"]["paired_observations"], 1)
+        self.assertEqual(report["summary"]["unpaired_groups"], 0)
+        self.assertEqual(report["summary"]["never_invoked_pairs"], 1)
+        self.assertEqual(report["summary"]["never_invoked_credited_pairs"], 0)
+        self.assertFalse(report["summary"]["positive_causal_proof_claimed"])
+
+
+if __name__ == "__main__":
+    unittest.main()
