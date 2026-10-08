@@ -150,15 +150,121 @@ class HarborAblationAttributionTests(unittest.TestCase):
 
         self.assertEqual(
             result["necessity"],
-            "UNATTRIBUTABLE_FULL_NEVER_INVOKED_TASK_EVIDENCE",
+            "UNATTRIBUTABLE_FULL_NEVER_INVOKED_COMPONENT",
         )
         self.assertEqual(
             result["sufficiency"],
-            "UNATTRIBUTABLE_ONLY_ARM_NEVER_INVOKED_TASK_EVIDENCE",
+            "UNATTRIBUTABLE_ONLY_ARM_NEVER_INVOKED_COMPONENT",
         )
         self.assertEqual(
             result["classification"],
-            "NO_ISOLATED_TASK_EVIDENCE_SIGNAL",
+            "NO_ISOLATED_COMPONENT_SIGNAL",
+        )
+
+    def test_same_analyzer_attributes_find_without_component_specific_code(
+        self,
+    ) -> None:
+        contract = {
+            "component": "find",
+            "arms": {
+                "bare": "none",
+                "full": "hashmarks",
+                "remove": "hashmarks-no-find",
+                "only": "hashmarks-find-only",
+            },
+        }
+        treatments = {
+            "none": None,
+            "hashmarks": {
+                "tools": FULL_TOOLS,
+                "projection_identity": "sha256:full",
+                "source_contract_identity": "sha256:contract",
+                "full_contract": True,
+            },
+            "hashmarks-no-find": {
+                "tools": [
+                    "repository_context",
+                    "task_evidence",
+                    "change_impact",
+                ],
+                "projection_identity": "sha256:without-find",
+                "source_contract_identity": "sha256:contract",
+                "full_contract": False,
+            },
+            "hashmarks-find-only": {
+                "tools": ["find"],
+                "projection_identity": "sha256:find-only",
+                "source_contract_identity": "sha256:contract",
+                "full_contract": False,
+            },
+        }
+
+        def projection(
+            subject: str,
+            status: str,
+            tools: list[str],
+        ) -> dict[str, object]:
+            return {
+                "receipt": {
+                    "backend": "harbor",
+                    "task_id": "lookup-known-symbol",
+                    "harness": "codex",
+                    "subject": subject,
+                    "model": "provider/model",
+                    "replicate_id": 6201,
+                    "status": status,
+                    "execution": {
+                        "campaign_id": "campaign",
+                        "mcp_treatment": treatments[subject],
+                        "ablation": contract,
+                    },
+                },
+                "trace": {
+                    "available": True,
+                    "tool_order_complete": True,
+                    "subject_tools": tools,
+                },
+                "answer": None,
+            }
+
+        result = quartet_projection(
+            {
+                "bare": projection("none", "FAIL", []),
+                "full": projection(
+                    "hashmarks",
+                    "PASS",
+                    ["mcp__hashmarks__find"],
+                ),
+                "remove": projection(
+                    "hashmarks-no-find",
+                    "FAIL",
+                    ["mcp__hashmarks__task_evidence"],
+                ),
+                "only": projection(
+                    "hashmarks-find-only",
+                    "PASS",
+                    ["mcp__hashmarks__find"],
+                ),
+            },
+            contract=contract,
+        )
+
+        self.assertEqual(result["component"], "find")
+        self.assertEqual(
+            result["necessity"],
+            "SUPPORTED_NECESSITY_CONTRAST",
+        )
+        self.assertEqual(
+            result["sufficiency"],
+            "SUPPORTED_SUFFICIENCY_CONTRAST",
+        )
+        self.assertEqual(
+            result["classification"],
+            "NECESSARY_AND_SUFFICIENT_CONTRAST",
+        )
+        self.assertEqual(
+            result["component_invoked"],
+            {"full": True, "only": True},
         )
 
     def test_removal_pass_means_task_evidence_was_not_necessary_in_replicate(
