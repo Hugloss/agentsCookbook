@@ -125,7 +125,7 @@ def run_hashmarks_retrieval_probe(
             [*base, "find", expected["symbol"]], workspace,
             cache_root=cache_root,
         )
-    exact_rows = exact.get("hits") if isinstance(exact, dict) else None
+    exact_rows = exact.get("results") if isinstance(exact, dict) else None
     return {
         "schema": "agents-cookbook-hashmarks-retrieval-probe.v1",
         "authority": {"diagnostic_only": True, "product_defect_proven": False},
