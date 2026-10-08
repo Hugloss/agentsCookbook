@@ -192,8 +192,40 @@ def credential_file(
     return _credential_file(run_root, keys=settings.passthrough_env_keys, host=host)
 
 
-def mcp_config(run_root: Path) -> Path:
-    return write_mcp_config(run_root / "hashmarks.mcp.json")
+def mcp_configs(
+    run_root: Path,
+    *,
+    preflight_receipt: Mapping[str, Any],
+) -> dict[str, Path | None]:
+    hashmarks = preflight_receipt.get("hashmarks")
+    treatments = hashmarks.get("treatments") if isinstance(hashmarks, dict) else None
+    if not isinstance(treatments, dict) or "hashmarks" not in treatments:
+        raise HarborBackendError("Harbor preflight has no Hashmarks treatment authority")
+    configs: dict[str, Path | None] = {"none": None}
+    for subject, raw in sorted(treatments.items()):
+        if (
+            not isinstance(subject, str)
+            or not subject
+            or Path(subject).name != subject
+            or not isinstance(raw, dict)
+        ):
+            raise HarborBackendError("Harbor preflight contains invalid treatment identity")
+        tools = raw.get("tools")
+        full_contract = raw.get("full_contract")
+        if (
+            not isinstance(tools, list)
+            or not tools
+            or not all(isinstance(value, str) and value for value in tools)
+            or not isinstance(full_contract, bool)
+        ):
+            raise HarborBackendError(
+                f"Harbor preflight treatment is incomplete: {subject}"
+            )
+        configs[subject] = write_mcp_config(
+            run_root / f"{subject}.mcp.json",
+            tool_names=None if full_contract else tuple(tools),
+        )
+    return configs
 
 
 def _redact(value: str, settings: HarborSettings, host: Mapping[str, str]) -> str:
@@ -233,7 +265,7 @@ def run_harbor_trial(
     settings: HarborSettings,
     host: Mapping[str, str],
     credentials: Path | None,
-    mcp: Path,
+    mcp: Mapping[str, Path | None],
 ) -> TrialRunResult:
     definition = str(row["definition_id"])
     trial_id = digest({"campaign_id": campaign["campaign_id"], "definition_id": definition})
@@ -278,18 +310,23 @@ def run_harbor_trial(
     jobs_root = run_root / "jobs"
     if jobs_root.is_symlink() or (jobs_root / job_name).is_symlink():
         raise HarborBackendError("Harbor job directory must not be a symlink")
+    subject = str(condition["subject"])
+    if subject not in mcp:
+        raise HarborBackendError(
+            f"Harbor treatment has no admitted MCP config: {subject}"
+        )
     observed = execute_trial(
         settings=settings,
         row={
             "task": task_id,
             "harness": condition["agent"],
-            "subject": condition["subject"],
+            "subject": subject,
             "attempt": int(row["trial"]) + 1,
         },
         task_path=run_root / "tasks" / task_id,
         run_root=run_root,
         credential_file=credentials,
-        mcp_config=mcp,
+        mcp_config=mcp[subject],
         host=host,
         job_name=job_name,
     )
@@ -351,6 +388,12 @@ def run_harbor_trial(
             "campaign_id": campaign["campaign_id"],
             "launch_attempt": launch_attempt,
             "job_name": job_name,
+            "mcp_treatment": (
+                campaign.get("preflight", {})
+                .get("hashmarks", {})
+                .get("treatments", {})
+                .get(subject)
+            ),
         },
     }
     artifacts = {"harbor_result": ("harbor-result.json", canonical_json(observed))}
