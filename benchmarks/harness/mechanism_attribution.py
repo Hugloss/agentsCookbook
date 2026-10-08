@@ -648,11 +648,18 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
     grouped: dict[tuple[object, ...], dict[str, list[dict[str, Any]]]] = defaultdict(
         lambda: defaultdict(list)
     )
+    unavailable_bundles: list[dict[str, str]] = []
     if results_root.is_dir():
         for directory in sorted(results_root.iterdir()):
             if not directory.is_dir() or directory.name.startswith("."):
                 continue
-            projection = _bundle_projection(directory)
+            try:
+                projection = _bundle_projection(directory)
+            except (MechanismAttributionError, OSError, json.JSONDecodeError) as exc:
+                unavailable_bundles.append(
+                    {"directory": str(directory), "reason": str(exc)}
+                )
+                continue
             receipt = projection["receipt"]
             subject = receipt.get("subject")
             if subject in {"none", "hashmarks"}:
@@ -689,6 +696,7 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
         "summary": {
             "paired_observations": len(pairs),
             "unpaired_groups": len(unpaired),
+            "unavailable_bundles": len(unavailable_bundles),
             "outcome_transitions": dict(sorted(outcome_counts.items())),
             "treatment": dict(sorted(treatment_counts.items())),
             "routing": dict(sorted(routing_counts.items())),
@@ -708,6 +716,7 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
             "positive_causal_proof_claimed": False,
         },
         "unpaired": unpaired,
+        "unavailable_bundles": unavailable_bundles,
         "method": {
             "pair_authority": (
                 "same campaign + task + harness + model + replicate; "
