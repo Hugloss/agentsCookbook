@@ -172,8 +172,12 @@ class HarborAblationAttributionTests(unittest.TestCase):
             "NOT_NECESSARY_IN_THIS_REPLICATE",
         )
         self.assertEqual(
+            result["sufficiency"],
+            "SUPPORTED_SUFFICIENCY_CONTRAST",
+        )
+        self.assertEqual(
             result["classification"],
-            "REDUNDANT_OR_OTHER_HASHMARKS_PATH",
+            "SUFFICIENCY_SIGNAL",
         )
 
     def test_malformed_removal_arm_fails_treatment_authority(self) -> None:
