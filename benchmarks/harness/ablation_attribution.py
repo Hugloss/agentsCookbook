@@ -326,12 +326,20 @@ def quartet_projection(
     }
 
 
-def _rate(rows: list[Mapping[str, Any]]) -> float | None:
-    outcomes = [_status(row) for row in rows]
-    complete = [value for value in outcomes if value in {"PASS", "FAIL"}]
-    if not complete:
+def _qualified_complete_quartet(quartet: Mapping[str, Any]) -> bool:
+    """Only qualified, fully observed quartets support component contrasts."""
+    statuses = quartet.get("statuses")
+    return (
+        quartet.get("treatment_authority_valid") is True
+        and isinstance(statuses, Mapping)
+        and all(statuses.get(subject) in {"PASS", "FAIL"} for subject in ABLATION_SUBJECTS)
+    )
+
+
+def _qualified_rate(quartets: list[dict[str, Any]], subject: str) -> float | None:
+    if not quartets:
         return None
-    return sum(value == "PASS" for value in complete) / len(complete)
+    return sum(row["statuses"][subject] == "PASS" for row in quartets) / len(quartets)
 
 
 def _contrast(left: float | None, right: float | None) -> float | None:
@@ -386,6 +394,11 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
             )
         )
 
+    qualified = [row for row in quartets if _qualified_complete_quartet(row)]
+    invalid_treatment = sum(
+        row["treatment_authority_valid"] is not True for row in quartets
+    )
+    incomplete_outcomes = len(quartets) - len(qualified) - invalid_treatment
     classifications = Counter(
         str(row["classification"]) for row in quartets
     )
@@ -402,20 +415,20 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
         }
     )
     for harness in harnesses:
-        per_subject: dict[str, float | None] = {}
-        for subject in ABLATION_SUBJECTS:
-            selected = [
-                projection
-                for arms in grouped.values()
-                for projection in arms.get(subject, [])
-                if str(projection["receipt"].get("harness")) == harness
-            ]
-            per_subject[subject] = _rate(selected)
+        matched_count = sum(row["harness"] == harness for row in quartets)
+        selected = [row for row in qualified if row["harness"] == harness]
+        per_subject = {
+            subject: _qualified_rate(selected, subject)
+            for subject in ABLATION_SUBJECTS
+        }
         bare = per_subject["none"]
         full = per_subject["hashmarks"]
         removed = per_subject["hashmarks-no-task-evidence"]
         only = per_subject["hashmarks-task-evidence-only"]
         by_harness[harness] = {
+            "matched_quartets": matched_count,
+            "qualified_complete_quartets": len(selected),
+            "excluded_matched_quartets": matched_count - len(selected),
             "success_rate": per_subject,
             "full_uplift_vs_bare": _contrast(full, bare),
             "task_evidence_removal_drop": _contrast(full, removed),
@@ -438,6 +451,10 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
         "quartets": quartets,
         "summary": {
             "matched_quartets": len(quartets),
+            "qualified_complete_quartets": len(qualified),
+            "treatment_unqualified_quartets": invalid_treatment,
+            "incomplete_outcome_quartets": incomplete_outcomes,
+            "excluded_matched_quartets": len(quartets) - len(qualified),
             "incomplete_groups": len(incomplete_groups),
             "unavailable_bundles": len(unavailable),
             "classification": dict(sorted(classifications.items())),
@@ -463,6 +480,11 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
                 "ATIF invocation records can disqualify observed calls outside "
                 "a frozen MCP projection, but cannot attest to the entire tool "
                 "catalog actually advertised by a model host"
+            ),
+            "aggregate_denominator": (
+                "qualified complete matched quartets only; treatment-unqualified "
+                "or incomplete outcomes are excluded, never scored as failures or "
+                "mixed into per-harness component contrasts"
             ),
             "reasoning_content_consumed": False,
             "positive_causal_claim_policy": (
