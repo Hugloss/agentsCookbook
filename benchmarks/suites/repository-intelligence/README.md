@@ -97,6 +97,14 @@ replace heldout-v1, or carry release authority.
 
 See `headroom-v1/README.md` for its isolated config and commands.
 
+## headroom-v2
+
+`headroom-v2/` preserves the headroom-v1 cases and prompts with a new oracle
+identity. Its oracle grades a complete fenced JSON object semantically while
+recording plain-JSON format compliance separately. This corrects false semantic
+failures found in the interrupted v1 baseline. V1 receipts are not mixed into
+v2 campaigns. See `headroom-v2/README.md` for the run contract.
+
 ## Required-tool diagnostics after heldout-v1 run 000007
 
 Run 000007 completed 108 receipts but did not qualify: Enola was never called, and

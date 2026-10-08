@@ -61,7 +61,7 @@ def test_headroom_suite_is_small_repeated_and_subject_neutral() -> None:
         for forbidden in ("hashmarks", "enola", "mcp", "task_evidence"):
             assert forbidden not in prompt
 
-    assert suite.agents["opencode-native"]["identity"]["version"] == "native-config-v3"
+    assert suite.agents["opencode-native"]["identity"]["version"] == "native-config-v7"
     assert suite.experiment["scoring"]["version"] == 3
 
 
