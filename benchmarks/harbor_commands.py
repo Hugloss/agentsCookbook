@@ -20,7 +20,7 @@ from benchmarks.harness.harbor_backend import (
     admit_harbor_run,
     credential_file,
     harbor_report,
-    mcp_config,
+    mcp_configs,
     observed_preflight,
     run_harbor_trial,
     settings_from_config,
@@ -165,7 +165,10 @@ def run_harbor_command(args, profile: MatrixProfile) -> int:
                 flush=True,
             )
             credentials = credential_file(saved.root, settings=settings, host=config.host)
-            mcp = mcp_config(saved.root)
+            mcp = mcp_configs(
+                saved.root,
+                preflight_receipt=campaign["preflight"],
+            )
             _, initial = _inspect(saved.root, saved.run_id, suite, selected)
             initial_rows = {row["definition_id"]: row for row in initial["rows"]}
             results = []
