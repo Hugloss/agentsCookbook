@@ -886,6 +886,10 @@ def main(argv: list[str] | None = None) -> int:
         matrix_profile = load_profile(getattr(args, "matrix", "heldout"))
         if matrix_profile.backend == "harbor":
             return run_harbor_command(args, matrix_profile)
+        if args.command == "explain":
+            raise MatrixProfileError(
+                "explain is available only for Harbor matrices"
+            )
     except (MatrixProfileError, HarborBackendError, RunStoreError, CampaignAuthorityError, OSError, ValueError) as exc:
         raise SystemExit(f"benchmark matrix unavailable: {exc}") from exc
     explicit_score_output = getattr(args, "output", None) is not None
