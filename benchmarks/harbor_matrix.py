@@ -959,8 +959,13 @@ def _single_job_artifact(
     candidates = sorted(
         path
         for path in job_root.rglob(name)
-        if path.parent.name == parent and path.is_file() and not path.is_symlink()
+        if path.is_file() and not path.is_symlink()
     )
+    preferred = [
+        path for path in candidates if path.parent.name == parent
+    ]
+    if len(preferred) == 1:
+        return str(preferred[0])
     return str(candidates[0]) if len(candidates) == 1 else None
 
 
