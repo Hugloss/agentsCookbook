@@ -150,6 +150,10 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             'HARBOR_ABLATION_MATRIX ?= harbor-ablation-full',
             makefile,
         )
+        self.assertIn(
+            'HARBOR_FIND_ABLATION_MATRIX ?= harbor-find-ablation-full',
+            makefile,
+        )
         self.assertIn('--matrix "$(MATRIX)"', makefile)
         self.assertIn("benchmark-harness-explain:\n", makefile)
         self.assertIn(
@@ -163,6 +167,8 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             makefile,
         )
         self.assertIn('--matrix "$(HARBOR_ABLATION_MATRIX)"', makefile)
+        self.assertIn("benchmark-harness-find-ablation:\n", makefile)
+        self.assertIn('--matrix "$(HARBOR_FIND_ABLATION_MATRIX)"', makefile)
         self.assertIn('run --resume --run-id "$(RUN_ID)"', makefile)
         self.assertIn("benchmark-oracle-review:", makefile)
         self.assertIn(
