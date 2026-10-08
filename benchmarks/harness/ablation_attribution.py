@@ -11,7 +11,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Mapping
 
-from benchmarks.tool_routing import matches_subject_operation
+from benchmarks.tool_routing import is_subject_tool, matches_subject_operation
 
 from .mechanism_attribution import (
     MechanismAttributionError,
@@ -114,6 +114,90 @@ def _validate_quartet_authority(
     return True, None
 
 
+def _observed_tool_projection(
+    arm: Mapping[str, Any],
+    *,
+    canonical_tools: list[str],
+) -> dict[str, Any]:
+    """Conservatively check ATIF calls against the frozen arm catalog.
+
+    ATIF records invocations, not the advertised MCP catalog. Missing or
+    unrecognized calls must never be promoted to proof of exposed tools.
+    """
+    receipt = arm["receipt"]
+    trace = arm.get("trace")
+    treatment = _treatment(receipt)
+    allowed = treatment.get("tools") if isinstance(treatment, Mapping) else []
+    subject_tools = trace.get("subject_tools") if isinstance(trace, Mapping) else None
+    if (
+        not isinstance(trace, Mapping)
+        or trace.get("available") is not True
+        or trace.get("tool_order_complete") is not True
+        or not isinstance(subject_tools, list)
+    ):
+        return {
+            "status": "UNQUALIFIED_TRACE_INCOMPLETE",
+            "observed_subject_calls": None,
+            "disallowed_calls": [],
+            "unresolved_calls": [],
+            "catalog_advertisement_proven": False,
+        }
+    if not isinstance(allowed, list) or any(
+        not isinstance(name, str) for name in allowed
+    ):
+        allowed = []
+    disallowed: list[str] = []
+    unresolved: list[str] = []
+    observed = 0
+    for raw in subject_tools:
+        if not is_subject_tool(raw, "hashmarks"):
+            unresolved.append(str(raw))
+            continue
+        observed += 1
+        candidates = [
+            operation
+            for operation in canonical_tools
+            if matches_subject_operation(
+                raw, subject="hashmarks", operation=operation
+            )
+        ]
+        if len(candidates) != 1:
+            unresolved.append(str(raw))
+        elif candidates[0] not in allowed:
+            disallowed.append(str(raw))
+    status = (
+        "UNQUALIFIED_DISALLOWED_CALL"
+        if disallowed
+        else "UNQUALIFIED_UNRESOLVED_CALL"
+        if unresolved
+        else "NO_DISALLOWED_CALL_OBSERVED"
+    )
+    return {
+        "status": status,
+        "observed_subject_calls": observed,
+        "disallowed_calls": disallowed,
+        "unresolved_calls": unresolved,
+        "catalog_advertisement_proven": False,
+    }
+
+
+def _quartet_call_audits(
+    arms: Mapping[str, Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    full = _treatment(arms["hashmarks"]["receipt"])
+    canonical_tools = (
+        full.get("tools") if isinstance(full, Mapping) else None
+    )
+    if not isinstance(canonical_tools, list):
+        canonical_tools = []
+    return {
+        subject: _observed_tool_projection(
+            arms[subject], canonical_tools=canonical_tools
+        )
+        for subject in ABLATION_SUBJECTS
+    }
+
+
 def _necessity(
     *,
     full_status: str,
@@ -174,6 +258,18 @@ def quartet_projection(
     arms: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, Any]:
     valid, authority_error = _validate_quartet_authority(arms)
+    call_audits = _quartet_call_audits(arms)
+    if valid:
+        for subject in ABLATION_SUBJECTS:
+            if call_audits[subject]["status"] != "NO_DISALLOWED_CALL_OBSERVED":
+                valid = False
+                authority_error = (
+                    "observed-mcp-call-not-qualified:"
+                    + subject
+                    + ":"
+                    + str(call_audits[subject]["status"])
+                )
+                break
     bare = arms["none"]
     full = arms["hashmarks"]
     removed = arms["hashmarks-no-task-evidence"]
@@ -213,13 +309,19 @@ def quartet_projection(
         "statuses": statuses,
         "treatment_authority_valid": valid,
         "treatment_authority_error": authority_error,
+        "observed_call_projection": call_audits,
+        "observed_catalog_advertisement_proven": False,
         "task_evidence_invoked": {
             "full": full_invoked,
             "only": only_invoked,
         },
         "necessity": necessity,
         "sufficiency": sufficiency,
-        "classification": _combined(necessity, sufficiency),
+        "classification": (
+            _combined(necessity, sufficiency)
+            if valid
+            else "UNQUALIFIED_TREATMENT_AUTHORITY"
+        ),
         "positive_causal_proof_claimed": False,
     }
 
@@ -356,6 +458,11 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
             "invocation_gate": (
                 "positive task_evidence attribution requires observable invocation "
                 "in the relevant full or only arm"
+            ),
+            "call_projection_limit": (
+                "ATIF invocation records can disqualify observed calls outside "
+                "a frozen MCP projection, but cannot attest to the entire tool "
+                "catalog actually advertised by a model host"
             ),
             "reasoning_content_consumed": False,
             "positive_causal_claim_policy": (
