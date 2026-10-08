@@ -109,9 +109,6 @@ def harbor_suite(profile: MatrixProfile) -> tuple[SuiteDefinition, dict[str, Any
                     },
                     "configuration": {
                         **source.subjects["hashmarks"].get("configuration", {}),
-                        "harbor_tool_projection": projection.get(
-                            "tool_projections", {}
-                        ).get(subject),
                     },
                 }
             )
