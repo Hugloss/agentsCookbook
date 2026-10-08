@@ -22,6 +22,7 @@ from benchmarks.harbor_matrix import (
 )
 from benchmarks.matrix_profiles import MatrixProfile
 
+from .ablation_attribution import build_ablation_report
 from .bundle import verify_bundle
 from .bundle_writer import BundlePublicationError, publish_bundle
 from .campaign import campaign_status
@@ -458,6 +459,11 @@ def harbor_report(
     mechanism["interpretation_state"] = (
         "QUALIFIED" if status["qualified"] else "INSPECTION_ONLY"
     )
+    ablation = build_ablation_report(results_root)
+    ablation["campaign_qualified"] = status["qualified"]
+    ablation["interpretation_state"] = (
+        "QUALIFIED" if status["qualified"] else "INSPECTION_ONLY"
+    )
     report.update({
         "backend": "harbor",
         "expected_trials": status["expected_trials"],
@@ -466,6 +472,7 @@ def harbor_report(
         "interrupted_trials": status["interrupted_trials"],
         "qualified": status["qualified"],
         "mechanism_attribution": mechanism,
+        "component_ablation": ablation,
     })
     if not status["qualified"]:
         report["hashmarks_uplift"] = {
