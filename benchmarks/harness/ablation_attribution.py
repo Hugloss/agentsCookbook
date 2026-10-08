@@ -129,7 +129,7 @@ def _validate_quartet_authority(
     component = str(contract["component"])
     full = _treatment(arms["full"]["receipt"])
     removed = _treatment(arms["remove"]["receipt"])
-    only = _treatment(arms["only"]["receipt"])
+    only = _treatment(normalized_arms["only"]["receipt"])
     if not all(isinstance(value, Mapping) for value in (full, removed, only)):
         return False, "missing-frozen-mcp-treatment"
     assert full is not None and removed is not None and only is not None
@@ -309,6 +309,22 @@ def _combined(necessity: str, sufficiency: str) -> str:
     return "NO_ISOLATED_COMPONENT_SIGNAL"
 
 
+def _normalize_quartet_arms(
+    arms: Mapping[str, Mapping[str, Any]],
+    *,
+    contract: Mapping[str, Any],
+) -> dict[str, Mapping[str, Any]]:
+    if set(arms) == set(ABLATION_ROLES):
+        return {role: arms[role] for role in ABLATION_ROLES}
+    subjects = contract["arms"]
+    if set(arms) == set(subjects.values()):
+        return {
+            role: arms[subjects[role]]
+            for role in ABLATION_ROLES
+        }
+    raise MechanismAttributionError("component-ablation quartet has wrong arm keys")
+
+
 def quartet_projection(
     arms: Mapping[str, Mapping[str, Any]],
     *,
@@ -323,11 +339,15 @@ def quartet_projection(
     if normalized is None:
         raise MechanismAttributionError("invalid component-ablation contract")
     component = str(normalized["component"])
-    valid, authority_error = _validate_quartet_authority(
+    normalized_arms = _normalize_quartet_arms(
         arms,
         contract=normalized,
     )
-    call_audits = _quartet_call_audits(arms)
+    valid, authority_error = _validate_quartet_authority(
+        normalized_arms,
+        contract=normalized,
+    )
+    call_audits = _quartet_call_audits(normalized_arms)
     if valid:
         for role in ABLATION_ROLES:
             if call_audits[role]["status"] != "NO_DISALLOWED_CALL_OBSERVED":
@@ -335,6 +355,8 @@ def quartet_projection(
                 authority_error = (
                     "observed-mcp-call-not-qualified:"
                     + role
+                    + ":"
+                    + str(normalized["arms"][role])
                     + ":"
                     + str(call_audits[role]["status"])
                 )
@@ -344,11 +366,11 @@ def quartet_projection(
         for role in ABLATION_ROLES
     }
     full_invoked = _component_invoked(
-        arms["full"],
+        normalized_arms["full"],
         component=component,
     )
     only_invoked = _component_invoked(
-        arms["only"],
+        normalized_arms["only"],
         component=component,
     )
     necessity = (
@@ -369,7 +391,7 @@ def quartet_projection(
         if valid
         else "UNQUALIFIED_TREATMENT_AUTHORITY"
     )
-    receipt = arms["bare"]["receipt"]
+    receipt = normalized_arms["bare"]["receipt"]
     return {
         "task": receipt.get("task_id"),
         "harness": receipt.get("harness"),
@@ -381,7 +403,10 @@ def quartet_projection(
         "statuses": statuses,
         "treatment_authority_valid": valid,
         "treatment_authority_error": authority_error,
-        "observed_call_projection": call_audits,
+        "observed_call_projection": {
+            normalized["arms"][role]: call_audits[role]
+            for role in ABLATION_ROLES
+        },
         "observed_catalog_advertisement_proven": False,
         "component_invoked": {
             "full": full_invoked,
