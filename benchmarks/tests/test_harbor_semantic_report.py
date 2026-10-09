@@ -59,6 +59,7 @@ def _answer(subject: str) -> dict:
         "schema": "agentscookbook.harbor-answer-evidence.v1",
         "observed": observed,
         "expected": expected,
+        "semantic_case_id": "declarations-01",
         "match": subject == "hashmarks",
         "error": None,
         "tracked_clean": True,
