@@ -74,7 +74,11 @@ def _claims(payload: object, fields: set[str]) -> dict[str, list[object]] | None
             return all(visit(part, depth + 1) for part in value[:MAX_ATOMS]) and len(value) <= MAX_ATOMS
         if not isinstance(value, dict):
             return False
-        if value.get("isError") is True:
+        if (
+            value.get("isError") is True
+            or isinstance(value.get("error"), str) and bool(value["error"])
+            or value.get("status") in {"error", "failed", "denied", "unavailable"}
+        ):
             return False
         if value.get("type") == "text":
             text = value.get("text")
