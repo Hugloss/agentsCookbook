@@ -74,8 +74,24 @@ def _normalize_ablation_contract(value: object) -> dict[str, Any] | None:
         or len(set(normalized_arms.values())) != len(ABLATION_ROLES)
     ):
         return None
+    selector = value.get("selector")
+    normalized_selector = None
+    if selector is not None:
+        if (
+            not isinstance(selector, Mapping)
+            or set(selector) != {"argument", "value"}
+            or selector.get("argument") != "surface_name"
+            or not isinstance(selector.get("value"), str)
+            or not selector["value"]
+        ):
+            return None
+        normalized_selector = {
+            "argument": "surface_name",
+            "value": str(selector["value"]),
+        }
     return {
         "component": component,
+        **({"selector": normalized_selector} if normalized_selector else {}),
         "arms": normalized_arms,
     }
 
@@ -92,21 +108,41 @@ def _component_invoked(
     projection: Mapping[str, Any],
     *,
     component: str,
+    selector: Mapping[str, str] | None = None,
 ) -> bool | None:
     trace = projection.get("trace")
     if not isinstance(trace, dict) or trace.get("available") is not True:
         return None
-    tools = trace.get("subject_tools")
-    if not isinstance(tools, list):
+    if selector is None:
+        tools = trace.get("subject_tools")
+        if not isinstance(tools, list):
+            return None
+        return any(
+            matches_subject_operation(
+                name,
+                subject="hashmarks",
+                operation=component,
+            )
+            for name in tools
+        )
+    calls = trace.get("subject_call_selectors")
+    if not isinstance(calls, list):
         return None
-    return any(
-        matches_subject_operation(
+    matching_tool_observed = False
+    for raw in calls:
+        if not isinstance(raw, Mapping):
+            continue
+        name = raw.get("tool")
+        if not matches_subject_operation(
             name,
             subject="hashmarks",
             operation=component,
-        )
-        for name in tools
-    )
+        ):
+            continue
+        matching_tool_observed = True
+        if raw.get(selector["argument"]) == selector["value"]:
+            return True
+    return False if matching_tool_observed or calls else False
 
 
 def _treatment(receipt: Mapping[str, Any]) -> Mapping[str, Any] | None:
