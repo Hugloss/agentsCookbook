@@ -164,6 +164,56 @@ class HarborMechanismAttributionTests(unittest.TestCase):
         self.assertFalse(projection["reasoning_content_consumed"])
         self.assertFalse(projection["message_content_consumed"])
 
+    def test_atif_projection_keeps_bounded_query_surface_selector(self) -> None:
+        trajectory = {
+            "schema_version": "ATIF-v1.8",
+            "steps": [
+                {
+                    "source": "agent",
+                    "tool_calls": [
+                        {
+                            "tool_call_id": "query-1",
+                            "function_name": (
+                                "mcp__hashmarks__repository_intelligence_query"
+                            ),
+                            "arguments": {
+                                "surface_name": "verification-explanation",
+                                "task": "large task text not needed by selector audit",
+                            },
+                        }
+                    ],
+                    "observation": {
+                        "results": [
+                            {
+                                "source_call_id": "query-1",
+                                "content": {"schema": "example"},
+                            }
+                        ]
+                    },
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "trajectory.json"
+            path.write_text(json.dumps(trajectory), encoding="utf-8")
+            projection = project_atif(path)
+
+        self.assertEqual(
+            projection["subject_call_selectors"],
+            [
+                {
+                    "tool": (
+                        "mcp__hashmarks__repository_intelligence_query"
+                    ),
+                    "surface_name": "verification-explanation",
+                }
+            ],
+        )
+        self.assertNotIn(
+            "large task text",
+            json.dumps(projection["subject_call_selectors"]),
+        )
+
     def test_malformed_atif_calls_do_not_prove_never_invoked(self) -> None:
         scenarios = (
             ([], "empty-trajectory"),
