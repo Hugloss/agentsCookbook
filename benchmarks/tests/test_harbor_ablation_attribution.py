@@ -119,6 +119,26 @@ def _quartet(
 
 
 class HarborAblationAttributionTests(unittest.TestCase):
+    def _report_from_quartets(
+        self,
+        quartets: list[dict[str, dict[str, object]]],
+    ) -> dict[str, object]:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            projections = {}
+            for index, arms in enumerate(quartets):
+                for subject, row in arms.items():
+                    row["receipt"]["replicate_id"] = 6201 + index
+                    directory = root / f"{index:02d}-{subject}"
+                    directory.mkdir()
+                    projections[directory.name] = row
+            with mock.patch(
+                "benchmarks.harness.ablation_attribution."
+                "load_harbor_bundle_projection",
+                side_effect=lambda directory: projections[directory.name],
+            ):
+                return build_ablation_report(root)
+
     def test_matched_quartet_can_support_necessity_and_sufficiency_contrasts(
         self,
     ) -> None:
@@ -151,15 +171,121 @@ class HarborAblationAttributionTests(unittest.TestCase):
 
         self.assertEqual(
             result["necessity"],
-            "UNATTRIBUTABLE_FULL_NEVER_INVOKED_TASK_EVIDENCE",
+            "UNATTRIBUTABLE_FULL_NEVER_INVOKED_COMPONENT",
         )
         self.assertEqual(
             result["sufficiency"],
-            "UNATTRIBUTABLE_ONLY_ARM_NEVER_INVOKED_TASK_EVIDENCE",
+            "UNATTRIBUTABLE_ONLY_ARM_NEVER_INVOKED_COMPONENT",
         )
         self.assertEqual(
             result["classification"],
-            "NO_ISOLATED_TASK_EVIDENCE_SIGNAL",
+            "NO_ISOLATED_COMPONENT_SIGNAL",
+        )
+
+    def test_same_analyzer_attributes_find_without_component_specific_code(
+        self,
+    ) -> None:
+        contract = {
+            "component": "find",
+            "arms": {
+                "bare": "none",
+                "full": "hashmarks",
+                "remove": "hashmarks-no-find",
+                "only": "hashmarks-find-only",
+            },
+        }
+        treatments = {
+            "none": None,
+            "hashmarks": {
+                "tools": FULL_TOOLS,
+                "projection_identity": "sha256:full",
+                "source_contract_identity": "sha256:contract",
+                "full_contract": True,
+            },
+            "hashmarks-no-find": {
+                "tools": [
+                    "repository_context",
+                    "task_evidence",
+                    "change_impact",
+                ],
+                "projection_identity": "sha256:without-find",
+                "source_contract_identity": "sha256:contract",
+                "full_contract": False,
+            },
+            "hashmarks-find-only": {
+                "tools": ["find"],
+                "projection_identity": "sha256:find-only",
+                "source_contract_identity": "sha256:contract",
+                "full_contract": False,
+            },
+        }
+
+        def projection(
+            subject: str,
+            status: str,
+            tools: list[str],
+        ) -> dict[str, object]:
+            return {
+                "receipt": {
+                    "backend": "harbor",
+                    "task_id": "lookup-known-symbol",
+                    "harness": "codex",
+                    "subject": subject,
+                    "model": "provider/model",
+                    "replicate_id": 6201,
+                    "status": status,
+                    "execution": {
+                        "campaign_id": "campaign",
+                        "mcp_treatment": treatments[subject],
+                        "ablation": contract,
+                    },
+                },
+                "trace": {
+                    "available": True,
+                    "tool_order_complete": True,
+                    "subject_tools": tools,
+                },
+                "answer": None,
+            }
+
+        result = quartet_projection(
+            {
+                "bare": projection("none", "FAIL", []),
+                "full": projection(
+                    "hashmarks",
+                    "PASS",
+                    ["mcp__hashmarks__find"],
+                ),
+                "remove": projection(
+                    "hashmarks-no-find",
+                    "FAIL",
+                    ["mcp__hashmarks__task_evidence"],
+                ),
+                "only": projection(
+                    "hashmarks-find-only",
+                    "PASS",
+                    ["mcp__hashmarks__find"],
+                ),
+            },
+            contract=contract,
+        )
+
+        self.assertEqual(result["component"], "find")
+        self.assertEqual(
+            result["necessity"],
+            "SUPPORTED_NECESSITY_CONTRAST",
+        )
+        self.assertEqual(
+            result["sufficiency"],
+            "SUPPORTED_SUFFICIENCY_CONTRAST",
+        )
+        self.assertEqual(
+            result["classification"],
+            "NECESSARY_AND_SUFFICIENT_CONTRAST",
+        )
+        self.assertEqual(
+            result["component_invoked"],
+            {"full": True, "only": True},
         )
 
     def test_removal_pass_means_task_evidence_was_not_necessary_in_replicate(
@@ -292,37 +418,33 @@ class HarborAblationAttributionTests(unittest.TestCase):
                 "UNQUALIFIED_TRACE_INCOMPLETE",
             )
 
-    def _report_from_quartets(
-        self, quartets: list[dict[str, dict[str, object]]]
-    ) -> dict[str, object]:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            projections = {}
-            for index, arms in enumerate(quartets):
-                for subject, row in arms.items():
-                    row["receipt"]["replicate_id"] = 6201 + index
-                    directory = root / f"{index:02d}-{subject}"
-                    directory.mkdir()
-                    projections[directory.name] = row
-            with mock.patch(
-                "benchmarks.harness.ablation_attribution.load_harbor_bundle_projection",
-                side_effect=lambda directory: projections[directory.name],
-            ):
-                return build_ablation_report(root)
-
-    def test_aggregate_uses_only_complete_treatment_qualified_quartets(self) -> None:
+    def test_aggregate_uses_only_complete_treatment_qualified_quartets(
+        self,
+    ) -> None:
         valid = _quartet()
         bad_tools = _quartet(
-            bare="PASS", full="FAIL", removed="PASS", only="FAIL"
+            bare="PASS",
+            full="FAIL",
+            removed="PASS",
+            only="FAIL",
         )
         bad_tools["hashmarks-no-task-evidence"]["trace"]["subject_tools"] = [
             "mcp__hashmarks__task_evidence"
         ]
         incomplete = _quartet(
-            bare="PASS", full="FAIL", removed="PASS", only="FAIL"
+            bare="PASS",
+            full="FAIL",
+            removed="PASS",
+            only="FAIL",
         )
-        incomplete["hashmarks-task-evidence-only"]["receipt"]["status"] = "INCOMPLETE"
-        report = self._report_from_quartets([valid, bad_tools, incomplete])
+        incomplete["hashmarks-task-evidence-only"]["receipt"][
+            "status"
+        ] = "INCOMPLETE"
+
+        report = self._report_from_quartets(
+            [valid, bad_tools, incomplete]
+        )
+
         summary = report["summary"]
         self.assertEqual(summary["matched_quartets"], 3)
         self.assertEqual(summary["qualified_complete_quartets"], 1)
@@ -335,40 +457,61 @@ class HarborAblationAttributionTests(unittest.TestCase):
         self.assertEqual(
             by_harness["success_rate"],
             {
-                "none": 0.0,
-                "hashmarks": 1.0,
-                "hashmarks-no-task-evidence": 0.0,
-                "hashmarks-task-evidence-only": 1.0,
+                "bare": 0.0,
+                "full": 1.0,
+                "remove": 0.0,
+                "only": 1.0,
             },
         )
-        self.assertEqual(by_harness["task_evidence_removal_drop"], 1.0)
-        self.assertEqual(by_harness["task_evidence_only_uplift_vs_bare"], 1.0)
+        self.assertEqual(
+            by_harness["contrasts"]["removal_drop"],
+            1.0,
+        )
+        self.assertEqual(
+            by_harness["contrasts"]["only_uplift_vs_bare"],
+            1.0,
+        )
 
     def test_no_qualified_complete_quartet_means_unknown_aggregate(self) -> None:
         bad_tools = _quartet()
         bad_tools["hashmarks-task-evidence-only"]["trace"]["subject_tools"] = [
             "mcp__hashmarks__find"
         ]
+
         report = self._report_from_quartets([bad_tools])
+
         summary = report["summary"]
         self.assertEqual(summary["matched_quartets"], 1)
         self.assertEqual(summary["qualified_complete_quartets"], 0)
         self.assertEqual(summary["excluded_matched_quartets"], 1)
         by_harness = report["by_harness"]["codex"]
         self.assertEqual(by_harness["qualified_complete_quartets"], 0)
-        self.assertTrue(all(value is None for value in by_harness["success_rate"].values()))
-        self.assertIsNone(by_harness["full_uplift_vs_bare"])
-        self.assertIsNone(by_harness["task_evidence_removal_drop"])
-        self.assertIsNone(by_harness["task_evidence_only_uplift_vs_bare"])
+        self.assertTrue(
+            all(
+                value is None
+                for value in by_harness["success_rate"].values()
+            )
+        )
+        self.assertIsNone(
+            by_harness["contrasts"]["full_uplift_vs_bare"]
+        )
+        self.assertIsNone(by_harness["contrasts"]["removal_drop"])
+        self.assertIsNone(
+            by_harness["contrasts"]["only_uplift_vs_bare"]
+        )
 
     def test_incomplete_or_unmatched_groups_do_not_enter_aggregate(self) -> None:
         partial = _quartet()
         partial.pop("hashmarks-task-evidence-only")
+
         report = self._report_from_quartets([partial])
-        self.assertEqual(report["summary"]["matched_quartets"], 0)
+
         self.assertEqual(report["summary"]["incomplete_groups"], 1)
-        self.assertEqual(report["summary"]["qualified_complete_quartets"], 0)
-        self.assertIsNone(report["by_harness"]["codex"]["full_uplift_vs_bare"])
+        self.assertEqual(
+            report["summary"]["qualified_complete_quartets"],
+            0,
+        )
+        self.assertEqual(report["by_harness"], {})
 
     def test_ordinary_two_arm_results_are_not_an_ablation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

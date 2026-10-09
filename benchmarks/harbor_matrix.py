@@ -110,6 +110,46 @@ def load_matrix(path: Path) -> dict[str, Any]:
             raise HarborMatrixError(
                 f"Harbor subject {subject} tool projection must be unique non-empty strings"
             )
+    ablation = value.get("ablation")
+    if ablation is not None:
+        if not isinstance(ablation, dict) or set(ablation) != {"component", "arms"}:
+            raise HarborMatrixError(
+                "Harbor ablation must contain exactly component and arms"
+            )
+        component = ablation.get("component")
+        arms = ablation.get("arms")
+        if not isinstance(component, str) or not component:
+            raise HarborMatrixError("Harbor ablation component must be non-empty")
+        if not isinstance(arms, dict) or set(arms) != {
+            "bare",
+            "full",
+            "remove",
+            "only",
+        }:
+            raise HarborMatrixError(
+                "Harbor ablation arms must contain bare/full/remove/only"
+            )
+        arm_subjects = tuple(arms.values())
+        if (
+            not all(isinstance(item, str) and item for item in arm_subjects)
+            or len(set(arm_subjects)) != 4
+            or any(item not in subjects for item in arm_subjects)
+        ):
+            raise HarborMatrixError(
+                "Harbor ablation arms must be four unique declared subjects"
+            )
+        if arms["bare"] != "none" or arms["full"] != "hashmarks":
+            raise HarborMatrixError(
+                "Harbor ablation bare/full arms must be none/hashmarks"
+            )
+        if projections.get(arms["remove"]) != {"exclude": [component]}:
+            raise HarborMatrixError(
+                "Harbor ablation remove arm must exclude only its component"
+            )
+        if projections.get(arms["only"]) != {"include": [component]}:
+            raise HarborMatrixError(
+                "Harbor ablation only arm must include only its component"
+            )
     if not isinstance(value.get("modes"), dict) or not value["modes"]:
         raise HarborMatrixError(
             "Harbor matrix needs at least one mode"
@@ -158,6 +198,23 @@ def matrix_subjects(matrix: Mapping[str, Any]) -> tuple[str, ...]:
     if not isinstance(subjects, list):
         raise HarborMatrixError("Harbor matrix subjects are unavailable")
     return tuple(str(value) for value in subjects)
+
+
+def matrix_ablation(
+    matrix: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    value = matrix.get("ablation")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise HarborMatrixError("Harbor matrix ablation is unavailable")
+    return {
+        "component": str(value["component"]),
+        "arms": {
+            str(role): str(subject)
+            for role, subject in value["arms"].items()
+        },
+    }
 
 
 def subject_tool_projection(
@@ -548,6 +605,12 @@ def preflight(
     )
     if not canonical_tools:
         raise HarborMatrixError("Hashmarks canonical MCP tool catalog is unavailable")
+    ablation = matrix_ablation(matrix)
+    if ablation is not None and ablation["component"] not in canonical_tools:
+        raise HarborMatrixError(
+            "Harbor ablation component is not in the canonical Hashmarks MCP contract: "
+            + str(ablation["component"])
+        )
     subjects = matrix_subjects(matrix)
     treatments: dict[str, dict[str, Any]] = {}
     for subject in subjects:
@@ -621,6 +684,7 @@ def preflight(
             ),
             "canonical_tools": list(canonical_tools),
             "treatments": treatments,
+            **({"ablation": ablation} if ablation is not None else {}),
         },
         "passthrough_env_keys": list(
             settings.passthrough_env_keys

@@ -22,12 +22,19 @@ class HarborSharedCampaignTests(unittest.TestCase):
             ("harbor-full", 54),
             ("harbor-ablation-smoke", 12),
             ("harbor-ablation-full", 108),
+            ("harbor-find-ablation-smoke", 12),
+            ("harbor-find-ablation-full", 108),
         ):
             with self.subTest(name=name):
                 suite, _ = harbor_suite(load_profile(name))
                 self.assertEqual(len(suite.trial_definitions()), count)
 
-    def _environment(self, root: Path, *, ablation: bool = False):
+    def _environment(
+        self,
+        root: Path,
+        *,
+        ablation_component: str | None = None,
+    ):
         env = root / ".env"
         env.write_text("HASHMARKS_BENCH_SOURCE=/unused\nBENCHMARK_HARBOR_MODEL=provider/model\n")
         settings = HarborSettings(
@@ -53,29 +60,47 @@ class HarborSharedCampaignTests(unittest.TestCase):
                 "full_contract": True,
             },
         }
-        if ablation:
+        ablation = None
+        if ablation_component is not None:
+            suffix = ablation_component.replace("_", "-")
+            remove_subject = f"hashmarks-no-{suffix}"
+            only_subject = f"hashmarks-{suffix}-only"
             treatments.update(
                 {
-                    "hashmarks-no-task-evidence": {
-                        "tools": ["repository_context", "find"],
-                        "projection_identity": "sha256:no-task-evidence",
+                    remove_subject: {
+                        "tools": [
+                            tool
+                            for tool in full_tools
+                            if tool != ablation_component
+                        ],
+                        "projection_identity": f"sha256:no-{suffix}",
                         "source_contract_identity": "sha256:full",
                         "full_contract": False,
                     },
-                    "hashmarks-task-evidence-only": {
-                        "tools": ["task_evidence"],
-                        "projection_identity": "sha256:task-evidence-only",
+                    only_subject: {
+                        "tools": [ablation_component],
+                        "projection_identity": f"sha256:{suffix}-only",
                         "source_contract_identity": "sha256:full",
                         "full_contract": False,
                     },
                 }
             )
+            ablation = {
+                "component": ablation_component,
+                "arms": {
+                    "bare": "none",
+                    "full": "hashmarks",
+                    "remove": remove_subject,
+                    "only": only_subject,
+                },
+            }
         observed = {
             "ready": True,
             "hashmarks": {
                 "mcp_contract_identity": "sha256:full",
                 "canonical_tools": full_tools,
                 "treatments": treatments,
+                **({"ablation": ablation} if ablation is not None else {}),
             },
         }
         patches = (
@@ -164,7 +189,10 @@ class HarborSharedCampaignTests(unittest.TestCase):
     def test_ablation_run_persists_and_reports_matched_quartets(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            env, patches = self._environment(root, ablation=True)
+            env, patches = self._environment(
+                root,
+                ablation_component="task_evidence",
+            )
             with patches[0], patches[1], patches[2], mock.patch(
                 "benchmarks.harness.harbor_backend.execute_trial",
                 side_effect=self._reward_trial,
@@ -217,8 +245,54 @@ class HarborSharedCampaignTests(unittest.TestCase):
             ablation_path = root / "runs/000001/reports/ablation.json"
             self.assertTrue(ablation_path.is_file())
             stored = json.loads(ablation_path.read_text(encoding="utf-8"))
-            self.assertEqual(stored["schema"], "agentscookbook.harbor-ablation-report.v1")
+            self.assertEqual(stored["schema"], "agentscookbook.harbor-ablation-report.v2")
             self.assertEqual(stored["summary"]["matched_quartets"], 3)
+
+    def test_find_ablation_uses_same_campaign_and_report_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            env, patches = self._environment(
+                root,
+                ablation_component="find",
+            )
+            with patches[0], patches[1], patches[2], mock.patch(
+                "benchmarks.harness.harbor_backend.execute_trial",
+                side_effect=self._reward_trial,
+            ) as execute:
+                code, _ = self._call(
+                    "run",
+                    "--new",
+                    "--matrix",
+                    "harbor-find-ablation-smoke",
+                    "--env-file",
+                    str(env),
+                    "--root",
+                    str(root),
+                    "--no-json-results",
+                )
+                self.assertEqual(code, 0)
+                self.assertEqual(execute.call_count, 12)
+
+                code, report = self._call(
+                    "ablation",
+                    "--matrix",
+                    "harbor-find-ablation-smoke",
+                    "--root",
+                    str(root),
+                )
+                self.assertEqual(code, 0)
+                self.assertEqual(report["component"], "find")
+                self.assertEqual(
+                    report["arms"],
+                    {
+                        "bare": "none",
+                        "full": "hashmarks",
+                        "remove": "hashmarks-no-find",
+                        "only": "hashmarks-find-only",
+                    },
+                )
+                self.assertEqual(report["summary"]["matched_quartets"], 3)
+                self.assertEqual(execute.call_count, 12)
 
     def test_interrupted_launch_gets_new_job_name_on_resume(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

@@ -449,6 +449,11 @@ def run_harbor_trial(
                 .get("treatments", {})
                 .get(subject)
             ),
+            "ablation": (
+                campaign.get("preflight", {})
+                .get("hashmarks", {})
+                .get("ablation")
+            ),
         },
     }
     artifacts = {"harbor_result": ("harbor-result.json", canonical_json(observed))}

@@ -325,7 +325,7 @@ def run_harbor_command(args, profile: MatrixProfile) -> int:
         component = report["component_ablation"]
         if component.get("applicable") is not True:
             raise HarborBackendError(
-                "selected Harbor matrix has no task_evidence ablation arms"
+                "selected Harbor matrix has no component-ablation arms"
             )
         ablation = {
             **component,

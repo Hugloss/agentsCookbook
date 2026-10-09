@@ -11,6 +11,7 @@ from unittest import mock
 from benchmarks.harbor_matrix import (
     MATRIX_SCHEMA,
     REPORT_SCHEMA,
+    HarborMatrixError,
     HarborSettings,
     MatrixMode,
     build_report,
@@ -43,6 +44,12 @@ ABLATION_MATRIX = (
     / "benchmarks"
     / "harbor"
     / "repository-intelligence-ablation-v1.json"
+)
+FIND_ABLATION_MATRIX = (
+    ROOT
+    / "benchmarks"
+    / "harbor"
+    / "repository-intelligence-find-ablation-v1.json"
 )
 SUITE = (
     ROOT
@@ -104,6 +111,83 @@ class HarborMatrixTests(unittest.TestCase):
                 },
             },
         )
+        self.assertEqual(
+            matrix["ablation"],
+            {
+                "component": "task_evidence",
+                "arms": {
+                    "bare": "none",
+                    "full": "hashmarks",
+                    "remove": "hashmarks-no-task-evidence",
+                    "only": "hashmarks-task-evidence-only",
+                },
+            },
+        )
+
+    def test_checked_in_find_ablation_uses_known_exact_symbol_controls(
+        self,
+    ) -> None:
+        matrix = load_matrix(FIND_ABLATION_MATRIX)
+
+        self.assertEqual(
+            matrix["ablation"],
+            {
+                "component": "find",
+                "arms": {
+                    "bare": "none",
+                    "full": "hashmarks",
+                    "remove": "hashmarks-no-find",
+                    "only": "hashmarks-find-only",
+                },
+            },
+        )
+        self.assertEqual(
+            matrix["tool_projections"],
+            {
+                "hashmarks-no-find": {"exclude": ["find"]},
+                "hashmarks-find-only": {"include": ["find"]},
+            },
+        )
+        self.assertEqual(
+            matrix["modes"]["matrix"]["tasks"],
+            [
+                "lookup-known-symbol-paths-under",
+                "lookup-known-symbol-sync-remove-stale-paths",
+                "lookup-known-symbol-run-poll-delay",
+            ],
+        )
+
+    def test_harbor_only_exact_symbol_tasks_do_not_expand_native_experiment(
+        self,
+    ) -> None:
+        suite = load_suite(SUITE)
+        native_tasks = set(suite.experiment["tasks"])
+        harbor_only = {
+            "lookup-known-symbol-paths-under",
+            "lookup-known-symbol-sync-remove-stale-paths",
+            "lookup-known-symbol-run-poll-delay",
+        }
+
+        self.assertEqual(len(native_tasks), 12)
+        self.assertTrue(harbor_only.issubset(suite.tasks))
+        self.assertTrue(harbor_only.isdisjoint(native_tasks))
+
+    def test_ablation_contract_rejects_projection_semantic_drift(self) -> None:
+        matrix = load_matrix(FIND_ABLATION_MATRIX)
+        matrix["tool_projections"]["hashmarks-no-find"] = {
+            "exclude": ["task_evidence"]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "matrix.json"
+            path.write_text(
+                json.dumps(matrix),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                HarborMatrixError,
+                "remove arm must exclude only its component",
+            ):
+                load_matrix(path)
 
     def test_task_evidence_ablation_projects_exact_canonical_tool_sets(self) -> None:
         matrix = load_matrix(ABLATION_MATRIX)
@@ -532,6 +616,10 @@ class HarborMatrixTests(unittest.TestCase):
                     "projection_identity"
                 ]
             ).startswith("sha256:")
+        )
+        self.assertEqual(
+            receipt["hashmarks"]["ablation"],
+            matrix["ablation"],
         )
 
     def test_report_calculates_hashmarks_uplift_and_harness_spread(self) -> None:
