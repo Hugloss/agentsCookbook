@@ -451,7 +451,7 @@ class HarborAblationAttributionTests(unittest.TestCase):
         report = self._report_from_quartets([quartet])
         self.assertEqual(report["summary"]["qualified_complete_quartets"], 0)
         self.assertIsNone(
-            report["by_harness"]["codex"]["task_evidence_removal_drop"]
+            report["by_harness"]["codex"]["contrasts"]["removal_drop"]
         )
 
     def test_aggregate_uses_only_complete_treatment_qualified_quartets(
