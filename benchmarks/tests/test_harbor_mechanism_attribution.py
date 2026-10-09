@@ -487,6 +487,13 @@ class HarborMechanismAttributionTests(unittest.TestCase):
             report = build_mechanism_report(root)
 
         self.assertEqual(report["summary"]["paired_observations"], 1)
+        self.assertEqual(report["summary"]["information_qualified_pairs"], 1)
+        self.assertEqual(
+            report["summary"]["information_outcome_cross_tab"],
+            {
+                "PASS_TO_PASS|NO_SUBJECT_RESULT|NO_SUBJECT_RESULT|NO_SUBJECT_RESULT": 1,
+            },
+        )
         self.assertEqual(report["summary"]["unpaired_groups"], 0)
         self.assertEqual(report["summary"]["never_invoked_pairs"], 1)
         self.assertEqual(report["summary"]["never_invoked_credited_pairs"], 0)

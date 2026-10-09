@@ -485,3 +485,58 @@ The preflight fails before model work unless the Hashmarks checkout is clean, it
 `doctor --mcp` diagnostic reports the current canonical MCP contract, Harbor is
 available, Docker is available, all selected tasks satisfy the projection
 contract, and explicitly selected credential variables exist.
+
+
+### Information timing and oracle-aligned evidence
+
+The Harbor mechanism report now exposes a second, **non-causal information
+timeline** for completed bare/Hashmarks pairs. It is a richer explanatory
+projection than a headline pass rate or a raw tool-call count; it does not
+replace the frozen suite oracle or the generic component-ablation evaluator.
+
+Inspect with the existing model-free entrypoint:
+
+```sh
+make benchmark-harness-explain RUN_ID=000001
+```
+
+Each pair has `information_evidence` with:
+
+- `qualified` and `reason`: explicit observability admission/exclusion;
+- `target_alignment`: `ORACLE_TARGET_ONLY`, `ALTERNATE_TARGETS_ONLY`,
+  `MIXED_TARGETS`, `NO_STRUCTURED_PATH_TARGETS`, or `UNKNOWN`;
+- `arrival_timing`: `BEFORE_NATIVE_DISCOVERY`, `AFTER_NATIVE_DISCOVERY`,
+  `NO_NATIVE_DISCOVERY`, `NO_SUBJECT_RESULT`, or `UNKNOWN`;
+- `native_read_followthrough`: whether a later *observed native read* named
+  the oracle path, another returned path, both, or neither;
+- tool-call ordinals, plus the linked ATIF observation step for information
+  arrival (which can be later than the tool invocation); native discovery and
+  subsequent path-aligned reads are kept separate.
+
+The report summary groups **only qualified pairs** by outcome transition,
+arrival timing, target alignment, and follow-through under
+`information_outcome_cross_tab`. It separately counts
+`information_qualified_pairs` and `information_exclusion_reasons`. Thus
+`FAIL_TO_PASS | BEFORE_NATIVE_DISCOVERY | ORACLE_TARGET_ONLY |
+ORACLE_PATH_READ` is directly inspectable, while `PASS_TO_FAIL` with an
+alternate target is a signal to investigate, **not** proof the target harmed
+the agent. Also inspect `FAIL_TO_FAIL` with a correct target: the information
+may have been returned too late, left unused, or been insufficient.
+
+The expected path comes only from the frozen verifier's answer evidence,
+never from the model's answer or its reasoning. The observation projection
+parses bounded structured tool results and tool-call arguments, including JSON
+inside MCP text blocks. It compares complete repository-relative paths, never
+fuzzy substrings, and never persists raw tool results or agent messages in
+this derived report. Duplicate call/observation IDs, missing linked results,
+unparseable subject results or MCP text blocks, malformed tool order,
+ambiguous same-step result/call ordering, and missing path oracles fail closed to an explicit unqualified/unknown state.
+
+This experiment does **not** measure when the agent mentally adopted a
+belief or whether the tool output was attended to. A later native read is
+observable follow-through only. Opaque native read arguments are explicitly
+unknown rather than evidence that follow-through never occurred. Agents can use information without a native
+read, and a native read does not establish causation. For behavioral command
+oracles without a path oracle, information alignment remains unqualified
+rather than inventing a path-correctness grade. Use the existing
+`full/remove/only/bare` component ablations for stronger controlled contrasts.

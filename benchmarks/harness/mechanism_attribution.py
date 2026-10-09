@@ -14,6 +14,10 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from benchmarks.harness.bundle import verify_bundle
+from benchmarks.harness.information_timing import (
+    project_information_timing,
+    unavailable_information,
+)
 from benchmarks.tool_routing import (
     DISCOVERY_CLASSES,
     NATIVE_READ,
@@ -451,6 +455,7 @@ def load_harbor_bundle_projection(directory: Path) -> dict[str, Any]:
         raise MechanismAttributionError(
             f"bundle is not a Harbor receipt: {directory}"
         )
+    answer = read_answer_evidence(directory / "answer.json")
     trajectory = directory / "trajectory.json"
     if trajectory.is_file():
         try:
@@ -459,11 +464,18 @@ def load_harbor_bundle_projection(directory: Path) -> dict[str, Any]:
             trace = unavailable_trace(str(exc))
     else:
         trace = unavailable_trace("immutable ATIF trajectory was not captured")
-    answer = read_answer_evidence(directory / "answer.json")
+    expected = answer.get("expected") if isinstance(answer, dict) else None
+    expected_path = expected.get("path") if isinstance(expected, dict) else None
+    information = (
+        project_information_timing(trajectory, expected_path=expected_path)
+        if trace.get("available") is True and trace.get("tool_order_complete") is True
+        else unavailable_information("atif-order-unavailable-or-incomplete")
+    )
     return {
         "receipt": receipt,
         "trace": trace,
         "answer": answer,
+        "information": information,
     }
 
 
@@ -661,7 +673,13 @@ def pair_projection(
     )
     if same_answer is True and native_read_delta is not None and native_read_delta < 0:
         tags.append("SAME_ANSWER_FEWER_READS")
+    information = treated.get("information")
+    if not isinstance(information, dict):
+        information = unavailable_information("information-projection-unavailable")
+    if not call_order_qualified and information.get("qualified") is True:
+        information = unavailable_information("atif-order-unavailable-or-incomplete")
     return {
+        "information_evidence": information,
         "task": bare_receipt["task_id"],
         "harness": bare_receipt["harness"],
         "model": bare_receipt["model"],
@@ -767,11 +785,39 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
         for pair in pairs
         for tag in pair["mechanism_tags"]
     )
+    information_counts = Counter(
+        "|".join((
+            str(pair["outcome_transition"]),
+            str(pair["information_evidence"]["arrival_timing"]),
+            str(pair["information_evidence"]["target_alignment"]),
+            str(pair["information_evidence"]["native_read_followthrough"]),
+        ))
+        for pair in pairs
+        if pair["information_evidence"].get("qualified") is True
+        and pair["outcome_transition"] != "INCOMPLETE"
+    )
+    information_exclusions = Counter(
+        (
+            "incomplete-pair-outcome"
+            if pair["outcome_transition"] == "INCOMPLETE"
+            else str(pair["information_evidence"].get("reason") or "unknown")
+        )
+        for pair in pairs
+        if pair["information_evidence"].get("qualified") is not True
+        or pair["outcome_transition"] == "INCOMPLETE"
+    )
     return {
         "schema": MECHANISM_REPORT_SCHEMA,
         "pairs": pairs,
         "summary": {
             "paired_observations": len(pairs),
+            "information_qualified_pairs": sum(
+                pair["information_evidence"].get("qualified") is True
+                and pair["outcome_transition"] != "INCOMPLETE"
+                for pair in pairs
+            ),
+            "information_outcome_cross_tab": dict(sorted(information_counts.items())),
+            "information_exclusion_reasons": dict(sorted(information_exclusions.items())),
             "unpaired_groups": len(unpaired),
             "unavailable_bundles": len(unavailable_bundles),
             "outcome_transitions": dict(sorted(outcome_counts.items())),
@@ -806,6 +852,12 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
             ),
             "reasoning_content_consumed": False,
             "message_content_consumed": False,
+            "information_policy": (
+                "structured subject return is availability, not cognition; "
+                "matching subsequent native reads is observed follow-through; "
+                "incomplete tool order, missing oracle, or ambiguous linked "
+                "observations deny information qualification"
+            ),
             "positive_causal_claim_policy": (
                 "pair mechanisms are descriptive or supported associations; "
                 "positive causal proof requires a dedicated ablation"

@@ -37,6 +37,8 @@ def routing_artifact_sha256(value: object) -> str:
 
 _SEARCH_OPERATIONS = frozenset({
     "grep",
+    "rg",
+    "ripgrep",
     "glob",
     "search",
     "search_code",
