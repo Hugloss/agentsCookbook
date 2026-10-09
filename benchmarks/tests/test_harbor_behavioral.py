@@ -57,6 +57,12 @@ REPOSITORY_DECLARATIONS_MATRIX = (
     / "harbor"
     / "repository-intelligence-repository-declarations-ablation-v1.json"
 )
+DEPENDENCY_CODEMAP_MATRIX = (
+    ROOT
+    / "benchmarks"
+    / "harbor"
+    / "repository-intelligence-dependency-codemap-ablation-v1.json"
+)
 
 
 class HarborBehavioralTests(unittest.TestCase):
@@ -67,6 +73,7 @@ class HarborBehavioralTests(unittest.TestCase):
             (POST_CHANGE_MATRIX, "post_change", 4),
             (CORRELATE_EVIDENCE_MATRIX, "correlate_evidence", 4),
             (REPOSITORY_DECLARATIONS_MATRIX, "repository_declarations", 4),
+            (DEPENDENCY_CODEMAP_MATRIX, "dependency_codemap", 4),
         ):
             with self.subTest(component=component):
                 matrix = load_matrix(path)
@@ -172,6 +179,54 @@ class HarborBehavioralTests(unittest.TestCase):
                 "declarations-01",
                 "declarations-02",
                 "declarations-03",
+            ),
+        )
+
+    def test_dependency_codemap_matrix_matches_dependency_delta_intent(
+        self,
+    ) -> None:
+        matrix = load_matrix(DEPENDENCY_CODEMAP_MATRIX)
+        mode = mode_contract(matrix, "matrix")
+
+        self.assertEqual(
+            matrix["subjects"],
+            [
+                "none",
+                "hashmarks",
+                "hashmarks-no-dependency-codemap",
+                "hashmarks-dependency-codemap-only",
+            ],
+        )
+        self.assertEqual(
+            matrix["tool_projections"],
+            {
+                "hashmarks-no-dependency-codemap": {
+                    "exclude": ["dependency_codemap"],
+                },
+                "hashmarks-dependency-codemap-only": {
+                    "include": ["dependency_codemap"],
+                },
+            },
+        )
+        self.assertEqual(
+            matrix["ablation"],
+            {
+                "component": "dependency_codemap",
+                "arms": {
+                    "bare": "none",
+                    "full": "hashmarks",
+                    "remove": "hashmarks-no-dependency-codemap",
+                    "only": "hashmarks-dependency-codemap-only",
+                },
+            },
+        )
+        self.assertEqual(
+            mode.tasks,
+            (
+                "dependency_delta-00",
+                "dependency_delta-01",
+                "dependency_delta-02",
+                "dependency_delta-03",
             ),
         )
 
