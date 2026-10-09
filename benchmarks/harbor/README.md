@@ -173,6 +173,19 @@ make benchmark-harness-ablation RUN_ID=000001
 
 Qualified ablation campaigns persist `reports/ablation.json`.
 
+**Aggregate component effects have a stricter denominator than campaign
+completion.** The per-harness `success_rate` and the three component contrasts
+are computed *only* from fully matched quartets where every arm is PASS/FAIL
+and each frozen treatment passes the ATIF call-projection qualification.
+A reward-only or partial-trajectory campaign can therefore be operationally
+complete, but the component rates remain `null` rather than implying any
+uplift. Unqualified outcomes are still inspectable in `quartets[].statuses`.
+The report explicitly counts `matched_quartets`,
+`qualified_complete_quartets`, `treatment_unqualified_quartets`,
+`incomplete_outcome_quartets`, and `excluded_matched_quartets`; each
+`by_harness` result exposes its own denominator. No unmatched subject
+or incomplete quartet can contribute to an apparent component effect.
+
 The report deliberately separates two contrasts:
 
 - **necessity-style:** full Hashmarks versus full Hashmarks minus

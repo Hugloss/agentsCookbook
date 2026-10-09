@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from benchmarks.harness.ablation_attribution import (
     build_ablation_report,
@@ -290,6 +291,84 @@ class HarborAblationAttributionTests(unittest.TestCase):
                 ]["status"],
                 "UNQUALIFIED_TRACE_INCOMPLETE",
             )
+
+    def _report_from_quartets(
+        self, quartets: list[dict[str, dict[str, object]]]
+    ) -> dict[str, object]:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            projections = {}
+            for index, arms in enumerate(quartets):
+                for subject, row in arms.items():
+                    row["receipt"]["replicate_id"] = 6201 + index
+                    directory = root / f"{index:02d}-{subject}"
+                    directory.mkdir()
+                    projections[directory.name] = row
+            with mock.patch(
+                "benchmarks.harness.ablation_attribution.load_harbor_bundle_projection",
+                side_effect=lambda directory: projections[directory.name],
+            ):
+                return build_ablation_report(root)
+
+    def test_aggregate_uses_only_complete_treatment_qualified_quartets(self) -> None:
+        valid = _quartet()
+        bad_tools = _quartet(
+            bare="PASS", full="FAIL", removed="PASS", only="FAIL"
+        )
+        bad_tools["hashmarks-no-task-evidence"]["trace"]["subject_tools"] = [
+            "mcp__hashmarks__task_evidence"
+        ]
+        incomplete = _quartet(
+            bare="PASS", full="FAIL", removed="PASS", only="FAIL"
+        )
+        incomplete["hashmarks-task-evidence-only"]["receipt"]["status"] = "INCOMPLETE"
+        report = self._report_from_quartets([valid, bad_tools, incomplete])
+        summary = report["summary"]
+        self.assertEqual(summary["matched_quartets"], 3)
+        self.assertEqual(summary["qualified_complete_quartets"], 1)
+        self.assertEqual(summary["treatment_unqualified_quartets"], 1)
+        self.assertEqual(summary["incomplete_outcome_quartets"], 1)
+        self.assertEqual(summary["excluded_matched_quartets"], 2)
+        by_harness = report["by_harness"]["codex"]
+        self.assertEqual(by_harness["matched_quartets"], 3)
+        self.assertEqual(by_harness["qualified_complete_quartets"], 1)
+        self.assertEqual(
+            by_harness["success_rate"],
+            {
+                "none": 0.0,
+                "hashmarks": 1.0,
+                "hashmarks-no-task-evidence": 0.0,
+                "hashmarks-task-evidence-only": 1.0,
+            },
+        )
+        self.assertEqual(by_harness["task_evidence_removal_drop"], 1.0)
+        self.assertEqual(by_harness["task_evidence_only_uplift_vs_bare"], 1.0)
+
+    def test_no_qualified_complete_quartet_means_unknown_aggregate(self) -> None:
+        bad_tools = _quartet()
+        bad_tools["hashmarks-task-evidence-only"]["trace"]["subject_tools"] = [
+            "mcp__hashmarks__find"
+        ]
+        report = self._report_from_quartets([bad_tools])
+        summary = report["summary"]
+        self.assertEqual(summary["matched_quartets"], 1)
+        self.assertEqual(summary["qualified_complete_quartets"], 0)
+        self.assertEqual(summary["excluded_matched_quartets"], 1)
+        by_harness = report["by_harness"]["codex"]
+        self.assertEqual(by_harness["qualified_complete_quartets"], 0)
+        self.assertTrue(all(value is None for value in by_harness["success_rate"].values()))
+        self.assertIsNone(by_harness["full_uplift_vs_bare"])
+        self.assertIsNone(by_harness["task_evidence_removal_drop"])
+        self.assertIsNone(by_harness["task_evidence_only_uplift_vs_bare"])
+
+    def test_incomplete_or_unmatched_groups_do_not_enter_aggregate(self) -> None:
+        partial = _quartet()
+        partial.pop("hashmarks-task-evidence-only")
+        report = self._report_from_quartets([partial])
+        self.assertEqual(report["summary"]["matched_quartets"], 0)
+        self.assertEqual(report["summary"]["incomplete_groups"], 1)
+        self.assertEqual(report["summary"]["qualified_complete_quartets"], 0)
+        self.assertIsNone(report["by_harness"]["codex"]["full_uplift_vs_bare"])
 
     def test_ordinary_two_arm_results_are_not_an_ablation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
