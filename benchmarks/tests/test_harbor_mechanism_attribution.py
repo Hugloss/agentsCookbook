@@ -13,6 +13,7 @@ from benchmarks.harness.mechanism_attribution import (
     ANSWER_EVIDENCE_SCHEMA,
     ATTRIBUTION_PROVEN,
     ATTRIBUTION_SUPPORTED,
+    ATTRIBUTION_UNPROVEN,
     FOLLOWED,
     TREATMENT_NEVER_INVOKED,
     TREATMENT_SUCCESS,
@@ -162,6 +163,127 @@ class HarborMechanismAttributionTests(unittest.TestCase):
         self.assertEqual(projection["total_tokens"], 180)
         self.assertFalse(projection["reasoning_content_consumed"])
         self.assertFalse(projection["message_content_consumed"])
+
+    def test_malformed_atif_calls_do_not_prove_never_invoked(self) -> None:
+        scenarios = (
+            ([], "empty-trajectory"),
+            ([None], "malformed-step"),
+            ([{"source": "agent", "tool_calls": None}], "malformed-tool-call-list"),
+            ([{"source": "agent", "tool_calls": ["unknown"]}], "malformed-tool-call"),
+            (
+                [{"source": "agent", "tool_calls": [{"function_name": ""}]}],
+                "missing-tool-name",
+            ),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "trajectory.json"
+            for steps, reason in scenarios:
+                with self.subTest(reason=reason):
+                    path.write_text(
+                        json.dumps({"schema_version": "ATIF-v1.8", "steps": steps}),
+                        encoding="utf-8",
+                    )
+                    result = project_atif(path)
+                    self.assertTrue(result["available"])
+                    self.assertFalse(result["tool_order_complete"])
+                    self.assertIn(reason, result["tool_order_issue_codes"])
+                    self.assertGreater(result["tool_order_issue_count"], 0)
+                    self.assertEqual(result["treatment"], "UNKNOWN")
+                    self.assertEqual(result["subject_routing_timing"], "UNKNOWN")
+                    self.assertEqual(result["subject_target_followthrough"], "FOLLOWTHROUGH_UNKNOWN")
+
+    def test_malformed_atif_preserves_positive_calls_but_never_proves_complete_order(
+        self,
+    ) -> None:
+        steps = [{
+            "source": "agent",
+            "tool_calls": [
+                {
+                    "tool_call_id": "known",
+                    "function_name": "mcp__hashmarks__task_evidence",
+                    "arguments": {"task": "find owner"},
+                },
+                {"tool_call_id": "lost", "function_name": None},
+            ],
+            "observation": {
+                "results": [{"source_call_id": "known", "content": {"path": "src/x.py"}}]
+            },
+        }]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "trajectory.json"
+            path.write_text(
+                json.dumps({"schema_version": "ATIF-v1.8", "steps": steps}),
+                encoding="utf-8",
+            )
+            result = project_atif(path)
+        self.assertEqual(result["subject_tool_calls"], 1)
+        self.assertEqual(result["subject_tools"], ["mcp__hashmarks__task_evidence"])
+        self.assertFalse(result["tool_order_complete"])
+        self.assertEqual(result["tool_order_issue_codes"], ["missing-tool-name"])
+        self.assertEqual(result["treatment"], "UNKNOWN")
+        self.assertEqual(result["subject_routing_timing"], "UNKNOWN")
+        self.assertEqual(result["subject_target_followthrough"], "FOLLOWTHROUGH_UNKNOWN")
+
+    def test_optional_atif_tool_call_field_does_not_imply_corruption(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "trajectory.json"
+            path.write_text(
+                json.dumps({
+                    "schema_version": "ATIF-v1.8",
+                    "steps": [
+                        {"source": "agent", "message": "no tools"},
+                        {"source": "agent", "tool_calls": []},
+                    ],
+                }),
+                encoding="utf-8",
+            )
+            result = project_atif(path)
+        self.assertTrue(result["tool_order_complete"])
+        self.assertEqual(result["tool_order_issue_count"], 0)
+        self.assertEqual(result["tool_order_issue_codes"], [])
+        self.assertEqual(result["treatment"], TREATMENT_NEVER_INVOKED)
+
+    def test_partial_atif_does_not_support_paired_tool_displacement(self) -> None:
+        bare = _projection(
+            status="FAIL",
+            subject="none",
+            trace={**_trace(
+                treatment=TREATMENT_NEVER_INVOKED,
+                tool_calls=8,
+                native_read=5,
+                native_discovery=5,
+                tokens=1200,
+            ), "tool_order_complete": False},
+            observed={"path": "wrong.py", "symbol": "wrong"},
+            match=False,
+        )
+        treated = _projection(
+            status="PASS",
+            subject="hashmarks",
+            trace={**_trace(
+                tool_calls=2,
+                native_read=1,
+                native_discovery=1,
+                tokens=600,
+            ), "tool_order_complete": True},
+            observed={"path": "src/owner.py", "symbol": "resolve"},
+            match=True,
+        )
+        pair = pair_projection(bare, treated)
+        self.assertFalse(pair["tool_order_qualified"])
+        self.assertEqual(pair["outcome_transition"], "FAIL_TO_PASS")
+        self.assertEqual(pair["attribution_strength"], ATTRIBUTION_UNPROVEN)
+        self.assertEqual(pair["attribution_interpretation"], "tool-order-incomplete")
+        for key in (
+            "tool_call_delta",
+            "native_read_delta",
+            "native_search_delta",
+            "native_discovery_delta",
+            "token_delta",
+        ):
+            self.assertIsNone(pair[key])
+        self.assertEqual(pair["native_discovery_change"], "UNKNOWN")
+        self.assertNotIn("FEWER_TOOL_CALLS", pair["mechanism_tags"])
 
     def test_never_invoked_fail_to_pass_is_explicitly_not_attributable(self) -> None:
         bare = _projection(
