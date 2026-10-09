@@ -216,18 +216,29 @@ def project_atif(path: Path, *, subject: str = "hashmarks") -> dict[str, Any]:
     linked_results = _observation_results(steps)
     calls: list[dict[str, object]] = []
     subject_result_targets: list[tuple[int, set[str]]] = []
+    order_issues: list[str] = []
+    if not steps:
+        order_issues.append("empty-trajectory")
 
     for step in steps:
         if not isinstance(step, dict):
+            order_issues.append("malformed-step")
             continue
-        tool_calls = step.get("tool_calls")
+        if "tool_calls" not in step:
+            continue  # ATIF allows a step with no tool calls.
+        tool_calls = step["tool_calls"]
         if not isinstance(tool_calls, list):
+            order_issues.append("malformed-tool-call-list")
             continue
         for tool_call in tool_calls:
             if not isinstance(tool_call, dict):
+                order_issues.append("malformed-tool-call")
                 continue
             call_id = tool_call.get("tool_call_id")
             name = tool_call.get("function_name")
+            if not isinstance(name, str) or not name.strip():
+                order_issues.append("missing-tool-name")
+                continue
             arguments = tool_call.get("arguments")
             if not isinstance(arguments, dict):
                 arguments = {}
@@ -250,6 +261,7 @@ def project_atif(path: Path, *, subject: str = "hashmarks") -> dict[str, Any]:
             ):
                 subject_result_targets.append((len(calls), _path_values(content)))
 
+    order_complete = not order_issues
     normalized = normalize_calls(calls, subject=subject)
     sequence = tuple(
         str(call.get("tool"))
@@ -263,12 +275,16 @@ def project_atif(path: Path, *, subject: str = "hashmarks") -> dict[str, Any]:
         and isinstance(call.get("ordinal"), int)
     )
     invocation_observed = bool(subject_ordinals)
-    routing = subject_routing_timing(
-        sequence,
-        subject_ordinals,
-        configured=True,
-        invocation_observed=invocation_observed,
-        order_complete=True,
+    routing = (
+        subject_routing_timing(
+            sequence,
+            subject_ordinals,
+            configured=True,
+            invocation_observed=invocation_observed,
+            order_complete=True,
+        )
+        if order_complete
+        else ROUTING_UNKNOWN
     )
     subject_rows = [
         call
@@ -280,7 +296,9 @@ def project_atif(path: Path, *, subject: str = "hashmarks") -> dict[str, Any]:
         for call in subject_rows
         if isinstance(call.get("tool"), str)
     ]
-    if not subject_rows:
+    if not order_complete:
+        treatment = TREATMENT_UNKNOWN
+    elif not subject_rows:
         treatment = TREATMENT_NEVER_INVOKED
     elif any(
         call.get("status") == "completed"
@@ -346,6 +364,8 @@ def project_atif(path: Path, *, subject: str = "hashmarks") -> dict[str, Any]:
         followthrough = FOLLOWED if followed else NO_FOLLOWTHROUGH
     else:
         followthrough = FOLLOWTHROUGH_UNKNOWN
+    if not order_complete:
+        followthrough = FOLLOWTHROUGH_UNKNOWN
 
     token_metrics = _token_metrics(steps)
     return {
@@ -375,7 +395,9 @@ def project_atif(path: Path, *, subject: str = "hashmarks") -> dict[str, Any]:
         **token_metrics,
         "reasoning_content_consumed": False,
         "message_content_consumed": False,
-        "tool_order_complete": True,
+        "tool_order_complete": order_complete,
+        "tool_order_issue_count": len(order_issues),
+        "tool_order_issue_codes": sorted(set(order_issues)),
     }
 
 
@@ -603,12 +625,23 @@ def pair_projection(
         discovery_delta,
         treated_trace.get("native_discovery_calls"),
     )
-    strength, interpretation = _attribution(
-        outcome=outcome,
-        treated_trace=treated_trace,
-        discovery_change=discovery_change,
-        answer_transition=answer_transition,
+    call_order_qualified = (
+        bare_trace.get("tool_order_complete") is not False
+        and treated_trace.get("tool_order_complete") is not False
     )
+    if not call_order_qualified:
+        discovery_delta = None
+        tool_delta = None
+        token_delta = None
+        discovery_change = "UNKNOWN"
+        strength, interpretation = ATTRIBUTION_UNPROVEN, "tool-order-incomplete"
+    else:
+        strength, interpretation = _attribution(
+            outcome=outcome,
+            treated_trace=treated_trace,
+            discovery_change=discovery_change,
+            answer_transition=answer_transition,
+        )
     tags = _mechanism_tags(
         outcome=outcome,
         answer_transition=answer_transition,
@@ -621,10 +654,10 @@ def pair_projection(
         bare.get("answer"),
         treated.get("answer"),
     )
-    native_read_delta = _delta(
-        bare_trace,
-        treated_trace,
-        "native_read_calls",
+    native_read_delta = (
+        _delta(bare_trace, treated_trace, "native_read_calls")
+        if call_order_qualified
+        else None
     )
     if same_answer is True and native_read_delta is not None and native_read_delta < 0:
         tags.append("SAME_ANSWER_FEWER_READS")
@@ -643,10 +676,10 @@ def pair_projection(
         ),
         "native_discovery_delta": discovery_delta,
         "native_discovery_change": discovery_change,
-        "native_search_delta": _delta(
-            bare_trace,
-            treated_trace,
-            "native_search_calls",
+        "native_search_delta": (
+            _delta(bare_trace, treated_trace, "native_search_calls")
+            if call_order_qualified
+            else None
         ),
         "native_read_delta": native_read_delta,
         "tool_call_delta": tool_delta,
@@ -662,6 +695,7 @@ def pair_projection(
         "attribution_strength": strength,
         "attribution_interpretation": interpretation,
         "positive_causal_proof_claimed": False,
+        "tool_order_qualified": call_order_qualified,
         "trace_observability": {
             "bare": bare_trace.get("available") is True,
             "hashmarks": treated_trace.get("available") is True,
