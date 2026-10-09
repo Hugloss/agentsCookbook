@@ -6,6 +6,8 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -105,6 +107,48 @@ def workspace_manifest(workspace: Path) -> dict[str, dict[str, str]]:
     return manifest
 
 
+def admit_behavioral_oracle(
+    *, workspace: Path, contract: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Verify the existing frozen suite oracle before fixture mutation/model work."""
+    command = (
+        sys.executable,
+        str(contract["oracle_path"]),
+        "health",
+        str(contract["task_id"]),
+    )
+    before = workspace_manifest(workspace)
+    try:
+        result = subprocess.run(
+            command,
+            cwd=workspace,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise HarborBehavioralError(
+            f"behavioral oracle health unavailable: {contract['task_id']}: "
+            f"{type(exc).__name__}"
+        ) from exc
+    if workspace_manifest(workspace) != before:
+        raise HarborBehavioralError(
+            f"behavioral oracle health mutated workspace: {contract['task_id']}"
+        )
+    if result.returncode != 0:
+        raise HarborBehavioralError(
+            f"behavioral oracle health failed: {contract['task_id']} "
+            f"(exit {result.returncode})"
+        )
+    return {
+        "status": "PASS",
+        "command": "health",
+        "return_code": 0,
+        "timeout_seconds": 10,
+    }
+
+
 def prepare_behavioral_workspace(
     *,
     suite: SuiteDefinition,
@@ -118,6 +162,10 @@ def prepare_behavioral_workspace(
         raise HarborBehavioralError(
             f"task is not a behavioral command-oracle task: {task.get('id')}"
         )
+    health = admit_behavioral_oracle(
+        workspace=workspace,
+        contract=contract,
+    )
     context = TrialContext(
         workspace=workspace,
         control_root=control_root,
@@ -156,6 +204,7 @@ def prepare_behavioral_workspace(
         "allowed_change_globs": contract["allowed_change_globs"],
         "allowed_generated_globs": contract["allowed_generated_globs"],
         "oracle": "command-lexigram-v1",
+        "oracle_health": health,
     }
     (tests / "projection.json").write_text(
         json.dumps(projection, indent=2, sort_keys=True) + "\n",
@@ -261,38 +310,64 @@ observation_path.write_text(
 )
 env = dict(os.environ)
 env["BENCHMARK_OBSERVATION_PATH"] = str(observation_path)
-result = subprocess.run(
-    ["python3", "/tests/oracle.py", "grade", task_id],
-    cwd=workspace,
-    env=env,
-    text=True,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-    check=False,
-)
-oracle = None
+oracle_return_code = None
+oracle_stdout = ""
+oracle_stderr = ""
+oracle_timed_out = False
 try:
-    candidate = json.loads(result.stdout)
-    if isinstance(candidate, dict):
-        oracle = candidate
-except json.JSONDecodeError:
-    pass
+    result = subprocess.run(
+        ["python3", "/tests/oracle.py", "grade", task_id],
+        cwd=workspace,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        timeout=40,
+    )
+    oracle_return_code = result.returncode
+    oracle_stdout = result.stdout
+    oracle_stderr = result.stderr
+except subprocess.TimeoutExpired:
+    oracle_timed_out = True
+    error = error or "oracle-timeout"
+except OSError:
+    error = error or "oracle-launch-failed"
+
+oversized = (
+    len(oracle_stdout.encode("utf-8")) > 65536
+    or len(oracle_stderr.encode("utf-8")) > 65536
+)
+if oversized:
+    error = error or "oracle-output-limit"
+oracle = None
+if not oracle_timed_out and not oversized:
+    try:
+        candidate = json.loads(oracle_stdout)
+        if isinstance(candidate, dict):
+            oracle = candidate
+    except json.JSONDecodeError:
+        pass
 oracle_passed = (
-    result.returncode == 0
+    oracle_return_code == 0
     and isinstance(oracle, dict)
     and oracle.get("passed") is True
+    and error is None
 )
-if result.returncode not in (0, 1):
+if oracle_return_code is not None and oracle_return_code not in (0, 1):
     error = error or "oracle-invalid-exit"
-elif oracle is None:
-    error = error or "oracle-invalid-output"
+elif not oracle_timed_out and error is None and oracle is None:
+    error = "oracle-invalid-output"
 
 Path("/logs/verifier/oracle.json").write_text(
     json.dumps(
         {{
-            "return_code": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
+            "return_code": oracle_return_code,
+            "stdout": oracle_stdout[:8192],
+            "stderr": oracle_stderr[:8192],
+            "stdout_truncated": len(oracle_stdout) > 8192,
+            "stderr_truncated": len(oracle_stderr) > 8192,
+            "timed_out": oracle_timed_out,
             "result": oracle,
         }},
         sort_keys=True,
