@@ -77,7 +77,10 @@ def _claims(payload: object, fields: set[str]) -> dict[str, list[object]] | None
         if (
             value.get("isError") is True
             or isinstance(value.get("error"), str) and bool(value["error"])
-            or value.get("status") in {"error", "failed", "denied", "unavailable"}
+            or (
+                isinstance(value.get("status"), str)
+                and value["status"] in {"error", "failed", "denied", "unavailable"}
+            )
         ):
             return False
         if value.get("type") == "text":
