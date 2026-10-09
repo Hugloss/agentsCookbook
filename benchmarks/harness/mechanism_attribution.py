@@ -18,6 +18,10 @@ from benchmarks.harness.information_timing import (
     project_information_timing,
     unavailable_information,
 )
+from benchmarks.harness.semantic_information import (
+    project_semantic_information,
+    unavailable_semantic,
+)
 from benchmarks.tool_routing import (
     DISCOVERY_CLASSES,
     NATIVE_READ,
@@ -436,6 +440,9 @@ def read_answer_evidence(path: Path) -> dict[str, Any] | None:
         "match": value["match"],
         "observed": observed if isinstance(observed, dict) else None,
         "expected": expected if isinstance(expected, dict) else None,
+        "oracle": value.get("oracle") if isinstance(value.get("oracle"), dict) else None,
+        "semantic_case_id": value.get("semantic_case_id"),
+        "error": value.get("error"),
         "tracked_clean": (
             value.get("tracked_clean")
             if isinstance(value.get("tracked_clean"), bool)
@@ -471,11 +478,18 @@ def load_harbor_bundle_projection(directory: Path) -> dict[str, Any]:
         if trace.get("available") is True and trace.get("tool_order_complete") is True
         else unavailable_information("atif-order-unavailable-or-incomplete")
     )
+    if not isinstance(answer, dict) or answer.get("semantic_case_id") != receipt.get("task_id"):
+        semantic = unavailable_semantic("semantic-case-identity-mismatch-or-missing")
+    elif trace.get("available") is True and trace.get("tool_order_complete") is True:
+        semantic = project_semantic_information(trajectory, answer=answer)
+    else:
+        semantic = unavailable_semantic("atif-order-unavailable-or-incomplete")
     return {
         "receipt": receipt,
         "trace": trace,
         "answer": answer,
         "information": information,
+        "semantic_information": semantic,
     }
 
 
@@ -678,8 +692,14 @@ def pair_projection(
         information = unavailable_information("information-projection-unavailable")
     if not call_order_qualified and information.get("qualified") is True:
         information = unavailable_information("atif-order-unavailable-or-incomplete")
+    semantic = treated.get("semantic_information")
+    if not isinstance(semantic, dict):
+        semantic = unavailable_semantic("semantic-projection-unavailable")
+    if not call_order_qualified and semantic.get("qualified") is True:
+        semantic = unavailable_semantic("atif-order-unavailable-or-incomplete")
     return {
         "information_evidence": information,
+        "semantic_information_evidence": semantic,
         "task": bare_receipt["task_id"],
         "harness": bare_receipt["harness"],
         "model": bare_receipt["model"],
@@ -806,11 +826,39 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
         if pair["information_evidence"].get("qualified") is not True
         or pair["outcome_transition"] == "INCOMPLETE"
     )
+    semantic_counts = Counter(
+        "|".join((
+            str(pair["outcome_transition"]),
+            str(pair["semantic_information_evidence"]["arrival_timing"]),
+            str(pair["semantic_information_evidence"]["claim_alignment"]),
+            str(pair["semantic_information_evidence"]["final_answer_overlap"]),
+        ))
+        for pair in pairs
+        if pair["semantic_information_evidence"].get("qualified") is True
+        and pair["outcome_transition"] != "INCOMPLETE"
+    )
+    semantic_exclusions = Counter(
+        (
+            "incomplete-pair-outcome"
+            if pair["outcome_transition"] == "INCOMPLETE"
+            else str(pair["semantic_information_evidence"].get("reason") or "unknown")
+        )
+        for pair in pairs
+        if pair["semantic_information_evidence"].get("qualified") is not True
+        or pair["outcome_transition"] == "INCOMPLETE"
+    )
     return {
         "schema": MECHANISM_REPORT_SCHEMA,
         "pairs": pairs,
         "summary": {
             "paired_observations": len(pairs),
+            "semantic_qualified_pairs": sum(
+                pair["semantic_information_evidence"].get("qualified") is True
+                and pair["outcome_transition"] != "INCOMPLETE"
+                for pair in pairs
+            ),
+            "semantic_outcome_cross_tab": dict(sorted(semantic_counts.items())),
+            "semantic_exclusion_reasons": dict(sorted(semantic_exclusions.items())),
             "information_qualified_pairs": sum(
                 pair["information_evidence"].get("qualified") is True
                 and pair["outcome_transition"] != "INCOMPLETE"
@@ -852,6 +900,12 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
             ),
             "reasoning_content_consumed": False,
             "message_content_consumed": False,
+            "semantic_information_policy": (
+                "semantic claims are compared to the same frozen behavioral "
+                "oracle atoms after grading; matching a returned atom with a "
+                "final answer is co-occurrence, not observed mental adoption; "
+                "no oracle or model is run by the post-run evaluator"
+            ),
             "information_policy": (
                 "structured subject return is availability, not cognition; "
                 "matching subsequent native reads is observed follow-through; "

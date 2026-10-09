@@ -418,6 +418,7 @@ class HarborBehavioralTests(unittest.TestCase):
             tests.mkdir()
             (workspace / "sentinel.txt").write_text("source", encoding="utf-8")
             (tests / "oracle.py").write_text(oracle_source, encoding="utf-8")
+            (tests / "cases.json").write_bytes((SUITE / "cases.json").read_bytes())
             (tests / "baseline.json").write_text(
                 json.dumps(workspace_manifest(workspace)), encoding="utf-8"
             )
@@ -459,6 +460,24 @@ class HarborBehavioralTests(unittest.TestCase):
         self.assertTrue(answer["tracked_clean"])
         self.assertEqual(oracle["return_code"], 0)
         self.assertFalse(oracle["timed_out"])
+
+    def test_real_verifier_freezes_expected_claims_after_oracle_grade(self) -> None:
+        answer, oracle, reward = self._run_generated_verifier(
+            (SUITE / "oracle.py").read_text(encoding="utf-8")
+        )
+        case = json.loads((SUITE / "cases.json").read_text(encoding="utf-8"))[
+            "cases"
+        ]["post_change-00"]
+        self.assertEqual(answer["expected"], case["expected"])
+        self.assertEqual(answer["semantic_case_id"], "post_change-00")
+        self.assertEqual(
+            answer["oracle"]["schema"],
+            "agents-cookbook-lexigram-oracle.v1",
+        )
+        self.assertFalse(answer["match"])
+        self.assertIsNone(answer["error"])
+        self.assertEqual(oracle["return_code"], 1)
+        self.assertEqual(reward, "0\n")
 
     def test_hung_grade_reports_timeout_and_denies_reward(self) -> None:
         answer, oracle, reward = self._run_generated_verifier(
