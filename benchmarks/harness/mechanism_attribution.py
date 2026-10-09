@@ -300,6 +300,21 @@ def project_atif(path: Path, *, subject: str = "hashmarks") -> dict[str, Any]:
         for call in subject_rows
         if isinstance(call.get("tool"), str)
     ]
+    subject_call_selectors = [
+        {
+            "tool": str(call["tool"]),
+            **(
+                {"surface_name": str(call["input"]["surface_name"])}
+                if (
+                    isinstance(call.get("input"), dict)
+                    and isinstance(call["input"].get("surface_name"), str)
+                )
+                else {}
+            ),
+        }
+        for call in subject_rows
+        if isinstance(call.get("tool"), str)
+    ]
     if not order_complete:
         treatment = TREATMENT_UNKNOWN
     elif not subject_rows:
@@ -391,6 +406,7 @@ def project_atif(path: Path, *, subject: str = "hashmarks") -> dict[str, Any]:
         "native_discovery_after_subject": after,
         "subject_tool_calls": len(subject_rows),
         "subject_tools": subject_tools,
+        "subject_call_selectors": subject_call_selectors,
         "subject_first_tool_call_ordinal": first_subject,
         "subject_routing_timing": routing,
         "treatment": treatment,
