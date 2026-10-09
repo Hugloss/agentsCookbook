@@ -28,6 +28,8 @@ class HarborSharedCampaignTests(unittest.TestCase):
             ("harbor-change-impact-ablation-full", 144),
             ("harbor-post-change-ablation-smoke", 12),
             ("harbor-post-change-ablation-full", 144),
+            ("harbor-correlate-evidence-ablation-smoke", 12),
+            ("harbor-correlate-evidence-ablation-full", 144),
         ):
             with self.subTest(name=name):
                 suite, _ = harbor_suite(load_profile(name))
@@ -60,6 +62,7 @@ class HarborSharedCampaignTests(unittest.TestCase):
             "find",
             "task_evidence",
             "change_impact",
+            "correlate_evidence",
             "post_change",
         ]
         treatments = {
@@ -349,6 +352,54 @@ class HarborSharedCampaignTests(unittest.TestCase):
                         3,
                     )
                     self.assertEqual(execute.call_count, 12)
+
+    def test_correlate_evidence_ablation_uses_generic_campaign_lifecycle(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            env, patches = self._environment(
+                root,
+                ablation_component="correlate_evidence",
+            )
+            with patches[0], patches[1], patches[2], mock.patch(
+                "benchmarks.harness.harbor_backend.execute_trial",
+                side_effect=self._reward_trial,
+            ) as execute:
+                code, _ = self._call(
+                    "run",
+                    "--new",
+                    "--matrix",
+                    "harbor-correlate-evidence-ablation-smoke",
+                    "--env-file",
+                    str(env),
+                    "--root",
+                    str(root),
+                    "--no-json-results",
+                )
+                self.assertEqual(code, 0)
+                self.assertEqual(execute.call_count, 12)
+
+                code, report = self._call(
+                    "ablation",
+                    "--matrix",
+                    "harbor-correlate-evidence-ablation-smoke",
+                    "--root",
+                    str(root),
+                )
+                self.assertEqual(code, 0)
+                self.assertEqual(report["component"], "correlate_evidence")
+                self.assertEqual(
+                    report["arms"],
+                    {
+                        "bare": "none",
+                        "full": "hashmarks",
+                        "remove": "hashmarks-no-correlate-evidence",
+                        "only": "hashmarks-correlate-evidence-only",
+                    },
+                )
+                self.assertEqual(report["summary"]["matched_quartets"], 3)
+                self.assertEqual(execute.call_count, 12)
 
     def test_interrupted_launch_gets_new_job_name_on_resume(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
