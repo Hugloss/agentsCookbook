@@ -9,7 +9,10 @@ from pathlib import Path
 
 from benchmarks.harness.bundle_writer import publish_bundle
 from benchmarks.harness.identity import canonical_json, digest
-from benchmarks.harness.mechanism_attribution import build_mechanism_report
+from benchmarks.harness.mechanism_attribution import (
+    build_mechanism_report,
+    load_harbor_bundle_projection,
+)
 
 
 def _trajectory(subject: str) -> dict:
@@ -155,6 +158,52 @@ class SemanticReportIntegrationTests(unittest.TestCase):
         )
         self.assertFalse(pair["positive_causal_proof_claimed"])
         self.assertNotIn('"not-selected"', json.dumps(report["pairs"]))
+
+
+    def test_frozen_answer_for_another_task_denies_semantic_qualification(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            trial_id = digest({"case": "incorrect-semantic-case-binding"})
+            subject = "hashmarks"
+            harbor_result = {
+                "schema": "agentscookbook.harbor-harness-trial.v1",
+                "subject": subject,
+                "task": "declarations-02",
+                "harness": "codex",
+                "model": "provider/model",
+                "status": "COMPLETE",
+                "success": True,
+                "reward": 1.0,
+            }
+            receipt = {
+                "backend": "harbor",
+                "definition_id": "unmatched-task",
+                "trial_id": trial_id,
+                "task_id": "declarations-02",
+                "subject": subject,
+                "model": "provider/model",
+                "status": "PASS",
+                "harness": "codex",
+                "replicate_id": 1,
+                "execution": {"campaign_id": "case-binding"},
+            }
+            directory = publish_bundle(
+                results_root=root,
+                trial_id=trial_id,
+                artifacts={
+                    "harbor_result": ("harbor-result.json", canonical_json(harbor_result)),
+                    "trajectory": ("trajectory.json", canonical_json(_trajectory(subject))),
+                    "answer": ("answer.json", canonical_json(_answer(subject))),
+                },
+                receipt=receipt,
+            )
+            projection = load_harbor_bundle_projection(directory)
+
+        self.assertFalse(projection["semantic_information"]["qualified"])
+        self.assertEqual(
+            projection["semantic_information"]["reason"],
+            "semantic-case-identity-mismatch-or-missing",
+        )
 
 
 if __name__ == "__main__":
