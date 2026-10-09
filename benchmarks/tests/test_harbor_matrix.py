@@ -65,6 +65,13 @@ SUITE = (
     / "repository-intelligence"
     / "heldout-v1"
 )
+BEHAVIORAL_SUITE = (
+    ROOT
+    / "benchmarks"
+    / "suites"
+    / "repository-intelligence"
+    / "behavioral-v4"
+)
 
 
 class HarborMatrixTests(unittest.TestCase):
@@ -729,6 +736,146 @@ class HarborMatrixTests(unittest.TestCase):
                     "projection_identity"
                 ]
             ).startswith("sha256:")
+        )
+        self.assertEqual(
+            receipt["hashmarks"]["ablation"],
+            matrix["ablation"],
+        )
+
+    def test_selector_preflight_binds_product_owned_query_surfaces(
+        self,
+    ) -> None:
+        suite = load_suite(BEHAVIORAL_SUITE)
+        settings = HarborSettings(
+            executable="harbor",
+            model="provider/model",
+            root=Path("/runs"),
+            hashmarks_source=Path("/hashmarks"),
+            passthrough_env_keys=(),
+        )
+        matrix = load_matrix(VERIFICATION_EXPLANATION_MATRIX)
+        mode = MatrixMode(tasks=("verification-00",), attempts=1)
+        canonical_tools = [
+            "repository_context",
+            "task_evidence",
+            "repository_intelligence_query",
+        ]
+        canonical_surfaces = [
+            "change-intelligence",
+            "verification-explanation",
+            "freshness",
+        ]
+
+        def probe(
+            _settings,
+            _host,
+            *,
+            executable,
+            tool_names=None,
+            query_surfaces=None,
+        ):
+            self.assertEqual(executable, "/hashmarks/bin/hashmarks")
+            if tool_names is None and query_surfaces is None:
+                return {
+                    "contract_identity": "sha256:mcp",
+                    "operation_contract_identity": "sha256:ops",
+                    "tool_count": len(canonical_tools),
+                    "tools": canonical_tools,
+                    "repository_intelligence_query_surfaces": canonical_surfaces,
+                }
+            selected_tools = (
+                canonical_tools
+                if tool_names is None
+                else list(tool_names)
+            )
+            selected_surfaces = (
+                canonical_surfaces
+                if query_surfaces is None
+                else list(query_surfaces)
+            )
+            return {
+                "contract_identity": "sha256:mcp",
+                "operation_contract_identity": "sha256:ops",
+                "tool_count": len(canonical_tools),
+                "tools": canonical_tools,
+                "repository_intelligence_query_surfaces": canonical_surfaces,
+                "projection": {
+                    "source_contract_identity": "sha256:mcp",
+                    "tools": selected_tools,
+                    "observed_tools": selected_tools,
+                    "repository_intelligence_query_surfaces": selected_surfaces,
+                    "observed_repository_intelligence_query_surfaces": (
+                        selected_surfaces
+                    ),
+                    "projection_identity": (
+                        "sha256:"
+                        + "-".join(selected_tools)
+                        + ":"
+                        + "-".join(selected_surfaces)
+                    ),
+                },
+            }
+
+        with (
+            mock.patch(
+                "benchmarks.harbor_matrix._hashmarks_identity",
+                return_value={
+                    "commit": "a" * 40,
+                    "tree": "b" * 40,
+                    "working_copy_sha256": "c" * 64,
+                    "working_copy_clean": True,
+                    "executable": {
+                        "path": "/hashmarks/bin/hashmarks",
+                        "sha256": "d" * 64,
+                        "version": "hashmarks version 0.test",
+                    },
+                },
+            ),
+            mock.patch(
+                "benchmarks.harbor_matrix._hashmarks_probe",
+                side_effect=probe,
+            ),
+            mock.patch(
+                "benchmarks.harbor_matrix._require_command",
+                side_effect=("harbor 0.test", "27.0"),
+            ),
+        ):
+            receipt = preflight(
+                settings=settings,
+                matrix=matrix,
+                suite=suite,
+                mode=mode,
+                harnesses=("codex",),
+                tasks=("verification-00",),
+                host={},
+            )
+
+        treatments = receipt["hashmarks"]["treatments"]
+        self.assertEqual(
+            receipt["hashmarks"][
+                "canonical_repository_intelligence_query_surfaces"
+            ],
+            canonical_surfaces,
+        )
+        self.assertEqual(
+            treatments["hashmarks-no-verification-explanation"]["tools"],
+            canonical_tools,
+        )
+        self.assertEqual(
+            treatments["hashmarks-no-verification-explanation"][
+                "repository_intelligence_query_surfaces"
+            ],
+            ["change-intelligence", "freshness"],
+        )
+        self.assertEqual(
+            treatments["hashmarks-verification-explanation-only"]["tools"],
+            ["repository_intelligence_query"],
+        )
+        self.assertEqual(
+            treatments["hashmarks-verification-explanation-only"][
+                "repository_intelligence_query_surfaces"
+            ],
+            ["verification-explanation"],
         )
         self.assertEqual(
             receipt["hashmarks"]["ablation"],
