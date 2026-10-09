@@ -255,18 +255,29 @@ def mcp_configs(
 ) -> dict[str, Path | None]:
     hashmarks = preflight_receipt.get("hashmarks")
     treatments = hashmarks.get("treatments") if isinstance(hashmarks, dict) else None
+    if not isinstance(treatments, dict) or "hashmarks" not in treatments:
+        raise HarborBackendError("Harbor preflight has no Hashmarks treatment authority")
+    full_treatment = treatments.get("hashmarks")
     canonical_tools = (
         hashmarks.get("canonical_tools")
         if isinstance(hashmarks, dict)
         else None
     )
+    if not isinstance(canonical_tools, list) and isinstance(full_treatment, dict):
+        canonical_tools = full_treatment.get("tools")
     canonical_query_surfaces = (
         hashmarks.get("canonical_repository_intelligence_query_surfaces")
         if isinstance(hashmarks, dict)
         else None
     )
-    if not isinstance(treatments, dict) or "hashmarks" not in treatments:
-        raise HarborBackendError("Harbor preflight has no Hashmarks treatment authority")
+    if (
+        not isinstance(canonical_query_surfaces, list)
+        and isinstance(full_treatment, dict)
+    ):
+        canonical_query_surfaces = full_treatment.get(
+            "repository_intelligence_query_surfaces",
+            [],
+        )
     configs: dict[str, Path | None] = {"none": None}
     for subject, raw in sorted(treatments.items()):
         if (
