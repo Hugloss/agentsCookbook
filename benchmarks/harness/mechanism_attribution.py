@@ -441,6 +441,7 @@ def read_answer_evidence(path: Path) -> dict[str, Any] | None:
         "observed": observed if isinstance(observed, dict) else None,
         "expected": expected if isinstance(expected, dict) else None,
         "oracle": value.get("oracle") if isinstance(value.get("oracle"), dict) else None,
+        "semantic_case_id": value.get("semantic_case_id"),
         "error": value.get("error"),
         "tracked_clean": (
             value.get("tracked_clean")
@@ -478,7 +479,10 @@ def load_harbor_bundle_projection(directory: Path) -> dict[str, Any]:
         else unavailable_information("atif-order-unavailable-or-incomplete")
     )
     semantic = (
-        project_semantic_information(trajectory, answer=answer)
+        unavailable_semantic("semantic-case-identity-mismatch-or-missing")
+        if not isinstance(answer, dict)
+        or answer.get("semantic_case_id") != receipt.get("task_id")
+        else project_semantic_information(trajectory, answer=answer)
         if trace.get("available") is True and trace.get("tool_order_complete") is True
         else unavailable_semantic("atif-order-unavailable-or-incomplete")
     )
