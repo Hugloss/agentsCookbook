@@ -165,33 +165,50 @@ class SemanticReportIntegrationTests(unittest.TestCase):
             root = Path(tmp)
             trial_id = digest({"case": "incorrect-semantic-case-binding"})
             subject = "hashmarks"
+            job_name = f"h{trial_id[:24]}-a000001"
             harbor_result = {
                 "schema": "agentscookbook.harbor-harness-trial.v1",
-                "subject": subject,
+                "trial_id": job_name,
                 "task": "declarations-02",
                 "harness": "codex",
+                "subject": subject,
+                "attempt": 1,
                 "model": "provider/model",
                 "status": "COMPLETE",
                 "success": True,
                 "reward": 1.0,
+                "duration_ms": 1,
+                "harbor_return_code": 0,
+                "harbor_job_root": f"/jobs/{job_name}",
+                "reward_path": f"/jobs/{job_name}/reward.txt",
+                "mcp_exposed": True,
+                "stderr_tail": "",
             }
             receipt = {
                 "backend": "harbor",
                 "definition_id": "unmatched-task",
                 "trial_id": trial_id,
                 "task_id": "declarations-02",
+                "condition_id": "hashmarks-codex",
+                "trial": 0,
                 "subject": subject,
                 "model": "provider/model",
                 "status": "PASS",
                 "harness": "codex",
                 "replicate_id": 1,
-                "execution": {"campaign_id": "case-binding"},
+                "harbor": harbor_result,
+                "execution": {
+                    "campaign_id": "case-binding",
+                    "launch_attempt": 1,
+                    "job_name": job_name,
+                },
             }
             directory = publish_bundle(
                 results_root=root,
                 trial_id=trial_id,
                 artifacts={
                     "harbor_result": ("harbor-result.json", canonical_json(harbor_result)),
+                    "reward": ("reward.txt", b"1\\n"),
                     "trajectory": ("trajectory.json", canonical_json(_trajectory(subject))),
                     "answer": ("answer.json", canonical_json(_answer(subject))),
                 },
