@@ -794,11 +794,17 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
         ))
         for pair in pairs
         if pair["information_evidence"].get("qualified") is True
+        and pair["outcome_transition"] != "INCOMPLETE"
     )
     information_exclusions = Counter(
-        str(pair["information_evidence"].get("reason") or "unknown")
+        (
+            "incomplete-pair-outcome"
+            if pair["outcome_transition"] == "INCOMPLETE"
+            else str(pair["information_evidence"].get("reason") or "unknown")
+        )
         for pair in pairs
         if pair["information_evidence"].get("qualified") is not True
+        or pair["outcome_transition"] == "INCOMPLETE"
     )
     return {
         "schema": MECHANISM_REPORT_SCHEMA,
@@ -807,6 +813,7 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
             "paired_observations": len(pairs),
             "information_qualified_pairs": sum(
                 pair["information_evidence"].get("qualified") is True
+                and pair["outcome_transition"] != "INCOMPLETE"
                 for pair in pairs
             ),
             "information_outcome_cross_tab": dict(sorted(information_counts.items())),
