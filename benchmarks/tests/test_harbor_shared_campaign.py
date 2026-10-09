@@ -32,6 +32,8 @@ class HarborSharedCampaignTests(unittest.TestCase):
             ("harbor-correlate-evidence-ablation-full", 144),
             ("harbor-repository-declarations-ablation-smoke", 12),
             ("harbor-repository-declarations-ablation-full", 144),
+            ("harbor-dependency-codemap-ablation-smoke", 12),
+            ("harbor-dependency-codemap-ablation-full", 144),
         ):
             with self.subTest(name=name):
                 suite, _ = harbor_suite(load_profile(name))
@@ -66,6 +68,7 @@ class HarborSharedCampaignTests(unittest.TestCase):
             "change_impact",
             "correlate_evidence",
             "repository_declarations",
+            "dependency_codemap",
             "post_change",
         ]
         treatments = {
@@ -447,6 +450,54 @@ class HarborSharedCampaignTests(unittest.TestCase):
                         "full": "hashmarks",
                         "remove": "hashmarks-no-repository-declarations",
                         "only": "hashmarks-repository-declarations-only",
+                    },
+                )
+                self.assertEqual(report["summary"]["matched_quartets"], 3)
+                self.assertEqual(execute.call_count, 12)
+
+    def test_dependency_codemap_ablation_uses_generic_campaign_lifecycle(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            env, patches = self._environment(
+                root,
+                ablation_component="dependency_codemap",
+            )
+            with patches[0], patches[1], patches[2], mock.patch(
+                "benchmarks.harness.harbor_backend.execute_trial",
+                side_effect=self._reward_trial,
+            ) as execute:
+                code, _ = self._call(
+                    "run",
+                    "--new",
+                    "--matrix",
+                    "harbor-dependency-codemap-ablation-smoke",
+                    "--env-file",
+                    str(env),
+                    "--root",
+                    str(root),
+                    "--no-json-results",
+                )
+                self.assertEqual(code, 0)
+                self.assertEqual(execute.call_count, 12)
+
+                code, report = self._call(
+                    "ablation",
+                    "--matrix",
+                    "harbor-dependency-codemap-ablation-smoke",
+                    "--root",
+                    str(root),
+                )
+                self.assertEqual(code, 0)
+                self.assertEqual(report["component"], "dependency_codemap")
+                self.assertEqual(
+                    report["arms"],
+                    {
+                        "bare": "none",
+                        "full": "hashmarks",
+                        "remove": "hashmarks-no-dependency-codemap",
+                        "only": "hashmarks-dependency-codemap-only",
                     },
                 )
                 self.assertEqual(report["summary"]["matched_quartets"], 3)
