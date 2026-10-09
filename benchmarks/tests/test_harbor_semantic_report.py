@@ -163,7 +163,7 @@ class SemanticReportIntegrationTests(unittest.TestCase):
     def test_frozen_answer_for_another_task_denies_semantic_qualification(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            trial_id = digest({"case": "incorrect-semantic-case-binding"})
+            trial_id = digest({"campaign_id": "case-binding", "definition_id": "unmatched-task"})
             subject = "hashmarks"
             job_name = f"h{trial_id[:24]}-a000001"
             harbor_result = {
