@@ -165,6 +165,20 @@ contrasts into universal causal proof and always keeps
 
 Qualified component campaigns persist `reports/ablation.json`.
 
+**Aggregate component effects use a stricter denominator than campaign
+completion.** Per-harness success rates and component contrasts are computed
+only from fully matched quartets where all four outcomes are PASS/FAIL and the
+frozen treatment passes ATIF call-projection qualification. A reward-only,
+partial-trajectory, treatment-unqualified, or incomplete quartet remains
+inspectable but cannot contribute to apparent component uplift.
+
+The report explicitly counts `matched_quartets`,
+`qualified_complete_quartets`, `treatment_unqualified_quartets`,
+`incomplete_outcome_quartets`, and `excluded_matched_quartets`; each
+`by_harness` entry exposes its own matched/qualified denominator. When no
+qualified quartet exists, aggregate success rates and contrasts remain `null`
+rather than treating missing evidence as failure.
+
 #### Semantic localization: `task_evidence`
 
 The existing `harbor-ablation-*` matrices use prompts where the implementation
