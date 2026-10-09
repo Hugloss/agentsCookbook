@@ -74,6 +74,52 @@ class HarborBehavioralTests(unittest.TestCase):
                     tasks=mode.tasks,
                 )
 
+    def test_correlate_evidence_matrix_matches_correlation_intent(self) -> None:
+        matrix = load_matrix(CORRELATE_EVIDENCE_MATRIX)
+        mode = mode_contract(matrix, "matrix")
+
+        self.assertEqual(
+            matrix["subjects"],
+            [
+                "none",
+                "hashmarks",
+                "hashmarks-no-correlate-evidence",
+                "hashmarks-correlate-evidence-only",
+            ],
+        )
+        self.assertEqual(
+            matrix["tool_projections"],
+            {
+                "hashmarks-no-correlate-evidence": {
+                    "exclude": ["correlate_evidence"],
+                },
+                "hashmarks-correlate-evidence-only": {
+                    "include": ["correlate_evidence"],
+                },
+            },
+        )
+        self.assertEqual(
+            matrix["ablation"],
+            {
+                "component": "correlate_evidence",
+                "arms": {
+                    "bare": "none",
+                    "full": "hashmarks",
+                    "remove": "hashmarks-no-correlate-evidence",
+                    "only": "hashmarks-correlate-evidence-only",
+                },
+            },
+        )
+        self.assertEqual(
+            mode.tasks,
+            (
+                "correlation-00",
+                "correlation-01",
+                "correlation-02",
+                "correlation-03",
+            ),
+        )
+
     def test_behavioral_contract_reuses_frozen_command_oracle(self) -> None:
         suite = load_suite(SUITE)
 
