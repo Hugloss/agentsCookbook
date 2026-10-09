@@ -76,10 +76,13 @@ def _claims(payload: object, fields: set[str]) -> dict[str, list[object]] | None
             return False
         if (
             value.get("isError") is True
-            or isinstance(value.get("error"), str) and bool(value["error"])
+            or ("error" in value and value["error"] not in (None, ""))
             or (
-                isinstance(value.get("status"), str)
-                and value["status"] in {"error", "failed", "denied", "unavailable"}
+                "status" in value
+                and (
+                    not isinstance(value["status"], str)
+                    or value["status"] in {"error", "failed", "denied", "unavailable"}
+                )
             )
         ):
             return False
