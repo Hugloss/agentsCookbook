@@ -851,33 +851,71 @@ def _verifier(
     return f"""#!/bin/sh
 set -eu
 mkdir -p /logs/verifier
-clean=0
-if git -C /workspace diff --quiet -- . && git -C /workspace diff --cached --quiet -- .; then
-  clean=1
-fi
-export clean
 python3 - <<'PY'
 import json
-import os
+import subprocess
 from pathlib import Path
 
 expected = {expected_json}
+unexpected_changes = []
+unexpected_change_count = 0
+workspace_status_error = None
+try:
+    status = subprocess.run(
+        [
+            "git", "--no-optional-locks", "-C", "/workspace",
+            "status", "--porcelain=v1", "-z", "--untracked-files=all",
+            "--ignored=matching", "--", ".",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+        timeout=10,
+    )
+    if status.returncode != 0:
+        workspace_status_error = "git-status-failed"
+    elif len(status.stdout) > 131072:
+        workspace_status_error = "git-status-output-limit"
+    else:
+        for entry in status.stdout.split(bytes([0])):
+            if not entry or entry in (
+                b"?? .agentscookbook-answer.json",
+                b"!! .agentscookbook-answer.json",
+            ):
+                continue
+            unexpected_change_count += 1
+            if len(unexpected_changes) < 16:
+                unexpected_changes.append(
+                    entry[3:].decode("utf-8", errors="backslashreplace")
+                )
+except subprocess.TimeoutExpired:
+    workspace_status_error = "git-status-timeout"
+except OSError:
+    workspace_status_error = "git-status-unavailable"
+
+workspace_clean = (
+    workspace_status_error is None and unexpected_change_count == 0
+)
 source = Path("/workspace/.agentscookbook-answer.json")
 observed = None
 error = None
 try:
-    if source.is_file():
+    if source.is_symlink():
+        error = "answer-symlink"
+    elif not source.is_file():
+        error = "answer-missing"
+    elif source.stat().st_size > 65536:
+        error = "answer-size-limit"
+    else:
         value = json.loads(source.read_text(encoding="utf-8"))
         if isinstance(value, dict):
             observed = value
         else:
             error = "answer-not-object"
-    else:
-        error = "answer-missing"
 except (OSError, json.JSONDecodeError):
     error = "answer-invalid-json"
 
-tracked_clean = os.environ.get("clean") == "1"
+tracked_clean = workspace_clean
 match = observed == expected
 evidence = {{
     "schema": "agentscookbook.harbor-answer-evidence.v1",
@@ -885,6 +923,9 @@ evidence = {{
     "expected": expected,
     "match": match,
     "tracked_clean": tracked_clean,
+    "workspace_status_error": workspace_status_error,
+    "unexpected_change_count": unexpected_change_count,
+    "unexpected_change_paths": unexpected_changes,
     "error": error,
 }}
 Path("/logs/verifier/answer.json").write_text(
