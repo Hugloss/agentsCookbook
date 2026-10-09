@@ -40,6 +40,41 @@ class HarborMatrixError(ValueError):
     pass
 
 
+def _validate_named_projection(
+    *,
+    label: str,
+    projections: object,
+    subjects: list[object],
+) -> dict[str, Any]:
+    if not isinstance(projections, dict):
+        raise HarborMatrixError(f"Harbor {label} must be an object")
+    unknown = sorted(set(projections) - set(subjects))
+    if unknown:
+        raise HarborMatrixError(
+            f"Harbor {label} names unknown subject(s): " + ", ".join(unknown)
+        )
+    for subject, spec in projections.items():
+        if subject in {"none", "hashmarks"}:
+            raise HarborMatrixError(
+                f"Harbor {label} cannot redefine base subject {subject}"
+            )
+        if not isinstance(spec, dict) or set(spec) not in ({"include"}, {"exclude"}):
+            raise HarborMatrixError(
+                f"Harbor subject {subject} needs exactly one include/exclude {label}"
+            )
+        values = next(iter(spec.values()))
+        if (
+            not isinstance(values, list)
+            or not values
+            or not all(isinstance(item, str) and item for item in values)
+            or len(set(values)) != len(values)
+        ):
+            raise HarborMatrixError(
+                f"Harbor subject {subject} {label} must be unique non-empty strings"
+            )
+    return projections
+
+
 @dataclass(frozen=True)
 class HarborSettings:
     executable: str
@@ -90,38 +125,34 @@ def load_matrix(path: Path) -> dict[str, Any]:
             "Harbor matrix subjects must be unique strings starting with none "
             "and include hashmarks"
         )
-    projections = value.get("tool_projections", {})
-    if not isinstance(projections, dict):
-        raise HarborMatrixError("Harbor tool_projections must be an object")
-    unknown_projection_subjects = sorted(set(projections) - set(subjects))
-    if unknown_projection_subjects:
-        raise HarborMatrixError(
-            "Harbor tool projection names unknown subject(s): "
-            + ", ".join(unknown_projection_subjects)
-        )
+    projections = _validate_named_projection(
+        label="tool projection",
+        projections=value.get("tool_projections", {}),
+        subjects=subjects,
+    )
+    query_projections = _validate_named_projection(
+        label="query-surface projection",
+        projections=value.get("query_surface_projections", {}),
+        subjects=subjects,
+    )
     for subject in subjects:
         if subject in {"none", "hashmarks"}:
             continue
-        spec = projections.get(subject)
-        if not isinstance(spec, dict) or set(spec) not in ({"include"}, {"exclude"}):
+        if subject not in projections and subject not in query_projections:
             raise HarborMatrixError(
-                f"Harbor subject {subject} needs exactly one include/exclude tool projection"
-            )
-        values = next(iter(spec.values()))
-        if (
-            not isinstance(values, list)
-            or not values
-            or not all(isinstance(item, str) and item for item in values)
-            or len(set(values)) != len(values)
-        ):
-            raise HarborMatrixError(
-                f"Harbor subject {subject} tool projection must be unique non-empty strings"
+                f"Harbor subject {subject} needs a tool or query-surface projection"
             )
     ablation = value.get("ablation")
     if ablation is not None:
-        if not isinstance(ablation, dict) or set(ablation) != {"component", "arms"}:
+        if (
+            not isinstance(ablation, dict)
+            or set(ablation) not in (
+                {"component", "arms"},
+                {"component", "selector", "arms"},
+            )
+        ):
             raise HarborMatrixError(
-                "Harbor ablation must contain exactly component and arms"
+                "Harbor ablation must contain component/arms and optional selector"
             )
         component = ablation.get("component")
         arms = ablation.get("arms")
@@ -149,14 +180,53 @@ def load_matrix(path: Path) -> dict[str, Any]:
             raise HarborMatrixError(
                 "Harbor ablation bare/full arms must be none/hashmarks"
             )
-        if projections.get(arms["remove"]) != {"exclude": [component]}:
-            raise HarborMatrixError(
-                "Harbor ablation remove arm must exclude only its component"
-            )
-        if projections.get(arms["only"]) != {"include": [component]}:
-            raise HarborMatrixError(
-                "Harbor ablation only arm must include only its component"
-            )
+        selector = ablation.get("selector")
+        if selector is None:
+            if projections.get(arms["remove"]) != {"exclude": [component]}:
+                raise HarborMatrixError(
+                    "Harbor ablation remove arm must exclude only its component"
+                )
+            if projections.get(arms["only"]) != {"include": [component]}:
+                raise HarborMatrixError(
+                    "Harbor ablation only arm must include only its component"
+                )
+        else:
+            if (
+                component != "repository_intelligence_query"
+                or not isinstance(selector, dict)
+                or set(selector) != {"argument", "value"}
+                or selector.get("argument") != "surface_name"
+                or not isinstance(selector.get("value"), str)
+                or not selector["value"]
+            ):
+                raise HarborMatrixError(
+                    "Harbor selector ablation requires "
+                    "repository_intelligence_query.surface_name"
+                )
+            selected_value = str(selector["value"])
+            if projections.get(arms["remove"]) is not None:
+                raise HarborMatrixError(
+                    "Harbor selector remove arm must preserve the full tool catalog"
+                )
+            if projections.get(arms["only"]) != {
+                "include": ["repository_intelligence_query"]
+            }:
+                raise HarborMatrixError(
+                    "Harbor selector only arm must expose only "
+                    "repository_intelligence_query"
+                )
+            if query_projections.get(arms["remove"]) != {
+                "exclude": [selected_value]
+            }:
+                raise HarborMatrixError(
+                    "Harbor selector remove arm must exclude only its selector value"
+                )
+            if query_projections.get(arms["only"]) != {
+                "include": [selected_value]
+            }:
+                raise HarborMatrixError(
+                    "Harbor selector only arm must include only its selector value"
+                )
     if not isinstance(value.get("modes"), dict) or not value["modes"]:
         raise HarborMatrixError(
             "Harbor matrix needs at least one mode"
