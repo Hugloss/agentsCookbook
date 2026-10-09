@@ -192,12 +192,8 @@ class SemanticInformationTests(unittest.TestCase):
                     [_step(HASHMARKS, "h1", content=payload)],
                     _answer(expected, expected),
                 )
-                if isinstance(payload.get("status"), dict):
-                    self.assertTrue(result["qualified"])
-                    self.assertEqual(result["claim_alignment"], "NO_COMPARABLE_CLAIMS")
-                else:
-                    self.assertFalse(result["qualified"])
-                    self.assertEqual(result["reason"], "unstructured-subject-observation")
+                self.assertFalse(result["qualified"])
+                self.assertEqual(result["reason"], "unstructured-subject-observation")
 
     def test_missing_oracle_and_stale_legacy_artifact_are_unqualified(self) -> None:
         expected = {"comparison": "equivalent"}
