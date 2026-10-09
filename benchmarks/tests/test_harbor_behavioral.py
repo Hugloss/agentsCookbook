@@ -15,6 +15,11 @@ from benchmarks.harness.harbor_behavioral import (
     prepare_behavioral_workspace,
     workspace_manifest,
 )
+from benchmarks.harbor_matrix import (
+    load_matrix,
+    mode_contract,
+    validate_projection,
+)
 from benchmarks.harness.suite import load_suite
 
 
@@ -26,9 +31,40 @@ SUITE = (
     / "repository-intelligence"
     / "behavioral-v4"
 )
+CHANGE_IMPACT_MATRIX = (
+    ROOT
+    / "benchmarks"
+    / "harbor"
+    / "repository-intelligence-change-impact-ablation-v1.json"
+)
+POST_CHANGE_MATRIX = (
+    ROOT
+    / "benchmarks"
+    / "harbor"
+    / "repository-intelligence-post-change-ablation-v1.json"
+)
 
 
 class HarborBehavioralTests(unittest.TestCase):
+    def test_changed_path_matrices_admit_frozen_behavioral_tasks(self) -> None:
+        suite = load_suite(SUITE)
+        for path, component, count in (
+            (CHANGE_IMPACT_MATRIX, "change_impact", 4),
+            (POST_CHANGE_MATRIX, "post_change", 4),
+        ):
+            with self.subTest(component=component):
+                matrix = load_matrix(path)
+                mode = mode_contract(matrix, "matrix")
+                self.assertEqual(matrix["ablation"]["component"], component)
+                self.assertEqual(len(mode.tasks), count)
+                validate_projection(
+                    matrix=matrix,
+                    suite=suite,
+                    mode=mode,
+                    harnesses=tuple(matrix["harnesses"]),
+                    tasks=mode.tasks,
+                )
+
     def test_behavioral_contract_reuses_frozen_command_oracle(self) -> None:
         suite = load_suite(SUITE)
 
