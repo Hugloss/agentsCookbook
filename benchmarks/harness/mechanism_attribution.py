@@ -478,14 +478,12 @@ def load_harbor_bundle_projection(directory: Path) -> dict[str, Any]:
         if trace.get("available") is True and trace.get("tool_order_complete") is True
         else unavailable_information("atif-order-unavailable-or-incomplete")
     )
-    semantic = (
-        unavailable_semantic("semantic-case-identity-mismatch-or-missing")
-        if not isinstance(answer, dict)
-        or answer.get("semantic_case_id") != receipt.get("task_id")
-        else project_semantic_information(trajectory, answer=answer)
-        if trace.get("available") is True and trace.get("tool_order_complete") is True
-        else unavailable_semantic("atif-order-unavailable-or-incomplete")
-    )
+    if not isinstance(answer, dict) or answer.get("semantic_case_id") != receipt.get("task_id"):
+        semantic = unavailable_semantic("semantic-case-identity-mismatch-or-missing")
+    elif trace.get("available") is True and trace.get("tool_order_complete") is True:
+        semantic = project_semantic_information(trajectory, answer=answer)
+    else:
+        semantic = unavailable_semantic("atif-order-unavailable-or-incomplete")
     return {
         "receipt": receipt,
         "trace": trace,
