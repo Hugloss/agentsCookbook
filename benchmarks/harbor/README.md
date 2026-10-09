@@ -60,6 +60,23 @@ make benchmark-status MATRIX=harbor-full RUN_ID=000001
 make benchmark-report MATRIX=harbor-full RUN_ID=000001
 ```
 
+### Read-only workspace integrity
+
+The repository-location verifier uses one bounded native Git porcelain
+observation to qualify the workspace, including staged/unstaged tracked edits,
+new untracked files, and ignored files. The sole exception is the required
+`.agentscookbook-answer.json` transport file, which must be an ordinary file
+of at most 64 KiB. A symlink answer, extra generated file, failed Git status,
+or unbounded status output denies the read-only reward even when the reported
+owner/path is correct. The verifier keeps `tracked_clean` for compatible
+answer-evidence readers and now exposes `workspace_status_error`,
+`unexpected_change_count`, and bounded `unexpected_change_paths`.
+
+This check detects current worktree changes; it is **not** proof that the agent
+never modified and restored a file or changed Git metadata. The source
+checkout and experiment task authorities are still independently frozen
+before execution.
+
 The report publishes per-harness bare/Hashmarks success rates,
 `hashmarks_uplift`, and the bare-vs-Hashmarks `harness_spread`. A positive
 spread reduction is evidence that the portable repository-intelligence layer
