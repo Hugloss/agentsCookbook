@@ -184,18 +184,45 @@ def _validate_quartet_authority(
         and component in full_tools
     ):
         return False, "full-arm-not-canonical"
+    selector = contract.get("selector")
+    if selector is None:
+        if not (
+            removed.get("full_contract") is False
+            and isinstance(removed_tools, list)
+            and component not in removed_tools
+            and set(removed_tools) == set(full_tools) - {component}
+        ):
+            return False, "removal-arm-not-single-tool-ablation"
+        if not (
+            only.get("full_contract") is False
+            and only_tools == [component]
+        ):
+            return False, "only-arm-not-component-only"
+        return True, None
+
+    value = selector.get("value") if isinstance(selector, Mapping) else None
+    full_surfaces = full.get("repository_intelligence_query_surfaces")
+    removed_surfaces = removed.get("repository_intelligence_query_surfaces")
+    only_surfaces = only.get("repository_intelligence_query_surfaces")
+    if not (
+        isinstance(value, str)
+        and isinstance(full_surfaces, list)
+        and value in full_surfaces
+    ):
+        return False, "full-arm-selector-authority-missing"
     if not (
         removed.get("full_contract") is False
-        and isinstance(removed_tools, list)
-        and component not in removed_tools
-        and set(removed_tools) == set(full_tools) - {component}
+        and removed_tools == full_tools
+        and isinstance(removed_surfaces, list)
+        and set(removed_surfaces) == set(full_surfaces) - {value}
     ):
-        return False, "removal-arm-not-single-tool-ablation"
+        return False, "removal-arm-not-single-selector-ablation"
     if not (
         only.get("full_contract") is False
         and only_tools == [component]
+        and only_surfaces == [value]
     ):
-        return False, "only-arm-not-component-only"
+        return False, "only-arm-not-selector-only"
     return True, None
 
 
@@ -215,16 +242,31 @@ def _observed_tool_projection(
     treatment = _treatment(receipt)
     allowed = treatment.get("tools") if isinstance(treatment, Mapping) else []
     subject_tools = trace.get("subject_tools") if isinstance(trace, Mapping) else None
+    subject_selectors = (
+        trace.get("subject_call_selectors")
+        if isinstance(trace, Mapping)
+        else None
+    )
+    allowed_surfaces = (
+        treatment.get("repository_intelligence_query_surfaces")
+        if isinstance(treatment, Mapping)
+        else None
+    )
     if (
         not isinstance(trace, Mapping)
         or trace.get("available") is not True
         or trace.get("tool_order_complete") is not True
         or not isinstance(subject_tools, list)
+        or (
+            isinstance(allowed_surfaces, list)
+            and not isinstance(subject_selectors, list)
+        )
     ):
         return {
             "status": "UNQUALIFIED_TRACE_INCOMPLETE",
             "observed_subject_calls": None,
             "disallowed_calls": [],
+            "disallowed_selectors": [],
             "unresolved_calls": [],
             "catalog_advertisement_proven": False,
         }
@@ -233,6 +275,7 @@ def _observed_tool_projection(
     ):
         allowed = []
     disallowed: list[str] = []
+    disallowed_selectors: list[str] = []
     unresolved: list[str] = []
     observed = 0
     for raw in subject_tools:
@@ -253,9 +296,30 @@ def _observed_tool_projection(
             unresolved.append(str(raw))
         elif candidates[0] not in allowed:
             disallowed.append(str(raw))
+    if isinstance(allowed_surfaces, list):
+        if not all(isinstance(value, str) and value for value in allowed_surfaces):
+            allowed_surfaces = []
+        selector_rows = subject_selectors if isinstance(subject_selectors, list) else []
+        for raw in selector_rows:
+            if not isinstance(raw, Mapping):
+                unresolved.append("malformed-subject-selector")
+                continue
+            name = raw.get("tool")
+            if not matches_subject_operation(
+                name,
+                subject="hashmarks",
+                operation="repository_intelligence_query",
+            ):
+                continue
+            surface = raw.get("surface_name")
+            if not isinstance(surface, str) or not surface:
+                unresolved.append(str(name))
+            elif surface not in allowed_surfaces:
+                disallowed_selectors.append(surface)
+
     status = (
         "UNQUALIFIED_DISALLOWED_CALL"
-        if disallowed
+        if disallowed or disallowed_selectors
         else "UNQUALIFIED_UNRESOLVED_CALL"
         if unresolved
         else "NO_DISALLOWED_CALL_OBSERVED"
@@ -264,6 +328,7 @@ def _observed_tool_projection(
         "status": status,
         "observed_subject_calls": observed,
         "disallowed_calls": disallowed,
+        "disallowed_selectors": disallowed_selectors,
         "unresolved_calls": unresolved,
         "catalog_advertisement_proven": False,
     }
