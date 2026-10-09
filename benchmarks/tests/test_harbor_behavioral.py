@@ -45,14 +45,21 @@ POST_CHANGE_MATRIX = (
     / "harbor"
     / "repository-intelligence-post-change-ablation-v1.json"
 )
+CORRELATE_EVIDENCE_MATRIX = (
+    ROOT
+    / "benchmarks"
+    / "harbor"
+    / "repository-intelligence-correlate-evidence-ablation-v1.json"
+)
 
 
 class HarborBehavioralTests(unittest.TestCase):
-    def test_changed_path_matrices_admit_frozen_behavioral_tasks(self) -> None:
+    def test_behavioral_ablation_matrices_admit_frozen_tasks(self) -> None:
         suite = load_suite(SUITE)
         for path, component, count in (
             (CHANGE_IMPACT_MATRIX, "change_impact", 4),
             (POST_CHANGE_MATRIX, "post_change", 4),
+            (CORRELATE_EVIDENCE_MATRIX, "correlate_evidence", 4),
         ):
             with self.subTest(component=component):
                 matrix = load_matrix(path)
@@ -66,6 +73,52 @@ class HarborBehavioralTests(unittest.TestCase):
                     harnesses=tuple(matrix["harnesses"]),
                     tasks=mode.tasks,
                 )
+
+    def test_correlate_evidence_matrix_matches_correlation_intent(self) -> None:
+        matrix = load_matrix(CORRELATE_EVIDENCE_MATRIX)
+        mode = mode_contract(matrix, "matrix")
+
+        self.assertEqual(
+            matrix["subjects"],
+            [
+                "none",
+                "hashmarks",
+                "hashmarks-no-correlate-evidence",
+                "hashmarks-correlate-evidence-only",
+            ],
+        )
+        self.assertEqual(
+            matrix["tool_projections"],
+            {
+                "hashmarks-no-correlate-evidence": {
+                    "exclude": ["correlate_evidence"],
+                },
+                "hashmarks-correlate-evidence-only": {
+                    "include": ["correlate_evidence"],
+                },
+            },
+        )
+        self.assertEqual(
+            matrix["ablation"],
+            {
+                "component": "correlate_evidence",
+                "arms": {
+                    "bare": "none",
+                    "full": "hashmarks",
+                    "remove": "hashmarks-no-correlate-evidence",
+                    "only": "hashmarks-correlate-evidence-only",
+                },
+            },
+        )
+        self.assertEqual(
+            mode.tasks,
+            (
+                "correlation-00",
+                "correlation-01",
+                "correlation-02",
+                "correlation-03",
+            ),
+        )
 
     def test_behavioral_contract_reuses_frozen_command_oracle(self) -> None:
         suite = load_suite(SUITE)
