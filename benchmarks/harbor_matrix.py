@@ -285,8 +285,19 @@ def matrix_ablation(
         return None
     if not isinstance(value, dict):
         raise HarborMatrixError("Harbor matrix ablation is unavailable")
+    selector = value.get("selector")
     return {
         "component": str(value["component"]),
+        **(
+            {
+                "selector": {
+                    "argument": str(selector["argument"]),
+                    "value": str(selector["value"]),
+                }
+            }
+            if isinstance(selector, dict)
+            else {}
+        ),
         "arms": {
             str(role): str(subject)
             for role, subject in value["arms"].items()
@@ -305,8 +316,10 @@ def subject_tool_projection(
         return canonical_tools
     projections = matrix.get("tool_projections")
     spec = projections.get(subject) if isinstance(projections, dict) else None
+    if spec is None:
+        return canonical_tools
     if not isinstance(spec, dict):
-        raise HarborMatrixError(f"Harbor subject {subject} has no tool projection")
+        raise HarborMatrixError(f"Harbor subject {subject} has invalid tool projection")
     known = set(canonical_tools)
     key = "include" if "include" in spec else "exclude"
     requested = tuple(str(value) for value in spec[key])
@@ -323,6 +336,44 @@ def subject_tool_projection(
     )
     if not selected:
         raise HarborMatrixError(f"Harbor subject {subject} projects an empty tool catalog")
+    return selected
+
+
+def subject_query_surface_projection(
+    matrix: Mapping[str, Any],
+    subject: str,
+    canonical_surfaces: tuple[str, ...],
+) -> tuple[str, ...] | None:
+    if subject == "none":
+        return None
+    if subject == "hashmarks":
+        return canonical_surfaces
+    projections = matrix.get("query_surface_projections")
+    spec = projections.get(subject) if isinstance(projections, dict) else None
+    if spec is None:
+        return canonical_surfaces
+    if not isinstance(spec, dict):
+        raise HarborMatrixError(
+            f"Harbor subject {subject} has invalid query-surface projection"
+        )
+    known = set(canonical_surfaces)
+    key = "include" if "include" in spec else "exclude"
+    requested = tuple(str(value) for value in spec[key])
+    unknown = sorted(set(requested) - known)
+    if unknown:
+        raise HarborMatrixError(
+            f"Harbor subject {subject} references unknown query surface(s): "
+            + ", ".join(unknown)
+        )
+    selected = (
+        tuple(name for name in canonical_surfaces if name in set(requested))
+        if key == "include"
+        else tuple(name for name in canonical_surfaces if name not in set(requested))
+    )
+    if not selected:
+        raise HarborMatrixError(
+            f"Harbor subject {subject} projects an empty query-surface catalog"
+        )
     return selected
 
 
