@@ -769,10 +769,17 @@ def _copy_tracked_tree(
             )
 
 
-def _dockerfile() -> str:
-    return """FROM python:3.13-bookworm
+def _dockerfile(
+    task: Mapping[str, Any],
+) -> str:
+    extra = (
+        " golang-go"
+        if task.get("id") == "change_impact-02"
+        else ""
+    )
+    return f"""FROM python:3.13-bookworm
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git curl ca-certificates nodejs npm ripgrep \
+    && apt-get install -y --no-install-recommends git curl ca-certificates nodejs npm ripgrep{extra} \
     && rm -rf /var/lib/apt/lists/*
 COPY workspace /workspace
 COPY hashmarks-source /opt/hashmarks-source
@@ -953,7 +960,7 @@ def prepare_task(
         environment
         / "Dockerfile"
     ).write_text(
-        _dockerfile(),
+        _dockerfile(task),
         encoding="utf-8",
     )
     (
