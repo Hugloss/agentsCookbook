@@ -220,7 +220,7 @@ class DecisionEvidenceTests(unittest.TestCase):
 
         self.assertEqual(
             evidence["schema"],
-            "agents-cookbook-benchmark-decision-evidence.v7",
+            "agents-cookbook-benchmark-decision-evidence.v8",
         )
         self.assertTrue(evidence["authority"]["derived_only"])
         self.assertEqual(

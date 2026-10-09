@@ -25,6 +25,7 @@ from benchmarks.adapters.oracles import (
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.campaign_authority import (
     CampaignAuthorityError,
+    authority_epoch_projection,
     read_launch_claims,
     read_campaign,
 )
@@ -636,9 +637,17 @@ def _comparison_identity(receipt: dict[str, Any]) -> dict[str, Any]:
     return common
 
 
-def validate_comparability(receipts: list[dict[str, Any]]) -> None:
-    _check_comparable_agents(receipts)
-    _check_comparable_evidence(receipts)
+def validate_comparability(
+    receipts: list[dict[str, Any]],
+    *,
+    allow_participant_authority_mix: bool = False,
+) -> None:
+    if not allow_participant_authority_mix:
+        _check_comparable_agents(receipts)
+    _check_comparable_evidence(
+        receipts,
+        allow_subject_authority_mix=allow_participant_authority_mix,
+    )
     _check_comparable_localization_scoring(receipts)
     _check_localization_grades(receipts)
 
@@ -748,7 +757,11 @@ def _check_comparable_agents(receipts: list[dict[str, Any]]) -> None:
             )
 
 
-def _check_comparable_evidence(receipts: list[dict[str, Any]]) -> None:
+def _check_comparable_evidence(
+    receipts: list[dict[str, Any]],
+    *,
+    allow_subject_authority_mix: bool = False,
+) -> None:
     if not receipts:
         return
     for field in ("harness",):
@@ -772,6 +785,8 @@ def _check_comparable_evidence(receipts: list[dict[str, Any]]) -> None:
         environments[agent] = environment
         authority = receipt.get("authority", {}).get("subject", {})
         if authority.get("available") is not True:
+            continue
+        if allow_subject_authority_mix:
             continue
         subject = (_task_id(receipt), agent, _subject_id(receipt))
         observed = authority.get("observed")
@@ -2012,6 +2027,7 @@ def _pair_exclusions(
     by_definition: dict[str, list[dict[str, Any]]],
     suite: SuiteDefinition,
     interrupted: set[str] | None = None,
+    comparison_block_reason: str | None = None,
 ) -> list[dict[str, Any]]:
     interrupted = interrupted or set()
     conditions = {row["id"]: row for row in suite.experiment["conditions"]}
@@ -2049,10 +2065,16 @@ def _pair_exclusions(
                 left
                 and right
                 and all(row.get("status") in _VALID_OUTCOMES for row in (left, right))
+                and comparison_block_reason is None
             ):
                 continue
             exclusions.append(
                 {
+                    **(
+                        {"reason_code": comparison_block_reason}
+                        if comparison_block_reason is not None
+                        else {}
+                    ),
                     "task_id": key[0],
                     "agent_id": key[1],
                     "replicate_id": key[2],
@@ -2619,6 +2641,11 @@ def build_report(
     interrupted: set[str] = set()
     launch_claims: dict[str, str] = {}
     campaign_id = None
+    epoch_projection: dict[str, Any] = {
+        "evidence_tainted": False,
+        "authority_epoch_transitions": 0,
+        "authority_epochs": [],
+    }
     by_definition: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for receipt in receipts:
         definition = receipt.get("definition_id")
@@ -2653,6 +2680,15 @@ def build_report(
             ):
                 raise CampaignAuthorityError("report selection exceeds frozen campaign")
             launch_claims = read_launch_claims(results_root, campaign_id)
+            selected_pairs = {
+                (str(row["task_id"]), str(row["condition_id"]))
+                for row in expected.values()
+            }
+            epoch_projection = authority_epoch_projection(
+                results_root=results_root,
+                campaign_id=campaign_id,
+                selected_pairs=selected_pairs,
+            )
             if not set(launch_claims).issubset(set(manifest["selected_definitions"])):
                 raise CampaignAuthorityError(
                     "launch claim exceeds frozen campaign selection"
@@ -2677,7 +2713,13 @@ def build_report(
             f"campaign is incomplete: {len(missing)} frozen definition(s) missing"
         )
 
-    validate_comparability(receipts)
+    participant_authority_tainted = bool(
+        epoch_projection["evidence_tainted"]
+    )
+    validate_comparability(
+        receipts,
+        allow_participant_authority_mix=participant_authority_tainted,
+    )
 
     by_condition: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_agent: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -2701,10 +2743,28 @@ def build_report(
         campaign_complete
         and invalid_outcomes == 0
         and exposure_qualification["qualified"]
+        and not participant_authority_tainted
     )
-    paired_assistance = _paired_assistance(receipts)
-    stability = _stability(receipts, expected=expected, suite=suite)
-    context_invariance = _counterfactual_context(receipts)
+    comparison_block_reason = (
+        "participant-authority-epoch-taint"
+        if participant_authority_tainted
+        else None
+    )
+    paired_assistance = (
+        []
+        if participant_authority_tainted
+        else _paired_assistance(receipts)
+    )
+    stability = (
+        []
+        if participant_authority_tainted
+        else _stability(receipts, expected=expected, suite=suite)
+    )
+    context_invariance = (
+        []
+        if participant_authority_tainted
+        else _counterfactual_context(receipts)
+    )
     context_invariance_summary = _counterfactual_context_summary(context_invariance)
     analysis_evidence = _analysis_evidence(
         suite=suite,
@@ -2715,6 +2775,7 @@ def build_report(
         by_definition=by_definition,
         suite=suite,
         interrupted=interrupted,
+        comparison_block_reason=comparison_block_reason,
     )
     paired_assistance_summary = _paired_assistance_summary(paired_assistance)
     paired_assistance_usage_summary = _paired_assistance_usage_summary(
@@ -2754,7 +2815,7 @@ def build_report(
     return {
         "schema": {
             "name": "agents-cookbook-benchmark-report",
-            "version": 20,
+            "version": 21,
         },
         "suite": suite.experiment["suite"],
         "experiment": {
@@ -2786,7 +2847,11 @@ def build_report(
         "context_invariance": context_invariance,
         "context_invariance_summary": context_invariance_summary,
         "analysis_evidence": analysis_evidence,
-        "task_agent_authority": _task_agent_authority(receipts),
+        "task_agent_authority": (
+            []
+            if participant_authority_tainted
+            else _task_agent_authority(receipts)
+        ),
         "subject_adoption": subject_adoption,
         "diagnostics": [
             {
@@ -2801,13 +2866,41 @@ def build_report(
         ],
         "agent_profiles": agent_profiles,
         "decision_summary": decision_summary,
-        "cross_agent_observations": _cross_agent_observations(receipts),
+        "cross_agent_observations": (
+            []
+            if participant_authority_tainted
+            else _cross_agent_observations(receipts)
+        ),
+        "comparative_analysis": {
+            "status": (
+                "SUPPRESSED"
+                if participant_authority_tainted
+                else "AVAILABLE"
+            ),
+            "reason_code": comparison_block_reason,
+            "suppressed_surfaces": (
+                [
+                    "paired_assistance",
+                    "stability",
+                    "context_invariance",
+                    "cross_agent_observations",
+                    "task_agent_authority",
+                ]
+                if participant_authority_tainted
+                else []
+            ),
+        },
         "campaign_qualification": {
             "status": "QUALIFIED" if campaign_qualified else "NOT_QUALIFIED",
             "complete": campaign_complete,
             "invalid_outcomes": invalid_outcomes,
-            "mixed_execution_authority": False,
+            "mixed_execution_authority": participant_authority_tainted,
             "mixed_localization_scoring_policy": False,
+            "evidence_tainted": participant_authority_tainted,
+            "authority_epoch_transitions": epoch_projection[
+                "authority_epoch_transitions"
+            ],
+            "authority_epochs": epoch_projection["authority_epochs"],
             "subject_exposure": exposure_qualification,
         },
         "authority": {
@@ -2822,6 +2915,9 @@ def build_report(
             ),
             "subject_exposure_qualification": (
                 "mandatory-for-selected-non-control-conditions"
+            ),
+            "participant_authority_epoch_policy": (
+                "any-transition-blocks-qualification-and-comparative-analysis"
             ),
             "replicate_identity_field": (
                 "execution.replicate_id"

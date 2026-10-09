@@ -11,7 +11,7 @@ from typing import Any
 from .bundle import verify_bundle
 from .campaign_authority import (
     CampaignAuthorityError,
-    read_authority_epochs,
+    authority_epoch_projection,
     read_campaign,
     read_interrupted_attempts,
     read_launch_details,
@@ -168,27 +168,12 @@ def campaign_status(
                 (str(row["task_id"]), str(row["condition_id"]))
                 for row in definitions.values()
             }
-            epoch_records = read_authority_epochs(
-                results_root,
-                manifest["campaign_id"],
+            epoch_projection = authority_epoch_projection(
+                results_root=results_root,
+                campaign_id=manifest["campaign_id"],
+                selected_pairs=selected_pairs,
             )
-            authority_epoch_rows = [
-                {
-                    "task_id": task_id,
-                    "condition_id": condition_id,
-                    "epoch": int(record["epoch"]),
-                    "epoch_id": str(record["epoch_id"]),
-                    "previous_epoch_id": str(record["previous_epoch_id"]),
-                    "changed_components": list(record["changed_components"]),
-                    "changed_fields": list(record["changed_fields"]),
-                    "detected_at_ns": int(record["detected_at_ns"]),
-                }
-                for (task_id, condition_id), records in sorted(
-                    epoch_records.items()
-                )
-                if (task_id, condition_id) in selected_pairs
-                for record in records
-            ]
+            authority_epoch_rows = list(epoch_projection["authority_epochs"])
             claims = set(launch_claims)
             if not claims.issubset(set(manifest["selected_definitions"])):
                 raise CampaignAuthorityError("launch claim exceeds campaign selection")

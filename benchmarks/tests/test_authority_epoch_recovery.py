@@ -10,6 +10,7 @@ from benchmarks.adapters.opencode_native import _enrich_authority_revalidation
 from benchmarks.harness.campaign import campaign_status
 from benchmarks.harness.campaign_authority import (
     CampaignAuthorityError,
+    authority_epoch_projection,
     bind_authority_epoch,
     claim_launch,
     launch_state,
@@ -18,7 +19,9 @@ from benchmarks.harness.campaign_authority import (
     record_interrupted_attempt,
 )
 from benchmarks.harness.identity import canonical_json, digest
+from benchmarks.harness.decision_evidence import build_decision_evidence
 from benchmarks.harness.model import Observation
+from benchmarks.harness.report import build_report
 from benchmarks.harness.runner import _agent_failure
 from benchmarks.harness.suite import SuiteDefinition
 
@@ -244,6 +247,171 @@ class AuthorityEpochRecoveryTests(unittest.TestCase):
             self.assertEqual(
                 status["authority_epochs"][0]["changed_components"],
                 ["agent"],
+            )
+
+    def test_report_and_decision_use_epoch_taint_as_qualification_authority(
+        self,
+    ) -> None:
+        suite = _suite()
+        row = suite.trial_definitions()[0]
+        definition_id = str(row["definition_id"])
+        base = _authority()
+        campaign = _campaign(base, definition_id)
+        changed = _authority("b" * 64)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            results_root = Path(tmp) / "results"
+            _write_campaign(results_root, campaign)
+            bind_authority_epoch(
+                results_root=results_root,
+                campaign=campaign,
+                task_id="task-a",
+                condition_id="bare",
+                observed_authority=changed,
+            )
+            projection = authority_epoch_projection(
+                results_root=results_root,
+                campaign_id=campaign["campaign_id"],
+                selected_pairs={("task-a", "bare")},
+            )
+            self.assertTrue(projection["evidence_tainted"])
+            self.assertEqual(projection["authority_epoch_transitions"], 1)
+
+            receipt = {
+                "definition_id": definition_id,
+                "trial_id": "f" * 64,
+                "task": {"id": "task-a"},
+                "condition": {
+                    "id": "bare",
+                    "agent_definition": {"id": "agent"},
+                    "subject_definition": {"id": "none", "adapter": "none"},
+                },
+                "status": "PASS",
+                "authority": {
+                    "agent": {},
+                    "subject": {},
+                    "oracle": {},
+                    "harness": {},
+                    "environment": {},
+                    "mutation": None,
+                },
+                "execution": {
+                    "campaign_id": campaign["campaign_id"],
+                    "replicate_id": 1,
+                    "trial_index": 0,
+                    "authority_epoch": {
+                        "epoch": 2,
+                        "epoch_id": projection["authority_epochs"][0]["epoch_id"],
+                        "transitioned": True,
+                        "changed_components": ["agent"],
+                        "changed_fields": ["agent.executable_sha256"],
+                    },
+                },
+                "measurements": {"agent": {}},
+                "scoring": {"oracle_grade": {}},
+                "reason": None,
+            }
+
+            with (
+                mock.patch(
+                    "benchmarks.harness.report.validate_comparability"
+                ) as comparable,
+                mock.patch(
+                    "benchmarks.harness.report.subject_exposure_qualification",
+                    return_value={
+                        "status": "PASS",
+                        "qualified": True,
+                        "conditions": [],
+                    },
+                ),
+                mock.patch(
+                    "benchmarks.harness.report._aggregate_condition",
+                    return_value={},
+                ),
+                mock.patch(
+                    "benchmarks.harness.report._subject_adoption_summary",
+                    return_value=[],
+                ),
+                mock.patch(
+                    "benchmarks.harness.report._analysis_evidence",
+                    return_value={},
+                ),
+                mock.patch(
+                    "benchmarks.harness.report._diagnostic",
+                    return_value={
+                        "primary": "semantic-correct",
+                        "flags": {},
+                        "stage": None,
+                        "reason_code": None,
+                        "reason": None,
+                        "location_topology": None,
+                        "diagnostic_source": "receipt",
+                    },
+                ),
+                mock.patch(
+                    "benchmarks.harness.report._decision_summary",
+                    return_value={"campaign": {"qualification": "NOT_QUALIFIED"}},
+                ) as decision_summary,
+            ):
+                report = build_report(
+                    suite=suite,
+                    results_root=results_root,
+                    selected_definitions={definition_id},
+                    projected_receipts=[receipt],
+                )
+
+            comparable.assert_called_once_with(
+                [receipt],
+                allow_participant_authority_mix=True,
+            )
+            self.assertFalse(
+                decision_summary.call_args.kwargs["campaign_qualified"]
+            )
+            self.assertEqual(report["schema"]["version"], 21)
+            self.assertEqual(
+                report["campaign_qualification"]["status"],
+                "NOT_QUALIFIED",
+            )
+            self.assertTrue(
+                report["campaign_qualification"]["evidence_tainted"]
+            )
+            self.assertEqual(
+                report["campaign_qualification"]["authority_epoch_transitions"],
+                1,
+            )
+            self.assertTrue(
+                report["campaign_qualification"]["mixed_execution_authority"]
+            )
+            self.assertEqual(
+                report["comparative_analysis"]["status"],
+                "SUPPRESSED",
+            )
+            self.assertEqual(
+                report["comparative_analysis"]["reason_code"],
+                "participant-authority-epoch-taint",
+            )
+            self.assertEqual(report["paired_assistance"], [])
+            self.assertEqual(report["stability"], [])
+            self.assertEqual(report["context_invariance"], [])
+            self.assertEqual(report["cross_agent_observations"], [])
+            self.assertEqual(report["task_agent_authority"], [])
+
+            decision = build_decision_evidence(report)
+            self.assertEqual(
+                decision["schema"],
+                "agents-cookbook-benchmark-decision-evidence.v8",
+            )
+            self.assertIn(
+                "participant-authority-transition-observed",
+                decision["evidence_signals"],
+            )
+            self.assertEqual(
+                decision["campaign"]["qualification"]["status"],
+                "NOT_QUALIFIED",
+            )
+            self.assertEqual(
+                decision["campaign"]["comparative_analysis"]["status"],
+                "SUPPRESSED",
             )
 
     def test_runtime_drift_is_classified_and_carries_forensic_stack(self) -> None:

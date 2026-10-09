@@ -308,6 +308,11 @@ def build_decision_evidence(
         if isinstance(row.get("state"), str)
     ]
     campaign_qualification = report.get("campaign_qualification", {})
+    participant_authority_tainted = bool(
+        campaign_qualification.get("evidence_tainted")
+        if isinstance(campaign_qualification, dict)
+        else False
+    )
     subject_exposure = (
         campaign_qualification.get("subject_exposure", {})
         if isinstance(campaign_qualification, dict)
@@ -364,6 +369,8 @@ def build_decision_evidence(
     evidence_signals: list[str] = []
     if runtime_rows:
         evidence_signals.append("runtime-or-host-instability-observed")
+    if participant_authority_tainted:
+        evidence_signals.append("participant-authority-transition-observed")
     if semantic_rows:
         evidence_signals.append("semantic-misses-observed")
     if any(
@@ -399,7 +406,7 @@ def build_decision_evidence(
         evidence_signals.append("repository-intelligence-evidence-to-action-observed")
 
     return {
-        "schema": "agents-cookbook-benchmark-decision-evidence.v7",
+        "schema": "agents-cookbook-benchmark-decision-evidence.v8",
         "authority": {
             "derived_only": True,
             "ranking_performed": False,
@@ -416,6 +423,7 @@ def build_decision_evidence(
             "observed_trials": report.get("observed_trials"),
             "status_counts": report.get("status_counts", {}),
             "qualification": report.get("campaign_qualification", {}),
+            "comparative_analysis": report.get("comparative_analysis", {}),
         },
         "decision_summary": report.get("decision_summary", {}),
         "repository_intelligence_quality": repository_intelligence_quality,
