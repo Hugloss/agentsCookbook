@@ -638,6 +638,7 @@ def _hashmarks_probe(
     *,
     executable: str,
     tool_names: tuple[str, ...] | None = None,
+    query_surfaces: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     argv = [
         executable,
@@ -648,6 +649,8 @@ def _hashmarks_probe(
     ]
     for name in tool_names or ():
         argv.extend(("--mcp-tool", name))
+    for surface in query_surfaces or ():
+        argv.extend(("--mcp-query-surface", surface))
     result = _run(
         argv,
         env=host,
@@ -752,7 +755,26 @@ def preflight(
     )
     if not canonical_tools:
         raise HarborMatrixError("Hashmarks canonical MCP tool catalog is unavailable")
+    raw_query_surfaces = mcp.get("repository_intelligence_query_surfaces")
+    canonical_query_surfaces = (
+        tuple(str(value) for value in raw_query_surfaces)
+        if isinstance(raw_query_surfaces, list)
+        else ()
+    )
     ablation = matrix_ablation(matrix)
+    if ablation is not None and ablation.get("selector") is not None:
+        selector = ablation["selector"]
+        if not canonical_query_surfaces:
+            raise HarborMatrixError(
+                "Hashmarks canonical repository_intelligence_query surface catalog "
+                "is unavailable"
+            )
+        if selector["value"] not in canonical_query_surfaces:
+            raise HarborMatrixError(
+                "Harbor ablation selector is not in the canonical Hashmarks "
+                "repository_intelligence_query surface catalog: "
+                + str(selector["value"])
+            )
     if ablation is not None and ablation["component"] not in canonical_tools:
         raise HarborMatrixError(
             "Harbor ablation component is not in the canonical Hashmarks MCP contract: "
@@ -763,38 +785,70 @@ def preflight(
     for subject in subjects:
         if subject == "none":
             continue
-        selected = subject_tool_projection(matrix, subject, canonical_tools)
-        assert selected is not None
-        if subject == "hashmarks" and selected == canonical_tools:
+        selected_tools = subject_tool_projection(
+            matrix,
+            subject,
+            canonical_tools,
+        )
+        selected_surfaces = subject_query_surface_projection(
+            matrix,
+            subject,
+            canonical_query_surfaces,
+        )
+        assert selected_tools is not None
+        assert selected_surfaces is not None
+        full_contract = (
+            selected_tools == canonical_tools
+            and selected_surfaces == canonical_query_surfaces
+        )
+        if subject == "hashmarks" and full_contract:
             treatments[subject] = {
                 "tools": list(canonical_tools),
+                "repository_intelligence_query_surfaces": list(
+                    canonical_query_surfaces
+                ),
                 "projection_identity": mcp.get("contract_identity"),
                 "source_contract_identity": mcp.get("contract_identity"),
                 "full_contract": True,
             }
             continue
+        tools_projected = selected_tools != canonical_tools
+        surfaces_projected = selected_surfaces != canonical_query_surfaces
         projected = _hashmarks_probe(
             settings,
             host,
             executable=executable_path,
-            tool_names=selected,
+            tool_names=selected_tools if tools_projected else None,
+            query_surfaces=selected_surfaces if surfaces_projected else None,
         )
         projection = projected.get("projection")
         if not (
             isinstance(projection, dict)
             and projection.get("source_contract_identity") == mcp.get("contract_identity")
-            and projection.get("tools") == list(selected)
-            and projection.get("observed_tools") == list(selected)
+            and projection.get("tools") == list(selected_tools)
+            and projection.get("observed_tools") == list(selected_tools)
             and isinstance(projection.get("projection_identity"), str)
         ):
             raise HarborMatrixError(
                 f"Hashmarks MCP projection qualification failed for {subject}"
             )
+        if surfaces_projected and not (
+            projection.get("repository_intelligence_query_surfaces")
+            == list(selected_surfaces)
+            and projection.get(
+                "observed_repository_intelligence_query_surfaces"
+            )
+            == list(selected_surfaces)
+        ):
+            raise HarborMatrixError(
+                f"Hashmarks query-surface projection qualification failed for {subject}"
+            )
         treatments[subject] = {
-            "tools": list(selected),
+            "tools": list(selected_tools),
+            "repository_intelligence_query_surfaces": list(selected_surfaces),
             "projection_identity": projection["projection_identity"],
             "source_contract_identity": projection["source_contract_identity"],
-            "full_contract": False,
+            "full_contract": full_contract,
         }
     return {
         "schema": MATRIX_SCHEMA,
@@ -830,6 +884,9 @@ def preflight(
                 "tool_count"
             ),
             "canonical_tools": list(canonical_tools),
+            "canonical_repository_intelligence_query_surfaces": list(
+                canonical_query_surfaces
+            ),
             "treatments": treatments,
             **({"ablation": ablation} if ablation is not None else {}),
         },
