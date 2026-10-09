@@ -208,7 +208,7 @@ class SemanticReportIntegrationTests(unittest.TestCase):
                 trial_id=trial_id,
                 artifacts={
                     "harbor_result": ("harbor-result.json", canonical_json(harbor_result)),
-                    "reward": ("reward.txt", b"1\\n"),
+                    "reward": ("reward.txt", b"1\n"),
                     "trajectory": ("trajectory.json", canonical_json(_trajectory(subject))),
                     "answer": ("answer.json", canonical_json(_answer(subject))),
                 },
