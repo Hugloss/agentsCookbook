@@ -81,6 +81,24 @@ def _paths(value: object) -> set[str]:
     return found
 
 
+def _opaque_mcp_text(value: object, *, depth: int = 0) -> bool:
+    """An unparseable text block cannot support a negative path-evidence claim."""
+    if depth >= 16:
+        return True
+    if isinstance(value, list):
+        return any(_opaque_mcp_text(item, depth=depth + 1) for item in value)
+    if not isinstance(value, dict):
+        return False
+    if value.get("type") == "text" and isinstance(value.get("text"), str):
+        if _decode(value["text"]) is None:
+            return True
+    return any(
+        _opaque_mcp_text(child, depth=depth + 1)
+        for child in value.values()
+        if isinstance(child, (list, dict))
+    )
+
+
 def unavailable_information(reason: str) -> dict[str, Any]:
     return {
         "schema": INFORMATION_SCHEMA,
@@ -227,7 +245,10 @@ def project_information_timing(
         (ordinal, result_step, _decode(response))
         for ordinal, response, _, result_step in subject_calls
     ]
-    if any(content is None for _, _, content in decoded):
+    if any(
+        content is None or _opaque_mcp_text(content)
+        for _, _, content in decoded
+    ):
         return unavailable_information("unstructured-subject-observation")
 
     exposed: list[tuple[int, int, set[str]]] = [
@@ -263,10 +284,13 @@ def project_information_timing(
     oracle_read: int | None = None
     alternate_read: int | None = None
     ambiguous_same_step_read = False
+    opaque_native_read = False
     for ordinal, category, arguments, _, call_step, _ in calls:
         if category != NATIVE_READ:
             continue
         read_paths = _paths(arguments)
+        if not read_paths:
+            opaque_native_read = True
         earlier_oracle = any(
             result_step < call_step and oracle in paths
             for _, result_step, paths in exposed
@@ -299,6 +323,8 @@ def project_information_timing(
         if oracle_read is not None
         else "ALTERNATE_PATH_READ"
         if alternate_read is not None
+        else "UNKNOWN_NATIVE_READ_ARGUMENTS"
+        if opaque_native_read
         else "NO_MATCHING_NATIVE_READ"
     )
     return {
