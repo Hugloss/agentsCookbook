@@ -531,7 +531,9 @@ Long unattended campaigns treat **participant authority drift as evidence, not a
 4. retires any stale pre-transition launch as numbered interruption evidence;
 5. marks campaign evidence `TAINTED` and keeps collecting the remaining diagnostic evidence.
 
-Epochs never silently restore comparability. Any participant-authority transition blocks qualification for that saved campaign even when execution reaches every planned definition; status and the final run summary expose the transition count. Start a fresh campaign under one stable authority when qualification is required.
+Epochs never silently restore comparability. Any participant-authority transition blocks qualification for that saved campaign even when execution reaches every planned definition; status and the final run summary expose the transition count. The same verified epoch projection is carried into `report.json`, `decision-evidence.json`, and the heldout score so derived artifacts cannot reclassify a tainted campaign as qualified.
+
+A tainted campaign still produces diagnostic reports. Participant-mixed comparative surfaces are deliberately suppressed instead of computed across epochs: paired assistance, stability, context invariance, cross-agent observations, and the collapsed task/agent authority projection are unavailable with reason `participant-authority-epoch-taint`. Raw receipt diagnostics, per-condition operational summaries, subject-adoption evidence, and the compact epoch transition ledger remain inspectable. Start a fresh campaign under one stable authority when qualification or comparative conclusions are required.
 
 This recovery boundary does **not** weaken benchmark authority. Frozen suite/oracle/task inputs, harness authority, environment authority, campaign receipt integrity, or evidence corruption remain hard failures because subsequent results could no longer be interpreted or trusted. Participant instability can be preserved and segmented; benchmark-definition or evidence-authority instability cannot.
 
