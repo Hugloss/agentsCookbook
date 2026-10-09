@@ -7,9 +7,11 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from benchmarks.harness.harbor_behavioral import (
     HarborBehavioralError,
+    admit_behavioral_oracle,
     behavioral_contract,
     behavioral_verifier,
     prepare_behavioral_workspace,
@@ -161,6 +163,160 @@ class HarborBehavioralTests(unittest.TestCase):
             manifest = workspace_manifest(workspace)
 
         self.assertEqual(set(manifest), {"a.txt"})
+
+    def test_health_admission_is_bounded_and_read_only_before_mutation(self) -> None:
+        suite = load_suite(SUITE)
+        contract = behavioral_contract(suite, suite.tasks["change_impact-00"])
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            (workspace / "sentinel.txt").write_text("original", encoding="utf-8")
+            result = admit_behavioral_oracle(workspace=workspace, contract=contract)
+            self.assertEqual(result["status"], "PASS")
+            self.assertEqual(result["timeout_seconds"], 10)
+            self.assertEqual(
+                (workspace / "sentinel.txt").read_text(encoding="utf-8"),
+                "original",
+            )
+
+    def test_oracle_health_failure_blocks_mutation_and_fixture_publication(
+        self,
+    ) -> None:
+        suite = load_suite(SUITE)
+        task = suite.tasks["change_impact-00"]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace, tests = root / "workspace", root / "tests"
+            workspace.mkdir()
+            tests.mkdir()
+            with (
+                mock.patch(
+                    "benchmarks.harness.harbor_behavioral.subprocess.run",
+                    return_value=subprocess.CompletedProcess([], 2, "", "bad case"),
+                ),
+                mock.patch(
+                    "benchmarks.harness.harbor_behavioral.apply_mutation"
+                ) as mutation,
+            ):
+                with self.assertRaisesRegex(
+                    HarborBehavioralError, "oracle health failed"
+                ):
+                    prepare_behavioral_workspace(
+                        suite=suite,
+                        task=task,
+                        workspace=workspace,
+                        tests=tests,
+                        control_root=root,
+                    )
+                mutation.assert_not_called()
+            self.assertFalse((tests / "projection.json").exists())
+            self.assertFalse((tests / "baseline.json").exists())
+
+    def test_health_timeout_and_mutation_detection_fail_before_work(self) -> None:
+        suite = load_suite(SUITE)
+        contract = behavioral_contract(suite, suite.tasks["change_impact-00"])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with mock.patch(
+                "benchmarks.harness.harbor_behavioral.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(["health"], 10),
+            ):
+                with self.assertRaisesRegex(
+                    HarborBehavioralError, "oracle health unavailable"
+                ):
+                    admit_behavioral_oracle(workspace=root, contract=contract)
+
+            def dirty_health(*args, **kwargs):
+                (root / "unexpected.txt").write_text("changed", encoding="utf-8")
+                return subprocess.CompletedProcess([], 0, "", "")
+
+            with mock.patch(
+                "benchmarks.harness.harbor_behavioral.subprocess.run",
+                side_effect=dirty_health,
+            ):
+                with self.assertRaisesRegex(
+                    HarborBehavioralError, "health mutated workspace"
+                ):
+                    admit_behavioral_oracle(workspace=root, contract=contract)
+
+    def _run_generated_verifier(
+        self,
+        oracle_source: str,
+        *,
+        grade_timeout: str | None = None,
+    ) -> tuple[dict, dict, str]:
+        suite = load_suite(SUITE)
+        contract = behavioral_contract(suite, suite.tasks["post_change-00"])
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            tests = root / "tests"
+            logs = root / "logs" / "verifier"
+            workspace.mkdir()
+            tests.mkdir()
+            (workspace / "sentinel.txt").write_text("source", encoding="utf-8")
+            (tests / "oracle.py").write_text(oracle_source, encoding="utf-8")
+            (tests / "baseline.json").write_text(
+                json.dumps(workspace_manifest(workspace)), encoding="utf-8"
+            )
+            (workspace / ".agentscookbook-answer.json").write_text(
+                json.dumps({"path": "src/owner.py"}), encoding="utf-8"
+            )
+            script = behavioral_verifier(contract)
+            for original, replacement in (
+                ("/logs/verifier", str(logs)),
+                ("/tmp/agentscookbook-observation.json", str(root / "observation.json")),
+                ("/tests", str(tests)),
+                ("/workspace", str(workspace)),
+            ):
+                script = script.replace(original, replacement)
+            if grade_timeout is not None:
+                script = script.replace("timeout=40,", "timeout=" + grade_timeout + ",")
+            path = root / "verify.sh"
+            path.write_text(script, encoding="utf-8")
+            result = subprocess.run(
+                ["sh", str(path)],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return (
+                json.loads((logs / "answer.json").read_text(encoding="utf-8")),
+                json.loads((logs / "oracle.json").read_text(encoding="utf-8")),
+                (logs / "reward.txt").read_text(encoding="utf-8"),
+            )
+
+    def test_bounded_grade_accepts_canonical_oracle_result(self) -> None:
+        answer, oracle, reward = self._run_generated_verifier(
+            'import json\nprint(json.dumps({"passed": True}))\n'
+        )
+        self.assertEqual(reward, "1\\n")
+        self.assertTrue(answer["match"])
+        self.assertTrue(answer["tracked_clean"])
+        self.assertEqual(oracle["return_code"], 0)
+        self.assertFalse(oracle["timed_out"])
+
+    def test_hung_grade_reports_timeout_and_denies_reward(self) -> None:
+        answer, oracle, reward = self._run_generated_verifier(
+            "import time\ntime.sleep(1)\n",
+            grade_timeout="0.05",
+        )
+        self.assertEqual(reward, "0\\n")
+        self.assertEqual(answer["error"], "oracle-timeout")
+        self.assertFalse(answer["match"])
+        self.assertTrue(oracle["timed_out"])
+        self.assertIsNone(oracle["return_code"])
+
+    def test_oversized_grade_output_denies_reward_and_bounds_artifact(self) -> None:
+        answer, oracle, reward = self._run_generated_verifier(
+            'import json\nprint(json.dumps({"passed": True, "padding": "x" * 75000}))\n'
+        )
+        self.assertEqual(reward, "0\\n")
+        self.assertEqual(answer["error"], "oracle-output-limit")
+        self.assertFalse(answer["match"])
+        self.assertTrue(oracle["stdout_truncated"])
+        self.assertLessEqual(len(oracle["stdout"]), 8192)
 
     def test_behavioral_verifier_uses_oracle_and_post_mutation_baseline(self) -> None:
         suite = load_suite(SUITE)

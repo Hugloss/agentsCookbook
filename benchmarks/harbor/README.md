@@ -326,6 +326,26 @@ The projected task bundle therefore binds:
 
 No second behavioral oracle is introduced by Harbor.
 
+### Command-oracle lifecycle qualification
+
+Before applying the frozen mutation or publishing the projected task, the
+bridge invokes the suite-owned `oracle.py health <task-id>` using its current
+Python interpreter. The bounded 10-second health check must exit zero and
+leave workspace bytes unchanged. Failure, timeout, missing executable or
+unexpected workspace mutation blocks fixture preparation before model work.
+The frozen behavioral projection records `oracle_health` with the successful
+operation and time limit; health is not itself a correctness score.
+
+During Harbor verification, the existing suite-owned `oracle.py grade`
+receives a distinct 40-second command timeout inside Harbor's 60-second
+verifier budget. Missing oracle executables, timeouts, malformed responses,
+or stdout/stderr above 64 KiB fail reward closed and leave explicit verifier
+evidence. The `oracle.json` diagnostic retains bounded 8 KiB previews,
+truncation flags and timeout status. A hung grader can no longer consume the
+entire verifier budget without a diagnostic reward. This checks execution
+liveness and response integrity; it does not replace the existing lexigram
+oracle or prove that the external model saw a specific MCP catalog.
+
 ## Boundary
 
 Harbor uses the same numbered run store, durable launch claims, checksum-bound
