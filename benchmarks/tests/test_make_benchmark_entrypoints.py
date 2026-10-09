@@ -154,6 +154,16 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             'HARBOR_FIND_ABLATION_MATRIX ?= harbor-find-ablation-full',
             makefile,
         )
+        self.assertIn(
+            'HARBOR_CHANGE_IMPACT_ABLATION_MATRIX ?= '
+            'harbor-change-impact-ablation-full',
+            makefile,
+        )
+        self.assertIn(
+            'HARBOR_POST_CHANGE_ABLATION_MATRIX ?= '
+            'harbor-post-change-ablation-full',
+            makefile,
+        )
         self.assertIn('--matrix "$(MATRIX)"', makefile)
         self.assertIn("benchmark-harness-explain:\n", makefile)
         self.assertIn(
@@ -169,6 +179,22 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         self.assertIn('--matrix "$(HARBOR_ABLATION_MATRIX)"', makefile)
         self.assertIn("benchmark-harness-find-ablation:\n", makefile)
         self.assertIn('--matrix "$(HARBOR_FIND_ABLATION_MATRIX)"', makefile)
+        self.assertIn(
+            "benchmark-harness-change-impact-ablation:\n",
+            makefile,
+        )
+        self.assertIn(
+            '--matrix "$(HARBOR_CHANGE_IMPACT_ABLATION_MATRIX)"',
+            makefile,
+        )
+        self.assertIn(
+            "benchmark-harness-post-change-ablation:\n",
+            makefile,
+        )
+        self.assertIn(
+            '--matrix "$(HARBOR_POST_CHANGE_ABLATION_MATRIX)"',
+            makefile,
+        )
         self.assertIn('run --resume --run-id "$(RUN_ID)"', makefile)
         self.assertIn("benchmark-oracle-review:", makefile)
         self.assertIn(

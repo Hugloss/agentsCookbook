@@ -259,13 +259,81 @@ make benchmark-harness-ablation \
   HARBOR_ABLATION_MATRIX=harbor-find-ablation-full
 ```
 
+#### Known edit, downstream consequences: `change_impact`
+
+The `harbor-change-impact-ablation-*` matrices reuse the frozen
+`behavioral-v4` mutation corpus. Each task starts from a checksum-bound
+post-mutation repository baseline, asks the agent to make one narrowly allowed
+edit, and grades both the edited bytes and the downstream implementation /
+verification evidence with the suite's existing independent command oracle.
+
+This is intentionally different from semantic localization: the changed owner
+is already known, and the question is what else the change affects.
+
+```sh
+make benchmark-check MATRIX=harbor-change-impact-ablation-smoke
+make benchmark-new MATRIX=harbor-change-impact-ablation-smoke
+
+make benchmark-check MATRIX=harbor-change-impact-ablation-full
+make benchmark-new MATRIX=harbor-change-impact-ablation-full
+
+make benchmark-harness-change-impact-ablation
+```
+
+The full campaign is 4 tasks × 3 harnesses × 4 arms × 3 replicates = 144 trials.
+
+#### Existing change, evidence revalidation: `post_change`
+
+The `harbor-post-change-ablation-*` matrices reuse the four
+`behavioral-v4/post_change` cases. These cover both edit and read-only
+freshness/reuse decisions after a changed path already exists. This isolates
+whether `post_change` contributes beyond the rest of Hashmarks when the agent
+must decide what evidence is stale, reusable, or newly relevant.
+
+```sh
+make benchmark-check MATRIX=harbor-post-change-ablation-smoke
+make benchmark-new MATRIX=harbor-post-change-ablation-smoke
+
+make benchmark-check MATRIX=harbor-post-change-ablation-full
+make benchmark-new MATRIX=harbor-post-change-ablation-full
+
+make benchmark-harness-post-change-ablation
+```
+
+The full campaign is also 144 trials.
+
+### Behavioral Harbor projection authority
+
+Behavioral command-oracle tasks do not treat the mutation fixture as agent
+work. agentsCookbook applies the existing suite mutation through the canonical
+mutation helper, verifies its SHA-256 and exact changed-path set, and then
+freezes a post-mutation workspace manifest before Harbor launches a model.
+
+The Harbor verifier compares the final workspace against that frozen manifest.
+Only task-declared `allowed_change_globs` and
+`allowed_generated_globs` may differ. It then feeds the agent's bounded JSON
+answer to the existing suite `oracle.py` / `cases.json` command oracle and
+publishes reward only when both contamination and oracle checks pass.
+
+The projected task bundle therefore binds:
+
+- the mutated repository bytes;
+- the mutation identity and changed paths;
+- the post-mutation baseline manifest;
+- the suite command oracle and cases;
+- allowed edit/generated globs;
+- the Hashmarks source and projected MCP catalog.
+
+No second behavioral oracle is introduced by Harbor.
+
 ## Boundary
 
 Harbor uses the same numbered run store, durable launch claims, checksum-bound
 receipts, and interruption recovery as native benchmarks. Its trial executor
 and reward report are backend-specific. A Harbor reward does not certify
-Hashmarks subject-tool invocation or replace the native repository-location
-oracle. Completed `INCOMPLETE` receipts are immutable; resume only executes
+Hashmarks subject-tool invocation. Read-only localization keeps the frozen
+repository-location verifier; behavioral tasks reuse the suite's frozen
+command oracle and mutation authority. Completed `INCOMPLETE` receipts are immutable; resume only executes
 pending trials and launches interrupted before receipt publication. Start a
 new run after repairing an operational failure.
 

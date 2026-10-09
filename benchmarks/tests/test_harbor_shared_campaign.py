@@ -24,6 +24,10 @@ class HarborSharedCampaignTests(unittest.TestCase):
             ("harbor-ablation-full", 108),
             ("harbor-find-ablation-smoke", 12),
             ("harbor-find-ablation-full", 108),
+            ("harbor-change-impact-ablation-smoke", 12),
+            ("harbor-change-impact-ablation-full", 144),
+            ("harbor-post-change-ablation-smoke", 12),
+            ("harbor-post-change-ablation-full", 144),
         ):
             with self.subTest(name=name):
                 suite, _ = harbor_suite(load_profile(name))
@@ -51,7 +55,13 @@ class HarborSharedCampaignTests(unittest.TestCase):
             (destination / "task.txt").write_text("frozen", encoding="utf-8")
             return destination
 
-        full_tools = ["repository_context", "find", "task_evidence"]
+        full_tools = [
+            "repository_context",
+            "find",
+            "task_evidence",
+            "change_impact",
+            "post_change",
+        ]
         treatments = {
             "hashmarks": {
                 "tools": full_tools,
@@ -293,6 +303,52 @@ class HarborSharedCampaignTests(unittest.TestCase):
                 )
                 self.assertEqual(report["summary"]["matched_quartets"], 3)
                 self.assertEqual(execute.call_count, 12)
+
+    def test_changed_path_ablations_share_generic_campaign_lifecycle(
+        self,
+    ) -> None:
+        for matrix, component in (
+            ("harbor-change-impact-ablation-smoke", "change_impact"),
+            ("harbor-post-change-ablation-smoke", "post_change"),
+        ):
+            with self.subTest(matrix=matrix), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                env, patches = self._environment(
+                    root,
+                    ablation_component=component,
+                )
+                with patches[0], patches[1], patches[2], mock.patch(
+                    "benchmarks.harness.harbor_backend.execute_trial",
+                    side_effect=self._reward_trial,
+                ) as execute:
+                    code, _ = self._call(
+                        "run",
+                        "--new",
+                        "--matrix",
+                        matrix,
+                        "--env-file",
+                        str(env),
+                        "--root",
+                        str(root),
+                        "--no-json-results",
+                    )
+                    self.assertEqual(code, 0)
+                    self.assertEqual(execute.call_count, 12)
+
+                    code, report = self._call(
+                        "ablation",
+                        "--matrix",
+                        matrix,
+                        "--root",
+                        str(root),
+                    )
+                    self.assertEqual(code, 0)
+                    self.assertEqual(report["component"], component)
+                    self.assertEqual(
+                        report["summary"]["matched_quartets"],
+                        3,
+                    )
+                    self.assertEqual(execute.call_count, 12)
 
     def test_interrupted_launch_gets_new_job_name_on_resume(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
