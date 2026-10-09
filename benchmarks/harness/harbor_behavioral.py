@@ -374,10 +374,28 @@ Path("/logs/verifier/oracle.json").write_text(
     ) + "\\n",
     encoding="utf-8",
 )
+# Post-grade, verifier-only oracle atoms. This is the SAME frozen cases.json
+# used by oracle.py, never provided to the agent during its run.
+# Missing or invalid analytics metadata cannot alter the existing reward.
+semantic_expected = None
+if isinstance(oracle, dict) and oracle.get("schema") == "agents-cookbook-lexigram-oracle.v1":
+    try:
+        case_rows = json.loads(Path("/tests/cases.json").read_text(encoding="utf-8"))
+        case = case_rows["cases"][task_id]
+        expected_claims = case["expected"]
+        if (
+            isinstance(expected_claims, dict)
+            and expected_claims
+            and all(isinstance(key, str) and key for key in expected_claims)
+        ):
+            semantic_expected = expected_claims
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+
 evidence = {{
     "schema": "agentscookbook.harbor-answer-evidence.v1",
     "observed": observed,
-    "expected": None,
+    "expected": semantic_expected,
     "match": oracle_passed,
     "tracked_clean": tracked_clean,
     "error": error,
