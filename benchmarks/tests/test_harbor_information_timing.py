@@ -57,7 +57,7 @@ class HarborInformationTimingTests(unittest.TestCase):
         ])
         self.assertTrue(result["qualified"])
         self.assertEqual(result["target_alignment"], "ORACLE_TARGET_ONLY")
-        self.assertEqual(result["arrival_timing"], "NO_NATIVE_DISCOVERY")
+        self.assertEqual(result["arrival_timing"], "BEFORE_NATIVE_DISCOVERY")
         self.assertEqual(result["native_read_followthrough"], "ORACLE_PATH_READ")
         self.assertEqual(result["first_subject_result_ordinal"], 1)
         self.assertEqual(result["first_oracle_read_after_result_ordinal"], 2)
@@ -87,6 +87,55 @@ class HarborInformationTimingTests(unittest.TestCase):
         self.assertEqual(result["arrival_timing"], "AFTER_NATIVE_DISCOVERY")
         self.assertEqual(result["first_oracle_target_ordinal"], 3)
         self.assertEqual(result["first_oracle_read_after_result_ordinal"], 4)
+
+    def test_delayed_observation_is_not_backdated_to_subject_invocation(self) -> None:
+        result = _run([
+            _step(HASHMARKS, "h1"),
+            _step("rg", "r1", result="native work happened"),
+            {
+                "source": "environment",
+                "observation": {
+                    "results": [{"source_call_id": "h1", "content": {"path": ORACLE}}]
+                },
+            },
+            _step("read_file", "r2", path=ORACLE, result="code"),
+        ])
+        self.assertTrue(result["qualified"])
+        self.assertEqual(result["first_subject_result_ordinal"], 1)
+        self.assertEqual(result["first_subject_result_step"], 3)
+        self.assertEqual(result["first_native_discovery_step"], 2)
+        self.assertEqual(result["arrival_timing"], "AFTER_NATIVE_DISCOVERY")
+        self.assertEqual(result["first_oracle_read_after_result_ordinal"], 3)
+
+    def test_observation_before_call_is_not_valid_information(self) -> None:
+        result = _run([
+            {
+                "source": "environment",
+                "observation": {
+                    "results": [{"source_call_id": "h1", "content": {"path": ORACLE}}]
+                },
+            },
+            _step(HASHMARKS, "h1"),
+        ])
+        self.assertFalse(result["qualified"])
+        self.assertEqual(result["reason"], "observation-precedes-call")
+
+    def test_same_step_observation_and_native_read_is_ambiguous(self) -> None:
+        result = _run([{
+            "source": "agent",
+            "tool_calls": [
+                _call(HASHMARKS, "h1"),
+                _call("read_file", "r1", path=ORACLE),
+            ],
+            "observation": {
+                "results": [
+                    {"source_call_id": "h1", "content": {"path": ORACLE}},
+                    {"source_call_id": "r1", "content": "code"},
+                ]
+            },
+        }])
+        self.assertFalse(result["qualified"])
+        self.assertEqual(result["reason"], "native-discovery-observation-same-step")
 
     def test_alternative_path_is_not_called_harmful_without_outcome(self) -> None:
         result = _run([
