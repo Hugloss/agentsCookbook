@@ -476,7 +476,7 @@ class HarborBehavioralTests(unittest.TestCase):
         self.assertFalse(answer["match"])
         self.assertIsNone(answer["error"])
         self.assertEqual(oracle["return_code"], 1)
-        self.assertEqual(reward, "0\\n")
+        self.assertEqual(reward, "0\n")
 
     def test_hung_grade_reports_timeout_and_denies_reward(self) -> None:
         answer, oracle, reward = self._run_generated_verifier(
