@@ -540,3 +540,59 @@ read, and a native read does not establish causation. For behavioral command
 oracles without a path oracle, information alignment remains unqualified
 rather than inventing a path-correctness grade. Use the existing
 `full/remove/only/bare` component ablations for stronger controlled contrasts.
+
+
+### Semantic evidence: what information arrived, not just which file
+
+The post-run Harbor mechanism report now adds `semantic_information_evidence`
+for the frozen behavioral-v4 **command oracle** tasks (dependency transitions,
+change impact, declarations, correlation, freshness, negative evidence, and
+verification). This complements the path-specific `information_evidence`
+added in PR #211. It does not change the canonical task prompts, experiment
+arms, oracle correctness, execution, reward, or component ablation.
+
+After the existing behavioral oracle runs, its verifier writes the **same**
+canonical `cases.json` expected atoms into its verifier-only `answer.json`
+artifact. Those atoms are never placed in the agent workspace or supplied
+to the agent during execution. The mechanism evaluator reads this frozen
+bundle and the existing oracle's field-level rubric; it **does not** call
+an oracle or derive a second answer key from agent output.
+
+For each treated pair, it records:
+- `claim_alignment`: `ALIGNED_ONLY`, `DIVERGENT_ONLY`,
+  `MIXED_OR_CONFLICTING`, `NO_COMPARABLE_CLAIMS`, or `UNKNOWN`;
+- exact expected-field **names** (not values) found in structured
+  Hashmarks responses, separated into aligned, divergent, and conflicted;
+- `first_subject_observation_step`, `first_aligned_observation_step`,
+  `first_divergent_observation_step`, and `first_native_discovery_step`;
+- arrival `BEFORE_NATIVE_DISCOVERY`, `AFTER_NATIVE_DISCOVERY`,
+  `NO_NATIVE_DISCOVERY`, or `UNKNOWN_SAME_STEP`;
+- `final_answer_overlap`: whether correct or divergent returned claim
+  values also appeared in the verifier-observed final answer;
+- qualification/exclusion codes and the explicit
+  `agent_attention_proven=false` and `causal_influence_claimed=false`.
+
+The existing `make benchmark-harness-explain` target exposes
+`summary.semantic_outcome_cross_tab` keyed by paired outcome transition,
+arrival timing, alignment, and final-answer overlap. Only fully completed
+PASS/FAIL pairs with qualified structured evidence contribute. The
+`semantic_exclusion_reasons` denominator separately counts legacy bundles
+without frozen semantic expected atoms, incomplete traces, unlinked/ambiguous
+observations, invalid rubrics, and incomplete outcomes. The output contains
+no expected or observed atom **values** and no model reasoning/messages.
+
+An example pattern worth investigating is `FAIL_TO_FAIL` with an
+early, oracle-aligned claim that the final answer did not repeat. Another is
+`PASS_TO_FAIL` with a divergent claim repeated in the final answer.
+Neither is proof the model read or adopted the evidence; tool output
+availability and answer co-occurrence are not agent cognition.
+`ALIGNED_ONLY` also does not imply the entire tool response is accurate:
+only fields named by the frozen task oracle can be compared. Opaque
+narrative output, mixed values for the same field, and uncertain call/result
+ordering do not silently turn into an absence or a positive attribution.
+
+Use the existing bare/full/remove/only ablations for stronger component
+contrasts. These new post-run projections explain the **mechanism to inspect**,
+not universal causal effectiveness. Historical Harbor bundles without the
+new expected-atom artifact remain inspectable but do not retroactively
+acquire semantic qualification.
