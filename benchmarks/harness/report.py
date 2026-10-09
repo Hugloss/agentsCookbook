@@ -2027,6 +2027,7 @@ def _pair_exclusions(
     by_definition: dict[str, list[dict[str, Any]]],
     suite: SuiteDefinition,
     interrupted: set[str] | None = None,
+    comparison_block_reason: str | None = None,
 ) -> list[dict[str, Any]]:
     interrupted = interrupted or set()
     conditions = {row["id"]: row for row in suite.experiment["conditions"]}
@@ -2064,10 +2065,16 @@ def _pair_exclusions(
                 left
                 and right
                 and all(row.get("status") in _VALID_OUTCOMES for row in (left, right))
+                and comparison_block_reason is None
             ):
                 continue
             exclusions.append(
                 {
+                    **(
+                        {"reason_code": comparison_block_reason}
+                        if comparison_block_reason is not None
+                        else {}
+                    ),
                     "task_id": key[0],
                     "agent_id": key[1],
                     "replicate_id": key[2],
