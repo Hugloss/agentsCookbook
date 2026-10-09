@@ -179,6 +179,26 @@ class SemanticInformationTests(unittest.TestCase):
         self.assertFalse(info["qualified"])
         self.assertEqual(info["reason"], "unstructured-subject-observation")
 
+    def test_explicit_tool_error_is_not_classified_as_no_comparable_claim(self) -> None:
+        expected = {"winner": "not-selected"}
+        for payload in (
+            {"error": "tool denied"},
+            {"isError": True, "content": []},
+            {"status": "failed"},
+            {"status": {"malformed": True}},
+        ):
+            with self.subTest(payload=payload):
+                result = _run(
+                    [_step(HASHMARKS, "h1", content=payload)],
+                    _answer(expected, expected),
+                )
+                if isinstance(payload.get("status"), dict):
+                    self.assertTrue(result["qualified"])
+                    self.assertEqual(result["claim_alignment"], "NO_COMPARABLE_CLAIMS")
+                else:
+                    self.assertFalse(result["qualified"])
+                    self.assertEqual(result["reason"], "unstructured-subject-observation")
+
     def test_missing_oracle_and_stale_legacy_artifact_are_unqualified(self) -> None:
         expected = {"comparison": "equivalent"}
         info = _run(
