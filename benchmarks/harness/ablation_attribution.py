@@ -423,12 +423,30 @@ def quartet_projection(
     }
 
 
-def _rate(rows: list[Mapping[str, Any]]) -> float | None:
-    outcomes = [_status(row) for row in rows]
-    complete = [value for value in outcomes if value in {"PASS", "FAIL"}]
-    if not complete:
+def _qualified_complete_quartet(quartet: Mapping[str, Any]) -> bool:
+    """Only qualified, fully observed quartets support component contrasts."""
+
+    statuses = quartet.get("statuses")
+    return (
+        quartet.get("treatment_authority_valid") is True
+        and isinstance(statuses, Mapping)
+        and all(
+            statuses.get(role) in {"PASS", "FAIL"}
+            for role in ABLATION_ROLES
+        )
+    )
+
+
+def _qualified_rate(
+    quartets: list[dict[str, Any]],
+    role: str,
+) -> float | None:
+    if not quartets:
         return None
-    return sum(value == "PASS" for value in complete) / len(complete)
+    return (
+        sum(row["statuses"][role] == "PASS" for row in quartets)
+        / len(quartets)
+    )
 
 
 def _contrast(left: float | None, right: float | None) -> float | None:
@@ -551,6 +569,20 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
             )
         )
 
+    qualified = [
+        row
+        for row in quartets
+        if _qualified_complete_quartet(row)
+    ]
+    invalid_treatment = sum(
+        row["treatment_authority_valid"] is not True
+        for row in quartets
+    )
+    incomplete_outcomes = (
+        len(quartets)
+        - len(qualified)
+        - invalid_treatment
+    )
     classifications = Counter(
         str(row["classification"])
         for row in quartets
@@ -567,25 +599,33 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
     by_harness: dict[str, dict[str, Any]] = {}
     harnesses = sorted(
         {
-            str(projection["receipt"].get("harness"))
-            for projection, _contract, _role in eligible
+            str(row["harness"])
+            for row in quartets
         }
     )
     for harness in harnesses:
-        per_role: dict[str, float | None] = {}
-        for role in ABLATION_ROLES:
-            selected = [
-                projection
-                for projection, _contract, observed_role in eligible
-                if observed_role == role
-                and str(projection["receipt"].get("harness")) == harness
-            ]
-            per_role[role] = _rate(selected)
+        matched = [
+            row
+            for row in quartets
+            if row["harness"] == harness
+        ]
+        selected = [
+            row
+            for row in qualified
+            if row["harness"] == harness
+        ]
+        per_role = {
+            role: _qualified_rate(selected, role)
+            for role in ABLATION_ROLES
+        }
         bare = per_role["bare"]
         full = per_role["full"]
         removed = per_role["remove"]
         only = per_role["only"]
         by_harness[harness] = {
+            "matched_quartets": len(matched),
+            "qualified_complete_quartets": len(selected),
+            "excluded_matched_quartets": len(matched) - len(selected),
             "subjects": arms,
             "success_rate": per_role,
             "contrasts": {
@@ -604,6 +644,10 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
         "quartets": quartets,
         "summary": {
             "matched_quartets": len(quartets),
+            "qualified_complete_quartets": len(qualified),
+            "treatment_unqualified_quartets": invalid_treatment,
+            "incomplete_outcome_quartets": incomplete_outcomes,
+            "excluded_matched_quartets": len(quartets) - len(qualified),
             "incomplete_groups": len(incomplete_groups),
             "unavailable_bundles": len(unavailable),
             "classification": dict(sorted(classifications.items())),
@@ -633,6 +677,11 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
                 "ATIF invocation records can disqualify observed calls outside "
                 "a frozen MCP projection, but cannot attest to the entire tool "
                 "catalog actually advertised by a model host"
+            ),
+            "aggregate_denominator": (
+                "qualified complete matched quartets only; treatment-unqualified "
+                "or incomplete outcomes are excluded, never scored as failures or "
+                "mixed into per-harness component contrasts"
             ),
             "reasoning_content_consumed": False,
             "positive_causal_claim_policy": (
