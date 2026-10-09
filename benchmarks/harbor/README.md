@@ -80,6 +80,20 @@ message text. It consumes only structured tool calls, linked observations, and
 token metrics, then maps host-specific tools through agentsCookbook's existing
 tool-routing vocabulary.
 
+A captured ATIF trajectory is not automatically complete tool-order evidence.
+Malformed steps, non-list `tool_calls`, malformed call records, missing function
+names, and empty trajectories retain explicit `tool_order_issue_codes` and
+`tool_order_issue_count`. Valid observed calls remain visible, but a partial
+trajectory has `tool_order_complete=false`, unknown routing and treatment,
+and cannot prove `NEVER_INVOKED`, fewer tool calls, native discovery displacement,
+or a positive paired mechanism attribution. The component ablation analyzer
+likewise excludes those quartets from qualified aggregate denominators.
+ATIF steps with no `tool_calls` field are valid: the field is optional.
+
+This is *parser completeness* for the captured trace, not cryptographic
+attestation that a host emitted every call. Host exposure and delivery
+authenticity must still be established separately.
+
 For a completed bare/Hashmarks pair with the same campaign, task, harness,
 model, and replicate, the mechanism report records independent dimensions such
 as:
