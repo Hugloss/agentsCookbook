@@ -396,6 +396,7 @@ evidence = {{
     "schema": "agentscookbook.harbor-answer-evidence.v1",
     "observed": observed,
     "expected": semantic_expected,
+    "semantic_case_id": task_id if semantic_expected is not None else None,
     "match": oracle_passed,
     "tracked_clean": tracked_clean,
     "error": error,
