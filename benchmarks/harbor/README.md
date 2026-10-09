@@ -387,6 +387,40 @@ observable `repository_declarations` invocation in the relevant full/only
 arm; incomplete or treatment-unqualified quartets remain outside aggregate
 component-effect denominators.
 
+#### Frozen dependency evidence: `dependency_codemap`
+
+The `harbor-dependency-codemap-ablation-*` matrices reuse the four
+`behavioral-v4/dependency_delta` cases. These deliberately present already
+materialized dependency evidence; the agent is not asked to execute uv, Maven,
+or another package manager. The cases test whether dependency semantics are
+projected correctly rather than reconstructed from tool execution:
+
+- uv component selection moving from one version to another without inferring
+  why it changed;
+- Maven relationship/scope changes that leave component selection unchanged;
+- same-version uv source selection separated from marker-only relationship
+  change;
+- Maven classifier selection distinguished from effective-scope change.
+
+That matches Hashmarks's `dependency_codemap` contract: project dependency
+evidence as observation, explanation, or endpoint comparison without executing
+a package manager.
+
+```sh
+make benchmark-check MATRIX=harbor-dependency-codemap-ablation-smoke
+make benchmark-new MATRIX=harbor-dependency-codemap-ablation-smoke
+
+make benchmark-check MATRIX=harbor-dependency-codemap-ablation-full
+make benchmark-new MATRIX=harbor-dependency-codemap-ablation-full
+
+make benchmark-harness-dependency-codemap-ablation
+```
+
+The full campaign is 4 tasks × 3 harnesses × 4 arms × 3 replicates = 144
+trials. Positive attribution requires an observable `dependency_codemap`
+invocation in the relevant full/only arm; missing tool-order evidence or
+treatment drift leaves the quartet outside qualified component aggregates.
+
 ### Behavioral Harbor projection authority
 
 Behavioral command-oracle tasks do not treat the mutation fixture as agent
