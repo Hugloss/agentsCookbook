@@ -45,14 +45,21 @@ POST_CHANGE_MATRIX = (
     / "harbor"
     / "repository-intelligence-post-change-ablation-v1.json"
 )
+CORRELATE_EVIDENCE_MATRIX = (
+    ROOT
+    / "benchmarks"
+    / "harbor"
+    / "repository-intelligence-correlate-evidence-ablation-v1.json"
+)
 
 
 class HarborBehavioralTests(unittest.TestCase):
-    def test_changed_path_matrices_admit_frozen_behavioral_tasks(self) -> None:
+    def test_behavioral_ablation_matrices_admit_frozen_tasks(self) -> None:
         suite = load_suite(SUITE)
         for path, component, count in (
             (CHANGE_IMPACT_MATRIX, "change_impact", 4),
             (POST_CHANGE_MATRIX, "post_change", 4),
+            (CORRELATE_EVIDENCE_MATRIX, "correlate_evidence", 4),
         ):
             with self.subTest(component=component):
                 matrix = load_matrix(path)
