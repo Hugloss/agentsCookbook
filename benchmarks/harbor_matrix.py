@@ -1217,6 +1217,7 @@ def prepare_task(
 def mcp_config_payload(
     *,
     tool_names: tuple[str, ...] | list[str] | None = None,
+    query_surfaces: tuple[str, ...] | list[str] | None = None,
 ) -> dict[str, object]:
     return {
         "mcpServers": {
@@ -1233,6 +1234,11 @@ def mcp_config_payload(
                         for name in (tool_names or ())
                         for value in ("--tool", str(name))
                     ],
+                    *[
+                        value
+                        for surface in (query_surfaces or ())
+                        for value in ("--query-surface", str(surface))
+                    ],
                 ],
             }
         }
@@ -1243,6 +1249,7 @@ def write_mcp_config(
     path: Path,
     *,
     tool_names: tuple[str, ...] | list[str] | None = None,
+    query_surfaces: tuple[str, ...] | list[str] | None = None,
 ) -> Path:
     path.parent.mkdir(
         parents=True,
@@ -1250,7 +1257,10 @@ def write_mcp_config(
     )
     path.write_text(
         json.dumps(
-            mcp_config_payload(tool_names=tool_names),
+            mcp_config_payload(
+                tool_names=tool_names,
+                query_surfaces=query_surfaces,
+            ),
             indent=2,
             sort_keys=True,
         )
