@@ -39,6 +39,30 @@
       "projection": "benchmarks/harbor/repository-intelligence-find-ablation-v1.json",
       "mode": "matrix",
       "root": ".benchmark-runs/harbor-harness-v1/find-ablation-full"
+    },
+    "harbor-change-impact-ablation-smoke": {
+      "backend": "harbor",
+      "projection": "benchmarks/harbor/repository-intelligence-change-impact-ablation-v1.json",
+      "mode": "smoke",
+      "root": ".benchmark-runs/harbor-harness-v1/change-impact-ablation-smoke"
+    },
+    "harbor-change-impact-ablation-full": {
+      "backend": "harbor",
+      "projection": "benchmarks/harbor/repository-intelligence-change-impact-ablation-v1.json",
+      "mode": "matrix",
+      "root": ".benchmark-runs/harbor-harness-v1/change-impact-ablation-full"
+    },
+    "harbor-post-change-ablation-smoke": {
+      "backend": "harbor",
+      "projection": "benchmarks/harbor/repository-intelligence-post-change-ablation-v1.json",
+      "mode": "smoke",
+      "root": ".benchmark-runs/harbor-harness-v1/post-change-ablation-smoke"
+    },
+    "harbor-post-change-ablation-full": {
+      "backend": "harbor",
+      "projection": "benchmarks/harbor/repository-intelligence-post-change-ablation-v1.json",
+      "mode": "matrix",
+      "root": ".benchmark-runs/harbor-harness-v1/post-change-ablation-full"
     }
   }
 }
