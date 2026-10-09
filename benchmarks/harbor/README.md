@@ -509,8 +509,9 @@ Each pair has `information_evidence` with:
   `NO_NATIVE_DISCOVERY`, `NO_SUBJECT_RESULT`, or `UNKNOWN`;
 - `native_read_followthrough`: whether a later *observed native read* named
   the oracle path, another returned path, both, or neither;
-- first tool-call ordinals for returned evidence, native discovery, and
-  subsequent path-aligned reads.
+- tool-call ordinals, plus the linked ATIF observation step for information
+  arrival (which can be later than the tool invocation); native discovery and
+  subsequent path-aligned reads are kept separate.
 
 The report summary groups **only qualified pairs** by outcome transition,
 arrival timing, target alignment, and follow-through under
@@ -528,12 +529,13 @@ parses bounded structured tool results and tool-call arguments, including JSON
 inside MCP text blocks. It compares complete repository-relative paths, never
 fuzzy substrings, and never persists raw tool results or agent messages in
 this derived report. Duplicate call/observation IDs, missing linked results,
-unparseable subject results, malformed tool order, and missing path oracles
-fail closed to an explicit unqualified/unknown state.
+unparseable subject results or MCP text blocks, malformed tool order,
+ambiguous same-step result/call ordering, and missing path oracles fail closed to an explicit unqualified/unknown state.
 
 This experiment does **not** measure when the agent mentally adopted a
 belief or whether the tool output was attended to. A later native read is
-observable follow-through only. Agents can use information without a native
+observable follow-through only. Opaque native read arguments are explicitly
+unknown rather than evidence that follow-through never occurred. Agents can use information without a native
 read, and a native read does not establish causation. For behavioral command
 oracles without a path oracle, information alignment remains unqualified
 rather than inventing a path-correctness grade. Use the existing
