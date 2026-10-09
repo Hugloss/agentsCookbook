@@ -1,7 +1,8 @@
 """Harbor-backed cross-harness benchmark projection.
 
 agentsCookbook owns experiment semantics; Harbor is execution infrastructure.
-Only read-only repository-location tasks are projected by this v1 bridge.
+The bridge projects frozen repository-location tasks and bounded behavioral
+command-oracle tasks without transferring experiment authority to Harbor.
 """
 
 from __future__ import annotations
@@ -20,6 +21,12 @@ from typing import Any, Iterable, Mapping
 
 from benchmarks.adapters.hashmarks import HashmarksSubject
 from benchmarks.adapters.runtime import observe_executable
+from benchmarks.harness.harbor_behavioral import (
+    HarborBehavioralError,
+    behavioral_contract,
+    behavioral_verifier,
+    prepare_behavioral_workspace,
+)
 from benchmarks.harness.model import TrialContext
 from benchmarks.harness.source import materialize_repository
 from benchmarks.harness.suite import SuiteDefinition, load_suite
@@ -318,6 +325,25 @@ def _task_expected(
     }
 
 
+def _task_projection(
+    suite: SuiteDefinition,
+    task: Mapping[str, Any],
+) -> dict[str, Any]:
+    try:
+        behavioral = behavioral_contract(suite, task)
+    except HarborBehavioralError as exc:
+        raise HarborMatrixError(str(exc)) from exc
+    if behavioral is not None:
+        return {
+            "kind": "command-lexigram",
+            "behavioral": behavioral,
+        }
+    return {
+        "kind": "repository-location-json",
+        "expected": _task_expected(task),
+    }
+
+
 def validate_projection(
     *,
     matrix: Mapping[str, Any],
@@ -339,7 +365,7 @@ def validate_projection(
             raise HarborMatrixError(
                 f"unknown suite task: {task_id}"
             )
-        _task_expected(task)
+        _task_projection(suite, task)
     if not harnesses or mode.attempts < 1:
         raise HarborMatrixError(
             "Harbor projection is empty"
@@ -772,7 +798,7 @@ def _task_toml(
         "[task]\n"
         f'name = "agentscookbook/{task["id"]}"\n'
         'version = "1.0.0"\n'
-        'description = "Read-only repository localization projection"\n\n'
+        f'description = "Repository-intelligence {task["mode"]} projection"\n\n'
         "[metadata]\n"
         'category = "repository-intelligence"\n'
         f'tags = ["agentscookbook", "harbor", "{task["family"]}"]\n\n'
@@ -792,13 +818,19 @@ def _task_toml(
 def _instruction(
     task: Mapping[str, Any],
 ) -> str:
+    suffix = (
+        " Do not modify tracked repository files."
+        if task.get("mode") == "read_only"
+        else ""
+    )
     return (
         str(task["prompt"]).rstrip()
         + "\n\n"
         + "For this Harbor evaluation, also write "
         + "that exact JSON object to "
-        + "/workspace/.agentscookbook-answer.json. "
-        + "Do not modify tracked repository files.\n"
+        + "/workspace/.agentscookbook-answer.json."
+        + suffix
+        + "\n"
     )
 
 
@@ -870,8 +902,9 @@ def prepare_task(
     hashmarks_source: Path,
 ) -> Path:
     task = suite.tasks[task_id]
-    expected = _task_expected(
-        task
+    projection = _task_projection(
+        suite,
+        task,
     )
     if destination.exists():
         shutil.rmtree(
@@ -899,6 +932,18 @@ def prepare_task(
         ),
         cache_root=cache_root,
     )
+    behavioral = None
+    if projection["kind"] == "command-lexigram":
+        try:
+            behavioral = prepare_behavioral_workspace(
+                suite=suite,
+                task=task,
+                workspace=environment / "workspace",
+                tests=tests,
+                control_root=destination,
+            )
+        except HarborBehavioralError as exc:
+            raise HarborMatrixError(str(exc)) from exc
     _copy_tracked_tree(
         hashmarks_source,
         environment
@@ -930,7 +975,11 @@ def prepare_task(
         / "test.sh"
     )
     verifier.write_text(
-        _verifier(expected),
+        (
+            behavioral_verifier(behavioral)
+            if behavioral is not None
+            else _verifier(projection["expected"])
+        ),
         encoding="utf-8",
     )
     verifier.chmod(
