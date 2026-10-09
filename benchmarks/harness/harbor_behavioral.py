@@ -140,17 +140,30 @@ def prepare_behavioral_workspace(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    baseline_sha256 = hashlib.sha256(
+        json.dumps(
+            manifest,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    projection = {
+        "schema": "agentscookbook.harbor-behavioral-projection.v1",
+        "task_id": contract["task_id"],
+        "mutation_identity": identity,
+        "baseline_manifest_sha256": baseline_sha256,
+        "allowed_change_globs": contract["allowed_change_globs"],
+        "allowed_generated_globs": contract["allowed_generated_globs"],
+        "oracle": "command-lexigram-v1",
+    }
+    (tests / "projection.json").write_text(
+        json.dumps(projection, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     return {
         **contract,
-        "mutation_identity": identity,
-        "baseline_manifest_sha256": hashlib.sha256(
-            json.dumps(
-                manifest,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            ).encode("utf-8")
-        ).hexdigest(),
+        **projection,
     }
 
 
