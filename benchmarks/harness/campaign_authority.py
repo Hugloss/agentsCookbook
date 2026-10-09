@@ -471,6 +471,36 @@ def read_authority_epochs(
     return grouped
 
 
+def authority_epoch_projection(
+    *,
+    results_root: Path,
+    campaign_id: str,
+    selected_pairs: set[tuple[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Project verified epoch evidence without exposing diagnostic stacks."""
+    records = read_authority_epochs(results_root, campaign_id)
+    rows = [
+        {
+            "task_id": task_id,
+            "condition_id": condition_id,
+            "epoch": int(record["epoch"]),
+            "epoch_id": str(record["epoch_id"]),
+            "previous_epoch_id": str(record["previous_epoch_id"]),
+            "changed_components": list(record["changed_components"]),
+            "changed_fields": list(record["changed_fields"]),
+            "detected_at_ns": int(record["detected_at_ns"]),
+        }
+        for (task_id, condition_id), epochs in sorted(records.items())
+        if selected_pairs is None or (task_id, condition_id) in selected_pairs
+        for record in epochs
+    ]
+    return {
+        "evidence_tainted": bool(rows),
+        "authority_epoch_transitions": len(rows),
+        "authority_epochs": rows,
+    }
+
+
 def bind_authority_epoch(
     *,
     results_root: Path,
