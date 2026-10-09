@@ -99,6 +99,18 @@
       "projection": "benchmarks/harbor/repository-intelligence-dependency-codemap-ablation-v1.json",
       "mode": "matrix",
       "root": ".benchmark-runs/harbor-harness-v1/dependency-codemap-ablation-full"
+    },
+    "harbor-verification-explanation-ablation-smoke": {
+      "backend": "harbor",
+      "projection": "benchmarks/harbor/repository-intelligence-verification-explanation-ablation-v1.json",
+      "mode": "smoke",
+      "root": ".benchmark-runs/harbor-harness-v1/verification-explanation-ablation-smoke"
+    },
+    "harbor-verification-explanation-ablation-full": {
+      "backend": "harbor",
+      "projection": "benchmarks/harbor/repository-intelligence-verification-explanation-ablation-v1.json",
+      "mode": "matrix",
+      "root": ".benchmark-runs/harbor-harness-v1/verification-explanation-ablation-full"
     }
   }
 }

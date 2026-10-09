@@ -40,6 +40,41 @@ class HarborMatrixError(ValueError):
     pass
 
 
+def _validate_named_projection(
+    *,
+    label: str,
+    projections: object,
+    subjects: list[object],
+) -> dict[str, Any]:
+    if not isinstance(projections, dict):
+        raise HarborMatrixError(f"Harbor {label} must be an object")
+    unknown = sorted(set(projections) - set(subjects))
+    if unknown:
+        raise HarborMatrixError(
+            f"Harbor {label} names unknown subject(s): " + ", ".join(unknown)
+        )
+    for subject, spec in projections.items():
+        if subject in {"none", "hashmarks"}:
+            raise HarborMatrixError(
+                f"Harbor {label} cannot redefine base subject {subject}"
+            )
+        if not isinstance(spec, dict) or set(spec) not in ({"include"}, {"exclude"}):
+            raise HarborMatrixError(
+                f"Harbor subject {subject} needs exactly one include/exclude {label}"
+            )
+        values = next(iter(spec.values()))
+        if (
+            not isinstance(values, list)
+            or not values
+            or not all(isinstance(item, str) and item for item in values)
+            or len(set(values)) != len(values)
+        ):
+            raise HarborMatrixError(
+                f"Harbor subject {subject} {label} must be unique non-empty strings"
+            )
+    return projections
+
+
 @dataclass(frozen=True)
 class HarborSettings:
     executable: str
@@ -90,38 +125,34 @@ def load_matrix(path: Path) -> dict[str, Any]:
             "Harbor matrix subjects must be unique strings starting with none "
             "and include hashmarks"
         )
-    projections = value.get("tool_projections", {})
-    if not isinstance(projections, dict):
-        raise HarborMatrixError("Harbor tool_projections must be an object")
-    unknown_projection_subjects = sorted(set(projections) - set(subjects))
-    if unknown_projection_subjects:
-        raise HarborMatrixError(
-            "Harbor tool projection names unknown subject(s): "
-            + ", ".join(unknown_projection_subjects)
-        )
+    projections = _validate_named_projection(
+        label="tool projection",
+        projections=value.get("tool_projections", {}),
+        subjects=subjects,
+    )
+    query_projections = _validate_named_projection(
+        label="query-surface projection",
+        projections=value.get("query_surface_projections", {}),
+        subjects=subjects,
+    )
     for subject in subjects:
         if subject in {"none", "hashmarks"}:
             continue
-        spec = projections.get(subject)
-        if not isinstance(spec, dict) or set(spec) not in ({"include"}, {"exclude"}):
+        if subject not in projections and subject not in query_projections:
             raise HarborMatrixError(
-                f"Harbor subject {subject} needs exactly one include/exclude tool projection"
-            )
-        values = next(iter(spec.values()))
-        if (
-            not isinstance(values, list)
-            or not values
-            or not all(isinstance(item, str) and item for item in values)
-            or len(set(values)) != len(values)
-        ):
-            raise HarborMatrixError(
-                f"Harbor subject {subject} tool projection must be unique non-empty strings"
+                f"Harbor subject {subject} needs a tool or query-surface projection"
             )
     ablation = value.get("ablation")
     if ablation is not None:
-        if not isinstance(ablation, dict) or set(ablation) != {"component", "arms"}:
+        if (
+            not isinstance(ablation, dict)
+            or set(ablation) not in (
+                {"component", "arms"},
+                {"component", "selector", "arms"},
+            )
+        ):
             raise HarborMatrixError(
-                "Harbor ablation must contain exactly component and arms"
+                "Harbor ablation must contain component/arms and optional selector"
             )
         component = ablation.get("component")
         arms = ablation.get("arms")
@@ -149,14 +180,53 @@ def load_matrix(path: Path) -> dict[str, Any]:
             raise HarborMatrixError(
                 "Harbor ablation bare/full arms must be none/hashmarks"
             )
-        if projections.get(arms["remove"]) != {"exclude": [component]}:
-            raise HarborMatrixError(
-                "Harbor ablation remove arm must exclude only its component"
-            )
-        if projections.get(arms["only"]) != {"include": [component]}:
-            raise HarborMatrixError(
-                "Harbor ablation only arm must include only its component"
-            )
+        selector = ablation.get("selector")
+        if selector is None:
+            if projections.get(arms["remove"]) != {"exclude": [component]}:
+                raise HarborMatrixError(
+                    "Harbor ablation remove arm must exclude only its component"
+                )
+            if projections.get(arms["only"]) != {"include": [component]}:
+                raise HarborMatrixError(
+                    "Harbor ablation only arm must include only its component"
+                )
+        else:
+            if (
+                component != "repository_intelligence_query"
+                or not isinstance(selector, dict)
+                or set(selector) != {"argument", "value"}
+                or selector.get("argument") != "surface_name"
+                or not isinstance(selector.get("value"), str)
+                or not selector["value"]
+            ):
+                raise HarborMatrixError(
+                    "Harbor selector ablation requires "
+                    "repository_intelligence_query.surface_name"
+                )
+            selected_value = str(selector["value"])
+            if projections.get(arms["remove"]) is not None:
+                raise HarborMatrixError(
+                    "Harbor selector remove arm must preserve the full tool catalog"
+                )
+            if projections.get(arms["only"]) != {
+                "include": ["repository_intelligence_query"]
+            }:
+                raise HarborMatrixError(
+                    "Harbor selector only arm must expose only "
+                    "repository_intelligence_query"
+                )
+            if query_projections.get(arms["remove"]) != {
+                "exclude": [selected_value]
+            }:
+                raise HarborMatrixError(
+                    "Harbor selector remove arm must exclude only its selector value"
+                )
+            if query_projections.get(arms["only"]) != {
+                "include": [selected_value]
+            }:
+                raise HarborMatrixError(
+                    "Harbor selector only arm must include only its selector value"
+                )
     if not isinstance(value.get("modes"), dict) or not value["modes"]:
         raise HarborMatrixError(
             "Harbor matrix needs at least one mode"
@@ -215,8 +285,19 @@ def matrix_ablation(
         return None
     if not isinstance(value, dict):
         raise HarborMatrixError("Harbor matrix ablation is unavailable")
+    selector = value.get("selector")
     return {
         "component": str(value["component"]),
+        **(
+            {
+                "selector": {
+                    "argument": str(selector["argument"]),
+                    "value": str(selector["value"]),
+                }
+            }
+            if isinstance(selector, dict)
+            else {}
+        ),
         "arms": {
             str(role): str(subject)
             for role, subject in value["arms"].items()
@@ -235,8 +316,10 @@ def subject_tool_projection(
         return canonical_tools
     projections = matrix.get("tool_projections")
     spec = projections.get(subject) if isinstance(projections, dict) else None
+    if spec is None:
+        return canonical_tools
     if not isinstance(spec, dict):
-        raise HarborMatrixError(f"Harbor subject {subject} has no tool projection")
+        raise HarborMatrixError(f"Harbor subject {subject} has invalid tool projection")
     known = set(canonical_tools)
     key = "include" if "include" in spec else "exclude"
     requested = tuple(str(value) for value in spec[key])
@@ -253,6 +336,44 @@ def subject_tool_projection(
     )
     if not selected:
         raise HarborMatrixError(f"Harbor subject {subject} projects an empty tool catalog")
+    return selected
+
+
+def subject_query_surface_projection(
+    matrix: Mapping[str, Any],
+    subject: str,
+    canonical_surfaces: tuple[str, ...],
+) -> tuple[str, ...] | None:
+    if subject == "none":
+        return None
+    if subject == "hashmarks":
+        return canonical_surfaces
+    projections = matrix.get("query_surface_projections")
+    spec = projections.get(subject) if isinstance(projections, dict) else None
+    if spec is None:
+        return canonical_surfaces
+    if not isinstance(spec, dict):
+        raise HarborMatrixError(
+            f"Harbor subject {subject} has invalid query-surface projection"
+        )
+    known = set(canonical_surfaces)
+    key = "include" if "include" in spec else "exclude"
+    requested = tuple(str(value) for value in spec[key])
+    unknown = sorted(set(requested) - known)
+    if unknown:
+        raise HarborMatrixError(
+            f"Harbor subject {subject} references unknown query surface(s): "
+            + ", ".join(unknown)
+        )
+    selected = (
+        tuple(name for name in canonical_surfaces if name in set(requested))
+        if key == "include"
+        else tuple(name for name in canonical_surfaces if name not in set(requested))
+    )
+    if not selected:
+        raise HarborMatrixError(
+            f"Harbor subject {subject} projects an empty query-surface catalog"
+        )
     return selected
 
 
@@ -517,6 +638,7 @@ def _hashmarks_probe(
     *,
     executable: str,
     tool_names: tuple[str, ...] | None = None,
+    query_surfaces: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     argv = [
         executable,
@@ -527,6 +649,8 @@ def _hashmarks_probe(
     ]
     for name in tool_names or ():
         argv.extend(("--mcp-tool", name))
+    for surface in query_surfaces or ():
+        argv.extend(("--mcp-query-surface", surface))
     result = _run(
         argv,
         env=host,
@@ -631,7 +755,26 @@ def preflight(
     )
     if not canonical_tools:
         raise HarborMatrixError("Hashmarks canonical MCP tool catalog is unavailable")
+    raw_query_surfaces = mcp.get("repository_intelligence_query_surfaces")
+    canonical_query_surfaces = (
+        tuple(str(value) for value in raw_query_surfaces)
+        if isinstance(raw_query_surfaces, list)
+        else ()
+    )
     ablation = matrix_ablation(matrix)
+    if ablation is not None and ablation.get("selector") is not None:
+        selector = ablation["selector"]
+        if not canonical_query_surfaces:
+            raise HarborMatrixError(
+                "Hashmarks canonical repository_intelligence_query surface catalog "
+                "is unavailable"
+            )
+        if selector["value"] not in canonical_query_surfaces:
+            raise HarborMatrixError(
+                "Harbor ablation selector is not in the canonical Hashmarks "
+                "repository_intelligence_query surface catalog: "
+                + str(selector["value"])
+            )
     if ablation is not None and ablation["component"] not in canonical_tools:
         raise HarborMatrixError(
             "Harbor ablation component is not in the canonical Hashmarks MCP contract: "
@@ -642,38 +785,70 @@ def preflight(
     for subject in subjects:
         if subject == "none":
             continue
-        selected = subject_tool_projection(matrix, subject, canonical_tools)
-        assert selected is not None
-        if subject == "hashmarks" and selected == canonical_tools:
+        selected_tools = subject_tool_projection(
+            matrix,
+            subject,
+            canonical_tools,
+        )
+        selected_surfaces = subject_query_surface_projection(
+            matrix,
+            subject,
+            canonical_query_surfaces,
+        )
+        assert selected_tools is not None
+        assert selected_surfaces is not None
+        full_contract = (
+            selected_tools == canonical_tools
+            and selected_surfaces == canonical_query_surfaces
+        )
+        if subject == "hashmarks" and full_contract:
             treatments[subject] = {
                 "tools": list(canonical_tools),
+                "repository_intelligence_query_surfaces": list(
+                    canonical_query_surfaces
+                ),
                 "projection_identity": mcp.get("contract_identity"),
                 "source_contract_identity": mcp.get("contract_identity"),
                 "full_contract": True,
             }
             continue
+        tools_projected = selected_tools != canonical_tools
+        surfaces_projected = selected_surfaces != canonical_query_surfaces
         projected = _hashmarks_probe(
             settings,
             host,
             executable=executable_path,
-            tool_names=selected,
+            tool_names=selected_tools if tools_projected else None,
+            query_surfaces=selected_surfaces if surfaces_projected else None,
         )
         projection = projected.get("projection")
         if not (
             isinstance(projection, dict)
             and projection.get("source_contract_identity") == mcp.get("contract_identity")
-            and projection.get("tools") == list(selected)
-            and projection.get("observed_tools") == list(selected)
+            and projection.get("tools") == list(selected_tools)
+            and projection.get("observed_tools") == list(selected_tools)
             and isinstance(projection.get("projection_identity"), str)
         ):
             raise HarborMatrixError(
                 f"Hashmarks MCP projection qualification failed for {subject}"
             )
+        if surfaces_projected and not (
+            projection.get("repository_intelligence_query_surfaces")
+            == list(selected_surfaces)
+            and projection.get(
+                "observed_repository_intelligence_query_surfaces"
+            )
+            == list(selected_surfaces)
+        ):
+            raise HarborMatrixError(
+                f"Hashmarks query-surface projection qualification failed for {subject}"
+            )
         treatments[subject] = {
-            "tools": list(selected),
+            "tools": list(selected_tools),
+            "repository_intelligence_query_surfaces": list(selected_surfaces),
             "projection_identity": projection["projection_identity"],
             "source_contract_identity": projection["source_contract_identity"],
-            "full_contract": False,
+            "full_contract": full_contract,
         }
     return {
         "schema": MATRIX_SCHEMA,
@@ -709,6 +884,9 @@ def preflight(
                 "tool_count"
             ),
             "canonical_tools": list(canonical_tools),
+            "canonical_repository_intelligence_query_surfaces": list(
+                canonical_query_surfaces
+            ),
             "treatments": treatments,
             **({"ablation": ablation} if ablation is not None else {}),
         },
@@ -1039,6 +1217,7 @@ def prepare_task(
 def mcp_config_payload(
     *,
     tool_names: tuple[str, ...] | list[str] | None = None,
+    query_surfaces: tuple[str, ...] | list[str] | None = None,
 ) -> dict[str, object]:
     return {
         "mcpServers": {
@@ -1055,6 +1234,11 @@ def mcp_config_payload(
                         for name in (tool_names or ())
                         for value in ("--tool", str(name))
                     ],
+                    *[
+                        value
+                        for surface in (query_surfaces or ())
+                        for value in ("--query-surface", str(surface))
+                    ],
                 ],
             }
         }
@@ -1065,6 +1249,7 @@ def write_mcp_config(
     path: Path,
     *,
     tool_names: tuple[str, ...] | list[str] | None = None,
+    query_surfaces: tuple[str, ...] | list[str] | None = None,
 ) -> Path:
     path.parent.mkdir(
         parents=True,
@@ -1072,7 +1257,10 @@ def write_mcp_config(
     )
     path.write_text(
         json.dumps(
-            mcp_config_payload(tool_names=tool_names),
+            mcp_config_payload(
+                tool_names=tool_names,
+                query_surfaces=query_surfaces,
+            ),
             indent=2,
             sort_keys=True,
         )

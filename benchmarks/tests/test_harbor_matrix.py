@@ -19,6 +19,7 @@ from benchmarks.harbor_matrix import (
     load_matrix,
     plan_rows,
     preflight,
+    subject_query_surface_projection,
     subject_tool_projection,
     write_mcp_config,
 )
@@ -51,12 +52,25 @@ FIND_ABLATION_MATRIX = (
     / "harbor"
     / "repository-intelligence-find-ablation-v1.json"
 )
+VERIFICATION_EXPLANATION_MATRIX = (
+    ROOT
+    / "benchmarks"
+    / "harbor"
+    / "repository-intelligence-verification-explanation-ablation-v1.json"
+)
 SUITE = (
     ROOT
     / "benchmarks"
     / "suites"
     / "repository-intelligence"
     / "heldout-v1"
+)
+BEHAVIORAL_SUITE = (
+    ROOT
+    / "benchmarks"
+    / "suites"
+    / "repository-intelligence"
+    / "behavioral-v4"
 )
 
 
@@ -156,6 +170,84 @@ class HarborMatrixTests(unittest.TestCase):
                 "lookup-known-symbol-run-poll-delay",
             ],
         )
+
+    def test_verification_explanation_ablation_is_selector_scoped(
+        self,
+    ) -> None:
+        matrix = load_matrix(VERIFICATION_EXPLANATION_MATRIX)
+        canonical_surfaces = (
+            "change-intelligence",
+            "verification-explanation",
+            "freshness",
+        )
+        canonical_tools = (
+            "repository_context",
+            "repository_intelligence_query",
+            "task_evidence",
+        )
+
+        self.assertEqual(
+            matrix["ablation"],
+            {
+                "component": "repository_intelligence_query",
+                "selector": {
+                    "argument": "surface_name",
+                    "value": "verification-explanation",
+                },
+                "arms": {
+                    "bare": "none",
+                    "full": "hashmarks",
+                    "remove": "hashmarks-no-verification-explanation",
+                    "only": "hashmarks-verification-explanation-only",
+                },
+            },
+        )
+        self.assertEqual(
+            subject_tool_projection(
+                matrix,
+                "hashmarks-no-verification-explanation",
+                canonical_tools,
+            ),
+            canonical_tools,
+        )
+        self.assertEqual(
+            subject_tool_projection(
+                matrix,
+                "hashmarks-verification-explanation-only",
+                canonical_tools,
+            ),
+            ("repository_intelligence_query",),
+        )
+        self.assertEqual(
+            subject_query_surface_projection(
+                matrix,
+                "hashmarks-no-verification-explanation",
+                canonical_surfaces,
+            ),
+            ("change-intelligence", "freshness"),
+        )
+        self.assertEqual(
+            subject_query_surface_projection(
+                matrix,
+                "hashmarks-verification-explanation-only",
+                canonical_surfaces,
+            ),
+            ("verification-explanation",),
+        )
+
+    def test_selector_ablation_rejects_tool_level_removal_drift(self) -> None:
+        matrix = load_matrix(VERIFICATION_EXPLANATION_MATRIX)
+        matrix["tool_projections"][
+            "hashmarks-no-verification-explanation"
+        ] = {"exclude": ["repository_intelligence_query"]}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "matrix.json"
+            path.write_text(json.dumps(matrix), encoding="utf-8")
+            with self.assertRaisesRegex(
+                HarborMatrixError,
+                "remove arm must preserve the full tool catalog",
+            ):
+                load_matrix(path)
 
     def test_harbor_only_exact_symbol_tasks_do_not_expand_native_experiment(
         self,
@@ -370,6 +462,26 @@ class HarborMatrixTests(unittest.TestCase):
                 ["mcp", "--tool", "task_evidence"],
             )
 
+    def test_mcp_config_can_freeze_query_surface_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write_mcp_config(
+                Path(tmp) / "verification-only.mcp.json",
+                tool_names=("repository_intelligence_query",),
+                query_surfaces=("verification-explanation",),
+            )
+            value = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            value["mcpServers"]["hashmarks"]["args"][-5:],
+            [
+                "mcp",
+                "--tool",
+                "repository_intelligence_query",
+                "--query-surface",
+                "verification-explanation",
+            ],
+        )
+
     def test_settings_keep_secret_values_out_of_env_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -535,8 +647,16 @@ class HarborMatrixTests(unittest.TestCase):
             "change_impact",
         ]
 
-        def probe(_settings, _host, *, executable, tool_names=None):
+        def probe(
+            _settings,
+            _host,
+            *,
+            executable,
+            tool_names=None,
+            query_surfaces=None,
+        ):
             self.assertEqual(executable, "/hashmarks/.venv/bin/hashmarks")
+            self.assertIsNone(query_surfaces)
             if tool_names is None:
                 return {
                     "contract_identity": "sha256:mcp",
@@ -616,6 +736,146 @@ class HarborMatrixTests(unittest.TestCase):
                     "projection_identity"
                 ]
             ).startswith("sha256:")
+        )
+        self.assertEqual(
+            receipt["hashmarks"]["ablation"],
+            matrix["ablation"],
+        )
+
+    def test_selector_preflight_binds_product_owned_query_surfaces(
+        self,
+    ) -> None:
+        suite = load_suite(BEHAVIORAL_SUITE)
+        settings = HarborSettings(
+            executable="harbor",
+            model="provider/model",
+            root=Path("/runs"),
+            hashmarks_source=Path("/hashmarks"),
+            passthrough_env_keys=(),
+        )
+        matrix = load_matrix(VERIFICATION_EXPLANATION_MATRIX)
+        mode = MatrixMode(tasks=("verification-00",), attempts=1)
+        canonical_tools = [
+            "repository_context",
+            "task_evidence",
+            "repository_intelligence_query",
+        ]
+        canonical_surfaces = [
+            "change-intelligence",
+            "verification-explanation",
+            "freshness",
+        ]
+
+        def probe(
+            _settings,
+            _host,
+            *,
+            executable,
+            tool_names=None,
+            query_surfaces=None,
+        ):
+            self.assertEqual(executable, "/hashmarks/bin/hashmarks")
+            if tool_names is None and query_surfaces is None:
+                return {
+                    "contract_identity": "sha256:mcp",
+                    "operation_contract_identity": "sha256:ops",
+                    "tool_count": len(canonical_tools),
+                    "tools": canonical_tools,
+                    "repository_intelligence_query_surfaces": canonical_surfaces,
+                }
+            selected_tools = (
+                canonical_tools
+                if tool_names is None
+                else list(tool_names)
+            )
+            selected_surfaces = (
+                canonical_surfaces
+                if query_surfaces is None
+                else list(query_surfaces)
+            )
+            return {
+                "contract_identity": "sha256:mcp",
+                "operation_contract_identity": "sha256:ops",
+                "tool_count": len(canonical_tools),
+                "tools": canonical_tools,
+                "repository_intelligence_query_surfaces": canonical_surfaces,
+                "projection": {
+                    "source_contract_identity": "sha256:mcp",
+                    "tools": selected_tools,
+                    "observed_tools": selected_tools,
+                    "repository_intelligence_query_surfaces": selected_surfaces,
+                    "observed_repository_intelligence_query_surfaces": (
+                        selected_surfaces
+                    ),
+                    "projection_identity": (
+                        "sha256:"
+                        + "-".join(selected_tools)
+                        + ":"
+                        + "-".join(selected_surfaces)
+                    ),
+                },
+            }
+
+        with (
+            mock.patch(
+                "benchmarks.harbor_matrix._hashmarks_identity",
+                return_value={
+                    "commit": "a" * 40,
+                    "tree": "b" * 40,
+                    "working_copy_sha256": "c" * 64,
+                    "working_copy_clean": True,
+                    "executable": {
+                        "path": "/hashmarks/bin/hashmarks",
+                        "sha256": "d" * 64,
+                        "version": "hashmarks version 0.test",
+                    },
+                },
+            ),
+            mock.patch(
+                "benchmarks.harbor_matrix._hashmarks_probe",
+                side_effect=probe,
+            ),
+            mock.patch(
+                "benchmarks.harbor_matrix._require_command",
+                side_effect=("harbor 0.test", "27.0"),
+            ),
+        ):
+            receipt = preflight(
+                settings=settings,
+                matrix=matrix,
+                suite=suite,
+                mode=mode,
+                harnesses=("codex",),
+                tasks=("verification-00",),
+                host={},
+            )
+
+        treatments = receipt["hashmarks"]["treatments"]
+        self.assertEqual(
+            receipt["hashmarks"][
+                "canonical_repository_intelligence_query_surfaces"
+            ],
+            canonical_surfaces,
+        )
+        self.assertEqual(
+            treatments["hashmarks-no-verification-explanation"]["tools"],
+            canonical_tools,
+        )
+        self.assertEqual(
+            treatments["hashmarks-no-verification-explanation"][
+                "repository_intelligence_query_surfaces"
+            ],
+            ["change-intelligence", "freshness"],
+        )
+        self.assertEqual(
+            treatments["hashmarks-verification-explanation-only"]["tools"],
+            ["repository_intelligence_query"],
+        )
+        self.assertEqual(
+            treatments["hashmarks-verification-explanation-only"][
+                "repository_intelligence_query_surfaces"
+            ],
+            ["verification-explanation"],
         )
         self.assertEqual(
             receipt["hashmarks"]["ablation"],

@@ -74,8 +74,24 @@ def _normalize_ablation_contract(value: object) -> dict[str, Any] | None:
         or len(set(normalized_arms.values())) != len(ABLATION_ROLES)
     ):
         return None
+    selector = value.get("selector")
+    normalized_selector = None
+    if selector is not None:
+        if (
+            not isinstance(selector, Mapping)
+            or set(selector) != {"argument", "value"}
+            or selector.get("argument") != "surface_name"
+            or not isinstance(selector.get("value"), str)
+            or not selector["value"]
+        ):
+            return None
+        normalized_selector = {
+            "argument": "surface_name",
+            "value": str(selector["value"]),
+        }
     return {
         "component": component,
+        **({"selector": normalized_selector} if normalized_selector else {}),
         "arms": normalized_arms,
     }
 
@@ -92,21 +108,41 @@ def _component_invoked(
     projection: Mapping[str, Any],
     *,
     component: str,
+    selector: Mapping[str, str] | None = None,
 ) -> bool | None:
     trace = projection.get("trace")
     if not isinstance(trace, dict) or trace.get("available") is not True:
         return None
-    tools = trace.get("subject_tools")
-    if not isinstance(tools, list):
+    if selector is None:
+        tools = trace.get("subject_tools")
+        if not isinstance(tools, list):
+            return None
+        return any(
+            matches_subject_operation(
+                name,
+                subject="hashmarks",
+                operation=component,
+            )
+            for name in tools
+        )
+    calls = trace.get("subject_call_selectors")
+    if not isinstance(calls, list):
         return None
-    return any(
-        matches_subject_operation(
+    matching_tool_observed = False
+    for raw in calls:
+        if not isinstance(raw, Mapping):
+            continue
+        name = raw.get("tool")
+        if not matches_subject_operation(
             name,
             subject="hashmarks",
             operation=component,
-        )
-        for name in tools
-    )
+        ):
+            continue
+        matching_tool_observed = True
+        if raw.get(selector["argument"]) == selector["value"]:
+            return True
+    return False if matching_tool_observed or calls else False
 
 
 def _treatment(receipt: Mapping[str, Any]) -> Mapping[str, Any] | None:
@@ -148,18 +184,45 @@ def _validate_quartet_authority(
         and component in full_tools
     ):
         return False, "full-arm-not-canonical"
+    selector = contract.get("selector")
+    if selector is None:
+        if not (
+            removed.get("full_contract") is False
+            and isinstance(removed_tools, list)
+            and component not in removed_tools
+            and set(removed_tools) == set(full_tools) - {component}
+        ):
+            return False, "removal-arm-not-single-tool-ablation"
+        if not (
+            only.get("full_contract") is False
+            and only_tools == [component]
+        ):
+            return False, "only-arm-not-component-only"
+        return True, None
+
+    value = selector.get("value") if isinstance(selector, Mapping) else None
+    full_surfaces = full.get("repository_intelligence_query_surfaces")
+    removed_surfaces = removed.get("repository_intelligence_query_surfaces")
+    only_surfaces = only.get("repository_intelligence_query_surfaces")
+    if not (
+        isinstance(value, str)
+        and isinstance(full_surfaces, list)
+        and value in full_surfaces
+    ):
+        return False, "full-arm-selector-authority-missing"
     if not (
         removed.get("full_contract") is False
-        and isinstance(removed_tools, list)
-        and component not in removed_tools
-        and set(removed_tools) == set(full_tools) - {component}
+        and removed_tools == full_tools
+        and isinstance(removed_surfaces, list)
+        and set(removed_surfaces) == set(full_surfaces) - {value}
     ):
-        return False, "removal-arm-not-single-tool-ablation"
+        return False, "removal-arm-not-single-selector-ablation"
     if not (
         only.get("full_contract") is False
         and only_tools == [component]
+        and only_surfaces == [value]
     ):
-        return False, "only-arm-not-component-only"
+        return False, "only-arm-not-selector-only"
     return True, None
 
 
@@ -179,16 +242,31 @@ def _observed_tool_projection(
     treatment = _treatment(receipt)
     allowed = treatment.get("tools") if isinstance(treatment, Mapping) else []
     subject_tools = trace.get("subject_tools") if isinstance(trace, Mapping) else None
+    subject_selectors = (
+        trace.get("subject_call_selectors")
+        if isinstance(trace, Mapping)
+        else None
+    )
+    allowed_surfaces = (
+        treatment.get("repository_intelligence_query_surfaces")
+        if isinstance(treatment, Mapping)
+        else None
+    )
     if (
         not isinstance(trace, Mapping)
         or trace.get("available") is not True
         or trace.get("tool_order_complete") is not True
         or not isinstance(subject_tools, list)
+        or (
+            isinstance(allowed_surfaces, list)
+            and not isinstance(subject_selectors, list)
+        )
     ):
         return {
             "status": "UNQUALIFIED_TRACE_INCOMPLETE",
             "observed_subject_calls": None,
             "disallowed_calls": [],
+            "disallowed_selectors": [],
             "unresolved_calls": [],
             "catalog_advertisement_proven": False,
         }
@@ -197,6 +275,7 @@ def _observed_tool_projection(
     ):
         allowed = []
     disallowed: list[str] = []
+    disallowed_selectors: list[str] = []
     unresolved: list[str] = []
     observed = 0
     for raw in subject_tools:
@@ -217,9 +296,30 @@ def _observed_tool_projection(
             unresolved.append(str(raw))
         elif candidates[0] not in allowed:
             disallowed.append(str(raw))
+    if isinstance(allowed_surfaces, list):
+        if not all(isinstance(value, str) and value for value in allowed_surfaces):
+            allowed_surfaces = []
+        selector_rows = subject_selectors if isinstance(subject_selectors, list) else []
+        for raw in selector_rows:
+            if not isinstance(raw, Mapping):
+                unresolved.append("malformed-subject-selector")
+                continue
+            name = raw.get("tool")
+            if not matches_subject_operation(
+                name,
+                subject="hashmarks",
+                operation="repository_intelligence_query",
+            ):
+                continue
+            surface = raw.get("surface_name")
+            if not isinstance(surface, str) or not surface:
+                unresolved.append(str(name))
+            elif surface not in allowed_surfaces:
+                disallowed_selectors.append(surface)
+
     status = (
         "UNQUALIFIED_DISALLOWED_CALL"
-        if disallowed
+        if disallowed or disallowed_selectors
         else "UNQUALIFIED_UNRESOLVED_CALL"
         if unresolved
         else "NO_DISALLOWED_CALL_OBSERVED"
@@ -228,6 +328,7 @@ def _observed_tool_projection(
         "status": status,
         "observed_subject_calls": observed,
         "disallowed_calls": disallowed,
+        "disallowed_selectors": disallowed_selectors,
         "unresolved_calls": unresolved,
         "catalog_advertisement_proven": False,
     }
@@ -339,6 +440,7 @@ def quartet_projection(
     if normalized is None:
         raise MechanismAttributionError("invalid component-ablation contract")
     component = str(normalized["component"])
+    selector = normalized.get("selector")
     normalized_arms = _normalize_quartet_arms(
         arms,
         contract=normalized,
@@ -368,10 +470,12 @@ def quartet_projection(
     full_invoked = _component_invoked(
         normalized_arms["full"],
         component=component,
+        selector=selector if isinstance(selector, Mapping) else None,
     )
     only_invoked = _component_invoked(
         normalized_arms["only"],
         component=component,
+        selector=selector if isinstance(selector, Mapping) else None,
     )
     necessity = (
         _necessity(
@@ -398,6 +502,7 @@ def quartet_projection(
         "model": receipt.get("model"),
         "replicate_id": receipt.get("replicate_id"),
         "component": component,
+        **({"selector": dict(selector)} if isinstance(selector, Mapping) else {}),
         "subjects": dict(normalized["arms"]),
         "contract_source": contract_source,
         "statuses": statuses,
@@ -515,6 +620,14 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
         key = (
             *_pair_key(receipt),
             contract["component"],
+            (
+                (
+                    contract["selector"]["argument"],
+                    contract["selector"]["value"],
+                )
+                if isinstance(contract.get("selector"), Mapping)
+                else None
+            ),
             tuple(
                 (role_name, contract["arms"][role_name])
                 for role_name in ABLATION_ROLES
@@ -526,7 +639,17 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
         eligible.append((projection, contract, role))
 
     components = {
-        str(contract["component"])
+        (
+            str(contract["component"]),
+            (
+                (
+                    str(contract["selector"]["argument"]),
+                    str(contract["selector"]["value"]),
+                )
+                if isinstance(contract.get("selector"), Mapping)
+                else None
+            ),
+        )
         for contract in contracts.values()
     }
     if len(components) > 1:
@@ -590,7 +713,16 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
     necessity = Counter(str(row["necessity"]) for row in quartets)
     sufficiency = Counter(str(row["sufficiency"]) for row in quartets)
 
-    component = next(iter(components)) if components else None
+    component_key = next(iter(components)) if components else None
+    component = component_key[0] if component_key is not None else None
+    selector = (
+        {
+            "argument": component_key[1][0],
+            "value": component_key[1][1],
+        }
+        if component_key is not None and component_key[1] is not None
+        else None
+    )
     arms = (
         dict(next(iter(contracts.values()))["arms"])
         if contracts
@@ -640,6 +772,7 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
         "schema": ABLATION_REPORT_SCHEMA,
         "applicable": applicable,
         "component": component,
+        **({"selector": selector} if selector is not None else {}),
         "arms": arms,
         "quartets": quartets,
         "summary": {
@@ -661,17 +794,18 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
         "method": {
             "design": (
                 "same campaign + task + harness + model + replicate across "
-                "bare/full/remove-component/component-only arms"
+                "bare/full/remove/only arms for one declared component or selector"
             ),
             "necessity_contrast": (
-                "full Hashmarks versus full Hashmarks minus the declared component"
+                "full Hashmarks versus the declared component/selector removal arm"
             ),
             "sufficiency_contrast": (
-                "bare versus the declared component as the only Hashmarks tool"
+                "bare versus the declared component/selector-only Hashmarks arm"
             ),
             "invocation_gate": (
                 "positive component attribution requires observable invocation "
-                "in the relevant full or only arm"
+                "of the exact declared tool and selector, when present, in the "
+                "relevant full or only arm"
             ),
             "call_projection_limit": (
                 "ATIF invocation records can disqualify observed calls outside "

@@ -63,6 +63,12 @@ DEPENDENCY_CODEMAP_MATRIX = (
     / "harbor"
     / "repository-intelligence-dependency-codemap-ablation-v1.json"
 )
+VERIFICATION_EXPLANATION_MATRIX = (
+    ROOT
+    / "benchmarks"
+    / "harbor"
+    / "repository-intelligence-verification-explanation-ablation-v1.json"
+)
 
 
 class HarborBehavioralTests(unittest.TestCase):
@@ -74,6 +80,11 @@ class HarborBehavioralTests(unittest.TestCase):
             (CORRELATE_EVIDENCE_MATRIX, "correlate_evidence", 4),
             (REPOSITORY_DECLARATIONS_MATRIX, "repository_declarations", 4),
             (DEPENDENCY_CODEMAP_MATRIX, "dependency_codemap", 4),
+            (
+                VERIFICATION_EXPLANATION_MATRIX,
+                "repository_intelligence_query",
+                4,
+            ),
         ):
             with self.subTest(component=component):
                 matrix = load_matrix(path)
@@ -227,6 +238,40 @@ class HarborBehavioralTests(unittest.TestCase):
                 "dependency_delta-01",
                 "dependency_delta-02",
                 "dependency_delta-03",
+            ),
+        )
+
+    def test_verification_explanation_matrix_matches_query_facet_intent(
+        self,
+    ) -> None:
+        matrix = load_matrix(VERIFICATION_EXPLANATION_MATRIX)
+        mode = mode_contract(matrix, "matrix")
+
+        self.assertEqual(
+            matrix["query_surface_projections"],
+            {
+                "hashmarks-no-verification-explanation": {
+                    "exclude": ["verification-explanation"],
+                },
+                "hashmarks-verification-explanation-only": {
+                    "include": ["verification-explanation"],
+                },
+            },
+        )
+        self.assertEqual(
+            matrix["ablation"]["selector"],
+            {
+                "argument": "surface_name",
+                "value": "verification-explanation",
+            },
+        )
+        self.assertEqual(
+            mode.tasks,
+            (
+                "verification-00",
+                "verification-01",
+                "verification-02",
+                "verification-03",
             ),
         )
 

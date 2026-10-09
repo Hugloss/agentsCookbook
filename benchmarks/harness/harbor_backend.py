@@ -223,12 +223,23 @@ def credential_file(
 def _mcp_config_bytes(
     *,
     tools: list[str],
-    full_contract: bool,
+    canonical_tools: list[str],
+    query_surfaces: list[str],
+    canonical_query_surfaces: list[str],
 ) -> bytes:
     return (
         json.dumps(
             mcp_config_payload(
-                tool_names=None if full_contract else tuple(tools)
+                tool_names=(
+                    None
+                    if tools == canonical_tools
+                    else tuple(tools)
+                ),
+                query_surfaces=(
+                    None
+                    if query_surfaces == canonical_query_surfaces
+                    else tuple(query_surfaces)
+                ),
             ),
             indent=2,
             sort_keys=True,
@@ -246,6 +257,27 @@ def mcp_configs(
     treatments = hashmarks.get("treatments") if isinstance(hashmarks, dict) else None
     if not isinstance(treatments, dict) or "hashmarks" not in treatments:
         raise HarborBackendError("Harbor preflight has no Hashmarks treatment authority")
+    full_treatment = treatments.get("hashmarks")
+    canonical_tools = (
+        hashmarks.get("canonical_tools")
+        if isinstance(hashmarks, dict)
+        else None
+    )
+    if not isinstance(canonical_tools, list) and isinstance(full_treatment, dict):
+        canonical_tools = full_treatment.get("tools")
+    canonical_query_surfaces = (
+        hashmarks.get("canonical_repository_intelligence_query_surfaces")
+        if isinstance(hashmarks, dict)
+        else None
+    )
+    if (
+        not isinstance(canonical_query_surfaces, list)
+        and isinstance(full_treatment, dict)
+    ):
+        canonical_query_surfaces = full_treatment.get(
+            "repository_intelligence_query_surfaces",
+            [],
+        )
     configs: dict[str, Path | None] = {"none": None}
     for subject, raw in sorted(treatments.items()):
         if (
@@ -256,12 +288,31 @@ def mcp_configs(
         ):
             raise HarborBackendError("Harbor preflight contains invalid treatment identity")
         tools = raw.get("tools")
+        query_surfaces = raw.get("repository_intelligence_query_surfaces", [])
         full_contract = raw.get("full_contract")
         if (
-            not isinstance(tools, list)
+            not isinstance(canonical_tools, list)
+            or not all(isinstance(value, str) and value for value in canonical_tools)
+            or not isinstance(canonical_query_surfaces, list)
+            or not all(
+                isinstance(value, str) and value
+                for value in canonical_query_surfaces
+            )
+            or not isinstance(tools, list)
             or not tools
             or not all(isinstance(value, str) and value for value in tools)
+            or not isinstance(query_surfaces, list)
+            or not all(isinstance(value, str) and value for value in query_surfaces)
+            or len(set(tools)) != len(tools)
+            or len(set(query_surfaces)) != len(query_surfaces)
+            or not set(tools).issubset(set(canonical_tools))
+            or not set(query_surfaces).issubset(set(canonical_query_surfaces))
             or not isinstance(full_contract, bool)
+            or full_contract
+            != (
+                tools == canonical_tools
+                and query_surfaces == canonical_query_surfaces
+            )
         ):
             raise HarborBackendError(
                 f"Harbor preflight treatment is incomplete: {subject}"
@@ -269,7 +320,9 @@ def mcp_configs(
         path = run_root / f"{subject}.mcp.json"
         expected = _mcp_config_bytes(
             tools=tools,
-            full_contract=full_contract,
+            canonical_tools=canonical_tools,
+            query_surfaces=query_surfaces,
+            canonical_query_surfaces=canonical_query_surfaces,
         )
         if path.exists():
             if path.is_symlink() or not path.is_file() or path.read_bytes() != expected:

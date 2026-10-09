@@ -34,6 +34,8 @@ class HarborSharedCampaignTests(unittest.TestCase):
             ("harbor-repository-declarations-ablation-full", 144),
             ("harbor-dependency-codemap-ablation-smoke", 12),
             ("harbor-dependency-codemap-ablation-full", 144),
+            ("harbor-verification-explanation-ablation-smoke", 12),
+            ("harbor-verification-explanation-ablation-full", 144),
         ):
             with self.subTest(name=name):
                 suite, _ = harbor_suite(load_profile(name))
@@ -44,6 +46,7 @@ class HarborSharedCampaignTests(unittest.TestCase):
         root: Path,
         *,
         ablation_component: str | None = None,
+        selector_value: str | None = None,
     ):
         env = root / ".env"
         env.write_text("HASHMARKS_BENCH_SOURCE=/unused\nBENCHMARK_HARBOR_MODEL=provider/model\n")
@@ -69,11 +72,18 @@ class HarborSharedCampaignTests(unittest.TestCase):
             "correlate_evidence",
             "repository_declarations",
             "dependency_codemap",
+            "repository_intelligence_query",
             "post_change",
+        ]
+        full_query_surfaces = [
+            "change-intelligence",
+            "verification-explanation",
+            "freshness",
         ]
         treatments = {
             "hashmarks": {
                 "tools": full_tools,
+                "repository_intelligence_query_surfaces": full_query_surfaces,
                 "projection_identity": "sha256:full",
                 "source_contract_identity": "sha256:full",
                 "full_contract": True,
@@ -81,43 +91,97 @@ class HarborSharedCampaignTests(unittest.TestCase):
         }
         ablation = None
         if ablation_component is not None:
-            suffix = ablation_component.replace("_", "-")
-            remove_subject = f"hashmarks-no-{suffix}"
-            only_subject = f"hashmarks-{suffix}-only"
-            treatments.update(
-                {
-                    remove_subject: {
-                        "tools": [
-                            tool
-                            for tool in full_tools
-                            if tool != ablation_component
-                        ],
-                        "projection_identity": f"sha256:no-{suffix}",
-                        "source_contract_identity": "sha256:full",
-                        "full_contract": False,
-                    },
-                    only_subject: {
-                        "tools": [ablation_component],
-                        "projection_identity": f"sha256:{suffix}-only",
-                        "source_contract_identity": "sha256:full",
-                        "full_contract": False,
+            if selector_value is None:
+                suffix = ablation_component.replace("_", "-")
+                remove_subject = f"hashmarks-no-{suffix}"
+                only_subject = f"hashmarks-{suffix}-only"
+                treatments.update(
+                    {
+                        remove_subject: {
+                            "tools": [
+                                tool
+                                for tool in full_tools
+                                if tool != ablation_component
+                            ],
+                            "repository_intelligence_query_surfaces": (
+                                full_query_surfaces
+                            ),
+                            "projection_identity": f"sha256:no-{suffix}",
+                            "source_contract_identity": "sha256:full",
+                            "full_contract": False,
+                        },
+                        only_subject: {
+                            "tools": [ablation_component],
+                            "repository_intelligence_query_surfaces": (
+                                full_query_surfaces
+                            ),
+                            "projection_identity": f"sha256:{suffix}-only",
+                            "source_contract_identity": "sha256:full",
+                            "full_contract": False,
+                        },
+                    }
+                )
+                ablation = {
+                    "component": ablation_component,
+                    "arms": {
+                        "bare": "none",
+                        "full": "hashmarks",
+                        "remove": remove_subject,
+                        "only": only_subject,
                     },
                 }
-            )
-            ablation = {
-                "component": ablation_component,
-                "arms": {
-                    "bare": "none",
-                    "full": "hashmarks",
-                    "remove": remove_subject,
-                    "only": only_subject,
-                },
-            }
+            else:
+                remove_subject = f"hashmarks-no-{selector_value}"
+                only_subject = f"hashmarks-{selector_value}-only"
+                treatments.update(
+                    {
+                        remove_subject: {
+                            "tools": full_tools,
+                            "repository_intelligence_query_surfaces": [
+                                value
+                                for value in full_query_surfaces
+                                if value != selector_value
+                            ],
+                            "projection_identity": (
+                                f"sha256:no-{selector_value}"
+                            ),
+                            "source_contract_identity": "sha256:full",
+                            "full_contract": False,
+                        },
+                        only_subject: {
+                            "tools": ["repository_intelligence_query"],
+                            "repository_intelligence_query_surfaces": [
+                                selector_value
+                            ],
+                            "projection_identity": (
+                                f"sha256:{selector_value}-only"
+                            ),
+                            "source_contract_identity": "sha256:full",
+                            "full_contract": False,
+                        },
+                    }
+                )
+                ablation = {
+                    "component": "repository_intelligence_query",
+                    "selector": {
+                        "argument": "surface_name",
+                        "value": selector_value,
+                    },
+                    "arms": {
+                        "bare": "none",
+                        "full": "hashmarks",
+                        "remove": remove_subject,
+                        "only": only_subject,
+                    },
+                }
         observed = {
             "ready": True,
             "hashmarks": {
                 "mcp_contract_identity": "sha256:full",
                 "canonical_tools": full_tools,
+                "canonical_repository_intelligence_query_surfaces": (
+                    full_query_surfaces
+                ),
                 "treatments": treatments,
                 **({"ablation": ablation} if ablation is not None else {}),
             },
@@ -498,6 +562,56 @@ class HarborSharedCampaignTests(unittest.TestCase):
                         "full": "hashmarks",
                         "remove": "hashmarks-no-dependency-codemap",
                         "only": "hashmarks-dependency-codemap-only",
+                    },
+                )
+                self.assertEqual(report["summary"]["matched_quartets"], 3)
+                self.assertEqual(execute.call_count, 12)
+
+    def test_verification_facet_ablation_uses_generic_campaign_lifecycle(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            env, patches = self._environment(
+                root,
+                ablation_component="repository_intelligence_query",
+                selector_value="verification-explanation",
+            )
+            with patches[0], patches[1], patches[2], mock.patch(
+                "benchmarks.harness.harbor_backend.execute_trial",
+                side_effect=self._reward_trial,
+            ) as execute:
+                code, _ = self._call(
+                    "run",
+                    "--new",
+                    "--matrix",
+                    "harbor-verification-explanation-ablation-smoke",
+                    "--env-file",
+                    str(env),
+                    "--root",
+                    str(root),
+                    "--no-json-results",
+                )
+                self.assertEqual(code, 0)
+                self.assertEqual(execute.call_count, 12)
+
+                code, report = self._call(
+                    "ablation",
+                    "--matrix",
+                    "harbor-verification-explanation-ablation-smoke",
+                    "--root",
+                    str(root),
+                )
+                self.assertEqual(code, 0)
+                self.assertEqual(
+                    report["component"],
+                    "repository_intelligence_query",
+                )
+                self.assertEqual(
+                    report["selector"],
+                    {
+                        "argument": "surface_name",
+                        "value": "verification-explanation",
                     },
                 )
                 self.assertEqual(report["summary"]["matched_quartets"], 3)

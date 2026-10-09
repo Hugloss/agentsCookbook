@@ -179,6 +179,11 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             'harbor-dependency-codemap-ablation-full',
             makefile,
         )
+        self.assertIn(
+            'HARBOR_VERIFICATION_EXPLANATION_ABLATION_MATRIX ?= '
+            'harbor-verification-explanation-ablation-full',
+            makefile,
+        )
         self.assertIn('--matrix "$(MATRIX)"', makefile)
         self.assertIn("benchmark-harness-explain:\n", makefile)
         self.assertIn(
@@ -232,6 +237,14 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         )
         self.assertIn(
             '--matrix "$(HARBOR_DEPENDENCY_CODEMAP_ABLATION_MATRIX)"',
+            makefile,
+        )
+        self.assertIn(
+            "benchmark-harness-verification-explanation-ablation:\n",
+            makefile,
+        )
+        self.assertIn(
+            '--matrix "$(HARBOR_VERIFICATION_EXPLANATION_ABLATION_MATRIX)"',
             makefile,
         )
         self.assertIn('run --resume --run-id "$(RUN_ID)"', makefile)

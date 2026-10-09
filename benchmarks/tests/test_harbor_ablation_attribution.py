@@ -290,6 +290,261 @@ class HarborAblationAttributionTests(unittest.TestCase):
             {"full": True, "only": True},
         )
 
+    def test_selector_ablation_requires_exact_query_surface_invocation(
+        self,
+    ) -> None:
+        contract = {
+            "component": "repository_intelligence_query",
+            "selector": {
+                "argument": "surface_name",
+                "value": "verification-explanation",
+            },
+            "arms": {
+                "bare": "none",
+                "full": "hashmarks",
+                "remove": "hashmarks-no-verification-explanation",
+                "only": "hashmarks-verification-explanation-only",
+            },
+        }
+        full_tools = [*FULL_TOOLS, "repository_intelligence_query"]
+        full_surfaces = ["verification-explanation", "freshness"]
+        treatments = {
+            "none": None,
+            "hashmarks": {
+                "tools": full_tools,
+                "repository_intelligence_query_surfaces": full_surfaces,
+                "projection_identity": "sha256:full",
+                "source_contract_identity": "sha256:contract",
+                "full_contract": True,
+            },
+            "hashmarks-no-verification-explanation": {
+                "tools": full_tools,
+                "repository_intelligence_query_surfaces": ["freshness"],
+                "projection_identity": "sha256:without-surface",
+                "source_contract_identity": "sha256:contract",
+                "full_contract": False,
+            },
+            "hashmarks-verification-explanation-only": {
+                "tools": ["repository_intelligence_query"],
+                "repository_intelligence_query_surfaces": [
+                    "verification-explanation"
+                ],
+                "projection_identity": "sha256:surface-only",
+                "source_contract_identity": "sha256:contract",
+                "full_contract": False,
+            },
+        }
+
+        def projection(
+            subject: str,
+            status: str,
+            surface: str | None = None,
+        ) -> dict[str, object]:
+            tools = (
+                ["mcp__hashmarks__repository_intelligence_query"]
+                if surface is not None
+                else []
+            )
+            selectors = (
+                [
+                    {
+                        "tool": "mcp__hashmarks__repository_intelligence_query",
+                        "surface_name": surface,
+                    }
+                ]
+                if surface is not None
+                else []
+            )
+            return {
+                "receipt": {
+                    "backend": "harbor",
+                    "task_id": "verification-00",
+                    "harness": "codex",
+                    "subject": subject,
+                    "model": "provider/model",
+                    "replicate_id": 6201,
+                    "status": status,
+                    "execution": {
+                        "campaign_id": "campaign",
+                        "mcp_treatment": treatments[subject],
+                        "ablation": contract,
+                    },
+                },
+                "trace": {
+                    "available": True,
+                    "tool_order_complete": True,
+                    "subject_tools": tools,
+                    "subject_call_selectors": selectors,
+                },
+                "answer": None,
+            }
+
+        result = quartet_projection(
+            {
+                "bare": projection("none", "FAIL"),
+                "full": projection(
+                    "hashmarks",
+                    "PASS",
+                    "verification-explanation",
+                ),
+                "remove": projection(
+                    "hashmarks-no-verification-explanation",
+                    "FAIL",
+                ),
+                "only": projection(
+                    "hashmarks-verification-explanation-only",
+                    "PASS",
+                    "verification-explanation",
+                ),
+            },
+            contract=contract,
+        )
+
+        self.assertTrue(result["treatment_authority_valid"])
+        self.assertEqual(
+            result["selector"],
+            {
+                "argument": "surface_name",
+                "value": "verification-explanation",
+            },
+        )
+        self.assertEqual(
+            result["component_invoked"],
+            {"full": True, "only": True},
+        )
+        self.assertEqual(
+            result["classification"],
+            "NECESSARY_AND_SUFFICIENT_CONTRAST",
+        )
+
+        wrong_full = quartet_projection(
+            {
+                "bare": projection("none", "FAIL"),
+                "full": projection("hashmarks", "PASS", "freshness"),
+                "remove": projection(
+                    "hashmarks-no-verification-explanation",
+                    "FAIL",
+                ),
+                "only": projection(
+                    "hashmarks-verification-explanation-only",
+                    "PASS",
+                    "verification-explanation",
+                ),
+            },
+            contract=contract,
+        )
+        self.assertTrue(wrong_full["treatment_authority_valid"])
+        self.assertFalse(wrong_full["component_invoked"]["full"])
+        self.assertEqual(
+            wrong_full["necessity"],
+            "UNATTRIBUTABLE_FULL_NEVER_INVOKED_COMPONENT",
+        )
+
+    def test_selector_only_arm_calling_withheld_surface_is_unqualified(
+        self,
+    ) -> None:
+        contract = {
+            "component": "repository_intelligence_query",
+            "selector": {
+                "argument": "surface_name",
+                "value": "verification-explanation",
+            },
+            "arms": {
+                "bare": "none",
+                "full": "hashmarks",
+                "remove": "hashmarks-no-verification-explanation",
+                "only": "hashmarks-verification-explanation-only",
+            },
+        }
+        full_tools = [*FULL_TOOLS, "repository_intelligence_query"]
+        treatments = {
+            "none": None,
+            "hashmarks": {
+                "tools": full_tools,
+                "repository_intelligence_query_surfaces": [
+                    "verification-explanation",
+                    "freshness",
+                ],
+                "projection_identity": "sha256:full",
+                "source_contract_identity": "sha256:contract",
+                "full_contract": True,
+            },
+            "hashmarks-no-verification-explanation": {
+                "tools": full_tools,
+                "repository_intelligence_query_surfaces": ["freshness"],
+                "projection_identity": "sha256:without",
+                "source_contract_identity": "sha256:contract",
+                "full_contract": False,
+            },
+            "hashmarks-verification-explanation-only": {
+                "tools": ["repository_intelligence_query"],
+                "repository_intelligence_query_surfaces": [
+                    "verification-explanation"
+                ],
+                "projection_identity": "sha256:only",
+                "source_contract_identity": "sha256:contract",
+                "full_contract": False,
+            },
+        }
+
+        def arm(subject: str, surface: str | None) -> dict[str, object]:
+            selectors = (
+                [
+                    {
+                        "tool": "mcp__hashmarks__repository_intelligence_query",
+                        "surface_name": surface,
+                    }
+                ]
+                if surface is not None
+                else []
+            )
+            return {
+                "receipt": {
+                    "task_id": "verification-00",
+                    "harness": "codex",
+                    "subject": subject,
+                    "model": "provider/model",
+                    "replicate_id": 6201,
+                    "status": "PASS",
+                    "execution": {
+                        "campaign_id": "campaign",
+                        "mcp_treatment": treatments[subject],
+                    },
+                },
+                "trace": {
+                    "available": True,
+                    "tool_order_complete": True,
+                    "subject_tools": (
+                        ["mcp__hashmarks__repository_intelligence_query"]
+                        if surface is not None
+                        else []
+                    ),
+                    "subject_call_selectors": selectors,
+                },
+            }
+
+        result = quartet_projection(
+            {
+                "bare": arm("none", None),
+                "full": arm("hashmarks", "verification-explanation"),
+                "remove": arm(
+                    "hashmarks-no-verification-explanation",
+                    None,
+                ),
+                "only": arm(
+                    "hashmarks-verification-explanation-only",
+                    "freshness",
+                ),
+            },
+            contract=contract,
+        )
+
+        self.assertFalse(result["treatment_authority_valid"])
+        self.assertIn(
+            "UNQUALIFIED_DISALLOWED_CALL",
+            str(result["treatment_authority_error"]),
+        )
+
     def test_removal_pass_means_task_evidence_was_not_necessary_in_replicate(
         self,
     ) -> None:
