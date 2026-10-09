@@ -2,10 +2,11 @@
 
 This directory is an **execution projection**, not a second benchmark authority.
 
-The canonical repository task, pinned repository commit/tree, prompt, and oracle
-remain owned by the referenced agentsCookbook suite. The bridge admits only
-read-only, unmutated `repository-location-json` tasks and projects those facts
-into disposable Harbor tasks.
+The canonical repository task, pinned repository commit/tree, prompt, mutation,
+and oracle remain owned by the referenced agentsCookbook suite. The bridge
+projects both bounded read-only `repository-location-json` tasks and frozen
+behavioral command-oracle tasks into disposable Harbor tasks without becoming a
+second benchmark authority.
 
 The initial matrix compares the same model across OpenCode, Codex, and Claude
 Code with two arms:
@@ -318,6 +319,38 @@ make benchmark-harness-post-change-ablation
 ```
 
 The full campaign is also 144 trials.
+
+#### External/derived observations: `correlate_evidence`
+
+The `harbor-correlate-evidence-ablation-*` matrices reuse the four
+`behavioral-v4/correlation` cases. Their prompts are deliberately not owner
+localization or changed-path questions. They provide bounded external or
+derived observations and ask the agent to preserve evidence semantics:
+
+- runtime-path to repository-source mapping without inventing causation;
+- conflicting line/symbol claims without silently selecting an owner;
+- ambiguous symbol evidence and a known-missing repository member as separate
+  states;
+- independent revision comparison while retaining runtime provenance.
+
+That matches Hashmarks's `correlate_evidence` contract: correlate bounded
+observations while preserving ambiguity, provenance, completeness, and source
+equivalence.
+
+```sh
+make benchmark-check MATRIX=harbor-correlate-evidence-ablation-smoke
+make benchmark-new MATRIX=harbor-correlate-evidence-ablation-smoke
+
+make benchmark-check MATRIX=harbor-correlate-evidence-ablation-full
+make benchmark-new MATRIX=harbor-correlate-evidence-ablation-full
+
+make benchmark-harness-correlate-evidence-ablation
+```
+
+The full campaign is 4 tasks × 3 harnesses × 4 arms × 3 replicates = 144 trials.
+As with the other component experiments, positive attribution requires an
+observable `correlate_evidence` invocation in the relevant full/only arm and
+never becomes a universal causal claim.
 
 ### Behavioral Harbor projection authority
 
