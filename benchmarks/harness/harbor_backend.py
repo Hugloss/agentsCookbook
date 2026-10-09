@@ -289,6 +289,7 @@ def mcp_configs(
             raise HarborBackendError("Harbor preflight contains invalid treatment identity")
         tools = raw.get("tools")
         query_surfaces = raw.get("repository_intelligence_query_surfaces", [])
+        full_contract = raw.get("full_contract")
         if (
             not isinstance(canonical_tools, list)
             or not all(isinstance(value, str) and value for value in canonical_tools)
@@ -302,6 +303,16 @@ def mcp_configs(
             or not all(isinstance(value, str) and value for value in tools)
             or not isinstance(query_surfaces, list)
             or not all(isinstance(value, str) and value for value in query_surfaces)
+            or len(set(tools)) != len(tools)
+            or len(set(query_surfaces)) != len(query_surfaces)
+            or not set(tools).issubset(set(canonical_tools))
+            or not set(query_surfaces).issubset(set(canonical_query_surfaces))
+            or not isinstance(full_contract, bool)
+            or full_contract
+            != (
+                tools == canonical_tools
+                and query_surfaces == canonical_query_surfaces
+            )
         ):
             raise HarborBackendError(
                 f"Harbor preflight treatment is incomplete: {subject}"
