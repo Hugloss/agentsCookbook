@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,7 @@ from benchmarks.harness.ablation_attribution import (
     build_ablation_report,
     quartet_projection,
 )
+from benchmarks.harness.mechanism_attribution import project_atif
 
 
 FULL_TOOLS = [
@@ -417,6 +419,40 @@ class HarborAblationAttributionTests(unittest.TestCase):
                 ]["status"],
                 "UNQUALIFIED_TRACE_INCOMPLETE",
             )
+
+    def test_partially_parsed_atif_cannot_qualify_component_ablation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "trajectory.json"
+            path.write_text(json.dumps({
+                "schema_version": "ATIF-v1.8",
+                "steps": [{
+                    "source": "agent",
+                    "tool_calls": [
+                        {"function_name": "mcp__hashmarks__find"},
+                        {"function_name": None},
+                    ],
+                }],
+            }), encoding="utf-8")
+            partial = project_atif(path)
+        self.assertFalse(partial["tool_order_complete"])
+        self.assertEqual(partial["subject_tools"], ["mcp__hashmarks__find"])
+
+        quartet = _quartet()
+        quartet["hashmarks-no-task-evidence"]["trace"] = partial
+        result = quartet_projection(quartet)
+        self.assertFalse(result["treatment_authority_valid"])
+        self.assertIn(
+            "UNQUALIFIED_TRACE_INCOMPLETE", result["treatment_authority_error"]
+        )
+        self.assertEqual(result["classification"], "UNQUALIFIED_TREATMENT_AUTHORITY")
+        self.assertFalse(result["positive_causal_proof_claimed"])
+        report = self._report_from_quartets([quartet])
+        self.assertEqual(report["summary"]["qualified_complete_quartets"], 0)
+        self.assertIsNone(
+            report["by_harness"]["codex"]["task_evidence_removal_drop"]
+        )
 
     def test_aggregate_uses_only_complete_treatment_qualified_quartets(
         self,
