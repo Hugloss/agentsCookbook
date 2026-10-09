@@ -440,6 +440,7 @@ def quartet_projection(
     if normalized is None:
         raise MechanismAttributionError("invalid component-ablation contract")
     component = str(normalized["component"])
+    selector = normalized.get("selector")
     normalized_arms = _normalize_quartet_arms(
         arms,
         contract=normalized,
@@ -469,10 +470,12 @@ def quartet_projection(
     full_invoked = _component_invoked(
         normalized_arms["full"],
         component=component,
+        selector=selector if isinstance(selector, Mapping) else None,
     )
     only_invoked = _component_invoked(
         normalized_arms["only"],
         component=component,
+        selector=selector if isinstance(selector, Mapping) else None,
     )
     necessity = (
         _necessity(
@@ -499,6 +502,7 @@ def quartet_projection(
         "model": receipt.get("model"),
         "replicate_id": receipt.get("replicate_id"),
         "component": component,
+        **({"selector": dict(selector)} if isinstance(selector, Mapping) else {}),
         "subjects": dict(normalized["arms"]),
         "contract_source": contract_source,
         "statuses": statuses,
@@ -616,6 +620,14 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
         key = (
             *_pair_key(receipt),
             contract["component"],
+            (
+                (
+                    contract["selector"]["argument"],
+                    contract["selector"]["value"],
+                )
+                if isinstance(contract.get("selector"), Mapping)
+                else None
+            ),
             tuple(
                 (role_name, contract["arms"][role_name])
                 for role_name in ABLATION_ROLES
@@ -627,7 +639,17 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
         eligible.append((projection, contract, role))
 
     components = {
-        str(contract["component"])
+        (
+            str(contract["component"]),
+            (
+                (
+                    str(contract["selector"]["argument"]),
+                    str(contract["selector"]["value"]),
+                )
+                if isinstance(contract.get("selector"), Mapping)
+                else None
+            ),
+        )
         for contract in contracts.values()
     }
     if len(components) > 1:
@@ -691,7 +713,16 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
     necessity = Counter(str(row["necessity"]) for row in quartets)
     sufficiency = Counter(str(row["sufficiency"]) for row in quartets)
 
-    component = next(iter(components)) if components else None
+    component_key = next(iter(components)) if components else None
+    component = component_key[0] if component_key is not None else None
+    selector = (
+        {
+            "argument": component_key[1][0],
+            "value": component_key[1][1],
+        }
+        if component_key is not None and component_key[1] is not None
+        else None
+    )
     arms = (
         dict(next(iter(contracts.values()))["arms"])
         if contracts
@@ -741,6 +772,7 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
         "schema": ABLATION_REPORT_SCHEMA,
         "applicable": applicable,
         "component": component,
+        **({"selector": selector} if selector is not None else {}),
         "arms": arms,
         "quartets": quartets,
         "summary": {
@@ -762,17 +794,18 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
         "method": {
             "design": (
                 "same campaign + task + harness + model + replicate across "
-                "bare/full/remove-component/component-only arms"
+                "bare/full/remove/only arms for one declared component or selector"
             ),
             "necessity_contrast": (
-                "full Hashmarks versus full Hashmarks minus the declared component"
+                "full Hashmarks versus the declared component/selector removal arm"
             ),
             "sufficiency_contrast": (
-                "bare versus the declared component as the only Hashmarks tool"
+                "bare versus the declared component/selector-only Hashmarks arm"
             ),
             "invocation_gate": (
                 "positive component attribution requires observable invocation "
-                "in the relevant full or only arm"
+                "of the exact declared tool and selector, when present, in the "
+                "relevant full or only arm"
             ),
             "call_projection_limit": (
                 "ATIF invocation records can disqualify observed calls outside "
