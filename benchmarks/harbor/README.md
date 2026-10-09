@@ -421,6 +421,58 @@ trials. Positive attribution requires an observable `dependency_codemap`
 invocation in the relevant full/only arm; missing tool-order evidence or
 treatment drift leaves the quartet outside qualified component aggregates.
 
+#### Query-facet ablation: `verification-explanation`
+
+`repository_intelligence_query` is a multi-facet facade, so agentsCookbook
+does **not** treat the whole tool as one mechanism. A selector-aware ablation
+can bind one structured call argument to one product-owned facet. The first
+such matrix uses:
+
+```text
+component: repository_intelligence_query
+selector:  surface_name = verification-explanation
+```
+
+and the four `behavioral-v4/verification` cases. Their oracle asks for a
+focused repository-native verifier, runner, argv/scope, or closely related
+verification evidence.
+
+The treatment arms are:
+
+- `none`: no Hashmarks MCP;
+- `hashmarks`: full Hashmarks tools and all canonical query surfaces;
+- `hashmarks-no-verification-explanation`: full tool catalog, but exactly
+  that query facet withheld;
+- `hashmarks-verification-explanation-only`: only
+  `repository_intelligence_query`, restricted to exactly that facet.
+
+The facet catalog is not duplicated in agentsCookbook. Model-free preflight
+reads the canonical surface list from Hashmarks readiness, derives the two
+subsets, asks Hashmarks to qualify each projected server, and freezes selected
+plus independently observed surfaces into treatment authority. Generated MCP
+config then carries exact repeated `--query-surface` arguments.
+
+ATIF attribution is selector-aware. A call to
+`repository_intelligence_query(surface_name="freshness")` does not count as
+invoking `verification-explanation`; a call to a facet withheld by the frozen
+treatment disqualifies that quartet. Only bounded structured
+`tool + surface_name` evidence is retained for this gate—model reasoning and
+unrelated tool arguments are not consumed.
+
+```sh
+make benchmark-check MATRIX=harbor-verification-explanation-ablation-smoke
+make benchmark-new MATRIX=harbor-verification-explanation-ablation-smoke
+
+make benchmark-check MATRIX=harbor-verification-explanation-ablation-full
+make benchmark-new MATRIX=harbor-verification-explanation-ablation-full
+
+make benchmark-harness-verification-explanation-ablation
+```
+
+The full campaign is again 144 trials. The same generic ablation report remains
+the authority; it records both `component` and `selector` and still keeps
+`positive_causal_proof_claimed=false`.
+
 ### Behavioral Harbor projection authority
 
 Behavioral command-oracle tasks do not treat the mutation fixture as agent
