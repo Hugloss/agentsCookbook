@@ -189,6 +189,35 @@ class HarborInformationTimingTests(unittest.TestCase):
         self.assertFalse(result["qualified"])
         self.assertEqual(result["reason"], "unstructured-subject-observation")
 
+    def test_opaque_mcp_text_block_is_not_absence_of_evidence(self) -> None:
+        result = _run([
+            _step(
+                HASHMARKS,
+                "h1",
+                result=[{"type": "text", "text": "Owner might be src/owner.py"}],
+            ),
+        ])
+        self.assertFalse(result["qualified"])
+        self.assertEqual(result["reason"], "unstructured-subject-observation")
+
+    def test_unstructured_native_read_inputs_do_not_prove_no_followthrough(self) -> None:
+        result = _run([
+            _step(HASHMARKS, "h1", result={"path": ORACLE}),
+            {
+                "source": "agent",
+                "tool_calls": [{
+                    "tool_call_id": "r1",
+                    "function_name": "read_file",
+                    "arguments": {"opaque_command": "open target"},
+                }],
+            },
+        ])
+        self.assertTrue(result["qualified"])
+        self.assertEqual(
+            result["native_read_followthrough"],
+            "UNKNOWN_NATIVE_READ_ARGUMENTS",
+        )
+
     def test_missing_link_is_not_no_evidence(self) -> None:
         result = _run([_step(HASHMARKS, "h1")])
         self.assertFalse(result["qualified"])
