@@ -469,6 +469,7 @@ class HarborBehavioralTests(unittest.TestCase):
             "cases"
         ]["post_change-00"]
         self.assertEqual(answer["expected"], case["expected"])
+        self.assertEqual(answer["semantic_case_id"], "post_change-00")
         self.assertEqual(
             answer["oracle"]["schema"],
             "agents-cookbook-lexigram-oracle.v1",
