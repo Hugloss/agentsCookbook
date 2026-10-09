@@ -25,6 +25,7 @@ from benchmarks.adapters.oracles import (
 from benchmarks.harness.bundle import verify_bundle
 from benchmarks.harness.campaign_authority import (
     CampaignAuthorityError,
+    authority_epoch_projection,
     read_launch_claims,
     read_campaign,
 )
@@ -636,9 +637,17 @@ def _comparison_identity(receipt: dict[str, Any]) -> dict[str, Any]:
     return common
 
 
-def validate_comparability(receipts: list[dict[str, Any]]) -> None:
-    _check_comparable_agents(receipts)
-    _check_comparable_evidence(receipts)
+def validate_comparability(
+    receipts: list[dict[str, Any]],
+    *,
+    allow_participant_authority_mix: bool = False,
+) -> None:
+    if not allow_participant_authority_mix:
+        _check_comparable_agents(receipts)
+    _check_comparable_evidence(
+        receipts,
+        allow_subject_authority_mix=allow_participant_authority_mix,
+    )
     _check_comparable_localization_scoring(receipts)
     _check_localization_grades(receipts)
 
@@ -748,7 +757,11 @@ def _check_comparable_agents(receipts: list[dict[str, Any]]) -> None:
             )
 
 
-def _check_comparable_evidence(receipts: list[dict[str, Any]]) -> None:
+def _check_comparable_evidence(
+    receipts: list[dict[str, Any]],
+    *,
+    allow_subject_authority_mix: bool = False,
+) -> None:
     if not receipts:
         return
     for field in ("harness",):
@@ -772,6 +785,8 @@ def _check_comparable_evidence(receipts: list[dict[str, Any]]) -> None:
         environments[agent] = environment
         authority = receipt.get("authority", {}).get("subject", {})
         if authority.get("available") is not True:
+            continue
+        if allow_subject_authority_mix:
             continue
         subject = (_task_id(receipt), agent, _subject_id(receipt))
         observed = authority.get("observed")
