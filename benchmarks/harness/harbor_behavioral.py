@@ -305,7 +305,7 @@ observation_path.write_text(
             }}
         }},
         sort_keys=True,
-    ) + "\n",
+    ) + "\\n",
     encoding="utf-8",
 )
 env = dict(os.environ)
@@ -371,7 +371,7 @@ Path("/logs/verifier/oracle.json").write_text(
             "result": oracle,
         }},
         sort_keys=True,
-    ) + "\n",
+    ) + "\\n",
     encoding="utf-8",
 )
 evidence = {{
@@ -385,11 +385,11 @@ evidence = {{
     "oracle": oracle,
 }}
 Path("/logs/verifier/answer.json").write_text(
-    json.dumps(evidence, sort_keys=True) + "\n",
+    json.dumps(evidence, sort_keys=True) + "\\n",
     encoding="utf-8",
 )
 Path("/logs/verifier/reward.txt").write_text(
-    "1\n" if oracle_passed and tracked_clean else "0\n",
+    "1\\n" if oracle_passed and tracked_clean else "0\\n",
     encoding="utf-8",
 )
 PY

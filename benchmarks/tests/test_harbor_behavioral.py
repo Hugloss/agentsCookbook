@@ -291,7 +291,7 @@ class HarborBehavioralTests(unittest.TestCase):
         answer, oracle, reward = self._run_generated_verifier(
             'import json\nprint(json.dumps({"passed": True}))\n'
         )
-        self.assertEqual(reward, "1\\n")
+        self.assertEqual(reward, "1\n")
         self.assertTrue(answer["match"])
         self.assertTrue(answer["tracked_clean"])
         self.assertEqual(oracle["return_code"], 0)
@@ -302,7 +302,7 @@ class HarborBehavioralTests(unittest.TestCase):
             "import time\ntime.sleep(1)\n",
             grade_timeout="0.05",
         )
-        self.assertEqual(reward, "0\\n")
+        self.assertEqual(reward, "0\n")
         self.assertEqual(answer["error"], "oracle-timeout")
         self.assertFalse(answer["match"])
         self.assertTrue(oracle["timed_out"])
@@ -312,7 +312,7 @@ class HarborBehavioralTests(unittest.TestCase):
         answer, oracle, reward = self._run_generated_verifier(
             'import json\nprint(json.dumps({"passed": True, "padding": "x" * 75000}))\n'
         )
-        self.assertEqual(reward, "0\\n")
+        self.assertEqual(reward, "0\n")
         self.assertEqual(answer["error"], "oracle-output-limit")
         self.assertFalse(answer["match"])
         self.assertTrue(oracle["stdout_truncated"])
