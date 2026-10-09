@@ -51,6 +51,12 @@ CORRELATE_EVIDENCE_MATRIX = (
     / "harbor"
     / "repository-intelligence-correlate-evidence-ablation-v1.json"
 )
+REPOSITORY_DECLARATIONS_MATRIX = (
+    ROOT
+    / "benchmarks"
+    / "harbor"
+    / "repository-intelligence-repository-declarations-ablation-v1.json"
+)
 
 
 class HarborBehavioralTests(unittest.TestCase):
@@ -60,6 +66,7 @@ class HarborBehavioralTests(unittest.TestCase):
             (CHANGE_IMPACT_MATRIX, "change_impact", 4),
             (POST_CHANGE_MATRIX, "post_change", 4),
             (CORRELATE_EVIDENCE_MATRIX, "correlate_evidence", 4),
+            (REPOSITORY_DECLARATIONS_MATRIX, "repository_declarations", 4),
         ):
             with self.subTest(component=component):
                 matrix = load_matrix(path)
@@ -117,6 +124,54 @@ class HarborBehavioralTests(unittest.TestCase):
                 "correlation-01",
                 "correlation-02",
                 "correlation-03",
+            ),
+        )
+
+    def test_repository_declarations_matrix_matches_declaration_intent(
+        self,
+    ) -> None:
+        matrix = load_matrix(REPOSITORY_DECLARATIONS_MATRIX)
+        mode = mode_contract(matrix, "matrix")
+
+        self.assertEqual(
+            matrix["subjects"],
+            [
+                "none",
+                "hashmarks",
+                "hashmarks-no-repository-declarations",
+                "hashmarks-repository-declarations-only",
+            ],
+        )
+        self.assertEqual(
+            matrix["tool_projections"],
+            {
+                "hashmarks-no-repository-declarations": {
+                    "exclude": ["repository_declarations"],
+                },
+                "hashmarks-repository-declarations-only": {
+                    "include": ["repository_declarations"],
+                },
+            },
+        )
+        self.assertEqual(
+            matrix["ablation"],
+            {
+                "component": "repository_declarations",
+                "arms": {
+                    "bare": "none",
+                    "full": "hashmarks",
+                    "remove": "hashmarks-no-repository-declarations",
+                    "only": "hashmarks-repository-declarations-only",
+                },
+            },
+        )
+        self.assertEqual(
+            mode.tasks,
+            (
+                "declarations-00",
+                "declarations-01",
+                "declarations-02",
+                "declarations-03",
             ),
         )
 

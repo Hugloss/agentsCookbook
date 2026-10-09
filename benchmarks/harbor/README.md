@@ -352,6 +352,41 @@ As with the other component experiments, positive attribution requires an
 observable `correlate_evidence` invocation in the relevant full/only arm and
 never becomes a universal causal claim.
 
+#### Correlated provider declarations: `repository_declarations`
+
+The `harbor-repository-declarations-ablation-*` matrices reuse the four
+`behavioral-v4/declarations` cases. They test whether the agent preserves
+declaration authority rather than collapsing independently sourced provider
+claims into one synthetic truth:
+
+- equivalent declarations retain both provider identities rather than picking
+  a winner;
+- differing declarations remain explicitly differing without selecting an
+  authoritative provider;
+- declared A↔B and B↔C relationships do not silently prove A↔C or merge
+  provider namespaces;
+- incomplete provider coverage does not become proof of absence or
+  equivalence.
+
+That matches Hashmarks's `repository_declarations` contract: project
+correlated repository declarations while preserving provenance, ambiguity,
+coverage, and freshness.
+
+```sh
+make benchmark-check MATRIX=harbor-repository-declarations-ablation-smoke
+make benchmark-new MATRIX=harbor-repository-declarations-ablation-smoke
+
+make benchmark-check MATRIX=harbor-repository-declarations-ablation-full
+make benchmark-new MATRIX=harbor-repository-declarations-ablation-full
+
+make benchmark-harness-repository-declarations-ablation
+```
+
+The full campaign is again 144 trials. Positive attribution requires an
+observable `repository_declarations` invocation in the relevant full/only
+arm; incomplete or treatment-unqualified quartets remain outside aggregate
+component-effect denominators.
+
 ### Behavioral Harbor projection authority
 
 Behavioral command-oracle tasks do not treat the mutation fixture as agent

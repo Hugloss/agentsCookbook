@@ -169,6 +169,11 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             'harbor-correlate-evidence-ablation-full',
             makefile,
         )
+        self.assertIn(
+            'HARBOR_REPOSITORY_DECLARATIONS_ABLATION_MATRIX ?= '
+            'harbor-repository-declarations-ablation-full',
+            makefile,
+        )
         self.assertIn('--matrix "$(MATRIX)"', makefile)
         self.assertIn("benchmark-harness-explain:\n", makefile)
         self.assertIn(
@@ -206,6 +211,14 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
         )
         self.assertIn(
             '--matrix "$(HARBOR_CORRELATE_EVIDENCE_ABLATION_MATRIX)"',
+            makefile,
+        )
+        self.assertIn(
+            "benchmark-harness-repository-declarations-ablation:\n",
+            makefile,
+        )
+        self.assertIn(
+            '--matrix "$(HARBOR_REPOSITORY_DECLARATIONS_ABLATION_MATRIX)"',
             makefile,
         )
         self.assertIn('run --resume --run-id "$(RUN_ID)"', makefile)

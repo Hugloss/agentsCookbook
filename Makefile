@@ -1,4 +1,4 @@
-BENCHMARK_TARGETS := benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood benchmark-context-invariance benchmark-context-invariance-check benchmark-context-invariance-check-all benchmark-context-invariance-qualify-check benchmark-context-invariance-qualify benchmark-context-invariance-qualify-resume benchmark-context-invariance-qualify-status benchmark-context-invariance-new benchmark-context-invariance-resume benchmark-context-invariance-runs benchmark-context-invariance-status benchmark-context-invariance-reports benchmark-harness-explain benchmark-harness-ablation benchmark-harness-find-ablation benchmark-harness-change-impact-ablation benchmark-harness-post-change-ablation benchmark-harness-correlate-evidence-ablation
+BENCHMARK_TARGETS := benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood benchmark-context-invariance benchmark-context-invariance-check benchmark-context-invariance-check-all benchmark-context-invariance-qualify-check benchmark-context-invariance-qualify benchmark-context-invariance-qualify-resume benchmark-context-invariance-qualify-status benchmark-context-invariance-new benchmark-context-invariance-resume benchmark-context-invariance-runs benchmark-context-invariance-status benchmark-context-invariance-reports benchmark-harness-explain benchmark-harness-ablation benchmark-harness-find-ablation benchmark-harness-change-impact-ablation benchmark-harness-post-change-ablation benchmark-harness-correlate-evidence-ablation benchmark-harness-repository-declarations-ablation
 .PHONY: $(BENCHMARK_TARGETS)
 
 BENCHMARK_REQUESTED_GOALS := $(filter benchmark benchmark-%,$(MAKECMDGOALS))
@@ -36,6 +36,7 @@ HARBOR_FIND_ABLATION_MATRIX ?= harbor-find-ablation-full
 HARBOR_CHANGE_IMPACT_ABLATION_MATRIX ?= harbor-change-impact-ablation-full
 HARBOR_POST_CHANGE_ABLATION_MATRIX ?= harbor-post-change-ablation-full
 HARBOR_CORRELATE_EVIDENCE_ABLATION_MATRIX ?= harbor-correlate-evidence-ablation-full
+HARBOR_REPOSITORY_DECLARATIONS_ABLATION_MATRIX ?= harbor-repository-declarations-ablation-full
 
 benchmark-harness-explain:
 	@./benchmark explain --env-file "$(BENCHMARK_ENV)" \
@@ -60,6 +61,10 @@ benchmark-harness-post-change-ablation:
 benchmark-harness-correlate-evidence-ablation:
 	@./benchmark ablation --env-file "$(BENCHMARK_ENV)" \
 		--matrix "$(HARBOR_CORRELATE_EVIDENCE_ABLATION_MATRIX)" $(BENCHMARK_RUN_ID_FLAG)
+
+benchmark-harness-repository-declarations-ablation:
+	@./benchmark ablation --env-file "$(BENCHMARK_ENV)" \
+		--matrix "$(HARBOR_REPOSITORY_DECLARATIONS_ABLATION_MATRIX)" $(BENCHMARK_RUN_ID_FLAG)
 
 benchmark-context-invariance:
 	@./benchmark run --auto --env-file "$(CONTEXT_INVARIANCE_ENV)"
