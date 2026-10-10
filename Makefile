@@ -1,4 +1,4 @@
-BENCHMARK_TARGETS := benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood benchmark-context-invariance benchmark-context-invariance-check benchmark-context-invariance-check-all benchmark-context-invariance-qualify-check benchmark-context-invariance-qualify benchmark-context-invariance-qualify-resume benchmark-context-invariance-qualify-status benchmark-context-invariance-new benchmark-context-invariance-resume benchmark-context-invariance-runs benchmark-context-invariance-status benchmark-context-invariance-reports benchmark-harness-explain benchmark-harness-ablation benchmark-harness-find-ablation benchmark-harness-change-impact-ablation benchmark-harness-post-change-ablation benchmark-harness-correlate-evidence-ablation benchmark-harness-repository-declarations-ablation benchmark-harness-dependency-codemap-ablation benchmark-harness-verification-explanation-ablation benchmark-host-delivery-audit benchmark-intervention-audit benchmark-treatment-freeze benchmark-independent-campaign-qualify benchmark-provider-campaign-qualify
+BENCHMARK_TARGETS := benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood benchmark-context-invariance benchmark-context-invariance-check benchmark-context-invariance-check-all benchmark-context-invariance-qualify-check benchmark-context-invariance-qualify benchmark-context-invariance-qualify-resume benchmark-context-invariance-qualify-status benchmark-context-invariance-new benchmark-context-invariance-resume benchmark-context-invariance-runs benchmark-context-invariance-status benchmark-context-invariance-reports benchmark-harness-explain benchmark-harness-ablation benchmark-harness-find-ablation benchmark-harness-change-impact-ablation benchmark-harness-post-change-ablation benchmark-harness-correlate-evidence-ablation benchmark-harness-repository-declarations-ablation benchmark-harness-dependency-codemap-ablation benchmark-harness-verification-explanation-ablation benchmark-host-delivery-audit benchmark-intervention-audit benchmark-treatment-freeze benchmark-independent-campaign-qualify benchmark-provider-campaign-qualify benchmark-native-host-readiness benchmark-host-transport-provenance benchmark-empirical-campaign-decision
 .PHONY: $(BENCHMARK_TARGETS)
 
 BENCHMARK_REQUESTED_GOALS := $(filter benchmark benchmark-%,$(MAKECMDGOALS))
@@ -328,3 +328,34 @@ benchmark-provider-campaign-qualify:
 		--host-key-file "$(HOST_KEY_FILE)" --seal "$(SEAL)" \
 		--independent-key-file "$(INDEPENDENT_KEY_FILE)" \
 		--require-provider-submission --require-admitted
+
+# E245–E248: inspect native host gaps, check exact signed cross-trial
+# transport provenance, and only then permit descriptive population reporting.
+.PHONY: benchmark-native-host-readiness benchmark-host-transport-provenance benchmark-empirical-campaign-decision
+benchmark-native-host-readiness:
+	@if [ -z "$(DESIGN)" ]; then \
+		echo 'Set DESIGN; native host request capture currently fails closed' >&2; exit 2; fi
+	@uv run --no-project python -m benchmarks.harness.native_host_readiness \
+		--design "$(DESIGN)"
+
+benchmark-host-transport-provenance:
+	@if [ -z "$(MANIFEST)" ] || [ -z "$(RESULTS_ROOT)" ] || [ -z "$(ATTESTATIONS_ROOT)" ] || [ -z "$(HOST_KEY_FILE)" ] || [ -z "$(APPROVED_ENDPOINT_SHA256)" ] || [ -z "$(EXPECTED_HOST_IDENTITY)" ]; then \
+		echo 'Set MANIFEST RESULTS_ROOT ATTESTATIONS_ROOT HOST_KEY_FILE APPROVED_ENDPOINT_SHA256 EXPECTED_HOST_IDENTITY' >&2; exit 2; fi
+	@uv run --no-project python -m benchmarks.harness.host_transport_provenance \
+		--manifest "$(MANIFEST)" --bundles-root "$(RESULTS_ROOT)" \
+		--attestations-root "$(ATTESTATIONS_ROOT)" \
+		--host-key-file "$(HOST_KEY_FILE)" \
+		--approved-endpoint-sha256 "$(APPROVED_ENDPOINT_SHA256)" \
+		--expected-host-identity "$(EXPECTED_HOST_IDENTITY)" --require-qualified
+
+benchmark-empirical-campaign-decision:
+	@if [ -z "$(MANIFEST)" ] || [ -z "$(RESULTS_ROOT)" ] || [ -z "$(ATTESTATIONS_ROOT)" ] || [ -z "$(HOST_KEY_FILE)" ] || [ -z "$(SEAL)" ] || [ -z "$(INDEPENDENT_KEY_FILE)" ] || [ -z "$(APPROVED_ENDPOINT_SHA256)" ] || [ -z "$(EXPECTED_HOST_IDENTITY)" ]; then \
+		echo 'Set MANIFEST RESULTS_ROOT ATTESTATIONS_ROOT HOST_KEY_FILE SEAL INDEPENDENT_KEY_FILE APPROVED_ENDPOINT_SHA256 EXPECTED_HOST_IDENTITY' >&2; exit 2; fi
+	@uv run --no-project python -m benchmarks.harness.empirical_campaign_decision \
+		--manifest "$(MANIFEST)" --bundles-root "$(RESULTS_ROOT)" \
+		--attestations-root "$(ATTESTATIONS_ROOT)" \
+		--host-key-file "$(HOST_KEY_FILE)" --seal "$(SEAL)" \
+		--independent-key-file "$(INDEPENDENT_KEY_FILE)" \
+		--approved-endpoint-sha256 "$(APPROVED_ENDPOINT_SHA256)" \
+		--expected-host-identity "$(EXPECTED_HOST_IDENTITY)" \
+		--require-descriptive-population
