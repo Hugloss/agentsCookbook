@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 
-function qualifyEvidence({ verdict, evidence, location, quote, fixture, expected }) {
+function qualifySingleEvidence({ verdict, evidence, location, quote, fixture, expected }) {
   if (!evidence || typeof evidence !== 'string' || !evidence.trim()) {
     return { state: 'UNQUALIFIED', reason: 'missing-evidence-statement' };
   }
@@ -60,6 +60,42 @@ function qualifyEvidence({ verdict, evidence, location, quote, fixture, expected
   // Source citation is located, not semantically adjudicated. Gold oracle still
   // owns whether the evidence proves the particular invariant.
   return { state: 'LOCATED_NOT_ADJUDICATED', reason: null, location: match[1] + ':' + line };
+}
+
+function qualifyEvidence({ verdict, evidence, location, quote, fixture, expected, anchors }) {
+  if (!fixture || expected !== 'FINDING' || verdict !== 'FINDING') {
+    return qualifySingleEvidence({ verdict, evidence, location, quote, fixture, expected });
+  }
+  if (!Array.isArray(anchors) || anchors.length < 1 || anchors.length > 8
+    || !anchors.every((item) => item && typeof item.path === 'string'
+      && Number.isSafeInteger(item.line) && item.line >= 1
+      && typeof item.quote === 'string' && item.quote.length >= 3)) {
+    return { state: 'UNQUALIFIED', reason: 'positive-fixture-oracle-anchor-missing' };
+  }
+  const citations = typeof location === 'string' ? location.split(';').map((s) => s.trim()) : [];
+  const quotes = typeof quote === 'string' ? quote.split(';').map((s) => s.trim()) : [];
+  if (citations.length !== anchors.length || quotes.length !== anchors.length) {
+    return { state: 'UNQUALIFIED', reason: 'missing-required-evidence-anchors' };
+  }
+  const actual = [];
+  for (let i = 0; i < citations.length; i += 1) {
+    const result = qualifySingleEvidence({
+      verdict, evidence, location: citations[i], quote: quotes[i], fixture, expected,
+    });
+    if (result.state !== 'LOCATED_NOT_ADJUDICATED') return result;
+    actual.push(JSON.stringify([result.location, quotes[i]]));
+  }
+  const expectedAnchors = anchors.map((a) => JSON.stringify([a.path + ':' + a.line, a.quote]));
+  if (new Set(actual).size !== anchors.length
+    || JSON.stringify(actual.slice().sort()) !== JSON.stringify(expectedAnchors.sort())) {
+    return { state: 'UNQUALIFIED', reason: 'citation-does-not-match-reviewed-oracle-anchors' };
+  }
+  return {
+    state: 'LOCATED_NOT_ADJUDICATED',
+    reason: null,
+    location: actual.length === 1 ? citations[0] : citations.join(';'),
+    reviewed_anchor_count: anchors.length,
+  };
 }
 
 module.exports = { qualifyEvidence };
