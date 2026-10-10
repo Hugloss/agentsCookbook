@@ -357,6 +357,7 @@ class LauncherTests(unittest.TestCase):
                 opencode_executable=exe, expected_binary_sha256=H("wrong"),
                 expected_version="native-0.1", run_root=root / "run",
                 workspace=repo, prompt="Find source owner",
+                allow_unconfined_execution=True,
                 host_key_file=key, host_identity="gateway-host",
                 current=source(), replaced=None, upstream=UPSTREAM,
                 approved_origin="https://api.example.invalid",
@@ -368,6 +369,40 @@ class LauncherTests(unittest.TestCase):
                     launch_native_trial(**data)
                 run.assert_not_called()
                 self.assertFalse(data["run_root"].exists())
+
+    def test_unconfined_native_execution_requires_explicit_approval(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            workspace = root / "workspace"
+            (workspace / ".git").mkdir(parents=True)
+            binary = root / "fake-opencode"
+            binary.write_text("#!/bin/sh\\necho fixture-version\\n")
+            binary.chmod(0o700)
+            key = root / "key"
+            key.write_bytes(KEY)
+            key.chmod(0o600)
+            cell = manifest()["assignments"][0]
+            kwargs = dict(
+                manifest=manifest(), trial_id=cell["trial_id"],
+                opencode_executable=binary, expected_binary_sha256=sha256_file(binary),
+                expected_version="fixture-version", run_root=root / "new",
+                workspace=workspace, prompt="find source",
+                host_key_file=key, host_identity="test-host",
+                current=source(), replaced=None, upstream=UPSTREAM,
+                approved_origin="https://api.example.invalid",
+                upstream_api_key="not-a-real-key",
+                catalog_sha256=H("catalog"), oracle_sha256=H("oracle"),
+                workspace_sha256=H("workspace"),
+            )
+            with self.assertRaisesRegex(ValueError, "unconfined-native-launch"):
+                launch_native_trial(**kwargs)
+            self.assertFalse(kwargs["run_root"].exists())
+            with patch("benchmarks.harness.opencode_native_trial.subprocess.run") as run:
+                (workspace / "opencode.json").write_text("{}")
+                with self.assertRaisesRegex(ValueError, "uncontrolled-project-opencode-config"):
+                    launch_native_trial(**kwargs, allow_unconfined_execution=True)
+                run.assert_not_called()
+            self.assertFalse(kwargs["run_root"].exists())
 
     def test_launch_environment_is_isolated_and_not_a_native_provenance_certificate(self):
         with tempfile.TemporaryDirectory() as td:
@@ -401,6 +436,7 @@ class LauncherTests(unittest.TestCase):
                     expected_version="native-0.1",
                     run_root=root / "run", workspace=repo,
                     prompt="Find source owner", host_key_file=key,
+                    allow_unconfined_execution=True,
                     host_identity="gateway-host", current=source(), replaced=None,
                     upstream=UPSTREAM, approved_origin="https://api.example.invalid",
                     upstream_api_key="private-provider-secret",
