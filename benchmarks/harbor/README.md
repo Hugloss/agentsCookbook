@@ -648,3 +648,45 @@ contrasts. These new post-run projections explain the **mechanism to inspect**,
 not universal causal effectiveness. Historical Harbor bundles without the
 new expected-atom artifact remain inspectable but do not retroactively
 acquire semantic qualification.
+
+### Scoped SCIP/LSP relationship evidence timing
+
+After Hashmarks PRs #409–#413, the same immutable ATIF tool results can
+contain qualified `task_evidence.semantic_relationships` records. The Harbor
+mechanism evaluator now adds `relationship_scope_evidence` to each treated
+bare/Hashmarks pair without changing reward, oracle, task, prompts, or execution.
+
+The projection requires a linked structured `task_evidence` tool result with
+a resolved owner and self-consistent count scopes. It preserves the difference
+between the direct SCIP **outgoing definition count** and the wider
+**associated direct producer-claim count**, which may include incoming SCIP or
+request-local LSP observations. A zero outgoing count is not evidence of
+absent incoming relationships. No additional Hashmarks requests are made.
+
+The returned report describes:
+- `SCOPED_SEMANTIC_RETURN`, `NO_SCOPE_RECORD`, `NEVER_INVOKED`, or
+  unqualified/unknown evidence with explicit exclusion reasons;
+- `BEFORE_NATIVE_DISCOVERY`, `AFTER_NATIVE_DISCOVERY`,
+  `NO_NATIVE_DISCOVERY`, or `SAME_STEP_UNORDERED` based on the *linked
+  result step*, not the earlier invocation step;
+- an **exact** subsequent `structural_locality` request for the same
+  `path::qualname` with `result_mode="relationships"`, separate from model
+  attention or actual evidence use;
+- native search calls observed before and after the semantic return.
+
+The summary includes `relationship_scope_outcome_cross_tab` combining the
+qualified return timing, explicit detail-request state, semantic count scope,
+paired outcome, and existing paired `native_search_delta`. Incomplete
+outcomes, missing/duplicated ATIF links, malformed producer claims, and opaque
+results are excluded rather than treated as evidence absence. The paired bare
+arm remains the same harness/model/task/replicate. This is **descriptive
+correlation**, not a claim that Hashmarks reduced exploration or caused a pass.
+
+Inspect with `make benchmark-harness-explain RUN_ID=000001`. A real A/B
+measurement still needs paired runs against explicitly selected Hashmarks
+source commits, with identical task/agent/model conditions and successful
+campaign admission. These post-run projections run model-free against the
+frozen bundles; historical bundles without the new fields are not silently
+upgraded. `observed_use_proven`, `agent_attention_proven` and
+`causal_influence_claimed` remain false.
+
