@@ -149,7 +149,7 @@ class ExactFactorialCampaignCoverage(unittest.TestCase):
         self.assertEqual(empty["coverage_state"], "INCOMPLETE")
         self.assertEqual(empty["issues"]["missing-grid-cell"], 135)
         with self.assertRaises(ValueError):
-            audit(projections()) if False else audit_factorial_campaign(
+            audit_factorial_campaign(
                 projections(), MATRIX, mode="smoke", campaign_id="",
             )
 
@@ -185,6 +185,17 @@ class IndependentReviewQueue(unittest.TestCase):
         changed = build_review_queue(s, {"cases": [case]})
         self.assertNotEqual(after["multidomain_queue"][0]["frozen_case_sha256"],
                             changed["multidomain_queue"][0]["frozen_case_sha256"])
+
+    def test_self_declared_approved_case_still_needs_independent_verification(self) -> None:
+        skill = {"cases": [{"id": "x", "skill": "owner", "kind": "confusion"}]}
+        md = {"cases": [{"id": "a", "review": {
+            "state": "approved", "approvals": [],
+        }}]}
+        queue = build_review_queue(skill, md)
+        self.assertEqual(queue["multidomain_review_required"], 1)
+        self.assertEqual(queue["multidomain_queue"][0]["required_action"],
+                         "verify-independent-approval")
+        self.assertFalse(queue["independent_review_completed"])
 
     def test_duplicate_and_unknown_review_authority_rejected(self) -> None:
         case = {"id": "a", "review": {"state": "pending"}}
