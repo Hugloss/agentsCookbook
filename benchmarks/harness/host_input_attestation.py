@@ -12,7 +12,6 @@ import argparse
 import hashlib
 import hmac
 import json
-import os
 import stat
 from pathlib import Path
 from typing import Any, Mapping
@@ -47,7 +46,11 @@ def _hex64(value: object) -> bool:
 
 
 def load_host_key(path: Path) -> bytes:
-    """Do not load keys from a trial, project tree, or world/group-readable file."""
+    """Verify key file type and owner-only access.
+
+    The caller remains responsible for keeping it outside evaluated workspaces
+    and inaccessible to agents and MCP servers.
+    """
     if path.is_symlink():
         raise ValueError("host-key-symlink")
     try:
