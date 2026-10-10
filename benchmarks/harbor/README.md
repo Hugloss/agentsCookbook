@@ -648,3 +648,57 @@ contrasts. These new post-run projections explain the **mechanism to inspect**,
 not universal causal effectiveness. Historical Harbor bundles without the
 new expected-atom artifact remain inspectable but do not retroactively
 acquire semantic qualification.
+
+
+### Component-isolated semantic evidence for controlled ablations
+
+The `ablation` report now carries a **separate diagnostic denominator** for
+oracle-aligned semantic evidence in the four-arm `bare/full/remove/only`
+experiments. This builds on the post-grade semantic evidence projection rather
+than introducing a second oracle or a competing ablation scorer.
+
+For each matched quartet, `semantic_component_evidence.full` and
+`semantic_component_evidence.only` examine **only returned observations from
+the exact frozen component**, including the exact `surface_name` for
+selector-based experiments. Evidence from `find`, `task_evidence`, or another
+Hashmarks tool cannot be credited to `repository_declarations` merely because
+it was in the same full-arm trajectory. A result containing the expected
+semantic atom is available evidence; a repeated value in the final answer is
+co-occurrence, **not proof of the agent attending to or adopting it**.
+
+The existing command:
+
+```sh
+make benchmark-harness-ablation RUN_ID=000001
+```
+
+now exposes:
+
+- Per-quartet `semantic_component_evidence` with full/only claim alignment,
+  arrival relative to native discovery, final-answer overlap, and a qualification
+  reason. Only expected **field names** appear; values and agent messages are not
+  reproduced in the report.
+- `summary.semantic_qualified_quartets` and
+  `summary.semantic_exclusion_reasons`.
+- `summary.semantic_outcome_cross_tab`, grouping qualified contrasts by
+  existing classification, full/only outcomes, alignment, arrival, and repeated
+  claims. This helps distinguish *correct information exposed before discovery
+  and associated with a successful only-arm outcome* from *late, conflicting,
+  or unused information associated with a failure*.
+- Per-harness `semantic_qualified_quartets` alongside the **unchanged**
+  `qualified_complete_quartets` and success-rate contrasts.
+
+This diagnostic denominator is deliberately stricter: a quartet must already
+be treatment-qualified and have four complete PASS/FAIL outcomes, both
+`full` and `only` arms must have invoked the declared component/selector,
+and both component-filtered semantic ATIF projections must be qualified.
+Missing post-grade oracle atoms, partial ATIF, unlinked observations, opaque
+results, non-invocation, and treatment violations remain **excluded**, not
+converted to failed/negative information exposure. Historical bundles without
+semantic post-grade receipts stay inspectable but do not qualify retroactively.
+
+A component may still help through non-atom mechanisms (e.g., better discovery
+or smaller search space); `NO_COMPARABLE_CLAIMS` is not an ineffectiveness
+verdict. The control experiment's existing necessity/sufficiency-style
+contrasts remain descriptive replicate-level evidence, never universal
+causal proof. No models are invoked by this report.
