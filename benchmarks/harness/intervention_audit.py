@@ -126,6 +126,9 @@ def audit_intervention_observations(
             issues["host-boundary-not-attested"] += 1
         if row.get("model") != plan["model"] or row.get("status") not in ("PASS", "FAIL"):
             issues["model-or-graded-outcome-mismatch"] += 1
+        if (not isinstance(row.get("source_contract_identity"), str)
+                or not row["source_contract_identity"]):
+            issues["missing-source-contract-identity"] += 1
         meta = row.get("intervention")
         required_facets = {
             "study", "arm", "design_sha256", "presentation",
@@ -156,6 +159,11 @@ def audit_intervention_observations(
                         or a.get("model") != plan["model"] or b.get("model") != plan["model"]
                         or a.get("status") not in ("PASS", "FAIL")
                         or b.get("status") not in ("PASS", "FAIL")):
+                    continue
+                if (not isinstance(a.get("source_contract_identity"), str)
+                        or not a["source_contract_identity"]
+                        or a.get("source_contract_identity") != b.get("source_contract_identity")):
+                    issues["cross-arm-source-contract-drift"] += 1
                     continue
                 left, right = a.get("intervention"), b.get("intervention")
                 if not isinstance(left, Mapping) or not isinstance(right, Mapping):
@@ -243,6 +251,12 @@ def audit_intervention_bundles(
                     or execution.get("campaign_id") != plan["campaign_id"]
                     or receipt.get("subject") != "hashmarks"):
                 raise ValueError("foreign-campaign-or-uncontrolled-subject")
+            treatment = execution.get("mcp_treatment")
+            if (not isinstance(treatment, dict)
+                    or treatment.get("full_contract") is not True
+                    or not isinstance(treatment.get("source_contract_identity"), str)
+                    or not treatment["source_contract_identity"]):
+                raise ValueError("unproven-or-partial-subject-tool-contract")
             path = attestations_root / (directory.name + ".json")
             verified = verify_host_attestations(
                 directory / "trajectory.json", path, key,
@@ -263,6 +277,7 @@ def audit_intervention_bundles(
                 "harness": receipt.get("harness"), "task": receipt.get("task_id"),
                 "replicate": receipt.get("replicate_id"), "arm": facet["arm"],
                 "model": receipt.get("model"), "status": receipt.get("status"),
+                "source_contract_identity": treatment["source_contract_identity"],
                 "host_attested": True, "intervention": facet,
             })
         except (MechanismAttributionError, OSError, ValueError, KeyError, TypeError):
