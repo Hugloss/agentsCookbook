@@ -50,6 +50,44 @@ def _endpoint(endpoint: str, *, approved_origin: str) -> str:
     return endpoint
 
 
+def validate_sse_response(body: bytes) -> bool:
+    """Only complete OpenAI-style SSE with a terminal [DONE] is accepted.
+
+    A stream truncated after a syntactically valid chunk must never become
+    a completed provider submission receipt.
+    """
+    try:
+        value = body.decode("utf-8")
+    except (UnicodeError, AttributeError):
+        return False
+    if not value.endswith(("\\n\\n", "\\r\\n\\r\\n")):
+        return False
+    chunks: list[str] = []
+    for event in value.replace("\\r\\n", "\\n").split("\\n\\n"):
+        if not event.strip():
+            continue
+        rows = [
+            line[5:].lstrip(" ") for line in event.split("\\n")
+            if line.startswith("data:")
+        ]
+        if len(rows) != 1:
+            return False
+        chunks.append(rows[0])
+    if len(chunks) < 2 or chunks[-1] != "[DONE]" or "[DONE]" in chunks[:-1]:
+        return False
+    saw_choice = False
+    for chunk in chunks[:-1]:
+        try:
+            event = json.loads(chunk)
+        except (TypeError, ValueError):
+            return False
+        if not isinstance(event, dict) or not isinstance(event.get("choices"), list):
+            return False
+        if event["choices"]:
+            saw_choice = True
+    return saw_choice
+
+
 def _dispatch_verified_chat_request(
     capture: TrustedModelRequestCapture,
     *,
@@ -60,6 +98,7 @@ def _dispatch_verified_chat_request(
     catalog_sha256: str, prompt_sha256: str,
     oracle_sha256: str, workspace_sha256: str,
     timeout_seconds: int = 60,
+    accept_sse: bool = False,
 ) -> tuple[dict[str, Any], bytes]:
     """Execute exactly one validated request through an HTTPS transport.
 
@@ -77,6 +116,13 @@ def _dispatch_verified_chat_request(
             or not isinstance(serialized_model_request, bytes)
             or not 0 < len(serialized_model_request) <= MAX_BODY_BYTES):
         raise ValueError("invalid-host-provider-transport-parameters")
+    if accept_sse:
+        try:
+            parsed_request = json.loads(serialized_model_request)
+        except (TypeError, ValueError):
+            raise ValueError("invalid-streaming-model-request") from None
+        if not isinstance(parsed_request, dict) or parsed_request.get("stream") is not True:
+            raise ValueError("streaming-response-not-requested")
     # The capture validates declared assignment, model, tool response, exact
     # model-input message and non-tool prompt identity before network work.
     observed = capture.observe_outbound_request(
@@ -97,22 +143,32 @@ def _dispatch_verified_chat_request(
         headers={
             "Authorization": "Bearer " + api_key,
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            "Accept": "text/event-stream" if accept_sse else "application/json",
         },
     )
     try:
         with opener.open(req, timeout=timeout_seconds) as response:
             status = response.status
             body = response.read(MAX_RESPONSE_BYTES + 1)
+            headers = getattr(response, "headers", None)
+            content_type = (
+                headers.get("Content-Type", "") if headers is not None else ""
+            )
         if (type(status) is not int or not 200 <= status < 300
                 or not isinstance(body, bytes)
                 or not 0 < len(body) <= MAX_RESPONSE_BYTES):
             raise ValueError("provider-response-incomplete")
-        parsed = json.loads(body)
-        if (not isinstance(parsed, dict)
-                or not isinstance(parsed.get("choices"), list)
-                or not parsed["choices"]):
-            raise ValueError("invalid-openai-compatible-provider-response")
+        if accept_sse:
+            if (not isinstance(content_type, str)
+                    or not content_type.lower().startswith("text/event-stream")
+                    or not validate_sse_response(body)):
+                raise ValueError("incomplete-or-invalid-streaming-provider-response")
+        else:
+            parsed = json.loads(body)
+            if (not isinstance(parsed, dict)
+                    or not isinstance(parsed.get("choices"), list)
+                    or not parsed["choices"]):
+                raise ValueError("invalid-openai-compatible-provider-response")
     except Exception:
         # Do not leak provider URL, request/response content, credentials, or
         # exception descriptions (network errors can embed secrets).
@@ -151,4 +207,10 @@ def dispatch_verified_chat_response(**kwargs: Any) -> bytes:
     provider connection without writing user/model content to disk.
     """
     _, body = _dispatch_verified_chat_request(**kwargs)
+    return body
+
+
+def dispatch_verified_chat_stream_response(**kwargs: Any) -> bytes:
+    """Return exactly one validated and terminally complete SSE response."""
+    _, body = _dispatch_verified_chat_request(**kwargs, accept_sse=True)
     return body
