@@ -365,6 +365,8 @@ benchmark-empirical-campaign-decision:
 # needs immutable native ATIF and independent host-bound capture verification.
 .PHONY: benchmark-opencode-native-gateway
 benchmark-opencode-native-gateway:
+	@if [ "$(ALLOW_UNCONFINED_NATIVE_TEST)" != "1" ]; then \
+		echo 'This standalone native runner has no OS-level sandbox. Explicitly set ALLOW_UNCONFINED_NATIVE_TEST=1; never use a sensitive workstation or repository.' >&2; exit 2; fi
 	@if [ -z "$(MANIFEST)" ] || [ -z "$(TRIAL_ID)" ] || [ -z "$(OPENCODE_BIN)" ] || [ -z "$(OPENCODE_SHA256)" ] || [ -z "$(OPENCODE_VERSION)" ] || [ -z "$(RUN_ROOT)" ] || [ -z "$(WORKSPACE)" ] || [ -z "$(PROMPT_FILE)" ] || [ -z "$(CURRENT_SOURCE)" ] || [ -z "$(HOST_KEY_FILE)" ] || [ -z "$(HOST_IDENTITY)" ] || [ -z "$(UPSTREAM)" ] || [ -z "$(APPROVED_ORIGIN)" ] || [ -z "$(CATALOG_SHA256)" ] || [ -z "$(ORACLE_SHA256)" ] || [ -z "$(WORKSPACE_SHA256)" ]; then \
 		echo 'Set MANIFEST TRIAL_ID OPENCODE_BIN OPENCODE_SHA256 OPENCODE_VERSION RUN_ROOT WORKSPACE PROMPT_FILE CURRENT_SOURCE HOST_KEY_FILE HOST_IDENTITY UPSTREAM APPROVED_ORIGIN CATALOG_SHA256 ORACLE_SHA256 WORKSPACE_SHA256; export BENCHMARK_UPSTREAM_API_KEY' >&2; exit 2; fi
 	@uv run --no-project python -m benchmarks.harness.opencode_native_trial \
@@ -377,4 +379,5 @@ benchmark-opencode-native-gateway:
 		--host-key-file "$(HOST_KEY_FILE)" --host-identity "$(HOST_IDENTITY)" \
 		--upstream "$(UPSTREAM)" --approved-origin "$(APPROVED_ORIGIN)" \
 		--catalog-sha256 "$(CATALOG_SHA256)" --oracle-sha256 "$(ORACLE_SHA256)" \
-		--workspace-sha256 "$(WORKSPACE_SHA256)"
+		--workspace-sha256 "$(WORKSPACE_SHA256)" \
+		--allow-unconfined-native-test
