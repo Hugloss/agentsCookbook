@@ -19,6 +19,9 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from benchmarks.harness.host_input_attestation import canonical
+from benchmarks.harness.trusted_http_provider import (
+    dispatch_verified_chat_stream_response, validate_sse_response,
+)
 from benchmarks.harness.opencode_native_gateway import (
     NativeOpenCodeGateway, admit_opencode_binary,
     gateway_config, sha256_file, write_gateway_config,
@@ -57,13 +60,13 @@ def source() -> dict:
     }
 
 
-def request(*, selected: object, tool: bool) -> bytes:
+def request(*, selected: object, tool: bool, stream: bool = False) -> bytes:
     messages = [{"role": "user", "content": "Find owner"}]
     if tool:
         messages.append({
             "role": "tool", "tool_call_id": "native-tool-1", "content": selected,
         })
-    return canonical({"model": "gpt-fixture", "messages": messages, "stream": False})
+    return canonical({"model": "gpt-fixture", "messages": messages, "stream": stream})
 
 
 class GatewayTests(unittest.TestCase):
@@ -124,6 +127,111 @@ class GatewayTests(unittest.TestCase):
                 self.body(tool=True),
                 authorization="Bearer " + self.gateway.token,
             )
+
+    def test_streaming_native_provider_request_uses_exact_sse_relay(self):
+        selected = self.gateway.selected["selected_content"]
+        original = request(selected=selected, tool=True, stream=True)
+        stream = (
+            b'data: {"choices":[{"delta":{"content":"owner"}}]}\\n\\n'
+            b'data: [DONE]\\n\\n'
+        )
+        # Patch transport only; all gateway model/tool/link checks still run.
+        with patch(
+            "benchmarks.harness.opencode_native_gateway.dispatch_verified_chat_stream_response",
+            return_value=stream,
+        ) as submit:
+            returned = self.gateway._handle_request(
+                original, authorization="Bearer " + self.gateway.token,
+            )
+        self.assertEqual(returned, stream)
+        self.assertEqual(submit.call_count, 1)
+        self.assertEqual(submit.call_args.kwargs["serialized_model_request"], original)
+        self.assertEqual(self.gateway.result()["post_evidence_submissions"], 1)
+
+    def test_terminal_sse_validation_rejects_truncated_and_malformed_events(self):
+        good = (
+            b'data: {"choices":[{"delta":{"content":"yes"}}]}\\n\\n'
+            b'data: [DONE]\\n\\n'
+        )
+        self.assertTrue(validate_sse_response(good))
+        for invalid in (
+            good.replace(b"data: [DONE]\\n\\n", b""),
+            b'data: {"choices":[]}\\n\\ndata: [DONE]\\n\\n',
+            b'data: not-json\\n\\ndata: [DONE]\\n\\n',
+            b'data: [DONE]\\n\\ndata: {"choices":[1]}\\n\\n',
+            b'data: {"choices":[1]}\\n\\ndata: [DONE]',
+        ):
+            with self.subTest(invalid=invalid):
+                self.assertFalse(validate_sse_response(invalid))
+
+    def test_transport_owner_signs_only_complete_sse_response(self):
+        body = request(
+            selected=self.gateway.selected["selected_content"],
+            tool=True, stream=True,
+        )
+        prompt = {
+            "request_settings": {"model": "gpt-fixture", "stream": True},
+            "non_tool_messages": [{"role": "user", "content": "Find owner"}],
+        }
+        expected_prompt = hashlib.sha256(canonical(prompt)).hexdigest()
+        done = (
+            b'data: {"choices":[{"delta":{"content":"answer"}}]}\\n\\n'
+            b'data: [DONE]\\n\\n'
+        )
+
+        class Response:
+            status = 200
+            headers = {"Content-Type": "text/event-stream"}
+            def __init__(self, payload):
+                self.payload = payload
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self, size):
+                return self.payload[:size]
+
+        class Opener:
+            def __init__(self, payload):
+                self.payload = payload
+                self.calls = 0
+            def open(self, request, timeout):
+                self.calls += 1
+                return Response(self.payload)
+
+        for payload, accepted in ((done, True), (done[:-7], False)):
+            # Only a fresh capture can attempt provider submission.
+            gateway = NativeOpenCodeGateway(
+                self.manifest, trial_id=self.cell["trial_id"],
+                host_key_file=self.key, host_identity="trial-provider-host",
+                current=source(), replaced=None,
+                gateway_token="some-privileged-local-secret-12345678",
+                upstream=UPSTREAM, approved_origin="https://api.example.invalid",
+                upstream_api_key="secret-upstream-key", catalog_sha256=H("catalog"),
+                oracle_sha256=H("oracle"), workspace_sha256=H("workspace"),
+            )
+            opener = Opener(payload)
+            with patch(
+                "benchmarks.harness.trusted_http_provider.build_opener",
+                return_value=opener,
+            ):
+                kwargs = dict(
+                    capture=gateway.capture, serialized_model_request=body,
+                    endpoint=UPSTREAM, approved_origin="https://api.example.invalid",
+                    api_key="secret-upstream-key", tool_call_id="native-tool-1",
+                    returned_packet=source()["content"], request_sequence=1,
+                    current=source(), replaced=None,
+                    catalog_sha256=H("catalog"), prompt_sha256=expected_prompt,
+                    oracle_sha256=H("oracle"), workspace_sha256=H("workspace"),
+                )
+                if accepted:
+                    self.assertEqual(dispatch_verified_chat_stream_response(**kwargs), done)
+                    self.assertIn("transport", gateway.capture._recorded[0])
+                else:
+                    with self.assertRaisesRegex(ValueError, "provider-submission-unverified"):
+                        dispatch_verified_chat_stream_response(**kwargs)
+                    self.assertNotIn("transport", gateway.capture._recorded[0])
+            self.assertEqual(opener.calls, 1)
 
     def test_wrong_tool_packet_and_foreign_call_do_not_dispatch(self):
         fake = []
