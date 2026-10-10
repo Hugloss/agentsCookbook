@@ -231,6 +231,13 @@ def build_factorial_report(results_root: Path) -> dict[str, Any]:
     for q in qualified:
         task_clusters[(str(q["task"]), str(q["harness"]), str(q["model"]))].append(float(q["interaction"]))
         by_harness[str(q["harness"])].append(float(q["interaction"]))
+    cross_harness = len(by_harness) > 1
+    unpooled = {
+        "state": "NOT_COMPARABLE_ACROSS_HARNESSES",
+        "reason": "different-harness-execution-and-observability",
+        "task_clusters": None, "point_estimate": None, "interval_95": None,
+        "probability_gain": None,
+    }
     return {
         "schema": SCHEMA,
         "applicable": bool(groups),
@@ -238,9 +245,16 @@ def build_factorial_report(results_root: Path) -> dict[str, Any]:
         "qualified_complete_quartets": len(qualified),
         "exclusion_reasons": dict(sorted(exclusions.items())),
         "quartets": quartets,
-        "interaction_effect": _bootstrap(task_clusters),
+        "interaction_effect": unpooled if cross_harness else _bootstrap(task_clusters),
         "by_harness": {
-            name: {"qualified_quartets": len(values), "mean_interaction": sum(values) / len(values)}
+            name: {
+                "qualified_quartets": len(values),
+                "mean_interaction": sum(values) / len(values),
+                "task_cluster_effect": _bootstrap({
+                    key: rows for key, rows in task_clusters.items()
+                    if key[1] == name
+                }),
+            }
             for name, values in sorted(by_harness.items())
         },
         "catalog_advertisement_proven": False,
