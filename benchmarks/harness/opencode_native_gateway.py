@@ -36,7 +36,7 @@ from .trusted_treatments import assigned_cell, select_treatment, verify_manifest
 SCHEMA = "agentscookbook.opencode-v1-gateway-launch.v1"
 MAX_REQUEST_BYTES = 8_388_608
 PROVIDER_ID = "agentscookbook-captured"
-MODEL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+MODEL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 
 
 def sha256_file(path: Path) -> str:
