@@ -76,6 +76,7 @@ def inspect_native_export(raw: bytes, *, session_id: str,
         raise ValueError("native-session-messages-unavailable")
     calls: list[dict[str, Any]] = []
     final_seen = False
+    observed_tool = False
     for message in messages:
         if not isinstance(message, dict) or not isinstance(message.get("info"), dict):
             raise ValueError("malformed-native-message")
@@ -91,7 +92,8 @@ def inspect_native_export(raw: bytes, *, session_id: str,
         for part in parts:
             if not isinstance(part, dict):
                 raise ValueError("invalid-native-session-part")
-            if part.get("type") == "text" and isinstance(part.get("text"), str) and part["text"].strip():
+            if (part.get("type") == "text" and observed_tool
+                    and isinstance(part.get("text"), str) and part["text"].strip()):
                 final_seen = True
             if part.get("type") != "tool":
                 continue
@@ -105,6 +107,7 @@ def inspect_native_export(raw: bytes, *, session_id: str,
                 raise ValueError("native-tool-or-call-not-authoritative")
             packet = _decode_tool_output(state["output"])
             calls.append({"tool_name": name, "call_id": call_id, "packet": packet})
+            observed_tool = True
     if not final_seen or len(calls) != 1:
         raise ValueError("missing-final-or-multiple-subject-native-calls")
     item = calls[0]
