@@ -51,6 +51,8 @@ class TrustedModelRequestCapture:
         self._host_identity = host_identity
         self._key = load_host_key(host_key_file)
         self._recorded: list[dict[str, Any]] = []
+        self._transport_required = False
+        self._transport_attempted = False
 
     def observe_outbound_request(
         self, *, serialized_model_request: bytes,
@@ -155,6 +157,47 @@ class TrustedModelRequestCapture:
             "model_attention_proven": "false",
         }
 
+    def begin_provider_transport(self) -> None:
+        """One attempt only. Even failed/ambiguous dispatch cannot retry or sign."""
+        if self._transport_attempted or not self._recorded:
+            raise ValueError("provider-transport-retry-or-unobserved-request")
+        self._transport_required = True
+        self._transport_attempted = True
+
+    def record_provider_submission(
+        self, *, tool_call_id: str, serialized_model_request: bytes,
+        endpoint_sha256: str, status: int,
+        response_sha256: str, response_bytes: int,
+    ) -> None:
+        """Trusted transport calls only after a bounded 2xx response.
+
+        Host-key authenticated submission is not provider processing proof.
+        """
+        if not self._transport_required or not self._transport_attempted:
+            raise ValueError("provider-transport-not-started")
+        if (not isinstance(tool_call_id, str) or not tool_call_id
+                or not isinstance(serialized_model_request, bytes)
+                or not _hex64(endpoint_sha256) or not _hex64(response_sha256)
+                or type(status) is not int or not 200 <= status < 300
+                or type(response_bytes) is not int or not 0 < response_bytes <= 2_097_152):
+            raise ValueError("invalid-provider-submission")
+        call_digest = hashlib.sha256(tool_call_id.encode("utf-8")).hexdigest()
+        request_digest = hashlib.sha256(serialized_model_request).hexdigest()
+        found = [
+            row for row in self._recorded
+            if row["call_id_sha256"] == call_digest
+            and row["model_input_sha256"] == request_digest
+        ]
+        if len(found) != 1 or "transport" in found[0]:
+            raise ValueError("provider-submission-request-mismatch-or-duplicate")
+        found[0]["transport"] = {
+            "boundary": "https-response",
+            "endpoint_sha256": endpoint_sha256,
+            "http_status": status,
+            "response_sha256": response_sha256,
+            "response_bytes": response_bytes,
+        }
+
     def _assigned(self, field: str) -> Any:
         return next(x[field] for x in self._manifest["assignments"]
                     if x["trial_id"] == self._trial_id)
@@ -165,6 +208,8 @@ class TrustedModelRequestCapture:
         Create-only output; rejects altered ATIF, missing/extra host input,
         calls with no matching returned packet and implicit second attempts.
         """
+        if self._transport_required and any("transport" not in row for row in self._recorded):
+            raise ValueError("provider-transport-not-proven-successful")
         lifecycle = project_evidence_lifecycle(trajectory)
         if (not lifecycle["qualified"] or lifecycle["return_state"] != "RETURNED"
                 or lifecycle["unreturned_calls"] != 0 or not self._recorded):
@@ -207,4 +252,8 @@ class TrustedModelRequestCapture:
             "observed_packets": len(self._recorded),
             "model_attention_proven": False,
             "provider_consumption_proven": False,
+            "provider_submission_attested": bool(
+                self._transport_required
+                and all("transport" in row for row in self._recorded)
+            ),
         }
