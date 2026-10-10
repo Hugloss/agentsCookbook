@@ -111,6 +111,18 @@
       "projection": "benchmarks/harbor/repository-intelligence-verification-explanation-ablation-v1.json",
       "mode": "matrix",
       "root": ".benchmark-runs/harbor-harness-v1/verification-explanation-ablation-full"
+    },
+    "harbor-factorial-smoke": {
+      "backend": "harbor",
+      "projection": "benchmarks/harbor/repository-intelligence-task-evidence-find-factorial-v1.json",
+      "mode": "smoke",
+      "root": ".benchmark-runs/harbor-harness-v1/factorial-smoke"
+    },
+    "harbor-factorial-full": {
+      "backend": "harbor",
+      "projection": "benchmarks/harbor/repository-intelligence-task-evidence-find-factorial-v1.json",
+      "mode": "matrix",
+      "root": ".benchmark-runs/harbor-harness-v1/factorial-full"
     }
   }
 }
