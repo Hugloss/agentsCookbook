@@ -72,8 +72,8 @@ function qualifyEvidence({ verdict, evidence, location, quote, fixture, expected
       && typeof item.quote === 'string' && item.quote.length >= 3)) {
     return { state: 'UNQUALIFIED', reason: 'positive-fixture-oracle-anchor-missing' };
   }
-  const citations = typeof location === 'string' ? location.split(';').map((s) => s.trim()) : [];
-  const quotes = typeof quote === 'string' ? quote.split(';').map((s) => s.trim()) : [];
+  const citations = typeof location === 'string' ? location.split(/\s*\|\|\|\s*/).map((s) => s.trim()) : [];
+  const quotes = typeof quote === 'string' ? quote.split(/\s*\|\|\|\s*/).map((s) => s.trim()) : [];
   if (citations.length !== anchors.length || quotes.length !== anchors.length) {
     return { state: 'UNQUALIFIED', reason: 'missing-required-evidence-anchors' };
   }
@@ -93,7 +93,7 @@ function qualifyEvidence({ verdict, evidence, location, quote, fixture, expected
   return {
     state: 'LOCATED_NOT_ADJUDICATED',
     reason: null,
-    location: actual.length === 1 ? citations[0] : citations.join(';'),
+    location: actual.length === 1 ? citations[0] : citations.join(' ||| '),
     reviewed_anchor_count: anchors.length,
   };
 }
