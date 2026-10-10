@@ -127,9 +127,19 @@ def audit_intervention_observations(
         if row.get("model") != plan["model"] or row.get("status") not in ("PASS", "FAIL"):
             issues["model-or-graded-outcome-mismatch"] += 1
         meta = row.get("intervention")
-        if (not isinstance(meta, Mapping) or meta.get("study") != plan["study"]
-                or meta.get("arm") != key[3] or meta.get("design_sha256") !=
-                hashlib.sha256(canonical(plan)).hexdigest()):
+        required_facets = {
+            "study", "arm", "design_sha256", "presentation",
+            "generation_sha256", "current_generation_sha256",
+            "semantic_sha256", "catalog_sha256", "prompt_sha256",
+            "oracle_sha256", "workspace_sha256", "surface_sha256",
+        }
+        if (not isinstance(meta, Mapping) or set(meta) != required_facets
+                or meta.get("study") != plan["study"]
+                or meta.get("arm") != key[3]
+                or meta.get("presentation") not in ("structured", "text")
+                or meta.get("design_sha256") != hashlib.sha256(canonical(plan)).hexdigest()
+                or any(not _hex64(meta.get(name)) for name in required_facets -
+                       {"study", "arm", "presentation"})):
             issues["host-intervention-design-unbound"] += 1
     missing = expected - set(registered)
     if missing:
@@ -150,10 +160,19 @@ def audit_intervention_observations(
                 left, right = a.get("intervention"), b.get("intervention")
                 if not isinstance(left, Mapping) or not isinstance(right, Mapping):
                     continue
-                if (left.get("study") != plan["study"] or right.get("study") != plan["study"]
+                required = {
+                    "study", "arm", "design_sha256", "presentation",
+                    "generation_sha256", "current_generation_sha256",
+                    "semantic_sha256", "catalog_sha256", "prompt_sha256",
+                    "oracle_sha256", "workspace_sha256", "surface_sha256",
+                }
+                if (set(left) != required or set(right) != required
+                        or left.get("study") != plan["study"] or right.get("study") != plan["study"]
                         or left.get("arm") != "control" or right.get("arm") != "variant"
                         or any(x.get("design_sha256") != hashlib.sha256(canonical(plan)).hexdigest()
-                               for x in (left, right))):
+                               for x in (left, right))
+                        or any(not _hex64(x.get(name)) for x in (left, right)
+                               for name in required - {"study", "arm", "presentation"})):
                     continue
                 reason = _facet_compare(left, right, plan["study"])
                 if reason:
