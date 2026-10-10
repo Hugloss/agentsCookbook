@@ -1547,8 +1547,9 @@ under the **same isolated home and configuration** after the run. It
 requires exactly one session with that title, workspace, and update
 epoch, then captures `opencode export <session-id>`.
 
-Exports use host-owned bounded output files and a Linux file-size limit
-(16 MiB); no unbounded stdout pipe, 'most recent session' fallback,
+Exports use host-owned bounded output files and an explicit Linux
+`prlimit` file-size owner (16 MiB). The capture substrate is admitted
+*before* native model work and uses no threaded `preexec_fn`; no unbounded stdout pipe, 'most recent session' fallback,
 agent-supplied session ID, or arbitrary prior session can qualify. A
 missing, ambiguous, oversized, timed-out, or failed native export blocks
 the next admission step. This is an observation of OpenCode's
@@ -1612,7 +1613,8 @@ prompt/catalog/oracle/workspace or generation drift all block a cohort.
 ```sh
 make benchmark-native-session-cohort-audit \
   MANIFEST=/external/pre-work/frozen-manifest.json \
-  NATIVE_RESULTS_ROOT=/private/native-results   SOURCES_ROOT=/external/frozen-trial-sources \
+  NATIVE_RESULTS_ROOT=/private/native-results \
+  SOURCES_ROOT=/external/frozen-trial-sources \
   WORKSPACE=/disposable/git-workspace \
   HOST_KEY_FILE=/trusted-host/host.key \
   HOST_IDENTITY=<registered-provider-host> \
