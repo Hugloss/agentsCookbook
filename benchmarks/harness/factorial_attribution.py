@@ -144,6 +144,7 @@ def factorial_quartet(arms: Mapping[str, Mapping[str, Any]], contract: object) -
                 tools = treatment.get("tools")
                 if (
                     not isinstance(tools, list) or len(tools) != len(allowed)
+                    or not all(isinstance(tool, str) and tool for tool in tools)
                     or set(tools) != allowed
                     or treatment.get("full_contract") is not (role == "both")
                     or treatment.get("repository_intelligence_query_surfaces")
