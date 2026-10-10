@@ -29,7 +29,7 @@ from .host_input_attestation import canonical
 from .trusted_host_capture import TrustedModelRequestCapture
 from .trusted_http_provider import (
     MAX_RESPONSE_BYTES, _RejectRedirect, _endpoint,
-    dispatch_verified_chat_request,
+    dispatch_verified_chat_response,
 )
 from .trusted_treatments import assigned_cell, select_treatment, verify_manifest
 
@@ -258,14 +258,23 @@ class NativeOpenCodeGateway:
                 ],
             }
             prompt_sha256 = hashlib.sha256(canonical(prompt)).hexdigest()
-            # Same bytes are validated and handed to HTTPS transport, no
-            # detached 'proposed prompt' can become a successful receipt.
-            # dispatch_verified_chat_request sends only bounded direct HTTPS.
-            # It returns *metadata*, not response bytes; native OpenCode
-            # requires the actual response to proceed. This route therefore
-            # deliberately refuses qualification until a byte-returning
-            # transport owner is wired. See E252, do not send twice.
-            raise ValueError("native-gateway-response-relay-not-yet-authoritative")
+            # One outbound request, one bounded HTTPS response, one relay.
+            # Failed / ambiguous transport stays TREATMENT_ATTEMPTED and the
+            # run cannot retry or create an attested successful submission.
+            result = dispatch_verified_chat_response(
+                capture=self.capture, serialized_model_request=body,
+                endpoint=self.upstream, approved_origin=self.approved_origin,
+                api_key=self.upstream_api_key, tool_call_id=call_id,
+                returned_packet=self.current["content"],
+                request_sequence=1, current=self.current,
+                replaced=self.replaced, catalog_sha256=self.catalog_sha256,
+                prompt_sha256=prompt_sha256, oracle_sha256=self.oracle_sha256,
+                workspace_sha256=self.workspace_sha256,
+                timeout_seconds=self.timeout_seconds,
+            )
+            self._state = "PROVIDER_RESPONSE_RETURNED"
+            self.post_evidence_submissions = 1
+            return result
 
     def start(self) -> int:
         if self._server is not None:
@@ -325,7 +334,8 @@ class NativeOpenCodeGateway:
             "pre_evidence_requests": self.pre_evidence_requests,
             "post_evidence_submissions": self.post_evidence_submissions,
             "model_request_attested": False,
+            "host_submission_recorded": self.post_evidence_submissions == 1,
             "native_process_origin_proven": False,
-            "provider_response_relay_qualified": False,
+            "provider_response_relay_qualified": self.post_evidence_submissions == 1,
             "causal_improvement_proven": False,
         }
