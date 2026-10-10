@@ -1,4 +1,4 @@
-BENCHMARK_TARGETS := benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood benchmark-context-invariance benchmark-context-invariance-check benchmark-context-invariance-check-all benchmark-context-invariance-qualify-check benchmark-context-invariance-qualify benchmark-context-invariance-qualify-resume benchmark-context-invariance-qualify-status benchmark-context-invariance-new benchmark-context-invariance-resume benchmark-context-invariance-runs benchmark-context-invariance-status benchmark-context-invariance-reports benchmark-harness-explain benchmark-harness-ablation benchmark-harness-find-ablation benchmark-harness-change-impact-ablation benchmark-harness-post-change-ablation benchmark-harness-correlate-evidence-ablation benchmark-harness-repository-declarations-ablation benchmark-harness-dependency-codemap-ablation benchmark-harness-verification-explanation-ablation benchmark-host-delivery-audit benchmark-intervention-audit
+BENCHMARK_TARGETS := benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood benchmark-context-invariance benchmark-context-invariance-check benchmark-context-invariance-check-all benchmark-context-invariance-qualify-check benchmark-context-invariance-qualify benchmark-context-invariance-qualify-resume benchmark-context-invariance-qualify-status benchmark-context-invariance-new benchmark-context-invariance-resume benchmark-context-invariance-runs benchmark-context-invariance-status benchmark-context-invariance-reports benchmark-harness-explain benchmark-harness-ablation benchmark-harness-find-ablation benchmark-harness-change-impact-ablation benchmark-harness-post-change-ablation benchmark-harness-correlate-evidence-ablation benchmark-harness-repository-declarations-ablation benchmark-harness-dependency-codemap-ablation benchmark-harness-verification-explanation-ablation benchmark-host-delivery-audit benchmark-intervention-audit benchmark-treatment-freeze benchmark-independent-campaign-qualify
 .PHONY: $(BENCHMARK_TARGETS)
 
 BENCHMARK_REQUESTED_GOALS := $(filter benchmark benchmark-%,$(MAKECMDGOALS))
@@ -293,3 +293,25 @@ benchmark-intervention-audit:
 		--design "$(DESIGN)" --bundles-root "$(RESULTS_ROOT)" \
 		--attestations-root "$(ATTESTATIONS_ROOT)" \
 		--host-key-file "$(HOST_KEY_FILE)" --require-complete
+
+# E237–E240: pre-run freeze and independent custodial qualification.
+# There is deliberately no CLI which self-signs host model input or approves
+# reviews; only privileged provider hosts can invoke the capture API.
+.PHONY: benchmark-treatment-freeze benchmark-independent-campaign-qualify
+benchmark-treatment-freeze:
+	@if [ -z "$(DESIGN)" ] || [ -z "$(MANIFEST_OUTPUT)" ] || [ -z "$(SOURCE_CONTRACT_ID)" ] || [ -z "$(HOST_BUILD_SHA256)" ] || [ -z "$(ASSIGNMENT_SEED_SHA256)" ]; then \
+		echo 'Set DESIGN MANIFEST_OUTPUT SOURCE_CONTRACT_ID HOST_BUILD_SHA256 ASSIGNMENT_SEED_SHA256' >&2; exit 2; fi
+	@uv run --no-project python -m benchmarks.harness.trusted_treatments \
+		--design "$(DESIGN)" --output "$(MANIFEST_OUTPUT)" \
+		--source-contract-identity "$(SOURCE_CONTRACT_ID)" \
+		--host-build-sha256 "$(HOST_BUILD_SHA256)" \
+		--assignment-seed-sha256 "$(ASSIGNMENT_SEED_SHA256)"
+
+benchmark-independent-campaign-qualify:
+	@if [ -z "$(MANIFEST)" ] || [ -z "$(RESULTS_ROOT)" ] || [ -z "$(ATTESTATIONS_ROOT)" ] || [ -z "$(HOST_KEY_FILE)" ] || [ -z "$(SEAL)" ] || [ -z "$(INDEPENDENT_KEY_FILE)" ]; then \
+		echo 'Set MANIFEST RESULTS_ROOT ATTESTATIONS_ROOT HOST_KEY_FILE SEAL INDEPENDENT_KEY_FILE' >&2; exit 2; fi
+	@uv run --no-project python -m benchmarks.harness.independent_campaign_qualification \
+		--manifest "$(MANIFEST)" --bundles-root "$(RESULTS_ROOT)" \
+		--attestations-root "$(ATTESTATIONS_ROOT)" \
+		--host-key-file "$(HOST_KEY_FILE)" --seal "$(SEAL)" \
+		--independent-key-file "$(INDEPENDENT_KEY_FILE)" --require-admitted
