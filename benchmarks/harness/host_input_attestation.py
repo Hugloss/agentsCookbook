@@ -29,6 +29,10 @@ FIELDS = frozenset((
     "call_id_sha256", "model_request_sequence", "boundary",
 ))
 HEX = frozenset("0123456789abcdef")
+TRANSPORT_FIELDS = frozenset((
+    "boundary", "endpoint_sha256", "http_status",
+    "response_sha256", "response_bytes",
+))
 INTERVENTION_FIELDS = frozenset((
     "study", "arm", "design_sha256", "presentation", "generation_sha256",
     "current_generation_sha256", "semantic_sha256", "catalog_sha256",
@@ -102,6 +106,8 @@ def verify_host_attestations(
         "subject_return": lifecycle["return_state"],
         "returned_packets": lifecycle["returned_packets"],
         "verified_model_input_packets": 0,
+        "verified_provider_submission_packets": 0,
+        "provider_submission_state": "UNKNOWN",
         "delivery_state": "UNKNOWN",
         "attestation_state": "UNAVAILABLE",
         "reason": None,
@@ -143,10 +149,12 @@ def verify_host_attestations(
             for row in lifecycle["packet_refs"]
         }
         matched: set[tuple[str, str]] = set()
+        submitted: set[tuple[str, str]] = set()
         requests: set[tuple[str, str, str]] = set()
         for row in deliveries:
-            if not isinstance(row, dict) or set(row) not in (
-                FIELDS | {"mac_sha256"}, FIELDS | {"mac_sha256", "intervention"},
+            if not isinstance(row, dict) or not (
+                FIELDS | {"mac_sha256"} <= set(row)
+                and set(row) - (FIELDS | {"mac_sha256"}) <= {"intervention", "transport"}
             ):
                 raise ValueError("invalid-delivery-fields")
             delivery = {field: row[field] for field in FIELDS}
@@ -161,6 +169,19 @@ def verify_host_attestations(
                                    INTERVENTION_FIELDS - {"study", "arm", "presentation"})):
                     raise ValueError("invalid-intervention-binding")
                 delivery["intervention"] = intervention
+            if "transport" in row:
+                transport = row["transport"]
+                if (not isinstance(transport, dict)
+                        or set(transport) != TRANSPORT_FIELDS
+                        or transport["boundary"] != "https-response"
+                        or not _hex64(transport["endpoint_sha256"])
+                        or not _hex64(transport["response_sha256"])
+                        or type(transport["http_status"]) is not int
+                        or not 200 <= transport["http_status"] < 300
+                        or type(transport["response_bytes"]) is not int
+                        or not 0 < transport["response_bytes"] <= 2_097_152):
+                    raise ValueError("invalid-provider-transport-record")
+                delivery["transport"] = transport
             if not all(_hex64(delivery[name]) for name in (
                 "host_build_sha256", "model_request_sha256", "model_input_sha256",
                 "model_message_sha256", "packet_sha256", "call_id_sha256",
@@ -185,11 +206,18 @@ def verify_host_attestations(
             ):
                 raise ValueError("host-authentication-failed")
             matched.add(binding)
+            if "transport" in delivery:
+                submitted.add(binding)
         state = "PROVEN" if matched == packets else "PARTIAL"
         output.update(
             delivery_state=state,
             attestation_state="VERIFIED",
             verified_model_input_packets=len(matched),
+            verified_provider_submission_packets=len(submitted),
+            provider_submission_state=(
+                "SUBMITTED" if submitted == packets else
+                "PARTIAL" if submitted else "UNKNOWN"
+            ),
             reason=None if state == "PROVEN" else "some-returned-packets-not-attested",
         )
         return output
