@@ -21,7 +21,9 @@ def build_readiness(root: Path) -> dict[str, Any]:
     matrix_path = root / "benchmarks/harbor/repository-intelligence-task-evidence-find-factorial-v1.json"
     skill = json.loads(skill_path.read_text(encoding="utf-8"))
     multidomain = json.loads(multidomain_path.read_text(encoding="utf-8"))
-    factorial = json.loads(matrix_path.read_text(encoding="utf-8"))
+    from benchmarks.harbor_matrix import load_matrix
+
+    factorial = load_matrix(matrix_path)
     if (
         not isinstance(skill, dict) or not isinstance(skill.get("cases"), list)
         or not isinstance(multidomain, dict) or not isinstance(multidomain.get("cases"), list)
