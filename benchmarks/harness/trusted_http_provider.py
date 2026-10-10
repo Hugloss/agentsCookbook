@@ -50,7 +50,7 @@ def _endpoint(endpoint: str, *, approved_origin: str) -> str:
     return endpoint
 
 
-def dispatch_verified_chat_request(
+def _dispatch_verified_chat_request(
     capture: TrustedModelRequestCapture,
     *,
     serialized_model_request: bytes,
@@ -60,7 +60,7 @@ def dispatch_verified_chat_request(
     catalog_sha256: str, prompt_sha256: str,
     oracle_sha256: str, workspace_sha256: str,
     timeout_seconds: int = 60,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], bytes]:
     """Execute exactly one validated request through an HTTPS transport.
 
     Validate before work; only a bounded successful response is marked
@@ -125,7 +125,7 @@ def dispatch_verified_chat_request(
         response_sha256=hashlib.sha256(body).hexdigest(),
         response_bytes=len(body),
     )
-    return {
+    return ({
         "schema": "agentscookbook.provider-transport-submission.v1",
         "provider_submission_state": "SUBMITTED",
         "request_sha256": observed["model_request_sha256"],
@@ -135,4 +135,20 @@ def dispatch_verified_chat_request(
         "provider_consumption_proven": False,
         "model_attention_proven": False,
         "causal_influence_proven": False,
-    }
+    }, body)
+
+
+def dispatch_verified_chat_request(**kwargs: Any) -> dict[str, Any]:
+    """Compatibility interface: expose only submission metadata to caller."""
+    metadata, _ = _dispatch_verified_chat_request(**kwargs)
+    return metadata
+
+
+def dispatch_verified_chat_response(**kwargs: Any) -> bytes:
+    """Privileged host-only: relay the exact bounded upstream response bytes.
+
+    The host must keep these bytes in memory and return them over its native
+    provider connection without writing user/model content to disk.
+    """
+    _, body = _dispatch_verified_chat_request(**kwargs)
+    return body
