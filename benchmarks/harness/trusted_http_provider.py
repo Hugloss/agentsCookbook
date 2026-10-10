@@ -60,14 +60,14 @@ def validate_sse_response(body: bytes) -> bool:
         value = body.decode("utf-8")
     except (UnicodeError, AttributeError):
         return False
-    if not value.endswith(("\\n\\n", "\\r\\n\\r\\n")):
+    if not value.endswith(("\n\n", "\r\n\r\n")):
         return False
     chunks: list[str] = []
-    for event in value.replace("\\r\\n", "\\n").split("\\n\\n"):
+    for event in value.replace("\r\n", "\n").split("\n\n"):
         if not event.strip():
             continue
         rows = [
-            line[5:].lstrip(" ") for line in event.split("\\n")
+            line[5:].lstrip(" ") for line in event.split("\n")
             if line.startswith("data:")
         ]
         if len(rows) != 1:
