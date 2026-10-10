@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from benchmarks.harbor_matrix import HarborMatrixError, load_matrix, matrix_factorial
+from benchmarks.matrix_profiles import harbor_suite, load_profile
 from benchmarks.harness.factorial_attribution import factorial_quartet
 
 
@@ -67,6 +68,10 @@ class FactorialContracts(unittest.TestCase):
         )
         self.assertEqual(matrix_factorial(matrix), CONTRACT)
         self.assertEqual(len(matrix["subjects"]), 5)
+        smoke, _ = harbor_suite(load_profile("harbor-factorial-smoke"))
+        full, _ = harbor_suite(load_profile("harbor-factorial-full"))
+        self.assertEqual(len(smoke.trial_definitions()), 15)
+        self.assertEqual(len(full.trial_definitions()), 135)
 
     def test_interaction_never_claims_causality(self) -> None:
         result = factorial_quartet(_arms(), CONTRACT)
