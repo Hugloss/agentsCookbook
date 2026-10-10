@@ -1528,3 +1528,114 @@ config, child credential isolation and native-exit-without-evidence:
 uv run --no-project python -m unittest benchmarks.tests.test_opencode_native_gateway -v
 uv run --no-project python -m unittest discover -s benchmarks/tests
 ```
+
+
+## E253–E256: genuine native-session read-back and cohort verification
+
+The E249–E252 OpenCode trial-scoped gateway captures one selected provider
+request and relays the upstream response. That **alone** does not prove a
+native OpenCode tool call, and the prior runner discarded the native session.
+This bundle adds a separate native session owner and refuses to qualify an
+unmatched provider request.
+
+### E253 — select and capture the precise OpenCode native session
+
+The pinned launcher now starts `opencode run` with a unique
+`--title agentscookbook:<trial>:<nonce> --format json`, records the
+start epoch, and reads `opencode session list --format json --max-count 20`
+under the **same isolated home and configuration** after the run. It
+requires exactly one session with that title, workspace, and update
+epoch, then captures `opencode export <session-id>`.
+
+Exports use host-owned bounded output files and a Linux file-size limit
+(16 MiB); no unbounded stdout pipe, 'most recent session' fallback,
+agent-supplied session ID, or arbitrary prior session can qualify. A
+missing, ambiguous, oversized, timed-out, or failed native export blocks
+the next admission step. This is an observation of OpenCode's
+*local session store*, not a remotely attested event.
+
+### E254 — bind the native tool result to the real provider submission
+
+`opencode_native_session.inspect_native_export` independently checks the
+native session ID, exact title, repository directory, provider and model
+IDs. The exported assistant parts must contain **exactly one** completed,
+recognized Hashmarks tool result with a call ID and JSON packet identical
+to the one observed by the trusted gateway; a final assistant text part
+must occur **after** that tool completion. Missing/foreign calls, changed
+packets, unknown tools, tool failures and missing terminal answer fail
+before any host receipt is written.
+
+Only after that exact native tool observation does the host preserve the
+raw `native-session.json`, derive `trajectory.json` **from the native
+export** (not from a gateway request or agent prose), and create
+`host-attestation.json` using the existing E233 host-key signing
+boundary. The independent host verifier must then prove complete
+ATIF packet coverage and successful HTTPS submission for the same
+call/packet binding. Artifacts are create-only, stored outside the
+evaluated workspace, and never overwritten. The result retains exact
+SHA-256 digests for the raw export, derived ATIF, and signed host receipt.
+
+This does **not** independently authenticate the native session contents:
+a locally readable export is observational data, even if its bytes match
+the gateway request. The host token and receipt signing key are not
+kernel-level proof of the identity of the process that initiated the
+loopback request.
+
+### E255 — admission boundary remains explicit
+
+The standalone launcher is still **unconfined** unless the caller opts in;
+this bundle does not claim that HOME/XDG isolation provides a secure
+network or filesystem sandbox. It continues refusing execution without
+`ALLOW_UNCONFINED_NATIVE_TEST=1`, with project OpenCode configuration,
+or with trusted host authority inside the evaluated workspace.
+
+The practical remaining security requirement is **OS-backed process
+identity and exclusive network egress**: ensure that only the pinned
+OpenCode child may connect to the gateway and that it cannot access an
+alternate external provider. Do not change
+`native_process_origin_proven=false` until that property is actually
+enforced and tested with an isolation backend. Native session parity
+alone is not a substitute for this boundary.
+
+### E256 — re-evaluate every trial, not just the signed receipt
+
+The separate read-only verifier, `native_session_cohort_audit`, checks
+each frozen trial directory against its saved raw export, derived ATIF,
+externally HMAC-authenticated provider receipt, and separately supplied
+pinned current/replaced source JSON. It re-derives the ATIF from native
+tool observations and rejects changes to model, tool-call ID, original
+packet, selected treatment facets, provider host, endpoint, session
+workspace or title. Missing controls, foreign trial directories,
+symlinked evidence, duplicate/replayed receipts, and cross-arm
+prompt/catalog/oracle/workspace or generation drift all block a cohort.
+
+```sh
+make benchmark-native-session-cohort-audit \
+  MANIFEST=/external/pre-work/frozen-manifest.json \
+  NATIVE_RESULTS_ROOT=/private/native-results   SOURCES_ROOT=/external/frozen-trial-sources \
+  WORKSPACE=/disposable/git-workspace \
+  HOST_KEY_FILE=/trusted-host/host.key \
+  HOST_IDENTITY=<registered-provider-host> \
+  APPROVED_ENDPOINT_SHA256=<sha256-of-full-approved-HTTPS-url>
+```
+
+Every `SOURCES_ROOT/<trial-id>.json` file must contain exactly
+`{"current":{...},"replaced":null}` (or an explicit pinned replacement)
+and must be independently provisioned, not written by the evaluated
+agent. The validator does not establish that an external timestamp or
+human approved those values.
+
+`native_session_cohort_observationally_consistent=true` is the
+maximum claim this verifier makes; **not** independent OS process
+provenance, restricted egress, independently reviewed oracle,
+provider cognition, true randomization or causal Hashmarks improvement.
+Real external campaigns still require independently controlled
+assignments, native process isolation and grading.
+
+Model-free regressions:
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_opencode_native_session -v
+uv run --no-project python -m unittest benchmarks.tests.test_native_session_cohort_audit -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
