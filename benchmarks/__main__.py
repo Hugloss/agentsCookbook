@@ -717,6 +717,20 @@ def _refresh_canonical_status(
         return None, f"run store is active or changed: {exc}"
 
 
+def _derive_trace_and_decision(
+    *,
+    report_data: dict[str, object],
+    results_root: Path,
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Build one deterministic diagnostic projection for every report path."""
+    trace_diagnostics = build_trace_diagnostics(results_root)
+    decision = build_decision_evidence(
+        report_data,
+        trace_diagnostics=trace_diagnostics,
+    )
+    return trace_diagnostics, decision
+
+
 def _refresh_canonical_report(
     *,
     store_root: Path,
@@ -751,15 +765,14 @@ def _refresh_canonical_report(
             report_data["run_id"] = paths.run_id
             report_data["reports_dir"] = str(_reports_dir(paths.root))
             _write_derived_json(paths.root, "report.json", report_data)
-            trace_diagnostics = build_trace_diagnostics(paths.results)
+            trace_diagnostics, decision = _derive_trace_and_decision(
+                report_data=report_data,
+                results_root=paths.results,
+            )
             _write_derived_json(
                 paths.root,
                 "trace-diagnostics.json",
                 trace_diagnostics,
-            )
-            decision = build_decision_evidence(
-                report_data,
-                trace_diagnostics=trace_diagnostics,
             )
             decision["run_id"] = paths.run_id
             _write_derived_json(
@@ -1780,9 +1793,11 @@ def _persist_completed_run_reports(
     report_data["run_id"] = paths.run_id
     report_data["reports_dir"] = str(reports_dir)
 
-    decision_data = build_decision_evidence(report_data)
+    trace_data, decision_data = _derive_trace_and_decision(
+        report_data=report_data,
+        results_root=paths.results,
+    )
     decision_data["run_id"] = paths.run_id
-    trace_data = build_trace_diagnostics(paths.results)
 
     score_path = reports_dir / score_output
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -1823,13 +1838,13 @@ def _persist_completed_run_reports(
 
         status_path = _write_derived_json(paths.root, "status.json", status_payload)
         report_path = _write_derived_json(paths.root, "report.json", report_data)
+        trace_path = _write_derived_json(
+            paths.root, "trace-diagnostics.json", trace_data
+        )
         decision_path = _write_derived_json(
             paths.root,
             "decision-evidence.json",
             decision_data,
-        )
-        trace_path = _write_derived_json(
-            paths.root, "trace-diagnostics.json", trace_data
         )
         os.replace(staged_score, score_path)
         directory_fd = os.open(reports_dir, os.O_RDONLY)

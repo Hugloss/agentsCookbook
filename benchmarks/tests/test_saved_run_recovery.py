@@ -495,6 +495,24 @@ class SavedRunRecoveryTests(unittest.TestCase):
                     },
                 ),
                 mock.patch(
+                    "benchmarks.__main__.build_trace_diagnostics",
+                    return_value={
+                        "summary": {
+                            "repository_intelligence_quality": {
+                                "state": "observed",
+                                "claim_scope": "descriptive-diagnostic-only",
+                                "subjects": [
+                                    {
+                                        "subject_id": "hashmarks",
+                                        "operation": "task_evidence",
+                                        "calls": 1,
+                                    }
+                                ],
+                            }
+                        }
+                    },
+                ),
+                mock.patch(
                     "benchmarks.__main__.subprocess.run",
                     side_effect=score_run,
                 ),
@@ -532,6 +550,21 @@ class SavedRunRecoveryTests(unittest.TestCase):
                 "NOT_QUALIFIED",
             )
             self.assertTrue(stored_decision["authority"]["derived_only"])
+            self.assertEqual(
+                stored_decision["authority"]["sources"],
+                ["report.json", "trace-diagnostics.json"],
+            )
+            self.assertEqual(
+                stored_decision["repository_intelligence_quality"]["state"],
+                "observed",
+            )
+            stored_trace = json.loads(
+                written["trace_diagnostics"].read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                stored_trace["summary"]["repository_intelligence_quality"]["state"],
+                stored_decision["repository_intelligence_quality"]["state"],
+            )
 
     def test_run_rejects_invalid_score_output_before_campaign_admission(self) -> None:
         suite = (
