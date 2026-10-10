@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 from typing import Any, Mapping
 
-from .evidence_lifecycle import _canonical, _packet, project_evidence_lifecycle
+from .evidence_lifecycle import _packet, project_evidence_lifecycle
 from .host_input_attestation import (
     SCHEMA, _bound_mac, canonical, load_host_key,
 )
@@ -82,6 +82,10 @@ class TrustedModelRequestCapture:
             replicate=self._assigned("replicate"), arm=self._arm,
             current=current, replaced=replaced,
         )
+        # The selected current content must be the actual Hashmarks return,
+        # not an unrelated packet used to launder a model message identity.
+        if canonical(returned_packet) != canonical(current.get("content")):
+            raise ValueError("selected-source-does-not-match-returned-packet")
         packet = _packet(returned_packet)
         if packet is None:
             raise ValueError("empty-returned-packet-is-not-evidence")
@@ -89,8 +93,19 @@ class TrustedModelRequestCapture:
             request = json.loads(serialized_model_request)
         except (ValueError, UnicodeError) as exc:
             raise ValueError("non-json-host-request-not-supported") from exc
-        if not isinstance(request, dict) or not isinstance(request.get("messages"), list):
-            raise ValueError("unsupported-provider-request-envelope")
+        if (not isinstance(request, dict) or not isinstance(request.get("messages"), list)
+                or request.get("model") != self._manifest["design"]["model"]):
+            raise ValueError("unsupported-or-cross-model-provider-request")
+        expected_prompt_digest = hashlib.sha256(canonical({
+            "request_settings": {key: value for key, value in request.items()
+                                 if key != "messages"},
+            "non_tool_messages": [
+                message for message in request["messages"]
+                if isinstance(message, dict) and message.get("role") != "tool"
+            ],
+        })).hexdigest()
+        if prompt_sha256 != expected_prompt_digest:
+            raise ValueError("outbound-prompt-digest-not-observed")
         # A tool packet MUST be present in exactly one specifically linked
         # model-input message. Agent prose cannot substitute for this link.
         matches = [
