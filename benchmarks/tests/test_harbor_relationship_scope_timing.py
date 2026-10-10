@@ -23,6 +23,8 @@ def _packet(*, outgoing: int = 1, associated: int = 1) -> dict:
     return {
         "ownership": {
             "status": "resolved",
+            "proof_scope_complete": True,
+            "authority": "repository-ownership-only",
             "owner": {"path": "src/engine.py", "qualname": "normalize_widget"},
         },
         "semantic_relationships": {
@@ -171,6 +173,39 @@ class RelationshipScopeTimingTests(unittest.TestCase):
                     "unstructured-subject-result",
                     "invalid-semantic-observation",
                 })
+
+    def test_cross_presentation_parity_is_required(self) -> None:
+        packet = _packet(outgoing=0, associated=1)
+        same = {
+            "structuredContent": {"result": packet},
+            "content": [{"type": "text", "text": json.dumps({"result": packet})}],
+        }
+        qualified = _run([_step(TOOL, "h1", response=same)])
+        self.assertTrue(qualified["qualified"])
+        self.assertEqual(qualified["summary_count"], 0)
+        self.assertEqual(qualified["associated_count"], 1)
+
+        divergent = _packet(outgoing=1, associated=1)
+        mismatched = {
+            "structuredContent": {"result": packet},
+            "content": [{"type": "text", "text": json.dumps({"result": divergent})}],
+        }
+        unqualified = _run([_step(TOOL, "h1", response=mismatched)])
+        self.assertFalse(unqualified["qualified"])
+        self.assertEqual(unqualified["reason"], "invalid-semantic-observation")
+
+    def test_unqualified_owner_does_not_become_qualified_scope(self) -> None:
+        for field, value in (
+            ("status", "ambiguous"),
+            ("proof_scope_complete", False),
+            ("authority", "caller-claimed"),
+        ):
+            packet = _packet()
+            packet["ownership"][field] = value
+            with self.subTest(field=field):
+                result = _run([_step(TOOL, "h1", response=packet)])
+                self.assertFalse(result["qualified"])
+                self.assertEqual(result["reason"], "invalid-semantic-observation")
 
     def test_mismatched_count_or_scope_is_unqualified(self) -> None:
         for alteration in (
