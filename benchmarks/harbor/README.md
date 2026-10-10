@@ -1384,3 +1384,129 @@ for at least one native agent/version, execute controlled matched
 provider-backed tasks with independent run custody, and obtain real
 independent oracle reviews. Do not describe provider-owned MCP routing
 as the missing native transport hook.
+
+
+## E249–E252: opt-in pinned OpenCode custom-provider gateway
+
+This is the **first executable trial-scoped native OpenCode provider route**
+in the evaluator. It does not replace the existing native OpenCode
+benchmark adapter and is not enabled implicitly. It is a standalone
+one-shot OpenAI-compatible route for controlled evaluation.
+
+Official OpenCode V1 provider documentation describes
+`provider.<name>.npm="@ai-sdk/openai-compatible"` with
+`options.baseURL` for a custom provider and `enabled_providers` for
+provider restriction. See
+[OpenCode provider configuration](https://opencode.ai/docs/providers/)
+and [OpenCode config](https://opencode.ai/docs/config/).
+The opt-in runner freezes those values in a *private, create-only*
+`opencode.json` and selects `agentscookbook-captured/<model>`.
+It also isolates HOME/XDG config/data/cache and suppresses unrelated
+LLM credentials in the launched child environment.
+
+### E249 — exact executable and provider-config admission
+
+A trial needs an already-frozen E238 assignment for
+`harness="opencode-native"` (or `"opencode"`), pinned OpenCode
+executable SHA-256, exact observed `opencode --version`, a model
+ID, and one independently pinned source payload
+(`generation_sha256`, `semantic_sha256`, `content`).
+The semantic digest MUST match the canonical JSON content.
+The executable is checked before and after running, and config
+files are create-only under a fresh private run root.
+
+**Do not reuse an existing OpenCode configuration** as gateway authority.
+OpenCode can merge managed, global, and project configuration, so the
+generated allowlist is an intended constraint—not proof of the
+runtime's final effective provider selection. Any foreign/native
+requests must still be rejected by the isolated gateway. The native
+provider package, its effective settings, other plugin hooks, and
+process egress are not yet independently attested.
+
+### E250 — actual loopback request boundary
+
+The runner launches the pinned native OpenCode process directly,
+not through a shell, and points its configured OpenAI-compatible
+provider to a loopback-only HTTP gateway with a per-trial bearer
+token. The token is not proof of OS process identity: an evaluated
+child could read its own environment. The upstream API credential
+stays with the privileged host and is **not** passed to OpenCode.
+
+A maximum of four pre-tool provider requests can pass through the
+host-owned TLS client for native tool selection. These are
+**unattested** and never count as Hashmarks delivery. When exactly
+one tool-result message appears, the gateway compares it byte-for-byte
+by JSON value against the frozen selected Hashmarks result. It then
+uses the existing E241 signed transport to validate and dispatch the
+actual request exactly once. Its bounded response is returned
+unchanged to the native client, without a second provider call.
+Wrong model, missing/duplicate tool message, changed selected
+content, auth failure, over-budget requests, and retries fail closed.
+Only OpenAI Chat Completions JSON with the currently supported
+single `role="tool"` message form is supported.
+
+### E251 — fail-before-work qualification and observed execution
+
+Use a **fresh** `RUN_ROOT`, a git-bound disposable `WORKSPACE`,
+a frozen original subject `CURRENT_SOURCE` JSON and, for freshness,
+the explicit `REPLACED_SOURCE` JSON. Specify the OpenCode binary and
+observed SHA/version; every authority is a required argument.
+
+```sh
+export BENCHMARK_UPSTREAM_API_KEY=<privileged-host-only-provider-secret>
+make benchmark-opencode-native-gateway \
+  MANIFEST=/external/prework/frozen-manifest.json \
+  TRIAL_ID=<frozen-native-trial-id> \
+  OPENCODE_BIN=/trusted/bin/opencode \
+  OPENCODE_SHA256=<sha256-executable> \
+  OPENCODE_VERSION=<exact-version-output> \
+  RUN_ROOT=/private/new-trial-dir \
+  WORKSPACE=/disposable/git-workspace \
+  PROMPT_FILE=/external/frozen-prompt.txt \
+  CURRENT_SOURCE=/external/verified-hashmarks-packet.json \
+  HOST_KEY_FILE=/trusted-host/host.key \
+  HOST_IDENTITY=<trusted-provider-host-id> \
+  UPSTREAM=https://api.openai.com/v1/chat/completions \
+  APPROVED_ORIGIN=https://api.openai.com \
+  CATALOG_SHA256=<64-hex> ORACLE_SHA256=<64-hex> \
+  WORKSPACE_SHA256=<64-hex>
+```
+
+The native process must successfully exit AND the gateway must have
+relayed exactly one selected tool-result request before
+`native_gateway_route_completed` can become true. A normal
+`opencode run` exit on its own is not evidence of native model-input
+delivery. Invalid or unobserved runs return nonzero status without
+upgrading evidence. This launcher does **not** infer a tool result
+from agent prose or synthesize a host-signed ATIF.
+
+### E252 — what is and isn't empirically qualified
+
+The gateway can prove to its own key holder which HTTP request body it
+received and submitted. **It cannot prove that only the real OpenCode
+process could speak on loopback.** OS-bound peer identity/egress
+confinement, immutable native OpenCode session export, ATIF binding,
+real task oracle review, and externally anchored campaign authority
+are required before claiming native execution provenance or a
+model-backed Hashmarks effect. The result intentionally reports:
+
+- `host_receipt_finalized=false`
+- `native_process_origin_proven=false`
+- `native_model_input_delivered_proven=false`
+- `causal_improvement_proven=false`
+
+The earlier `TrustedModelRequestCapture.finalize` can only sign when
+**real immutable ATIF** is separately available and exactly matches
+the observed packet; never create an ATIF from the gateway request
+to manufacture delivery proof. The E248 empirical gate remains
+conservative, and no campaign has been run here.
+
+Model-free attack regressions cover SHA/version drift, fail-before-work
+admission, exact gateway model/packet matching, unknown messages,
+pre-evidence budgets, one-shot response relay, no retries, create-only
+config, child credential isolation and native-exit-without-evidence:
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_opencode_native_gateway -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
