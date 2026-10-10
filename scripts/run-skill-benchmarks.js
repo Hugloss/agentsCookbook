@@ -110,9 +110,9 @@ function validateCorpus(corpus) {
     if (!item.scenario || typeof item.scenario !== 'string') errors.push(`${item.id}: missing scenario`);
     if (item.fixture && item.expected === 'FINDING') {
       const contract = item.evidence_contract;
-      if (!contract || contract.status !== 'reviewed-fixture-anchor'
+      if (!contract || contract.status !== 'pinned-fixture-anchor'
         || !Array.isArray(contract.anchors) || contract.anchors.length === 0) {
-        errors.push(`${item.id}: positive fixture needs reviewed oracle anchors`);
+        errors.push(`${item.id}: positive fixture needs pinned fixture anchors`);
       } else {
         const fixtureDir = path.resolve(repoRoot, item.fixture);
         const proof = qualifyEvidence({
@@ -123,7 +123,7 @@ function validateCorpus(corpus) {
           quote: contract.anchors.map((row) => row.quote).join(' ||| '),
         });
         if (proof.state !== 'LOCATED_NOT_ADJUDICATED') {
-          errors.push(`${item.id}: invalid reviewed oracle anchors (${proof.reason})`);
+          errors.push(`${item.id}: invalid pinned fixture anchors (${proof.reason})`);
         }
       }
     }
