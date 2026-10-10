@@ -97,7 +97,7 @@ class EvidenceLifecycleAttacks(unittest.TestCase):
         self.assertEqual(_project(_atif(response=different))["reason"], "divergent-presentation")
 
     def test_opaque_error_and_oversized_are_not_negative_evidence(self) -> None:
-        self.assertEqual(_project(_atif(response={"isError": True, "content": ""}))["qualified"], True)
+        self.assertEqual(_project(_atif(response={"isError": True, "content": ""}))["reason"], "invalid-subject-packet")
         self.assertEqual(_project(_atif(response="x" * 270_000))["reason"], "invalid-subject-packet")
         self.assertEqual(_project({"schema_version": "ATIF-v1.8", "steps": []})["reason"], "atif-invalid")
 
