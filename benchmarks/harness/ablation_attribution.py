@@ -592,6 +592,12 @@ def _contrast(left: float | None, right: float | None) -> float | None:
     return None if left is None or right is None else left - right
 
 
+def _has_frozen_factorial(projection: Mapping[str, Any]) -> bool:
+    receipt = projection.get("receipt")
+    execution = receipt.get("execution") if isinstance(receipt, Mapping) else None
+    return isinstance(execution, Mapping) and execution.get("factorial") is not None
+
+
 def _legacy_contract_needed(
     projections: list[dict[str, Any]],
 ) -> bool:
@@ -600,7 +606,8 @@ def _legacy_contract_needed(
         LEGACY_TASK_EVIDENCE_CONTRACT["arms"]["only"],
     }
     return any(
-        _receipt_ablation_contract(projection["receipt"]) is None
+        not _has_frozen_factorial(projection)
+        and _receipt_ablation_contract(projection["receipt"]) is None
         and str(projection["receipt"].get("subject")) in legacy_specific
         for projection in projections
     )
@@ -633,7 +640,7 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
         receipt = projection["receipt"]
         contract = _receipt_ablation_contract(receipt)
         source = "receipt"
-        if contract is None and legacy_enabled:
+        if contract is None and legacy_enabled and not _has_frozen_factorial(projection):
             subject = str(receipt.get("subject"))
             if subject in LEGACY_TASK_EVIDENCE_CONTRACT["arms"].values():
                 contract = dict(LEGACY_TASK_EVIDENCE_CONTRACT)
