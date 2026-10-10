@@ -22,6 +22,10 @@ from benchmarks.harness.semantic_information import (
     project_semantic_information,
     unavailable_semantic,
 )
+from benchmarks.harness.relationship_scope_timing import (
+    project_relationship_scope_timing,
+    unavailable_relationship_scope,
+)
 from benchmarks.tool_routing import (
     DISCOVERY_CLASSES,
     NATIVE_READ,
@@ -519,6 +523,11 @@ def load_harbor_bundle_projection(directory: Path) -> dict[str, Any]:
             component=ablation["component"],
             selector=ablation.get("selector"),
         )
+    relationship_scope = (
+        project_relationship_scope_timing(trajectory)
+        if trace.get("available") is True and trace.get("tool_order_complete") is True
+        else unavailable_relationship_scope("atif-order-unavailable-or-incomplete")
+    )
     return {
         "receipt": receipt,
         "trace": trace,
@@ -526,6 +535,7 @@ def load_harbor_bundle_projection(directory: Path) -> dict[str, Any]:
         "information": information,
         "semantic_information": semantic,
         "component_semantic_information": component_semantic,
+        "relationship_scope_timing": relationship_scope,
     }
 
 
@@ -733,7 +743,15 @@ def pair_projection(
         semantic = unavailable_semantic("semantic-projection-unavailable")
     if not call_order_qualified and semantic.get("qualified") is True:
         semantic = unavailable_semantic("atif-order-unavailable-or-incomplete")
+    relationship_scope = treated.get("relationship_scope_timing")
+    if not isinstance(relationship_scope, dict):
+        relationship_scope = unavailable_relationship_scope("scope-projection-unavailable")
+    if not call_order_qualified:
+        relationship_scope = unavailable_relationship_scope(
+            "atif-order-unavailable-or-incomplete"
+        )
     return {
+        "relationship_scope_evidence": relationship_scope,
         "information_evidence": information,
         "semantic_information_evidence": semantic,
         "task": bare_receipt["task_id"],
@@ -883,11 +901,40 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
         if pair["semantic_information_evidence"].get("qualified") is not True
         or pair["outcome_transition"] == "INCOMPLETE"
     )
+    scope_counts = Counter(
+        "|".join((
+            str(pair["outcome_transition"]),
+            str(pair["relationship_scope_evidence"]["arrival_timing"]),
+            str(pair["relationship_scope_evidence"]["detail_followthrough"]),
+            str(pair["relationship_scope_evidence"]["summary_count_scope"]),
+            str(pair["native_search_delta"]),
+        ))
+        for pair in pairs
+        if pair["relationship_scope_evidence"].get("state") == "SCOPED_SEMANTIC_RETURN"
+        and pair["relationship_scope_evidence"].get("qualified") is True
+        and pair["outcome_transition"] != "INCOMPLETE"
+        and pair["tool_order_qualified"]
+    )
+    scope_exclusions = Counter(
+        (
+            "incomplete-pair-outcome"
+            if pair["outcome_transition"] == "INCOMPLETE"
+            else str(pair["relationship_scope_evidence"].get("reason") or "unknown")
+        )
+        for pair in pairs
+        if pair["relationship_scope_evidence"].get("state") != "SCOPED_SEMANTIC_RETURN"
+        or pair["relationship_scope_evidence"].get("qualified") is not True
+        or pair["outcome_transition"] == "INCOMPLETE"
+        or not pair["tool_order_qualified"]
+    )
     return {
         "schema": MECHANISM_REPORT_SCHEMA,
         "pairs": pairs,
         "summary": {
             "paired_observations": len(pairs),
+            "relationship_scope_qualified_pairs": sum(scope_counts.values()),
+            "relationship_scope_outcome_cross_tab": dict(sorted(scope_counts.items())),
+            "relationship_scope_exclusion_reasons": dict(sorted(scope_exclusions.items())),
             "semantic_qualified_pairs": sum(
                 pair["semantic_information_evidence"].get("qualified") is True
                 and pair["outcome_transition"] != "INCOMPLETE"
@@ -947,6 +994,12 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
                 "matching subsequent native reads is observed follow-through; "
                 "incomplete tool order, missing oracle, or ambiguous linked "
                 "observations deny information qualification"
+            ),
+            "relationship_scope_policy": (
+                "scoped semantic evidence must be present in a linked ATIF tool return; "
+                "an exact follow-up structural_locality request is tool behavior, "
+                "not proof of agent attention or causal benefit; paired native "
+                "search deltas are descriptive only"
             ),
             "positive_causal_claim_policy": (
                 "pair mechanisms are descriptive or supported associations; "
