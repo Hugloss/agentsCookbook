@@ -16,7 +16,9 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Mapping
 
-from .host_input_attestation import canonical, load_host_key, _load_receipt
+from .host_input_attestation import (
+    canonical, load_host_key, _load_receipt, verify_host_attestations,
+)
 from .intervention_audit import audit_intervention_bundles
 from .mechanism_attribution import load_harbor_bundle_projection
 from .trusted_treatments import load_manifest, verify_manifest
@@ -142,7 +144,8 @@ def validate_trial_alignment(
 
 def qualify_campaign(manifest: Mapping[str, Any], bundles_root: Path,
                      attestations_root: Path, host_key: bytes,
-                     seal: object | None, *, independent_key: bytes | None) -> dict[str, Any]:
+                     seal: object | None, *, independent_key: bytes | None,
+                     require_provider_submission: bool = False) -> dict[str, Any]:
     frozen = verify_manifest(dict(manifest))
     audit = audit_intervention_bundles(
         frozen["design"], bundles_root, attestations_root, host_key,
@@ -155,6 +158,24 @@ def qualify_campaign(manifest: Mapping[str, Any], bundles_root: Path,
         issues["unqualified-host-attested-intervention-coverage"] += 1
     if not alignment["complete"]:
         issues["incomplete-or-misaligned-frozen-plan"] += 1
+    verified_submission_trials = 0
+    if require_provider_submission:
+        # Independent read-back, never from ATIF agent prose, unsigned file
+        # metadata or source-provided claim of provider dispatch.
+        for cell in frozen["assignments"]:
+            trial_id = cell["trial_id"]
+            verified = verify_host_attestations(
+                bundles_root / trial_id / "trajectory.json",
+                attestations_root / (trial_id + ".json"), host_key,
+                campaign_id=frozen["design"]["campaign_id"],
+                trial_id=trial_id,
+            )
+            if (verified["attestation_state"] == "VERIFIED"
+                    and verified["delivery_state"] == "PROVEN"
+                    and verified["provider_submission_state"] == "SUBMITTED"):
+                verified_submission_trials += 1
+            else:
+                issues["missing-or-unverified-provider-submission"] += 1
     seal_valid = False
     reviewed = False
     alleged_pre_work = False
@@ -182,6 +203,12 @@ def qualify_campaign(manifest: Mapping[str, Any], bundles_root: Path,
         "manifest_sha256": frozen["manifest_sha256"],
         "host_intervention_coverage": audit,
         "frozen_trial_alignment": alignment,
+        "require_provider_submission": require_provider_submission,
+        "verified_provider_submission_trials": verified_submission_trials,
+        "expected_provider_submission_trials": (
+            len(frozen["assignments"]) if require_provider_submission else None
+        ),
+        "provider_processing_proven": False,
         "independent_seal_authenticated": seal_valid,
         "independent_review_custodian_claim_authenticated": reviewed,
         "external_pre_work_claim_authenticated": alleged_pre_work,
@@ -210,6 +237,7 @@ def main() -> int:
     parser.add_argument("--seal", type=Path)
     parser.add_argument("--independent-key-file", type=Path)
     parser.add_argument("--require-admitted", action="store_true")
+    parser.add_argument("--require-provider-submission", action="store_true")
     args = parser.parse_args()
     try:
         manifest = load_manifest(args.manifest)
@@ -221,7 +249,8 @@ def main() -> int:
         )
         report = qualify_campaign(manifest, args.bundles_root,
                                   args.attestations_root, host_key,
-                                  seal, independent_key=independent_key)
+                                  seal, independent_key=independent_key,
+                                  require_provider_submission=args.require_provider_submission)
     except (OSError, ValueError, TypeError) as exc:
         print(json.dumps({"schema": REPORT_SCHEMA, "descriptive_campaign_admitted": False,
                           "error": str(exc)}, sort_keys=True, indent=2))
