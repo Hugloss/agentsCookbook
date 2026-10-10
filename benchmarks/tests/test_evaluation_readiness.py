@@ -16,7 +16,7 @@ class EvaluationReadinessTests(unittest.TestCase):
         self.assertEqual(result["multidomain"]["cases"], 60)
         self.assertEqual(result["qualification_blockers"]["unreviewed_multidomain_cases"], 60)
         self.assertEqual(result["skill_corpus"]["skills"], 66)
-        self.assertEqual(result["qualification_blockers"]["skills_without_confusion_case"], 53)
+        self.assertEqual(result["qualification_blockers"]["skills_without_confusion_case"], 54)
         self.assertEqual(result["qualification_blockers"]["fixture_positive_without_pinned_anchor"], 0)
         self.assertFalse(result["qualification_blockers"]["host_model_input_delivery_attested"])
         self.assertFalse(result["qualification_blockers"]["factorial_model_run_qualified"])
