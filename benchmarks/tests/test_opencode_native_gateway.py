@@ -132,8 +132,8 @@ class GatewayTests(unittest.TestCase):
         selected = self.gateway.selected["selected_content"]
         original = request(selected=selected, tool=True, stream=True)
         stream = (
-            b'data: {"choices":[{"delta":{"content":"owner"}}]}\\n\\n'
-            b'data: [DONE]\\n\\n'
+            b'data: {"choices":[{"delta":{"content":"owner"}}]}\n\n'
+            b'data: [DONE]\n\n'
         )
         # Patch transport only; all gateway model/tool/link checks still run.
         with patch(
@@ -150,16 +150,16 @@ class GatewayTests(unittest.TestCase):
 
     def test_terminal_sse_validation_rejects_truncated_and_malformed_events(self):
         good = (
-            b'data: {"choices":[{"delta":{"content":"yes"}}]}\\n\\n'
-            b'data: [DONE]\\n\\n'
+            b'data: {"choices":[{"delta":{"content":"yes"}}]}\n\n'
+            b'data: [DONE]\n\n'
         )
         self.assertTrue(validate_sse_response(good))
         for invalid in (
-            good.replace(b"data: [DONE]\\n\\n", b""),
-            b'data: {"choices":[]}\\n\\ndata: [DONE]\\n\\n',
-            b'data: not-json\\n\\ndata: [DONE]\\n\\n',
-            b'data: [DONE]\\n\\ndata: {"choices":[1]}\\n\\n',
-            b'data: {"choices":[1]}\\n\\ndata: [DONE]',
+            good.replace(b"data: [DONE]\n\n", b""),
+            b'data: {"choices":[]}\n\ndata: [DONE]\n\n',
+            b'data: not-json\n\ndata: [DONE]\n\n',
+            b'data: [DONE]\n\ndata: {"choices":[1]}\n\n',
+            b'data: {"choices":[1]}\n\ndata: [DONE]',
         ):
             with self.subTest(invalid=invalid):
                 self.assertFalse(validate_sse_response(invalid))
@@ -175,8 +175,8 @@ class GatewayTests(unittest.TestCase):
         }
         expected_prompt = hashlib.sha256(canonical(prompt)).hexdigest()
         done = (
-            b'data: {"choices":[{"delta":{"content":"answer"}}]}\\n\\n'
-            b'data: [DONE]\\n\\n'
+            b'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n'
+            b'data: [DONE]\n\n'
         )
 
         class Response:
