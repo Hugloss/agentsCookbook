@@ -29,7 +29,7 @@ try {
   assert.strictEqual(qualifyEvidence({ ...claim, anchors: null }).reason, 'positive-fixture-oracle-anchor-missing');
   assert.strictEqual(qualifyEvidence({ ...claim, anchors: [
     { path: 'owner.js', line: 1, quote: 'function owner()' }
-  ] }).reason, 'citation-does-not-match-reviewed-oracle-anchors');
+  ] }).reason, 'citation-does-not-match-pinned-fixture-anchors');
   assert.strictEqual(qualifyEvidence({ ...claim, anchors: [
     { path: 'owner.js', line: 1, quote: 'return false;' },
     { path: 'owner.js', line: 1, quote: 'function owner()' }
