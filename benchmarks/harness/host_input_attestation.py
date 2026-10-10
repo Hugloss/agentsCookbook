@@ -30,6 +30,11 @@ FIELDS = frozenset((
     "call_id_sha256", "model_request_sequence", "boundary",
 ))
 HEX = frozenset("0123456789abcdef")
+INTERVENTION_FIELDS = frozenset((
+    "study", "arm", "design_sha256", "presentation", "generation_sha256",
+    "current_generation_sha256", "semantic_sha256", "catalog_sha256",
+    "prompt_sha256", "oracle_sha256", "workspace_sha256", "surface_sha256",
+))
 
 
 def canonical(value: object) -> bytes:
@@ -137,9 +142,22 @@ def verify_host_attestations(
         matched: set[tuple[str, str]] = set()
         requests: set[tuple[str, str, str]] = set()
         for row in deliveries:
-            if not isinstance(row, dict) or set(row) != FIELDS | {"mac_sha256"}:
+            if not isinstance(row, dict) or set(row) not in (
+                FIELDS | {"mac_sha256"}, FIELDS | {"mac_sha256", "intervention"},
+            ):
                 raise ValueError("invalid-delivery-fields")
             delivery = {field: row[field] for field in FIELDS}
+            if "intervention" in row:
+                intervention = row["intervention"]
+                if (not isinstance(intervention, dict)
+                        or set(intervention) != INTERVENTION_FIELDS
+                        or intervention["study"] not in ("presentation", "freshness")
+                        or intervention["arm"] not in ("control", "variant")
+                        or intervention["presentation"] not in ("structured", "text")
+                        or not all(_hex64(intervention[name]) for name in
+                                   INTERVENTION_FIELDS - {"study", "arm", "presentation"})):
+                    raise ValueError("invalid-intervention-binding")
+                delivery["intervention"] = intervention
             if not all(_hex64(delivery[name]) for name in (
                 "host_build_sha256", "model_request_sha256", "model_input_sha256",
                 "model_message_sha256", "packet_sha256", "call_id_sha256",
