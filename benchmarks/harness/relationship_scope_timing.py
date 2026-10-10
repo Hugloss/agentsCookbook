@@ -59,7 +59,12 @@ def _semantic_record(value: object) -> dict[str, Any] | None:
     if not isinstance(row, Mapping) or not isinstance(owner, Mapping):
         return None
     proof = owner.get("owner")
-    if owner.get("status") != "resolved" or not isinstance(proof, Mapping):
+    if (
+        owner.get("status") != "resolved"
+        or owner.get("proof_scope_complete") is not True
+        or owner.get("authority") != "repository-ownership-only"
+        or not isinstance(proof, Mapping)
+    ):
         return None
     path, qualname = proof.get("path"), proof.get("qualname")
     if not isinstance(path, str) or not isinstance(qualname, str):
@@ -121,8 +126,10 @@ def _unwrap(value: object, depth: int = 0) -> tuple[str, dict[str, Any] | None]:
         return ("record", records[0]) if records else ("absent", None)
     if not isinstance(value, dict):
         return "unreadable", None
-    if value.get("isError") is True or value.get("status") in (
-        "error", "failed", "denied", "unavailable"
+    if (
+        value.get("isError") is True
+        or value.get("status") in ("error", "failed", "denied", "unavailable")
+        or ("error" in value and value["error"] not in (None, ""))
     ):
         return "unreadable", None
     if "semantic_relationships" in value:
@@ -130,10 +137,19 @@ def _unwrap(value: object, depth: int = 0) -> tuple[str, dict[str, Any] | None]:
         return ("record", record) if record is not None else ("unreadable", None)
     if value.get("type") == "text":
         return _unwrap(value.get("text"), depth + 1)
-    for name in ("structuredContent", "result", "data", "content"):
-        if name in value:
-            return _unwrap(value[name], depth + 1)
-    return "absent", None
+    fields = [
+        name for name in ("structuredContent", "result", "data", "content")
+        if name in value
+    ]
+    if not fields:
+        return "absent", None
+    outcomes = [_unwrap(value[name], depth + 1) for name in fields]
+    if any(state == "unreadable" for state, _ in outcomes):
+        return "unreadable", None
+    records = [row for state, row in outcomes if state == "record"]
+    if records and any(row != records[0] for row in records):
+        return "unreadable", None
+    return ("record", records[0]) if records else ("absent", None)
 
 
 def _steps(atif: object) -> tuple[list[dict[str, Any]], dict[str, tuple[object, int]]] | None:
