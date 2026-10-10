@@ -86,6 +86,7 @@ def _observations(design: dict) -> list[dict]:
         "harness": h, "task": t, "replicate": r, "arm": arm,
         "status": "PASS" if arm == "variant" else "FAIL",
         "model": design["model"], "host_attested": True,
+        "source_contract_identity": "sha256:frozen-hashmarks-source",
         "intervention": _facets(design["study"], arm, design),
     } for h in design["harnesses"] for t in design["tasks"]
       for r in range(1, design["replicates"] + 1)
@@ -254,6 +255,26 @@ class PresentationAndFreshnessInterventionAttacks(unittest.TestCase):
                 self.assertEqual(audit_intervention_observations(
                     design, rows)["coverage_state"], "INCOMPLETE")
 
+    def test_source_identity_must_remain_constant_across_matched_arms(self) -> None:
+        design = _design()
+        rows = _observations(design)
+        rows[1]["source_contract_identity"] = "sha256:changed"
+        report = audit_intervention_observations(design, rows)
+        self.assertEqual(report["qualified_matched_pairs"], 0)
+        self.assertIn("cross-arm-source-contract-drift", report["issues"])
+
+    def test_malformed_facet_does_not_crash_or_qualify(self) -> None:
+        design = _design()
+        rows = _observations(design)
+        rows[0]["intervention"]["surface_sha256"] = []
+        report = audit_intervention_observations(design, rows)
+        self.assertEqual(report["coverage_state"], "INCOMPLETE")
+        self.assertIn("host-intervention-design-unbound", report["issues"])
+        rows = _observations(design)
+        del rows[1]["intervention"]["surface_sha256"]
+        report = audit_intervention_observations(design, rows)
+        self.assertEqual(report["qualified_matched_pairs"], 0)
+
     def test_missing_duplicate_foreign_and_unattested_are_excluded(self) -> None:
         design = _design()
         rows = _observations(design)
@@ -299,7 +320,13 @@ class PresentationAndFreshnessInterventionAttacks(unittest.TestCase):
             with patch("benchmarks.harness.intervention_audit.load_harbor_bundle_projection") as mocked:
                 mocked.return_value = {
                     "receipt": {
-                        "execution": {"campaign_id": "C"}, "subject": "hashmarks",
+                        "execution": {
+                            "campaign_id": "C",
+                            "mcp_treatment": {
+                                "full_contract": True,
+                                "source_contract_identity": "sha256:frozen-hashmarks-source",
+                            },
+                        }, "subject": "hashmarks",
                         "harness": "codex", "task_id": "owner",
                         "replicate_id": 1, "model": "provider/model",
                         "status": "PASS",
