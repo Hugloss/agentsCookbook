@@ -1171,3 +1171,106 @@ which invokes the boundary adapter on real outgoing requests, independently
 custody and anchor the pre-work manifest, verify source and oracle reviews
 through actual people, and run the controlled model trials. CI passing
 does not close those dependencies.
+
+
+## E241–E244: controlled HTTPS provider dispatch and strict submission assurance
+
+The E237–E240 host adapter checked a declared outbound request but did not
+own the transport. E241 introduces a **runnable** HTTPS transport with a
+narrow protocol and explicit host custody, rather than pretending Harbor
+can intercept requests made inside native third-party agent harnesses.
+
+### E241: actual outbound body, one attempt, no redirect
+
+A privileged host imports
+`benchmarks.harness.trusted_http_provider.dispatch_verified_chat_request`
+and passes an E237 `TrustedModelRequestCapture` plus the **actual serialized**
+OpenAI-compatible Chat Completions JSON body. The host still owns:
+the frozen manifest, model credentials, full original tool response, its
+real task/prompt/oracle/workspace identities, and external evidence storage.
+
+For this limited adapter the HTTP endpoint must be pinned to the host-owned
+`approved_origin`, use TLS, have exactly the path
+`/v1/chat/completions`, and have no embedded URL credentials/query/fragment.
+The transport suppresses environment-provided proxy routes, disables
+redirect following, sends **one** JSON POST with its original request bytes,
+and accepts only a bounded 2xx JSON object containing a nonempty
+`choices` array. The host must supply a syntactically correct provider
+conversation; this function does not construct agent reasoning, generate a
+prior tool call, implement all provider message shapes, or retry on error.
+An invalid envelope/unsupported provider remains inadmissible.
+
+The receipt is emitted only when `TrustedModelRequestCapture.finalize()`
+matches every source call and packet to the immutable completed ATIF.
+The transport must have observed a successful provider HTTP response before
+`finalize()` can publish an attestation. Failed/ambiguous requests cannot
+retry within the same capture and cannot produce a successful
+transport-submission receipt. Raw request and response bodies are not
+persisted by this transport.
+
+### E242: verify the selected treatment actually reached the transport
+
+Before HTTP work the host checks the frozen trial identity, single selected
+Hashmarks packet, pinned semantic/generation source, specific model and tool
+call, one and only one tool-message slot, and a prompt digest derived from
+the actual request settings and non-tool messages. These are observable
+body-level invariants, not inferred from returned tool packets.
+
+Every successful host-submission record includes a MAC-protected
+`transport` object:
+
+```json
+{
+  "boundary": "https-response",
+  "endpoint_sha256": "<64-hex>",
+  "http_status": 200,
+  "response_sha256": "<64-hex>",
+  "response_bytes": 1024
+}
+```
+
+The verifier distinguishes `delivery_state=PROVEN` (key-holder asserts
+tool-message inclusion) from `provider_submission_state=SUBMITTED`
+(key-holder asserts one successful HTTPS response from its pinned
+transport). Both remain host assertions: neither is proof of model
+attention, provider inference, or a causal outcome. A receipt without
+the signed transport object keeps submission `UNKNOWN`. Partial coverage
+does not become complete.
+
+### E243–E244: audit every arm under one external authority
+
+A stricter qualification entrypoint re-checks every planned trial's
+immutable ATIF and independent host HMAC, requires `SUBMITTED` for
+*all* planned cells, verifies the existing frozen source/assignment and
+paired intervention constraints, and separately validates the review
+custodian's signed seal. No completed cell is inferred from a missing
+bundle, no replayed request is a new observation, and one valid arm is
+not sufficient for a paired claim.
+
+```sh
+make benchmark-provider-campaign-qualify \
+  MANIFEST=/external/pre-work/frozen-manifest.json \
+  RESULTS_ROOT=/immutable/run/bundles \
+  ATTESTATIONS_ROOT=/external-host/receipts \
+  HOST_KEY_FILE=/trusted-host/host.key \
+  SEAL=/external-reviewer/seal.json \
+  INDEPENDENT_KEY_FILE=/external-reviewer/review.key
+```
+
+Descriptive campaign admission requires every independent check to pass.
+The report explicitly withholds provider-processing proof, real randomization,
+trusted pre-work chronology, model attention, and causal attribution.
+An externally signed pre-work or human-review *assertion* must still be
+supported by independent operational evidence.
+
+Model-free attack regressions (faked HTTPS responses, **no network traffic**):
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_trusted_http_provider -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
+
+**Not shipped:** native OpenCode/Codex/Claude Code transport interception,
+real verified provider trials, independently timestamped preregistration,
+or completed independent oracle review. No experimental result is inferred
+from mocks or a successful CI run.
