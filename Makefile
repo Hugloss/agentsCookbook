@@ -260,3 +260,17 @@ benchmark-score:
 .PHONY: benchmark-eval-readiness
 benchmark-eval-readiness:
 	@uv run --no-project python -m benchmarks.harness.evaluation_readiness
+
+# E229–E232: require explicit campaign identity; a green coverage audit is
+# intentionally not a model-delivery or empirical-causality certificate.
+.PHONY: benchmark-eval-review-queue benchmark-factorial-campaign-audit
+benchmark-eval-review-queue:
+	@uv run --no-project python -m benchmarks.harness.independent_review_queue
+
+benchmark-factorial-campaign-audit:
+	@if [ -z "$(CAMPAIGN_ID)" ] || [ -z "$(RESULTS_ROOT)" ]; then \
+		echo 'Set CAMPAIGN_ID and RESULTS_ROOT; optional MODE=smoke|matrix (default matrix)' >&2; exit 2; fi
+	@uv run --no-project python -m benchmarks.harness.factorial_campaign_audit \
+		--results-root "$(RESULTS_ROOT)" --campaign-id "$(CAMPAIGN_ID)" \
+		--mode "$(or $(MODE),matrix)" --require-complete
+

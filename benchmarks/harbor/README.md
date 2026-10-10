@@ -830,3 +830,76 @@ changing only the selected result representation; host-level model-input
 delivery proofs need a host-owned capture boundary. Until those authorities
 exist, the report explicitly records `NOT_ASSESSED`, `NOT_IDENTIFIABLE`,
 or `UNKNOWN`, not spurious success.
+
+
+## E229–E232: factorial campaign completeness and independent-review handoff
+
+The E217–E228 factorial matrix is **a defined experiment, not a measured
+effect**. E229–E232 add two read-only qualification surfaces without creating
+a new benchmark runner, another oracle, or a Hashmarks implementation.
+
+### E229–E230: exact campaign grid, verified bundles, and arm consistency
+
+Run the existing model-backed campaign explicitly (this requires configured
+Harbor, model credentials, runtime dependencies, and a pinned Hashmarks build):
+
+```sh
+make benchmark-check MATRIX=harbor-factorial-smoke
+make benchmark-new MATRIX=harbor-factorial-smoke
+make benchmark-check MATRIX=harbor-factorial-full
+make benchmark-new MATRIX=harbor-factorial-full
+```
+
+Then audit **one actual saved campaign** (do not use the sample paths as claims
+of a completed run):
+
+```sh
+make benchmark-factorial-campaign-audit \
+  RESULTS_ROOT=.benchmark-runs/harbor-harness-v1/factorial-full \
+  CAMPAIGN_ID=<actual-execution-campaign-id> MODE=matrix
+```
+
+For smoke use `MODE=smoke` and the smoke run root. The audit walks immediate
+bundle directories and invokes the repository's existing immutable Harbor
+bundle verifier; unreadable or corrupt bundles are counted as blockers.
+It insists on every `harness × task × replicate × subject` cell: **15 smoke
+cells/3 quartets**, **135 full cells/27 quartets**, including the bare control
+for each matched quartet. No duplicate, missing, foreign-campaign, out-of-grid,
+ungradeable, tool-order-incomplete, source-contract-drift, mixed-model, or
+contaminated-bare cell is silently removed from the denominator. Each four-arm
+factorial must pass the existing exact tool-catalog/trace treatment audit.
+
+`coverage_state=COMPLETE` is limited to exact, internally consistent run
+coverage. It does **not** authorize `empirical_effect_qualified`,
+`model_input_delivery_attested` or
+`independent_oracle_review_attested`; all remain false without distinct
+external authority. A failed `--require-complete` exits nonzero. The audit
+does not alter existing scoring or rerun a model.
+
+### E231–E232: independently reviewable case work, not synthetic approval
+
+```sh
+make benchmark-eval-readiness
+make benchmark-eval-review-queue > /tmp/agentscookbook-independent-review-queue.json
+```
+
+The queue enumerates each multidomain case still requiring a review, with a
+SHA-256 of the frozen case excluding its mutable review field, plus every
+skill without a distinct confusion case. Every queue entry is explicitly
+non-approved. For multidomain tasks an independent reviewer must inspect the
+pinned repository, fixture digest, source ownership, counterexample and oracle
+expectation; for confusion cases, create and independently validate genuine
+repository fixtures and a negative oracle, not just an ungrounded scenario.
+Reviewer-generated evidence must be checked against the frozen identity in a
+separate approval workflow. This PR does not self-approve 60 multidomain cases
+or fabricate 54 confusion cases.
+
+### Boundary
+
+Hashmarks owns repository evidence; agentsCookbook owns descriptive
+measurement and intervention qualification. ATIF-linked returns are not proof
+of visibility or cognition. Presentation parity is not a randomized
+representation experiment. The optional campaign audit never runs in CI
+against synthetic results to assert actual uplift; tests exercise only
+model-free adversarial qualification rules. Independent review and
+model-backed intervention campaigns remain explicit follow-on actions.
