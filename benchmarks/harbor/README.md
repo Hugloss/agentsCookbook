@@ -903,3 +903,142 @@ representation experiment. The optional campaign audit never runs in CI
 against synthetic results to assert actual uplift; tests exercise only
 model-free adversarial qualification rules. Independent review and
 model-backed intervention campaigns remain explicit follow-on actions.
+
+
+## E233–E236: externally attested model-input boundary and intervention audit
+
+These read-only qualification tools do **not** turn Harbor's ATIF trace into a
+model-input log or add a model-input interception hook to Codex, OpenCode, or
+Claude Code. Today the standard Harbor backend **does not** generate the
+external signed receipts specified below. They can only be produced by a
+separately trusted, instrumented model-invoking host. Until such a host is
+integrated, delivery and intervention results remain **UNKNOWN / unrun**.
+
+### E233: independently keyed host input receipt
+
+A Hashmarks tool return is `RETURNED`, not `DELIVERED`. To attest the latter,
+a model-invoking **host** must inspect the actual outgoing model request
+*after* any result transformation and emit a receipt through a channel
+unavailable to the agent and MCP server. It must sign the binding to the
+tool packet only when that packet actually appears in the request input.
+
+The receipt schema is
+`agentscookbook.host-model-input-attestation.v1`:
+
+- Envelope: `schema`, `campaign_id`, `trial_id`,
+  `trajectory_sha256` (SHA-256 of exact ATIF bytes), `deliveries`.
+- Every delivery: `host_identity`, `host_build_sha256`,
+  `model_request_sha256`, `model_input_sha256`,
+  `model_message_sha256`, `packet_sha256`, `call_id_sha256`,
+  `model_request_sequence`, `boundary="host-model-request-input"`, and
+  `mac_sha256`. All `*_sha256` values are lowercase 64-digit hex.
+  `packet_sha256` and `call_id_sha256` must match a **qualified ATIF
+  Hashmarks result** rather than a free-text claim.
+- MAC: `HMAC-SHA256(key, b"agentscookbook:host-model-input-attestation:v1\\x00"
+  + canonical_json({"context": envelope_without_deliveries,
+  "delivery": delivery_without_mac}))`. Canonical JSON uses sorted keys,
+  compact separators, UTF-8, and rejects nonfinite numbers. Optional
+  `intervention` metadata is part of the MAC, never an unsigned annotation.
+
+The trust key **must** be independently generated and inaccessible to trial
+workspaces, agent tools, and Hashmarks. The verifier rejects symlinked keys
+and group/world-readable key files. Do not put keys, raw prompts, credentials,
+or raw model messages into the repository, benchmark outputs, or PRs.
+
+```sh
+make benchmark-host-delivery-audit \
+  TRAJECTORY=/immutable/run/trial/trajectory.json \
+  HOST_ATTESTATION=/external-host/receipts/trial.json \
+  HOST_KEY_FILE=/trusted-host-only/host-hmac.key \
+  CAMPAIGN_ID=real-campaign-id TRIAL_ID=real-trial-id
+```
+
+Invalid/stale/foreign/duplicated/orphaned or unauthenticated receipts never
+become delivery proof. Complete coverage yields `delivery_state=PROVEN`
+**only in the limited sense of a keyed host assertion about model-request
+input**: it does not prove the provider processed the request, the model
+noticed the information, or the information influenced an answer. Partial
+packet coverage stays `PARTIAL`; no key or receipt leaves it `UNKNOWN`.
+The ordinary mechanism and assurance reports intentionally retain their
+existing `UNKNOWN` delivery state unless an independent verification
+integration supplies qualified proof.
+
+### E234–E235: paired presentation and freshness protocols
+
+`benchmark-intervention-audit` consumes **verified Harbor result bundles**
+plus independently signed receipts for those exact trials; it does not create
+experimental subjects or synthesize agent traces. A design JSON has precisely:
+
+```json
+{
+  "schema": "agentscookbook.host-attested-intervention-design.v1",
+  "study": "presentation",
+  "campaign_id": "replace-with-actual-campaign-id",
+  "model": "replace-with-exact-provider-model",
+  "harnesses": ["codex"],
+  "tasks": ["locate-prefix-path-enumerator"],
+  "replicates": 3,
+  "arms": {"control": "structured", "variant": "text"}
+}
+```
+
+For `study="freshness"`, the exact arms are `control="current-generation"`
+and `variant="replaced-generation"`. Both require two model-backed,
+matched, graded, full-contract `hashmarks` trials per
+harness × task × replicate. The externally signed host receipt adds
+`intervention` with exactly:
+
+`study`, `arm`, `design_sha256`, `presentation`,
+`generation_sha256`, `current_generation_sha256`,
+`semantic_sha256`, `catalog_sha256`, `prompt_sha256`,
+`oracle_sha256`, `workspace_sha256`, `surface_sha256`.
+
+The design digest uses the canonical JSON above. Every signed packet
+in a trial must report the **same** treatment. Presentation comparisons
+require identical semantic/generation/catalog/prompt/oracle/workspace
+identities, with structured vs text as the only modeled difference and
+different surface digests. Freshness comparisons keep the presentation and
+current-target generation fixed but deliberately differ in exposed
+generation and semantic response identity. The trial source contract
+identity must also be unchanged. These are host-attested invariants, not
+independently reproduced source-byte proofs.
+
+```sh
+make benchmark-intervention-audit \
+  DESIGN=/trusted-evaluator/design.json \
+  RESULTS_ROOT=/immutable/harbor/run/bundles \
+  ATTESTATIONS_ROOT=/external-host/receipts \
+  HOST_KEY_FILE=/trusted-host-only/host-hmac.key
+```
+
+The receipt for each bundle directory `trial-name` lives at
+`ATTESTATIONS_ROOT/trial-name.json`. Its signed `trial_id` must equal
+that directory name; its signed campaign must match the frozen design.
+Missing/duplicate/foreign/ungradeable trials and uncontrolled changes
+block coverage, not merely disappear from denominators. This is **not a
+working treatment injector**: implementing verified transformations at each
+harness's host boundary remains external work.
+
+### E236: conclusions and safety of interpretation
+
+Only matched `PASS/FAIL` outcomes admitted through the exact host-input
+boundary enter the per-harness descriptive contrast (variant minus control).
+Task/harness/model-cluster bootstrap intervals are suppressed below eight
+independent task clusters, and harnesses are never pooled. Even a complete,
+host-attested grid is **not** evidence of true randomization, pre-registered
+timestamp authority, independent oracle review, provider consumption,
+model attention, or causal product uplift. Those require separately
+qualified evidence.
+
+Model-free QA (no model, key, external host or trial needed):
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_host_attested_interventions -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+make benchmark-eval-readiness
+```
+
+**Open external dependencies:** actual host-side model-request instrumentation,
+key custody and external durable signatures; real matched interventions and
+frozen randomized assignments; independent review of oracle cases. Never
+upgrade these to complete merely because the code and tests pass.
