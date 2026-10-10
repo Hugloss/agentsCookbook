@@ -98,7 +98,11 @@ def audit_factorial_campaign(
             continue
         key = (receipt.get("harness"), receipt.get("task_id"),
                receipt.get("replicate_id"), receipt.get("subject"))
-        if (type(key[2]) is not int or key not in expected_keys):
+        if (
+            type(key[2]) is not int
+            or not all(isinstance(value, str) for value in (key[0], key[1], key[3]))
+            or key not in expected_keys
+        ):
             issues["foreign-grid-cell"] += 1
             continue
         if key in cells:
