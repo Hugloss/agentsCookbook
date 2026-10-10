@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { qualifyEvidence } = require('./skill-evidence-contract');
 
 const repoRoot = path.resolve(path.dirname(fs.realpathSync(__filename)), '..');
 const defaultCorpus = path.join(repoRoot, 'evals', 'sharp-skill-cases.json');
@@ -132,7 +133,7 @@ function selectedCases(corpus, options) {
 function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); }
 
 function evaluatorSystem(skillText, skillName) {
-  return `${skillText}\n\n# Behavioral evaluation overlay\n\nApply only the invariant owned by \`${skillName}\`.\nDo not manufacture a finding because this is an evaluation.\nDo not claim a neighboring specialist's defect as this skill's finding.\nUse repository evidence when a fixture is supplied.\nAfter the normal skill-defined review append exactly:\n\nEVAL_VERDICT: FINDING|CLEAN\nEVAL_SCOPE: ${skillName}|NONE\nEVAL_EVIDENCE: <one concise evidence statement>\n\nUse FINDING only when this skill's own invariant is violated. Use CLEAN when the scenario is safe or belongs to another specialist.`;
+  return `${skillText}\n\n# Behavioral evaluation overlay\n\nApply only the invariant owned by \`${skillName}\`.\nDo not manufacture a finding because this is an evaluation.\nDo not claim a neighboring specialist's defect as this skill's finding.\nUse repository evidence when a fixture is supplied.\nAfter the normal skill-defined review append exactly:\n\nEVAL_VERDICT: FINDING|CLEAN\nEVAL_SCOPE: ${skillName}|NONE\nEVAL_EVIDENCE: <one concise evidence statement>\nEVAL_EVIDENCE_LOCATION: relative/path:line | NONE\nEVAL_EVIDENCE_QUOTE: <exact substring from that one line> | NONE\n\nFor a FINDING in a supplied repository fixture, give one exact file line and quote.\nDo not invent a path, line, or quote. A citation is only localization, not proof\nthat the cited text establishes the finding. For CLEAN return NONE for both.\n\nUse FINDING only when this skill's own invariant is violated. Use CLEAN when the scenario is safe or belongs to another specialist.`;
 }
 
 function casePrompt(item) {
@@ -188,7 +189,15 @@ function parseResult(output) {
   const verdict = output.match(/^EVAL_VERDICT:\s*(FINDING|CLEAN)\s*$/mi);
   const scope = output.match(/^EVAL_SCOPE:\s*([A-Za-z0-9_-]+|NONE)\s*$/mi);
   const evidence = output.match(/^EVAL_EVIDENCE:\s*(.+)\s*$/mi);
-  return { verdict: verdict ? verdict[1].toUpperCase() : '', scope: scope ? scope[1] : '', evidence: evidence ? evidence[1].trim() : '' };
+  const location = output.match(/^EVAL_EVIDENCE_LOCATION:\s*(.+)\s*$/mi);
+  const quote = output.match(/^EVAL_EVIDENCE_QUOTE:\s*(.+)\s*$/mi);
+  return {
+    verdict: verdict ? verdict[1].toUpperCase() : '',
+    scope: scope ? scope[1] : '',
+    evidence: evidence ? evidence[1].trim() : '',
+    location: location ? location[1].trim() : '',
+    quote: quote ? quote[1].trim() : '',
+  };
 }
 
 function persist(result, base) {
@@ -206,11 +215,23 @@ function executeCase(item, options) {
   const cwd = item.fixture ? path.resolve(repoRoot, item.fixture) : options.repoDir;
   const execution = options.runtime === 'pi' ? runPi(systemPrompt, prompt, cwd, options.model) : runOpenCode(systemPrompt, prompt, cwd, options.model);
   const parsed = parseResult(execution.stdout), expectedScope = item.expected === 'FINDING' ? item.skill : 'NONE';
-  const pass = execution.status === 0 && parsed.verdict === item.expected && parsed.scope === expectedScope && parsed.evidence.length > 0;
+  const proof = qualifyEvidence({
+    verdict: parsed.verdict,
+    evidence: parsed.evidence,
+    location: parsed.location,
+    quote: parsed.quote,
+    fixture: item.fixture ? cwd : null,
+    expected: item.expected,
+  });
+  const pass = execution.status === 0 && parsed.verdict === item.expected
+    && parsed.scope === expectedScope
+    && !['UNQUALIFIED'].includes(proof.state);
   return { id: item.id, skill: item.skill, kind: item.kind, runtime: options.runtime, model: options.model || null,
     expected: item.expected, expectedScope, status: pass ? 'pass' : 'fail', exitCode: execution.status,
     elapsedMs: execution.elapsedMs, outputChars: execution.stdout.length, verdict: parsed.verdict || null,
-    scope: parsed.scope || null, evidence: parsed.evidence || null, error: execution.error || null,
+    scope: parsed.scope || null, evidence: parsed.evidence || null,
+    evidenceQualification: proof.state, evidenceReason: proof.reason,
+    evidenceLocation: proof.location || null, error: execution.error || null,
     stdout: execution.stdout, stderr: execution.stderr };
 }
 
@@ -221,7 +242,12 @@ function main() {
   const corpus = JSON.parse(fs.readFileSync(options.corpus, 'utf8'));
   const errors = validateCorpus(corpus);
   if (errors.length) { for (const error of errors) process.stderr.write(`CORPUS_ERROR ${error}\n`); process.exit(1); }
-  if (options.validateCorpus) { process.stdout.write(`SUMMARY status=pass cases=${corpus.cases.length} specialists=${catalogSpecialists().length}\n`); return; }
+  if (options.validateCorpus) {
+    const confusionSkills = new Set(corpus.cases.filter((item) => item.kind === 'confusion').map((item) => item.skill));
+    const fixtureCases = corpus.cases.filter((item) => !!item.fixture);
+    process.stdout.write(`SUMMARY status=pass cases=${corpus.cases.length} specialists=${catalogSpecialists().length} confusion_skills=${confusionSkills.size} skills_without_confusion=${catalogSpecialists().length - confusionSkills.size} fixture_cases=${fixtureCases.length} scenario_only_cases=${corpus.cases.length - fixtureCases.length}\n`);
+    return;
+  }
   if (options.list) { for (const item of corpus.cases) process.stdout.write(`CASE id=${item.id} skill=${item.skill} kind=${item.kind} expected=${item.expected} fixture=${item.fixture || 'none'}\n`); return; }
   if (!['opencode', 'pi'].includes(options.runtime)) { process.stderr.write('Error: --runtime must be opencode or pi.\n'); process.exit(2); }
   const cases = selectedCases(corpus, options); if (options.artifactsDir) ensureDir(options.artifactsDir);
