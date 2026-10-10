@@ -1171,3 +1171,360 @@ which invokes the boundary adapter on real outgoing requests, independently
 custody and anchor the pre-work manifest, verify source and oracle reviews
 through actual people, and run the controlled model trials. CI passing
 does not close those dependencies.
+
+
+## E241–E244: controlled HTTPS provider dispatch and strict submission assurance
+
+The E237–E240 host adapter checked a declared outbound request but did not
+own the transport. E241 introduces a **runnable** HTTPS transport with a
+narrow protocol and explicit host custody, rather than pretending Harbor
+can intercept requests made inside native third-party agent harnesses.
+
+### E241: actual outbound body, one attempt, no redirect
+
+A privileged host imports
+`benchmarks.harness.trusted_http_provider.dispatch_verified_chat_request`
+and passes an E237 `TrustedModelRequestCapture` plus the **actual serialized**
+OpenAI-compatible Chat Completions JSON body. The host still owns:
+the frozen manifest, model credentials, full original tool response, its
+real task/prompt/oracle/workspace identities, and external evidence storage.
+
+For this limited adapter the HTTP endpoint must be pinned to the host-owned
+`approved_origin`, use TLS, have exactly the path
+`/v1/chat/completions`, and have no embedded URL credentials/query/fragment.
+The transport suppresses environment-provided proxy routes, disables
+redirect following, sends **one** JSON POST with its original request bytes,
+and accepts only a bounded 2xx JSON object containing a nonempty
+`choices` array. The host must supply a syntactically correct provider
+conversation; this function does not construct agent reasoning, generate a
+prior tool call, implement all provider message shapes, or retry on error.
+An invalid envelope/unsupported provider remains inadmissible.
+
+The receipt is emitted only when `TrustedModelRequestCapture.finalize()`
+matches every source call and packet to the immutable completed ATIF.
+The transport must have observed a successful provider HTTP response before
+`finalize()` can publish an attestation. Failed/ambiguous requests cannot
+retry within the same capture and cannot produce a successful
+transport-submission receipt. Raw request and response bodies are not
+persisted by this transport.
+
+### E242: verify the selected treatment actually reached the transport
+
+Before HTTP work the host checks the frozen trial identity, single selected
+Hashmarks packet, pinned semantic/generation source, specific model and tool
+call, one and only one tool-message slot, and a prompt digest derived from
+the actual request settings and non-tool messages. These are observable
+body-level invariants, not inferred from returned tool packets.
+
+Every successful host-submission record includes a MAC-protected
+`transport` object:
+
+```json
+{
+  "boundary": "https-response",
+  "endpoint_sha256": "<64-hex>",
+  "http_status": 200,
+  "response_sha256": "<64-hex>",
+  "response_bytes": 1024
+}
+```
+
+The verifier distinguishes `delivery_state=PROVEN` (key-holder asserts
+tool-message inclusion) from `provider_submission_state=SUBMITTED`
+(key-holder asserts one successful HTTPS response from its pinned
+transport). Both remain host assertions: neither is proof of model
+attention, provider inference, or a causal outcome. A receipt without
+the signed transport object keeps submission `UNKNOWN`. Partial coverage
+does not become complete.
+
+### E243–E244: audit every arm under one external authority
+
+A stricter qualification entrypoint re-checks every planned trial's
+immutable ATIF and independent host HMAC, requires `SUBMITTED` for
+*all* planned cells, verifies the existing frozen source/assignment and
+paired intervention constraints, and separately validates the review
+custodian's signed seal. No completed cell is inferred from a missing
+bundle, no replayed request is a new observation, and one valid arm is
+not sufficient for a paired claim.
+
+```sh
+make benchmark-provider-campaign-qualify \
+  MANIFEST=/external/pre-work/frozen-manifest.json \
+  RESULTS_ROOT=/immutable/run/bundles \
+  ATTESTATIONS_ROOT=/external-host/receipts \
+  HOST_KEY_FILE=/trusted-host/host.key \
+  SEAL=/external-reviewer/seal.json \
+  INDEPENDENT_KEY_FILE=/external-reviewer/review.key
+```
+
+Descriptive campaign admission requires every independent check to pass.
+The report explicitly withholds provider-processing proof, real randomization,
+trusted pre-work chronology, model attention, and causal attribution.
+An externally signed pre-work or human-review *assertion* must still be
+supported by independent operational evidence.
+
+Model-free attack regressions (faked HTTPS responses, **no network traffic**):
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_trusted_http_provider -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
+
+**Not shipped:** native OpenCode/Codex/Claude Code transport interception,
+real verified provider trials, independently timestamped preregistration,
+or completed independent oracle review. No experimental result is inferred
+from mocks or a successful CI run.
+
+
+## E245–E248: native-host feasibility and independently verified campaign provenance
+
+These checkpoints deliberately distinguish a **working first-party HTTPS
+provider transport** from the opaque model-request boundaries of native
+Codex, OpenCode, and Claude Code. They do not create another coding agent
+or transplant Hashmarks search into agentsCookbook.
+
+### E245: explicit native-harness boundary register
+
+`make benchmark-native-host-readiness DESIGN=/external/design.json`
+inspects the frozen design without contacting a model. The shipped
+integration status is:
+
+| Harness | What can be observed | Native model-input capture qualified? |
+|---|---|---|
+| Codex / codex-native | Agent trace and tool results | **No** |
+| OpenCode / opencode-native | Agent trace and tool results | **No** |
+| Claude Code | Harbor trace and tool results | **No** |
+| OpenAI Responses routing probe | Provider-managed MCP outputs and direct API response | **No** |
+| trusted-http-chat | First-party controlled HTTPS body and submission receipt | **Not a native agent harness** |
+
+The existing OpenAI Responses probe may truthfully claim routed
+`mcp_call` evidence, but provider-managed MCP output is not proof of
+exact model-input packet inclusion. Independent host HMAC keys and a
+synthetic provider response likewise do not magically identify a
+native third-party provider boundary.
+
+No `native-host-supported=true` user-supplied field can override this.
+Adding a genuine native integration requires a separately reviewed
+version-bound adapter and observed provider-request tests before changing
+the register.
+
+### E246–E247: cross-trial transport provenance
+
+`make benchmark-host-transport-provenance` re-verifies the signed host
+input AND successful HTTPS response binding for **every planned arm**,
+against exact frozen trial IDs and expected host identity, host build,
+`model_request_sequence=1`, selected arm and design, and the exact
+approved SHA-256 endpoint identity. Within each pair the host build,
+host identity, endpoint, catalog, prompt, oracle and workspace hashes
+must all be stable. One missing, foreign, tampered, re-signed-but-drifted
+or symlinked trial fails the population. This is read-only and cannot
+produce its own receipts.
+
+```sh
+make benchmark-host-transport-provenance \
+  MANIFEST=/external/pre-work/frozen-manifest.json \
+  RESULTS_ROOT=/immutable/run/bundles \
+  ATTESTATIONS_ROOT=/external-host/receipts \
+  HOST_KEY_FILE=/trusted-host/host.key \
+  APPROVED_ENDPOINT_SHA256=<sha256-of-approved-full-provider-url> \
+  EXPECTED_HOST_IDENTITY=<independent-registered-host-name>
+```
+
+These identities are host assertions verified with an independently
+custodied key, not remote provider-signed statements. A TLS 2xx response
+is evidence of bounded host submission, not reasoning or attention.
+
+### E248: descriptive empirical decision gate
+
+`make benchmark-empirical-campaign-decision` jointly requires
+authenticated provider submission, the independently sealed campaign,
+exact immutable Harbor bundles, complete intervention pair coverage,
+and cross-trial stable transport provenance. It also requires observed
+control failures (task headroom), and at least **eight distinct task
+clusters within each harness** before a descriptive interval population
+is admitted. Missing or unknown grades never enter an effect estimate.
+Each harness is assessed separately; heterogeneous model/harness
+populations are never pooled into a product-winner claim.
+
+```sh
+make benchmark-empirical-campaign-decision \
+  MANIFEST=/external/pre-work/frozen-manifest.json \
+  RESULTS_ROOT=/immutable/run/bundles \
+  ATTESTATIONS_ROOT=/external-host/receipts \
+  HOST_KEY_FILE=/trusted-host/host.key \
+  SEAL=/external-reviewer/seal.json \
+  INDEPENDENT_KEY_FILE=/external-reviewer/review.key \
+  APPROVED_ENDPOINT_SHA256=<64-hex> \
+  EXPECTED_HOST_IDENTITY=<registered-host>
+```
+
+The strongest possible state from these tools is
+`submission_bounded_descriptive_population_qualified`. The following
+are **always explicitly unproven**: true native-harness capture, actual
+independent human case reviews, externally trusted preregistration
+chronology, genuine assignment randomness, provider consumption,
+model attention, and causal Hashmarks uplift. Those require
+**new observed external evidence**, not another reporting boolean.
+
+Run the model-free attack ring:
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_native_provenance_and_empirical_decision -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
+
+The additional tests include valid-but-synthetic HMAC receipts,
+substituted endpoint/host-build identities, duplicate trial replay,
+missing control, cross-arm prompt drift, modified signed transport,
+unreviewed host status and insufficient control headroom.
+They are **not** a completed empirical benchmark.
+
+**Pending after this bundle:** wire a genuine instrumented host boundary
+for at least one native agent/version, execute controlled matched
+provider-backed tasks with independent run custody, and obtain real
+independent oracle reviews. Do not describe provider-owned MCP routing
+as the missing native transport hook.
+
+
+## E249–E252: opt-in pinned OpenCode custom-provider gateway
+
+This is the **first executable trial-scoped native OpenCode provider route**
+in the evaluator. It does not replace the existing native OpenCode
+benchmark adapter and is not enabled implicitly. It is a standalone
+one-shot OpenAI-compatible route for controlled evaluation.
+
+Official OpenCode V1 provider documentation describes
+`provider.<name>.npm="@ai-sdk/openai-compatible"` with
+`options.baseURL` for a custom provider and `enabled_providers` for
+provider restriction. See
+[OpenCode provider configuration](https://opencode.ai/docs/providers/)
+and [OpenCode config](https://opencode.ai/docs/config/).
+The opt-in runner freezes those values in a *private, create-only*
+`opencode.json` and selects `agentscookbook-captured/<model>`.
+It also isolates HOME/XDG config/data/cache and suppresses unrelated
+LLM credentials in the launched child environment.
+
+### E249 — exact executable and provider-config admission
+
+A trial needs an already-frozen E238 assignment for
+`harness="opencode-native"` (or `"opencode"`), pinned OpenCode
+executable SHA-256, exact observed `opencode --version`, a model
+ID, and one independently pinned source payload
+(`generation_sha256`, `semantic_sha256`, `content`).
+The semantic digest MUST match the canonical JSON content.
+The executable is checked before and after running, and config
+files are create-only under a fresh private run root.
+
+**Do not reuse an existing OpenCode configuration** as gateway authority.
+OpenCode can merge managed, global, and project configuration, so the
+generated allowlist is an intended constraint—not proof of the
+runtime's final effective provider selection. Any foreign/native
+requests must still be rejected by the isolated gateway. The native
+provider package, its effective settings, other plugin hooks, and
+process egress are not yet independently attested.
+
+### E250 — actual loopback request boundary
+
+The runner launches the pinned native OpenCode process directly,
+not through a shell, and points its configured OpenAI-compatible
+provider to a loopback-only HTTP gateway with a per-trial bearer
+token. The token is not proof of OS process identity: an evaluated
+child could read its own environment. The upstream API credential
+stays with the privileged host and is **not** passed to OpenCode.
+
+A maximum of four pre-tool provider requests can pass through the
+host-owned TLS client for native tool selection. These are
+**unattested** and never count as Hashmarks delivery. When exactly
+one tool-result message appears, the gateway compares it byte-for-byte
+by JSON value against the frozen selected Hashmarks result. It then
+uses the existing E241 signed transport to validate and dispatch the
+actual request exactly once. Its bounded response is returned
+unchanged to the native client, without a second provider call.
+Wrong model, missing/duplicate tool message, changed selected
+content, auth failure, over-budget requests, and retries fail closed.
+Only OpenAI Chat Completions JSON with the currently supported
+single `role="tool"` message form is supported. Both bounded nonstream
+JSON responses and OpenAI-style `text/event-stream` responses are supported.
+An SSE response must contain valid `choices` chunks and a terminal
+`data: [DONE]` event. Truncated/malformed streaming responses cannot
+generate a signed successful transport receipt. The full bounded SSE response
+is relayed without a second provider call.
+
+### E251 — fail-before-work qualification and observed execution
+
+Use a **fresh** `RUN_ROOT`, a git-bound disposable `WORKSPACE`,
+a frozen original subject `CURRENT_SOURCE` JSON and, for freshness,
+the explicit `REPLACED_SOURCE` JSON. Specify the OpenCode binary and
+observed SHA/version; every authority is a required argument.
+
+```sh
+export BENCHMARK_UPSTREAM_API_KEY=<privileged-host-only-provider-secret>
+make benchmark-opencode-native-gateway \
+  MANIFEST=/external/prework/frozen-manifest.json \
+  TRIAL_ID=<frozen-native-trial-id> \
+  OPENCODE_BIN=/trusted/bin/opencode \
+  OPENCODE_SHA256=<sha256-executable> \
+  OPENCODE_VERSION=<exact-version-output> \
+  RUN_ROOT=/private/new-trial-dir \
+  WORKSPACE=/disposable/git-workspace \
+  PROMPT_FILE=/external/frozen-prompt.txt \
+  CURRENT_SOURCE=/external/verified-hashmarks-packet.json \
+  HOST_KEY_FILE=/trusted-host/host.key \
+  HOST_IDENTITY=<trusted-provider-host-id> \
+  UPSTREAM=https://api.openai.com/v1/chat/completions \
+  APPROVED_ORIGIN=https://api.openai.com \
+  CATALOG_SHA256=<64-hex> ORACLE_SHA256=<64-hex> \
+  WORKSPACE_SHA256=<64-hex> \
+  ALLOW_UNCONFINED_NATIVE_TEST=1
+```
+
+**Safety:** This opt-in standalone runner does **not** use the existing
+bubblewrap-backed native benchmark sandbox. By default the Make target and
+Python CLI **refuse** to execute the native child. The
+`ALLOW_UNCONFINED_NATIVE_TEST=1` acknowledgement deliberately permits an
+unconfined agent process and must only be used in a disposable, isolated
+test host with no secrets or valuable workspace content. The runner also
+rejects evaluated-workspace-local secrets, trial authority placed inside
+that workspace, and project `opencode.json`, `opencode.jsonc` or
+`.opencode` configuration that could override provider selection.
+The upstream API key remains in the trusted parent, but these checks do not
+constitute OS isolation or guaranteed exclusive network egress.
+
+The native process must successfully exit AND the gateway must have
+relayed exactly one selected tool-result request before
+`native_gateway_route_completed` can become true. A normal
+`opencode run` exit on its own is not evidence of native model-input
+delivery. Invalid or unobserved runs return nonzero status without
+upgrading evidence. This launcher does **not** infer a tool result
+from agent prose or synthesize a host-signed ATIF.
+
+### E252 — what is and isn't empirically qualified
+
+The gateway can prove to its own key holder which HTTP request body it
+received and submitted. **It cannot prove that only the real OpenCode
+process could speak on loopback.** OS-bound peer identity/egress
+confinement, immutable native OpenCode session export, ATIF binding,
+real task oracle review, and externally anchored campaign authority
+are required before claiming native execution provenance or a
+model-backed Hashmarks effect. The result intentionally reports:
+
+- `host_receipt_finalized=false`
+- `native_process_origin_proven=false`
+- `native_model_input_delivered_proven=false`
+- `causal_improvement_proven=false`
+
+The earlier `TrustedModelRequestCapture.finalize` can only sign when
+**real immutable ATIF** is separately available and exactly matches
+the observed packet; never create an ATIF from the gateway request
+to manufacture delivery proof. The E248 empirical gate remains
+conservative, and no campaign has been run here.
+
+Model-free attack regressions cover SHA/version drift, fail-before-work
+admission, exact gateway model/packet matching, unknown messages,
+pre-evidence budgets, one-shot response relay, no retries, create-only
+config, child credential isolation and native-exit-without-evidence:
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_opencode_native_gateway -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
