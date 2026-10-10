@@ -9,7 +9,7 @@
       "fixture": "evals/fixtures/async-ownership",
       "scenario": "Two selections may overlap. Selection A starts first, selection B becomes current, B completes, then A completes. Determine whether older work can still overwrite state owned by B.",
       "evidence_contract": {
-        "status": "reviewed-fixture-anchor",
+        "status": "pinned-fixture-anchor",
         "anchors": [
           {
             "path": "service.js",
@@ -104,7 +104,7 @@
       "fixture": "evals/fixtures/semantic-authority",
       "scenario": "The API layer and worker layer both decide the same can-run policy from the same raw configuration. There is no documented distinction between the two decisions.",
       "evidence_contract": {
-        "status": "reviewed-fixture-anchor",
+        "status": "pinned-fixture-anchor",
         "anchors": [
           {
             "path": "api.js",
@@ -333,7 +333,7 @@
       "fixture": "evals/fixtures/test-causality",
       "scenario": "Inspect how the test knows background work is complete before it asserts.",
       "evidence_contract": {
-        "status": "reviewed-fixture-anchor",
+        "status": "pinned-fixture-anchor",
         "anchors": [
           {
             "path": "worker.test.js",
