@@ -18,6 +18,7 @@ try {
     quote: 'return false;',
     fixture: root,
     expected: 'FINDING',
+    anchors: [{ path: 'owner.js', line: 1, quote: 'return false;' }],
   };
   assert.strictEqual(qualifyEvidence(claim).state, 'LOCATED_NOT_ADJUDICATED');
   assert.strictEqual(qualifyEvidence({ ...claim, quote: 'return true;' }).reason, 'quote-not-on-cited-line');
@@ -25,6 +26,14 @@ try {
   assert.strictEqual(qualifyEvidence({ ...claim, location: '../outside.js:1' }).reason, 'path-escapes-fixture');
   assert.strictEqual(qualifyEvidence({ ...claim, location: 'owner.js:0' }).reason, 'invalid-line-number');
   assert.strictEqual(qualifyEvidence({ ...claim, location: '' }).reason, 'missing-file-line-quote');
+  assert.strictEqual(qualifyEvidence({ ...claim, anchors: null }).reason, 'positive-fixture-oracle-anchor-missing');
+  assert.strictEqual(qualifyEvidence({ ...claim, anchors: [
+    { path: 'owner.js', line: 1, quote: 'function owner()' }
+  ] }).reason, 'citation-does-not-match-reviewed-oracle-anchors');
+  assert.strictEqual(qualifyEvidence({ ...claim, anchors: [
+    { path: 'owner.js', line: 1, quote: 'return false;' },
+    { path: 'owner.js', line: 1, quote: 'function owner()' }
+  ] }).reason, 'missing-required-evidence-anchors');
   assert.strictEqual(qualifyEvidence({ ...claim, fixture: null }).state, 'SCENARIO_ONLY');
   assert.strictEqual(qualifyEvidence({ ...claim, verdict: 'CLEAN', expected: 'CLEAN' }).state, 'NOT_APPLICABLE');
   fs.symlinkSync('/etc/hosts', path.join(root, 'foreign.js'));
