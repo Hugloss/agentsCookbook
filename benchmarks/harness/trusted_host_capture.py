@@ -108,6 +108,13 @@ class TrustedModelRequestCapture:
         })).hexdigest()
         if prompt_sha256 != expected_prompt_digest:
             raise ValueError("outbound-prompt-digest-not-observed")
+        # An extra or malformed tool message is a confound for a controlled
+        # presentation/freshness intervention, even if the selected result
+        # also occurs exactly once.
+        if (any(not isinstance(message, dict) for message in request["messages"])
+                or sum(message.get("role") == "tool"
+                       for message in request["messages"]) != 1):
+            raise ValueError("uncontrolled-or-ambiguous-model-tool-messages")
         # A tool packet MUST be present in exactly one specifically linked
         # model-input message. Agent prose cannot substitute for this link.
         matches = [
