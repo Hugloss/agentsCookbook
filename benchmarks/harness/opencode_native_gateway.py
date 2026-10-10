@@ -29,7 +29,8 @@ from .host_input_attestation import canonical
 from .trusted_host_capture import TrustedModelRequestCapture
 from .trusted_http_provider import (
     MAX_RESPONSE_BYTES, _RejectRedirect, _endpoint,
-    dispatch_verified_chat_response,
+    dispatch_verified_chat_response, dispatch_verified_chat_stream_response,
+    validate_sse_response,
 )
 from .trusted_treatments import assigned_cell, select_treatment, verify_manifest
 
@@ -130,24 +131,35 @@ def write_gateway_config(path: Path, config: Mapping[str, Any]) -> str:
 
 
 def _forward_pre_evidence(body: bytes, *, upstream: str,
-                          api_key: str, timeout_seconds: int) -> bytes:
+                          api_key: str, timeout_seconds: int,
+                          stream: bool = False) -> bytes:
     """A tool-selection turn may precede Hashmarks; not host delivery proof."""
     opener = build_opener(ProxyHandler({}), _RejectRedirect(),
                           HTTPSHandler())
     request = Request(upstream, data=body, method="POST", headers={
         "Authorization": "Bearer " + api_key,
-        "Content-Type": "application/json", "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream" if stream else "application/json",
     })
     try:
         with opener.open(request, timeout=timeout_seconds) as response:
             code = response.status
             output = response.read(MAX_RESPONSE_BYTES + 1)
-        doc = json.loads(output)
+            headers = getattr(response, "headers", None)
+            mime = headers.get("Content-Type", "") if headers is not None else ""
         if (type(code) is not int or not 200 <= code < 300
-                or not 0 < len(output) <= MAX_RESPONSE_BYTES
-                or not isinstance(doc, dict) or not isinstance(doc.get("choices"), list)
-                or not doc["choices"]):
+                or not 0 < len(output) <= MAX_RESPONSE_BYTES):
             raise ValueError("unqualified-provider-response")
+        if stream:
+            if (not isinstance(mime, str)
+                    or not mime.lower().startswith("text/event-stream")
+                    or not validate_sse_response(output)):
+                raise ValueError("unqualified-streaming-provider-response")
+        else:
+            doc = json.loads(output)
+            if (not isinstance(doc, dict) or not isinstance(doc.get("choices"), list)
+                    or not doc["choices"]):
+                raise ValueError("unqualified-provider-response")
     except Exception:
         raise ValueError("pre-evidence-provider-request-failed") from None
     return output
@@ -242,6 +254,7 @@ class NativeOpenCodeGateway:
                 return _forward_pre_evidence(
                     body, upstream=self.upstream, api_key=self.upstream_api_key,
                     timeout_seconds=self.timeout_seconds,
+                    stream=request.get("stream") is True,
                 )
             if len(tool_messages) != 1:
                 raise ValueError("gateway-uncontrolled-foreign-tool-observations")
@@ -261,7 +274,11 @@ class NativeOpenCodeGateway:
             # One outbound request, one bounded HTTPS response, one relay.
             # Failed / ambiguous transport stays TREATMENT_ATTEMPTED and the
             # run cannot retry or create an attested successful submission.
-            result = dispatch_verified_chat_response(
+            submit = (
+                dispatch_verified_chat_stream_response if request.get("stream") is True
+                else dispatch_verified_chat_response
+            )
+            result = submit(
                 capture=self.capture, serialized_model_request=body,
                 endpoint=self.upstream, approved_origin=self.approved_origin,
                 api_key=self.upstream_api_key, tool_call_id=call_id,
@@ -296,7 +313,11 @@ class NativeOpenCodeGateway:
                         body, authorization=self.headers.get("Authorization", ""),
                     )
                     self.send_response(200)
-                    self.send_header("Content-Type", "application/json")
+                    is_stream = json.loads(body).get("stream") is True
+                    self.send_header(
+                        "Content-Type",
+                        "text/event-stream" if is_stream else "application/json",
+                    )
                     self.send_header("Content-Length", str(len(output)))
                     self.end_headers()
                     self.wfile.write(output)
