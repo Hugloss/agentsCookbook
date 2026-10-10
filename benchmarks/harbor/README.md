@@ -1443,7 +1443,12 @@ unchanged to the native client, without a second provider call.
 Wrong model, missing/duplicate tool message, changed selected
 content, auth failure, over-budget requests, and retries fail closed.
 Only OpenAI Chat Completions JSON with the currently supported
-single `role="tool"` message form is supported.
+single `role="tool"` message form is supported. Both bounded nonstream
+JSON responses and OpenAI-style `text/event-stream` responses are supported.
+An SSE response must contain valid `choices` chunks and a terminal
+`data: [DONE]` event. Truncated/malformed streaming responses cannot
+generate a signed successful transport receipt. The full bounded SSE response
+is relayed without a second provider call.
 
 ### E251 — fail-before-work qualification and observed execution
 
@@ -1469,8 +1474,21 @@ make benchmark-opencode-native-gateway \
   UPSTREAM=https://api.openai.com/v1/chat/completions \
   APPROVED_ORIGIN=https://api.openai.com \
   CATALOG_SHA256=<64-hex> ORACLE_SHA256=<64-hex> \
-  WORKSPACE_SHA256=<64-hex>
+  WORKSPACE_SHA256=<64-hex> \
+  ALLOW_UNCONFINED_NATIVE_TEST=1
 ```
+
+**Safety:** This opt-in standalone runner does **not** use the existing
+bubblewrap-backed native benchmark sandbox. By default the Make target and
+Python CLI **refuse** to execute the native child. The
+`ALLOW_UNCONFINED_NATIVE_TEST=1` acknowledgement deliberately permits an
+unconfined agent process and must only be used in a disposable, isolated
+test host with no secrets or valuable workspace content. The runner also
+rejects evaluated-workspace-local secrets, trial authority placed inside
+that workspace, and project `opencode.json`, `opencode.jsonc` or
+`.opencode` configuration that could override provider selection.
+The upstream API key remains in the trusted parent, but these checks do not
+constitute OS isolation or guaranteed exclusive network egress.
 
 The native process must successfully exit AND the gateway must have
 relayed exactly one selected tool-result request before
