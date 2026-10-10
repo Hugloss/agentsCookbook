@@ -128,7 +128,10 @@ def select_treatment(manifest: Mapping[str, Any], *, trial_id: str,
             "generation_sha256", "semantic_sha256", "content",
         } or not _hex(item["generation_sha256"]) or not _hex(item["semantic_sha256"]):
             raise ValueError("missing-pinned-treatment-content")
-        return dict(item), _payload(item["content"])
+        payload = _payload(item["content"])
+        if item["semantic_sha256"] != hashlib.sha256(payload).hexdigest():
+            raise ValueError("semantic-source-digest-does-not-match-content")
+        return dict(item), payload
 
     primary, primary_bytes = parse_source(current)
     if design["study"] == "presentation":
