@@ -1274,3 +1274,113 @@ uv run --no-project python -m unittest discover -s benchmarks/tests
 real verified provider trials, independently timestamped preregistration,
 or completed independent oracle review. No experimental result is inferred
 from mocks or a successful CI run.
+
+
+## E245–E248: native-host feasibility and independently verified campaign provenance
+
+These checkpoints deliberately distinguish a **working first-party HTTPS
+provider transport** from the opaque model-request boundaries of native
+Codex, OpenCode, and Claude Code. They do not create another coding agent
+or transplant Hashmarks search into agentsCookbook.
+
+### E245: explicit native-harness boundary register
+
+`make benchmark-native-host-readiness DESIGN=/external/design.json`
+inspects the frozen design without contacting a model. The shipped
+integration status is:
+
+| Harness | What can be observed | Native model-input capture qualified? |
+|---|---|---|
+| Codex / codex-native | Agent trace and tool results | **No** |
+| OpenCode / opencode-native | Agent trace and tool results | **No** |
+| Claude Code | Harbor trace and tool results | **No** |
+| OpenAI Responses routing probe | Provider-managed MCP outputs and direct API response | **No** |
+| trusted-http-chat | First-party controlled HTTPS body and submission receipt | **Not a native agent harness** |
+
+The existing OpenAI Responses probe may truthfully claim routed
+`mcp_call` evidence, but provider-managed MCP output is not proof of
+exact model-input packet inclusion. Independent host HMAC keys and a
+synthetic provider response likewise do not magically identify a
+native third-party provider boundary.
+
+No `native-host-supported=true` user-supplied field can override this.
+Adding a genuine native integration requires a separately reviewed
+version-bound adapter and observed provider-request tests before changing
+the register.
+
+### E246–E247: cross-trial transport provenance
+
+`make benchmark-host-transport-provenance` re-verifies the signed host
+input AND successful HTTPS response binding for **every planned arm**,
+against exact frozen trial IDs and expected host identity, host build,
+`model_request_sequence=1`, selected arm and design, and the exact
+approved SHA-256 endpoint identity. Within each pair the host build,
+host identity, endpoint, catalog, prompt, oracle and workspace hashes
+must all be stable. One missing, foreign, tampered, re-signed-but-drifted
+or symlinked trial fails the population. This is read-only and cannot
+produce its own receipts.
+
+```sh
+make benchmark-host-transport-provenance \
+  MANIFEST=/external/pre-work/frozen-manifest.json \
+  RESULTS_ROOT=/immutable/run/bundles \
+  ATTESTATIONS_ROOT=/external-host/receipts \
+  HOST_KEY_FILE=/trusted-host/host.key \
+  APPROVED_ENDPOINT_SHA256=<sha256-of-approved-full-provider-url> \
+  EXPECTED_HOST_IDENTITY=<independent-registered-host-name>
+```
+
+These identities are host assertions verified with an independently
+custodied key, not remote provider-signed statements. A TLS 2xx response
+is evidence of bounded host submission, not reasoning or attention.
+
+### E248: descriptive empirical decision gate
+
+`make benchmark-empirical-campaign-decision` jointly requires
+authenticated provider submission, the independently sealed campaign,
+exact immutable Harbor bundles, complete intervention pair coverage,
+and cross-trial stable transport provenance. It also requires observed
+control failures (task headroom), and at least **eight distinct task
+clusters within each harness** before a descriptive interval population
+is admitted. Missing or unknown grades never enter an effect estimate.
+Each harness is assessed separately; heterogeneous model/harness
+populations are never pooled into a product-winner claim.
+
+```sh
+make benchmark-empirical-campaign-decision \
+  MANIFEST=/external/pre-work/frozen-manifest.json \
+  RESULTS_ROOT=/immutable/run/bundles \
+  ATTESTATIONS_ROOT=/external-host/receipts \
+  HOST_KEY_FILE=/trusted-host/host.key \
+  SEAL=/external-reviewer/seal.json \
+  INDEPENDENT_KEY_FILE=/external-reviewer/review.key \
+  APPROVED_ENDPOINT_SHA256=<64-hex> \
+  EXPECTED_HOST_IDENTITY=<registered-host>
+```
+
+The strongest possible state from these tools is
+`submission_bounded_descriptive_population_qualified`. The following
+are **always explicitly unproven**: true native-harness capture, actual
+independent human case reviews, externally trusted preregistration
+chronology, genuine assignment randomness, provider consumption,
+model attention, and causal Hashmarks uplift. Those require
+**new observed external evidence**, not another reporting boolean.
+
+Run the model-free attack ring:
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_native_provenance_and_empirical_decision -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
+
+The additional tests include valid-but-synthetic HMAC receipts,
+substituted endpoint/host-build identities, duplicate trial replay,
+missing control, cross-arm prompt drift, modified signed transport,
+unreviewed host status and insufficient control headroom.
+They are **not** a completed empirical benchmark.
+
+**Pending after this bundle:** wire a genuine instrumented host boundary
+for at least one native agent/version, execute controlled matched
+provider-backed tasks with independent run custody, and obtain real
+independent oracle reviews. Do not describe provider-owned MCP routing
+as the missing native transport hook.
