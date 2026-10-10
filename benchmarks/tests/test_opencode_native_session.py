@@ -19,6 +19,7 @@ from unittest.mock import patch
 from benchmarks.harness.host_input_attestation import canonical, verify_host_attestations
 from benchmarks.harness.opencode_native_export import (
     acquire_native_export, select_native_session,
+    _run_bounded_native, native_export_preflight,
 )
 from benchmarks.harness.opencode_native_session import (
     finalize_native_export, inspect_native_export,
@@ -236,6 +237,24 @@ class NativeExportSelectionTests(unittest.TestCase):
                         canonical(entries), exact_title=record["title"],
                         workspace=workspace, started_at_ms=9000,
                     )
+
+    def test_native_capture_limit_is_required_before_export_process(self):
+        with tempfile.TemporaryDirectory() as td:
+            with patch(
+                "benchmarks.harness.opencode_native_export.shutil.which",
+                return_value=None,
+            ), patch(
+                "benchmarks.harness.opencode_native_export.subprocess.run",
+            ) as launched:
+                with self.assertRaisesRegex(ValueError, "prlimit-unavailable"):
+                    native_export_preflight()
+                with self.assertRaisesRegex(ValueError, "prlimit-unavailable"):
+                    _run_bounded_native(
+                        ["/trusted/opencode", "export", "ses_dummy"],
+                        workspace=Path(td), environment={"HOME": td},
+                        max_bytes=1024,
+                    )
+                launched.assert_not_called()
 
     def test_acquisition_uses_exact_opencode_session_commands(self):
         with tempfile.TemporaryDirectory() as td:
