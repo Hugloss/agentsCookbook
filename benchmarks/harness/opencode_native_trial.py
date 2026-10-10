@@ -28,7 +28,7 @@ from .opencode_native_gateway import (
     sha256_file, write_gateway_config,
 )
 from .trusted_treatments import load_manifest, verify_manifest
-from .opencode_native_export import acquire_native_export
+from .opencode_native_export import acquire_native_export, native_export_preflight
 from .opencode_native_session import finalize_native_export
 
 SCHEMA = "agentscookbook.pinned-opencode-gateway-trial.v1"
@@ -84,6 +84,10 @@ def launch_native_trial(
         expected_sha256=expected_binary_sha256,
         expected_version=expected_version,
     )
+    # A bounded native-session export is mandatory whenever model work can
+    # succeed. Reject missing Linux capture authority before creating the
+    # workspace/run root or starting the native model.
+    native_export_preflight()
     gateway = NativeOpenCodeGateway(
         frozen, trial_id=trial_id, host_key_file=host_key_file,
         host_identity=host_identity, current=current, replaced=replaced,
