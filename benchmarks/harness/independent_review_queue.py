@@ -53,10 +53,8 @@ def build_review_queue(skill: Mapping[str, Any], multidomain: Mapping[str, Any])
         state = review.get("state")
         if state not in ("pending", "approved", "escalated", "rejected"):
             raise ValueError("unknown-review-state")
-        # A checked-in self-declared approved field does not prove independent
-        # reviewer authority. This handoff is not an admission decision.
-        if state == "approved":
-            continue
+        # Even an "approved" field can be self-asserted; until an independently
+        # verified reviewer receipt exists, keep it in the validation queue.
         frozen = {key: value for key, value in case.items() if key != "review"}
         cases.append({
             "id": case_id,
@@ -64,7 +62,10 @@ def build_review_queue(skill: Mapping[str, Any], multidomain: Mapping[str, Any])
             "repository": case.get("repository_name"),
             "frozen_case_sha256": _digest(frozen),
             "current_review_state": state,
-            "required_action": "independent-oracle-review",
+            "required_action": (
+                "verify-independent-approval" if state == "approved"
+                else "independent-oracle-review"
+            ),
             "independent_approval_supplied_by_this_queue": False,
         })
     confusion = [{
