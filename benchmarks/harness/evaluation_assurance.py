@@ -143,6 +143,15 @@ def build_assurance_summary(pairs: list[dict[str, Any]]) -> dict[str, Any]:
     bare_failures = sum(
         _outcome(p["outcome_transition"])[0] == 0 for p in qualified
     )
+    cannot_pool = len(by_harness) > 1
+    unpooled = {
+        "state": "NOT_COMPARABLE_ACROSS_HARNESSES",
+        "reason": "different-harness-execution-and-observability",
+        "task_clusters": None,
+        "point_estimate": None,
+        "interval_95": None,
+        "probability_gain": None,
+    }
     report = {
         "schema": SCHEMA,
         "qualified_pairs": len(qualified),
@@ -158,8 +167,8 @@ def build_assurance_summary(pairs: list[dict[str, Any]]) -> dict[str, Any]:
             ),
             "caution": "Observed failure does not establish sufficient task difficulty.",
         },
-        "paired_effect": _bootstrap(groups),
-        "contracted_treatment_effect": _bootstrap(treatment_groups),
+        "paired_effect": unpooled if cannot_pool else _bootstrap(groups),
+        "contracted_treatment_effect": unpooled if cannot_pool else _bootstrap(treatment_groups),
         "per_harness": comparisons,
         "evidence_delivery": {
             "states": dict(sorted(lifecycle.items())),
