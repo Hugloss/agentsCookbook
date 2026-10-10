@@ -1,4 +1,4 @@
-BENCHMARK_TARGETS := benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood benchmark-context-invariance benchmark-context-invariance-check benchmark-context-invariance-check-all benchmark-context-invariance-qualify-check benchmark-context-invariance-qualify benchmark-context-invariance-qualify-resume benchmark-context-invariance-qualify-status benchmark-context-invariance-new benchmark-context-invariance-resume benchmark-context-invariance-runs benchmark-context-invariance-status benchmark-context-invariance-reports benchmark-harness-explain benchmark-harness-ablation benchmark-harness-find-ablation benchmark-harness-change-impact-ablation benchmark-harness-post-change-ablation benchmark-harness-correlate-evidence-ablation benchmark-harness-repository-declarations-ablation benchmark-harness-dependency-codemap-ablation benchmark-harness-verification-explanation-ablation
+BENCHMARK_TARGETS := benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood benchmark-context-invariance benchmark-context-invariance-check benchmark-context-invariance-check-all benchmark-context-invariance-qualify-check benchmark-context-invariance-qualify benchmark-context-invariance-qualify-resume benchmark-context-invariance-qualify-status benchmark-context-invariance-new benchmark-context-invariance-resume benchmark-context-invariance-runs benchmark-context-invariance-status benchmark-context-invariance-reports benchmark-harness-explain benchmark-harness-ablation benchmark-harness-find-ablation benchmark-harness-change-impact-ablation benchmark-harness-post-change-ablation benchmark-harness-correlate-evidence-ablation benchmark-harness-repository-declarations-ablation benchmark-harness-dependency-codemap-ablation benchmark-harness-verification-explanation-ablation benchmark-host-delivery-audit benchmark-intervention-audit
 .PHONY: $(BENCHMARK_TARGETS)
 
 BENCHMARK_REQUESTED_GOALS := $(filter benchmark benchmark-%,$(MAKECMDGOALS))
@@ -274,3 +274,22 @@ benchmark-factorial-campaign-audit:
 		--results-root "$(RESULTS_ROOT)" --campaign-id "$(CAMPAIGN_ID)" \
 		--mode "$(or $(MODE),matrix)" --require-complete
 
+
+# E233–E236: independent host MAC key file must be outside any model-visible
+# workspace, and no receipt is implicitly harvested from agent/ATIF prose.
+.PHONY: benchmark-host-delivery-audit benchmark-intervention-audit
+benchmark-host-delivery-audit:
+	@if [ -z "$(TRAJECTORY)" ] || [ -z "$(HOST_ATTESTATION)" ] || [ -z "$(HOST_KEY_FILE)" ] || [ -z "$(CAMPAIGN_ID)" ] || [ -z "$(TRIAL_ID)" ]; then \
+		echo 'Set TRAJECTORY HOST_ATTESTATION HOST_KEY_FILE CAMPAIGN_ID TRIAL_ID' >&2; exit 2; fi
+	@uv run --no-project python -m benchmarks.harness.host_input_attestation \
+		--trajectory "$(TRAJECTORY)" --attestation "$(HOST_ATTESTATION)" \
+		--host-key-file "$(HOST_KEY_FILE)" --campaign-id "$(CAMPAIGN_ID)" \
+		--trial-id "$(TRIAL_ID)" --require-delivery
+
+benchmark-intervention-audit:
+	@if [ -z "$(DESIGN)" ] || [ -z "$(RESULTS_ROOT)" ] || [ -z "$(ATTESTATIONS_ROOT)" ] || [ -z "$(HOST_KEY_FILE)" ]; then \
+		echo 'Set DESIGN RESULTS_ROOT ATTESTATIONS_ROOT HOST_KEY_FILE' >&2; exit 2; fi
+	@uv run --no-project python -m benchmarks.harness.intervention_audit \
+		--design "$(DESIGN)" --bundles-root "$(RESULTS_ROOT)" \
+		--attestations-root "$(ATTESTATIONS_ROOT)" \
+		--host-key-file "$(HOST_KEY_FILE)" --require-complete
