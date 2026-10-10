@@ -237,11 +237,18 @@ def run_harbor_command(args, profile: MatrixProfile) -> int:
                         "ablation.json",
                         report["component_ablation"],
                     )
+                if report["tool_factorial"]["applicable"]:
+                    _write_report(
+                        saved.root,
+                        "factorial.json",
+                        report["tool_factorial"],
+                    )
             else:
                 (saved.root / "reports/report.json").unlink(missing_ok=True)
                 (saved.root / "reports/score.json").unlink(missing_ok=True)
                 (saved.root / "reports/mechanism.json").unlink(missing_ok=True)
                 (saved.root / "reports/ablation.json").unlink(missing_ok=True)
+                (saved.root / "reports/factorial.json").unlink(missing_ok=True)
             print(
                 f"RUN SUMMARY verified {status['complete_trials']}/{status['expected_trials']} | "
                 f"outcomes {json.dumps(status['outcomes'], sort_keys=True)} | qualified {status['qualified']}",
@@ -266,6 +273,7 @@ def run_harbor_command(args, profile: MatrixProfile) -> int:
                     (saved.root / "reports/score.json").unlink(missing_ok=True)
                     (saved.root / "reports/mechanism.json").unlink(missing_ok=True)
                     (saved.root / "reports/ablation.json").unlink(missing_ok=True)
+                (saved.root / "reports/factorial.json").unlink(missing_ok=True)
         print(json.dumps(status, indent=2, sort_keys=True))
         return 2 if (
             status["conflicting_trials"]
@@ -302,6 +310,12 @@ def run_harbor_command(args, profile: MatrixProfile) -> int:
                         "ablation.json",
                         report["component_ablation"],
                     )
+                if report["tool_factorial"]["applicable"]:
+                    _write_report(
+                        saved.root,
+                        "factorial.json",
+                        report["tool_factorial"],
+                    )
                 if args.command in {"score", "reports"}:
                     _write_report(saved.root, "score.json", report)
             else:
@@ -309,6 +323,7 @@ def run_harbor_command(args, profile: MatrixProfile) -> int:
                 (saved.root / "reports/score.json").unlink(missing_ok=True)
                 (saved.root / "reports/mechanism.json").unlink(missing_ok=True)
                 (saved.root / "reports/ablation.json").unlink(missing_ok=True)
+                (saved.root / "reports/factorial.json").unlink(missing_ok=True)
     if args.command == "explain":
         mechanism = {
             **report["mechanism_attribution"],
