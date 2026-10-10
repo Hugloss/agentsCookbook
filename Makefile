@@ -256,3 +256,7 @@ benchmark-report:
 
 benchmark-score:
 	@./benchmark score --env-file "$(BENCHMARK_ENV)" --matrix "$(MATRIX)" $(BENCHMARK_RUN_ID_FLAG)
+
+.PHONY: benchmark-eval-readiness
+benchmark-eval-readiness:
+	@uv run --no-project python -m benchmarks.harness.evaluation_readiness
