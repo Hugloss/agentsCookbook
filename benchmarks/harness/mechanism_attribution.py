@@ -500,12 +500,32 @@ def load_harbor_bundle_projection(directory: Path) -> dict[str, Any]:
         semantic = project_semantic_information(trajectory, answer=answer)
     else:
         semantic = unavailable_semantic("atif-order-unavailable-or-incomplete")
+    execution = receipt.get("execution")
+    ablation = (
+        execution.get("ablation")
+        if isinstance(execution, dict)
+        else None
+    )
+    if not isinstance(ablation, dict) or not isinstance(ablation.get("component"), str):
+        component_semantic = unavailable_semantic("no-frozen-component-contract")
+    elif not isinstance(answer, dict) or answer.get("semantic_case_id") != receipt.get("task_id"):
+        component_semantic = unavailable_semantic("semantic-case-identity-mismatch-or-missing")
+    elif trace.get("available") is not True or trace.get("tool_order_complete") is not True:
+        component_semantic = unavailable_semantic("atif-order-unavailable-or-incomplete")
+    else:
+        component_semantic = project_semantic_information(
+            trajectory,
+            answer=answer,
+            component=ablation["component"],
+            selector=ablation.get("selector"),
+        )
     return {
         "receipt": receipt,
         "trace": trace,
         "answer": answer,
         "information": information,
         "semantic_information": semantic,
+        "component_semantic_information": component_semantic,
     }
 
 

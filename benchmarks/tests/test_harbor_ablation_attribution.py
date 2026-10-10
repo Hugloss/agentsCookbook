@@ -763,6 +763,105 @@ class HarborAblationAttributionTests(unittest.TestCase):
             1.0,
         )
 
+    @staticmethod
+    def _semantic_component(
+        *, alignment: str = "ALIGNED_ONLY", timing: str = "BEFORE_NATIVE_DISCOVERY",
+    ) -> dict[str, object]:
+        return {
+            "qualified": True,
+            "reason": None,
+            "claim_alignment": alignment,
+            "arrival_timing": timing,
+            "final_answer_overlap": "ALIGNED_REPEATED",
+            "aligned_fields": ["winner"],
+            "divergent_fields": [],
+            "conflicted_fields": [],
+            "causal_influence_claimed": False,
+        }
+
+    def test_ablation_semantic_diagnostics_require_exact_invocation_and_oracle(self) -> None:
+        arms = _quartet()
+        arms["hashmarks"]["component_semantic_information"] = self._semantic_component()
+        arms["hashmarks-task-evidence-only"][
+            "component_semantic_information"
+        ] = self._semantic_component(timing="AFTER_NATIVE_DISCOVERY")
+        row = quartet_projection(arms)
+        semantic = row["semantic_component_evidence"]
+        self.assertTrue(semantic["qualified"])
+        self.assertIsNone(semantic["reason"])
+        self.assertEqual(semantic["full"]["claim_alignment"], "ALIGNED_ONLY")
+        self.assertEqual(semantic["only"]["arrival_timing"], "AFTER_NATIVE_DISCOVERY")
+        self.assertFalse(semantic["positive_causal_proof_claimed"])
+
+        no_invocation = _quartet(full_invoked=False)
+        no_invocation["hashmarks"]["component_semantic_information"] = self._semantic_component()
+        no_invocation["hashmarks-task-evidence-only"][
+            "component_semantic_information"
+        ] = self._semantic_component()
+        rejected = quartet_projection(no_invocation)["semantic_component_evidence"]
+        self.assertFalse(rejected["qualified"])
+        self.assertEqual(rejected["reason"], "full-component-not-invoked-or-unknown")
+
+    def test_component_semantic_denominator_does_not_change_ordinary_ablation(self) -> None:
+        valid = _quartet()
+        valid["hashmarks"]["component_semantic_information"] = self._semantic_component()
+        valid["hashmarks-task-evidence-only"][
+            "component_semantic_information"
+        ] = self._semantic_component(timing="AFTER_NATIVE_DISCOVERY")
+
+        absent = _quartet()
+        absent["hashmarks"]["component_semantic_information"] = self._semantic_component()
+        absent["hashmarks-task-evidence-only"][
+            "component_semantic_information"
+        ] = {"qualified": False, "reason": "unstructured-subject-observation"}
+
+        invalid = _quartet()
+        invalid["hashmarks-no-task-evidence"]["trace"]["subject_tools"] = [
+            "mcp__hashmarks__task_evidence"
+        ]
+
+        report = self._report_from_quartets([valid, absent, invalid])
+        summary = report["summary"]
+        self.assertEqual(summary["matched_quartets"], 3)
+        self.assertEqual(summary["qualified_complete_quartets"], 2)
+        self.assertEqual(summary["semantic_qualified_quartets"], 1)
+        self.assertEqual(
+            summary["semantic_exclusion_reasons"],
+            {
+                "only:unstructured-subject-observation": 1,
+                "treatment-unqualified": 1,
+            },
+        )
+        expected = (
+            "NECESSARY_AND_SUFFICIENT_CONTRAST|PASS|PASS|"
+            "ALIGNED_ONLY|BEFORE_NATIVE_DISCOVERY|ALIGNED_REPEATED|"
+            "ALIGNED_ONLY|AFTER_NATIVE_DISCOVERY|ALIGNED_REPEATED"
+        )
+        self.assertEqual(summary["semantic_outcome_cross_tab"], {expected: 1})
+        self.assertEqual(
+            report["by_harness"]["codex"]["semantic_qualified_quartets"], 1
+        )
+        self.assertEqual(
+            report["by_harness"]["codex"]["qualified_complete_quartets"], 2
+        )
+        self.assertFalse(summary["positive_causal_proof_claimed"])
+
+    def test_incomplete_outcomes_excluded_even_with_valid_information(self) -> None:
+        arms = _quartet(only="INCOMPLETE")
+        arms["hashmarks"]["component_semantic_information"] = self._semantic_component()
+        arms["hashmarks-task-evidence-only"][
+            "component_semantic_information"
+        ] = self._semantic_component()
+        row = quartet_projection(arms)
+        self.assertFalse(row["semantic_component_evidence"]["qualified"])
+        self.assertEqual(
+            row["semantic_component_evidence"]["reason"],
+            "incomplete-quartet-outcomes",
+        )
+        report = self._report_from_quartets([arms])
+        self.assertEqual(report["summary"]["semantic_qualified_quartets"], 0)
+        self.assertEqual(report["summary"]["semantic_outcome_cross_tab"], {})
+
     def test_no_qualified_complete_quartet_means_unknown_aggregate(self) -> None:
         bad_tools = _quartet()
         bad_tools["hashmarks-task-evidence-only"]["trace"]["subject_tools"] = [
