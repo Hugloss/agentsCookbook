@@ -227,6 +227,37 @@ def load_matrix(path: Path) -> dict[str, Any]:
                 raise HarborMatrixError(
                     "Harbor selector only arm must include only its selector value"
                 )
+    factorial = value.get("factorial")
+    if factorial is not None:
+        if ablation is not None:
+            raise HarborMatrixError("factorial and single-component ablation are exclusive")
+        if not isinstance(factorial, dict) or set(factorial) != {"components", "arms"}:
+            raise HarborMatrixError("factorial requires exactly components and arms")
+        components = factorial.get("components")
+        arms = factorial.get("arms")
+        if (
+            not isinstance(components, list)
+            or len(components) != 2
+            or not all(isinstance(item, str) and item for item in components)
+            or components[0] == components[1]
+            or not isinstance(arms, dict)
+            or set(arms) != {"neither", "a_only", "b_only", "both"}
+            or len(set(arms.values())) != 4
+            or not all(isinstance(item, str) and item in subjects for item in arms.values())
+            or arms["both"] != "hashmarks"
+            or "none" in arms.values()
+        ):
+            raise HarborMatrixError("factorial needs two distinct components and four unique scoped arms")
+        a, b = components
+        expected = {
+            "neither": {"exclude": [a, b]},
+            "a_only": {"exclude": [b]},
+            "b_only": {"exclude": [a]},
+        }
+        if any(projections.get(arms[role]) != spec for role, spec in expected.items()):
+            raise HarborMatrixError("factorial arms must remove exactly the declared components")
+        if any(arms[role] in query_projections for role in expected):
+            raise HarborMatrixError("factorial tool isolation cannot silently change query surfaces")
     if not isinstance(value.get("modes"), dict) or not value["modes"]:
         raise HarborMatrixError(
             "Harbor matrix needs at least one mode"
@@ -302,6 +333,18 @@ def matrix_ablation(
             str(role): str(subject)
             for role, subject in value["arms"].items()
         },
+    }
+
+
+def matrix_factorial(matrix: Mapping[str, Any]) -> dict[str, Any] | None:
+    value = matrix.get("factorial")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise HarborMatrixError("matrix factorial contract is malformed")
+    return {
+        "components": list(value["components"]),
+        "arms": {role: value["arms"][role] for role in ("neither", "a_only", "b_only", "both")},
     }
 
 
@@ -762,6 +805,7 @@ def preflight(
         else ()
     )
     ablation = matrix_ablation(matrix)
+    factorial = matrix_factorial(matrix)
     if ablation is not None and ablation.get("selector") is not None:
         selector = ablation["selector"]
         if not canonical_query_surfaces:
@@ -889,6 +933,7 @@ def preflight(
             ),
             "treatments": treatments,
             **({"ablation": ablation} if ablation is not None else {}),
+            **({"factorial": factorial} if factorial is not None else {}),
         },
         "passthrough_env_keys": list(
             settings.passthrough_env_keys
