@@ -105,6 +105,9 @@ class ExactFactorialCampaignCoverage(unittest.TestCase):
         rows = projections()
         rows[0]["receipt"]["subject"] = "enola"
         self.assertEqual(audit(rows)["issues"]["foreign-grid-cell"], 1)
+        rows = projections()
+        rows[0]["receipt"]["subject"] = ["none"]
+        self.assertIn("foreign-grid-cell", audit(rows)["issues"])
 
     def test_incomplete_status_and_control_contamination_rejected(self) -> None:
         rows = projections()
