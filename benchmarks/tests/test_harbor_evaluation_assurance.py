@@ -157,6 +157,8 @@ class AssuranceReportAttacks(unittest.TestCase):
             _pair("a", "PASS_TO_FAIL", harness="opencode"),
         ])
         self.assertEqual(set(report["per_harness"]), {"codex", "opencode"})
+        self.assertEqual(report["paired_effect"]["state"], "NOT_COMPARABLE_ACROSS_HARNESSES")
+        self.assertIsNone(report["paired_effect"]["interval_95"])
         self.assertEqual(report["per_harness"]["codex"]["paired_effect"]["point_estimate"], 1.0)
         self.assertEqual(report["per_harness"]["opencode"]["paired_effect"]["point_estimate"], -1.0)
 
