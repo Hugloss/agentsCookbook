@@ -35,3 +35,35 @@ node scripts/run-skill-benchmarks.js --validate-corpus
 Model-backed runs belong in local runtime qualification because GitHub CI does not own the local endpoints or model profile.
 
 Do not put canonical agent or skill sources under an evaluation or runtime-specific directory.
+
+## Source-anchored positive fixture qualification
+
+For the existing positive repository-fixture cases, the corpus now pins exact
+file/line/quote anchors. A model's `EVAL_EVIDENCE` statement alone is not
+sufficient. The evaluator additionally requires:
+
+```text
+EVAL_EVIDENCE_LOCATION: relative/path:line
+EVAL_EVIDENCE_QUOTE: exact quote on that line
+```
+
+For multi-file proof, separate complete locations/quotes using the literal
+`|||` separator in both fields. The local file must be a real regular file
+under the fixture root, not an out-of-root symlink, and the citation must match
+every pinned anchor. A citation to a different existing line is rejected.
+Anchors are pinned source observations, **not independent semantic oracle
+approval**; a correct citation can still support an incorrect interpretation.
+
+Model-free quality checks:
+
+```sh
+node scripts/run-skill-benchmarks.js --validate-corpus
+node scripts/test-skill-evidence-contract.js
+```
+
+The validation summary reports actual confusion-case coverage and the count
+of scenario-only cases. Do not infer behavioral skill quality from corpus
+validation, a nonempty answer, or a source-citation match. The remaining
+uncovered specialists require independent, reviewed neighbor-confusion
+fixtures and model-backed qualification on OpenCode/Pi. Those evaluations
+are not performed by GitHub CI.
