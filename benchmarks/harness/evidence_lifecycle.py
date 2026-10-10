@@ -52,6 +52,12 @@ def _canonical(value: object) -> bytes:
 
 
 def _packet(value: object) -> tuple[str, int] | None:
+    if isinstance(value, dict) and (
+        value.get("isError") is True
+        or value.get("status") in ("error", "failed", "denied", "unavailable")
+        or ("error" in value and value["error"] not in (None, ""))
+    ):
+        raise ValueError("error-result-not-evidence")
     if value is None or value == "" or value == [] or value == {}:
         return None
     payload = _canonical(value)
