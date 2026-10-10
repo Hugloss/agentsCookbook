@@ -24,6 +24,7 @@ from benchmarks.harbor_matrix import (
 from benchmarks.matrix_profiles import MatrixProfile
 
 from .ablation_attribution import build_ablation_report
+from .factorial_attribution import build_factorial_report
 from .bundle import verify_bundle
 from .bundle_writer import BundlePublicationError, publish_bundle
 from .campaign import campaign_status
@@ -507,6 +508,11 @@ def run_harbor_trial(
                 .get("hashmarks", {})
                 .get("ablation")
             ),
+            "factorial": (
+                campaign.get("preflight", {})
+                .get("hashmarks", {})
+                .get("factorial")
+            ),
         },
     }
     artifacts = {"harbor_result": ("harbor-result.json", canonical_json(observed))}
@@ -572,6 +578,11 @@ def harbor_report(
         "QUALIFIED" if status["qualified"] else "INSPECTION_ONLY"
     )
     ablation = build_ablation_report(results_root)
+    factorial = build_factorial_report(results_root)
+    factorial["campaign_qualified"] = status["qualified"]
+    factorial["interpretation_state"] = (
+        "QUALIFIED" if status["qualified"] else "INSPECTION_ONLY"
+    )
     ablation["campaign_qualified"] = status["qualified"]
     ablation["interpretation_state"] = (
         "QUALIFIED" if status["qualified"] else "INSPECTION_ONLY"
@@ -585,6 +596,7 @@ def harbor_report(
         "qualified": status["qualified"],
         "mechanism_attribution": mechanism,
         "component_ablation": ablation,
+        "tool_factorial": factorial,
     })
     if not status["qualified"]:
         report["hashmarks_uplift"] = {

@@ -7,7 +7,17 @@
       "kind": "positive",
       "expected": "FINDING",
       "fixture": "evals/fixtures/async-ownership",
-      "scenario": "Two selections may overlap. Selection A starts first, selection B becomes current, B completes, then A completes. Determine whether older work can still overwrite state owned by B."
+      "scenario": "Two selections may overlap. Selection A starts first, selection B becomes current, B completes, then A completes. Determine whether older work can still overwrite state owned by B.",
+      "evidence_contract": {
+        "status": "pinned-fixture-anchor",
+        "anchors": [
+          {
+            "path": "service.js",
+            "line": 9,
+            "quote": "rendered = { key, data };"
+          }
+        ]
+      }
     },
     {
       "id": "stale-work-race-control",
@@ -92,7 +102,22 @@
       "kind": "positive",
       "expected": "FINDING",
       "fixture": "evals/fixtures/semantic-authority",
-      "scenario": "The API layer and worker layer both decide the same can-run policy from the same raw configuration. There is no documented distinction between the two decisions."
+      "scenario": "The API layer and worker layer both decide the same can-run policy from the same raw configuration. There is no documented distinction between the two decisions.",
+      "evidence_contract": {
+        "status": "pinned-fixture-anchor",
+        "anchors": [
+          {
+            "path": "api.js",
+            "line": 4,
+            "quote": "return config.enabled === true && config.blocked !== true;"
+          },
+          {
+            "path": "worker.js",
+            "line": 4,
+            "quote": "return config.enabled === true && config.blocked !== true;"
+          }
+        ]
+      }
     },
     {
       "id": "semantic-redecision-control",
@@ -306,7 +331,17 @@
       "kind": "positive",
       "expected": "FINDING",
       "fixture": "evals/fixtures/test-causality",
-      "scenario": "Inspect how the test knows background work is complete before it asserts."
+      "scenario": "Inspect how the test knows background work is complete before it asserts.",
+      "evidence_contract": {
+        "status": "pinned-fixture-anchor",
+        "anchors": [
+          {
+            "path": "worker.test.js",
+            "line": 12,
+            "quote": "await sleep(500);"
+          }
+        ]
+      }
     },
     {
       "id": "deterministic-causality-control",

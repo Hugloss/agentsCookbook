@@ -22,6 +22,9 @@ jobs:
       - name: Sharp skill corpus contracts
         run: node scripts/run-skill-benchmarks.js --validate-corpus
 
+      - name: Model-free skill evidence attack regressions
+        run: node scripts/test-skill-evidence-contract.js
+
       - name: Adapter smoke tests
         run: ./scripts/smoke-opencode-scripts.sh
 
@@ -39,6 +42,8 @@ jobs:
           node --check scripts/opencode-runtime.js
           node --check scripts/test-opencode-runtime.js
           node --check scripts/run-skill-benchmarks.js
+          node --check scripts/skill-evidence-contract.js
+          node --check scripts/test-skill-evidence-contract.js
           node --check scripts/export-review-artifacts.js
           node --check scripts/check-run-artifacts.js
           node --check adapters/opencode/review-artifact.js

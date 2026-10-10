@@ -22,6 +22,11 @@ from benchmarks.harness.semantic_information import (
     project_semantic_information,
     unavailable_semantic,
 )
+from benchmarks.harness.evidence_lifecycle import (
+    project_evidence_lifecycle,
+    unavailable_lifecycle,
+)
+from benchmarks.harness.evaluation_assurance import build_assurance_summary
 from benchmarks.harness.relationship_scope_timing import (
     project_relationship_scope_timing,
     unavailable_relationship_scope,
@@ -528,10 +533,16 @@ def load_harbor_bundle_projection(directory: Path) -> dict[str, Any]:
         if trace.get("available") is True and trace.get("tool_order_complete") is True
         else unavailable_relationship_scope("atif-order-unavailable-or-incomplete")
     )
+    lifecycle = (
+        project_evidence_lifecycle(trajectory)
+        if trace.get("available") is True and trace.get("tool_order_complete") is True
+        else unavailable_lifecycle("atif-order-unavailable-or-incomplete")
+    )
     return {
         "receipt": receipt,
         "trace": trace,
         "answer": answer,
+        "delivery_evidence": lifecycle,
         "information": information,
         "semantic_information": semantic,
         "component_semantic_information": component_semantic,
@@ -750,7 +761,13 @@ def pair_projection(
         relationship_scope = unavailable_relationship_scope(
             "atif-order-unavailable-or-incomplete"
         )
+    delivery = treated.get("delivery_evidence")
+    if not isinstance(delivery, dict):
+        delivery = unavailable_lifecycle("delivery-projection-unavailable")
+    if not call_order_qualified:
+        delivery = unavailable_lifecycle("atif-order-unavailable-or-incomplete")
     return {
+        "delivery_evidence": delivery,
         "relationship_scope_evidence": relationship_scope,
         "information_evidence": information,
         "semantic_information_evidence": semantic,
@@ -932,6 +949,7 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
         "pairs": pairs,
         "summary": {
             "paired_observations": len(pairs),
+            "evaluation_assurance": build_assurance_summary(pairs),
             "relationship_scope_qualified_pairs": sum(scope_counts.values()),
             "relationship_scope_outcome_cross_tab": dict(sorted(scope_counts.items())),
             "relationship_scope_exclusion_reasons": dict(sorted(scope_exclusions.items())),
@@ -994,6 +1012,17 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
                 "matching subsequent native reads is observed follow-through; "
                 "incomplete tool order, missing oracle, or ambiguous linked "
                 "observations deny information qualification"
+            ),
+            "delivery_evidence_policy": (
+                "ATIF linked tool results prove return availability only. "
+                "No independent model-input receipt is available, so delivered, "
+                "attended-to and used remain UNKNOWN; an action matching the "
+                "return is behavioral alignment, not proof of model cognition"
+            ),
+            "evaluation_assurance_policy": (
+                "cluster-bootstrap intervals are descriptive when eight or more "
+                "independent task/harness/model clusters exist; smaller populations "
+                "never receive invented intervals or significance claims"
             ),
             "relationship_scope_policy": (
                 "scoped semantic evidence must be present in a linked ATIF tool return; "

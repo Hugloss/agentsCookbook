@@ -32,6 +32,24 @@ def _bare_headroom(
     passes = sum(row["semantic_passes"] for row in summaries)
     failures = sum(row["semantic_failures"] for row in summaries)
     unresolved = sum(row["trials"] - row["semantic_gradeable"] for row in summaries)
+    per_task = []
+    for task_id, conditions in sorted(answer_contract.get("tasks", {}).items()):
+        for condition_id in sorted(bare_condition_ids):
+            row = conditions.get(condition_id)
+            if not isinstance(row, dict):
+                continue
+            repeated = (
+                row["semantic_gradeable"] >= 3
+                and row["semantic_failures"] >= 2
+            )
+            per_task.append({
+                "task_id": task_id,
+                "condition_id": condition_id,
+                "valid": row["semantic_gradeable"],
+                "failures": row["semantic_failures"],
+                "repeated_failure": repeated,
+            })
+    repeated_count = sum(row["repeated_failure"] for row in per_task)
     if not valid:
         state = "unavailable"
     elif failures:
@@ -46,8 +64,15 @@ def _bare_headroom(
         "unresolved_trials": unresolved,
         "headroom_trials": failures,
         "headroom_rate": failures / valid if valid else None,
+        "per_task_bare_headroom": per_task,
+        "repeated_failure_task_conditions": repeated_count,
+        "reproducibility_state": (
+            "unavailable" if not valid
+            else "observed" if repeated_count
+            else "not-demonstrated"
+        ),
         "interpretation": (
-            "bare control has reproducible semantic headroom"
+            "bare control has observed failures; inspect repeated task-level evidence separately"
             if state == "observed"
             else "bare control solved every valid diagnostic trial; this corpus does not yet demonstrate headroom"
             if state == "not-observed"
@@ -59,6 +84,7 @@ def _bare_headroom(
 def _answer_contract(results: Path, selected: set[str]) -> dict[str, Any]:
     """Count format and semantic outcomes from verified, selected receipts."""
     by_condition: dict[str, dict[str, Any]] = {}
+    by_task: dict[str, dict[str, dict[str, int]]] = {}
     seen: set[str] = set()
     for receipt in _receipts(results):
         definition = receipt.get("definition_id")
@@ -94,6 +120,15 @@ def _answer_contract(results: Path, selected: set[str]) -> dict[str, Any]:
             or (not gradeable and success is not None)
         ):
             raise ReportError(f"invalid answer rubric: {definition}")
+        task_id = str(receipt["task_id"])
+        task_row = by_task.setdefault(task_id, {}).setdefault(condition, {
+            "trials": 0,
+            "semantic_gradeable": 0,
+            "semantic_failures": 0,
+        })
+        task_row["trials"] += 1
+        task_row["semantic_gradeable"] += gradeable
+        task_row["semantic_failures"] += success is False
         row["trials"] += 1
         row["semantic_gradeable"] += gradeable
         row["semantic_passes"] += success is True
@@ -104,6 +139,7 @@ def _answer_contract(results: Path, selected: set[str]) -> dict[str, Any]:
         raise ReportError(f"missing selected answer receipts: {len(selected - seen)}")
     return {
         "conditions": by_condition,
+        "tasks": by_task,
         "totals": {
             key: sum(row[key] for row in by_condition.values())
             for key in (

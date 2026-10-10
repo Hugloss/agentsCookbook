@@ -744,3 +744,89 @@ frozen bundles; historical bundles without the new fields are not silently
 upgraded. `observed_use_proven`, `agent_attention_proven` and
 `causal_influence_claimed` remain false.
 
+## Integrated evidence/evaluation assurance (PR #217)
+
+The model-free Harbor mechanism report now includes
+`summary.evaluation_assurance`. It is derived from the same verified
+immutable receipts, not a second scorer, second oracle, or another campaign
+authority.
+
+- **E217 / E222**: `delivery_evidence` binds each subject invocation to its
+  ATIF source-call-linked packet digest, return step, bounded byte count, and
+  structural/text presentation parity. `RETURNED` means tool result observed;
+  `delivery_state=UNKNOWN` and `application_state=UNKNOWN` remain honest:
+  ATIF does **not** independently attest which bytes entered the model input
+  context. Tool follow-up is observable behavior, not proof of model cognition.
+- **E218**: model-free adversarial tests reject orphan/duplicate/early results,
+  forged semantic claims, malformed calls, tool-error envelopes, contradictory
+  JSON views, incomplete observations, and unsupported causal upgrades.
+- **E219**: headroom-v2 keeps semantic grading separate from output format.
+  An isolated bare-agent failure remains `observed` headroom but is no longer
+  mislabeled *reproducible*: `reproducibility_state` requires at least two
+  semantic failures among three or more gradeable replicates for the same
+  task/agent condition. No historical v2 oracle or receipt is regraded.
+- **E221**: exact within-harness paired outcome transitions receive a
+  deterministic task/harness/model-cluster bootstrap interval only when at
+  least eight independent task clusters are observed. Fewer groups show
+  `INSUFFICIENT_EVIDENCE` and a null interval; this is **not** a p-value,
+  posterior probability, or claim of statistical significance.
+- **E223 / E224**: JSON structured-vs-text parity is checked when both
+  presentations exist. A matching dual presentation is not a controlled
+  presentation experiment; frozen model-backed native/compact/text/structured
+  contrasts require a separate admitted intervention campaign.
+- **E227 / E228**: the single JSON report provides exact denominators,
+  exclusions, headroom, per-harness effects, observed packet states, and paired
+  native-search/token deltas. Missing monetary/provider/catalog accounting
+  remains unavailable instead of becoming zero.
+
+### E225: two-component tool-catalog factorial
+
+The frozen matrix isolates the interaction of Hashmarks `task_evidence` and
+`find` while holding the rest of the catalog unchanged. It has four
+factorial tool configurations plus the ordinary bare arm:
+
+| Factorial role | `task_evidence` | `find` |
+| --- | --- | --- |
+| neither | excluded | excluded |
+| a_only | present | excluded |
+| b_only | excluded | present |
+| both | present | present |
+
+It reuses Harbor's model execution, immutable bundles, treatment identities,
+independent answer grading, and ATIF call projection. The new report checks
+the exact per-arm tool catalog, source-contract identity, observed forbidden
+calls, complete four-way outcomes, and matched task/harness/model/replicate
+before emitting the descriptive interaction
+`both - a_only - b_only + neither`. Incomplete or contaminated groups are
+excluded. Catalog exposure is not inferred from absence of calls. Factorial
+records never enter the legacy single-component ablation fallback.
+
+Model-free admission and an explicitly funded run:
+
+```sh
+make benchmark-check MATRIX=harbor-factorial-smoke
+make benchmark-new MATRIX=harbor-factorial-smoke
+make benchmark-check MATRIX=harbor-factorial-full
+make benchmark-new MATRIX=harbor-factorial-full
+make benchmark-report MATRIX=harbor-factorial-full
+```
+
+A qualified full run persists `reports/factorial.json` and the corresponding
+`tool_factorial` section in `reports/report.json`. An unqualified run
+cannot publish a positive interaction claim. These commands involve model
+calls after the model-free checks; CI does not execute them.
+
+### E226 and outstanding empirical boundaries
+
+The existing `context-invariance-v1` suite already runs neutral/placebo/
+unsupported-authority/misleading-hint contrasts. Harbor's generic pair report
+does not silently call this a bound freshness intervention. A new frozen,
+independently reviewed stale/current/replaced-evidence task population is
+needed before context/freshness effect claims.
+
+`multidomain-v2` also has 60 pending independent reviews. This PR does not
+self-approve them. Presentation interventions need source/runtime support for
+changing only the selected result representation; host-level model-input
+delivery proofs need a host-owned capture boundary. Until those authorities
+exist, the report explicitly records `NOT_ASSESSED`, `NOT_IDENTIFIABLE`,
+or `UNKNOWN`, not spurious success.
