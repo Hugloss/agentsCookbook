@@ -17,6 +17,7 @@ from benchmarks.tool_routing import (
     DISCOVERY_CLASSES,
     SUBJECT_REPOSITORY_INTELLIGENCE,
     classify_call,
+    matches_subject_operation,
 )
 
 SCHEMA = "agentscookbook.harbor-semantic-information.v1"
@@ -162,8 +163,29 @@ def _oracle_contract(answer: object) -> tuple[dict[str, object], dict[str, objec
     return expected, observed
 
 
-def project_semantic_information(trajectory: Path, *, answer: object) -> dict[str, Any]:
-    """Project observed semantic atoms using post-grade verifier-only truth."""
+def project_semantic_information(
+    trajectory: Path,
+    *,
+    answer: object,
+    component: str | None = None,
+    selector: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Project structured semantic atoms; optionally isolate one frozen operation.
+
+    A component filter narrows tool *observations*, not the verifier's oracle.
+    A selector further requires the exact configured argument/value.
+    """
+    if component is not None and (not component or not isinstance(component, str)):
+        return unavailable_semantic("invalid-component-filter")
+    if selector is not None and (
+        component is None
+        or not isinstance(selector, Mapping)
+        or set(selector) != {"argument", "value"}
+        or selector.get("argument") != "surface_name"
+        or not isinstance(selector.get("value"), str)
+        or not selector["value"]
+    ):
+        return unavailable_semantic("invalid-component-selector")
     contract = _oracle_contract(answer)
     if contract is None:
         return unavailable_semantic("frozen-semantic-oracle-unavailable")
@@ -226,6 +248,17 @@ def project_semantic_information(trajectory: Path, *, answer: object) -> dict[st
             if tool_class in DISCOVERY_CLASSES:
                 native_steps.append(index)
             if tool_class != SUBJECT_REPOSITORY_INTELLIGENCE:
+                continue
+            if component is not None and not matches_subject_operation(
+                name,
+                subject="hashmarks",
+                operation=component,
+            ):
+                continue
+            if selector is not None and (
+                not isinstance(arguments, Mapping)
+                or arguments.get(selector["argument"]) != selector["value"]
+            ):
                 continue
             count += 1
             if not isinstance(call_id, str) or call_id not in linked:
