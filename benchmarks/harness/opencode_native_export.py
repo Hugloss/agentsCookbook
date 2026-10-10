@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import os
-import resource
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -23,8 +23,16 @@ SCHEMA = "agentscookbook.native-session-export-acquisition.v1"
 MAX_INDEX_BYTES = 262_144
 
 
-def _limit_output(size: int) -> None:
-    resource.setrlimit(resource.RLIMIT_FSIZE, (size, size))
+def native_export_preflight() -> str:
+    """Resolve the Linux file-size-limit owner before launching the agent.
+
+    Never use subprocess preexec_fn: the gateway is threaded and forking a
+    multi-threaded Python process with a pre-exec Python callback can deadlock.
+    """
+    binary = shutil.which("prlimit", path=os.defpath)
+    if not binary or not Path(binary).is_file():
+        raise ValueError("native-export-prlimit-unavailable")
+    return str(Path(binary).resolve())
 
 
 def _run_bounded_native(
@@ -39,13 +47,15 @@ def _run_bounded_native(
     if (max_bytes <= 0 or max_bytes > MAX_EXPORT_BYTES
             or timeout <= 0 or timeout > 60):
         raise ValueError("invalid-native-export-limits")
+    limit_owner = native_export_preflight()
     try:
         with tempfile.TemporaryFile() as capture:
             run = subprocess.run(
-                argv, cwd=workspace, env=dict(environment),
+                [limit_owner, "--fsize=" + str(max_bytes) + ":" + str(max_bytes),
+                 "--", *argv],
+                cwd=workspace, env=dict(environment),
                 stdout=capture, stderr=subprocess.DEVNULL,
                 timeout=timeout, check=False,
-                preexec_fn=lambda: _limit_output(max_bytes),
             )
             if run.returncode != 0:
                 raise ValueError("native-session-command-failed")
