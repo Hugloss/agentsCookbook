@@ -49,6 +49,7 @@ def launch_native_trial(
     upstream_api_key: str, catalog_sha256: str,
     oracle_sha256: str, workspace_sha256: str,
     timeout_seconds: int = 600,
+    allow_unconfined_execution: bool = False,
 ) -> dict[str, Any]:
     frozen = verify_manifest(dict(manifest))
     cells = [x for x in frozen["assignments"] if x["trial_id"] == trial_id]
@@ -60,6 +61,20 @@ def launch_native_trial(
     if (workspace.is_symlink() or not workspace.is_dir()
             or not (workspace / ".git").exists()):
         raise ValueError("untrusted-or-unbound-native-workspace")
+    # This experimental standalone launch is NOT the existing bwrap-backed
+    # benchmark runner. OS confinement and exclusive egress are not proven.
+    # Require deliberate opt-in rather than silently executing an agent with
+    # access to the user's host filesystem/network.
+    if allow_unconfined_execution is not True:
+        raise ValueError("unconfined-native-launch-not-explicitly-authorized")
+    workspace_root = workspace.resolve()
+    if (run_root.resolve().is_relative_to(workspace_root)
+            or host_key_file.resolve().is_relative_to(workspace_root)):
+        raise ValueError("native-run-authority-inside-evaluated-workspace")
+    if any((workspace_root / name).exists()
+           or (workspace_root / name).is_symlink()
+           for name in ("opencode.json", "opencode.jsonc", ".opencode")):
+        raise ValueError("uncontrolled-project-opencode-config")
     # No filesystem or model work before exact executable and trial admission.
     pin = admit_opencode_binary(
         opencode_executable,
@@ -161,6 +176,7 @@ def main() -> int:
     parser.add_argument("--oracle-sha256", required=True)
     parser.add_argument("--workspace-sha256", required=True)
     parser.add_argument("--timeout-seconds", type=int, default=600)
+    parser.add_argument("--allow-unconfined-native-test", action="store_true")
     args = parser.parse_args()
     try:
         api_key = os.environ.get("BENCHMARK_UPSTREAM_API_KEY")
@@ -184,6 +200,7 @@ def main() -> int:
             oracle_sha256=args.oracle_sha256,
             workspace_sha256=args.workspace_sha256,
             timeout_seconds=args.timeout_seconds,
+            allow_unconfined_execution=args.allow_unconfined_native_test,
         )
     except (ValueError, OSError, TypeError, UnicodeError) as exc:
         print(json.dumps({
