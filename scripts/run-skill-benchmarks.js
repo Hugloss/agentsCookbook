@@ -108,6 +108,25 @@ function validateCorpus(corpus) {
     if (!['positive', 'control', 'confusion'].includes(item.kind)) errors.push(`${item.id}: invalid kind ${item.kind}`);
     if (!['FINDING', 'CLEAN'].includes(item.expected)) errors.push(`${item.id}: expected must be FINDING or CLEAN`);
     if (!item.scenario || typeof item.scenario !== 'string') errors.push(`${item.id}: missing scenario`);
+    if (item.fixture && item.expected === 'FINDING') {
+      const contract = item.evidence_contract;
+      if (!contract || contract.status !== 'reviewed-fixture-anchor'
+        || !Array.isArray(contract.anchors) || contract.anchors.length === 0) {
+        errors.push(`${item.id}: positive fixture needs reviewed oracle anchors`);
+      } else {
+        const fixtureDir = path.resolve(repoRoot, item.fixture);
+        const proof = qualifyEvidence({
+          verdict: 'FINDING', evidence: 'preflight qualification of reviewed anchors',
+          fixture: fixtureDir, expected: 'FINDING',
+          anchors: contract.anchors,
+          location: contract.anchors.map((row) => row.path + ':' + row.line).join(';'),
+          quote: contract.anchors.map((row) => row.quote).join(';'),
+        });
+        if (proof.state !== 'LOCATED_NOT_ADJUDICATED') {
+          errors.push(`${item.id}: invalid reviewed oracle anchors (${proof.reason})`);
+        }
+      }
+    }
     if (item.fixture) {
       const fixture = path.resolve(repoRoot, item.fixture);
       if (!fixture.startsWith(`${repoRoot}${path.sep}`) || !fs.existsSync(fixture)) errors.push(`${item.id}: invalid fixture ${item.fixture}`);
@@ -133,7 +152,7 @@ function selectedCases(corpus, options) {
 function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); }
 
 function evaluatorSystem(skillText, skillName) {
-  return `${skillText}\n\n# Behavioral evaluation overlay\n\nApply only the invariant owned by \`${skillName}\`.\nDo not manufacture a finding because this is an evaluation.\nDo not claim a neighboring specialist's defect as this skill's finding.\nUse repository evidence when a fixture is supplied.\nAfter the normal skill-defined review append exactly:\n\nEVAL_VERDICT: FINDING|CLEAN\nEVAL_SCOPE: ${skillName}|NONE\nEVAL_EVIDENCE: <one concise evidence statement>\nEVAL_EVIDENCE_LOCATION: relative/path:line | NONE\nEVAL_EVIDENCE_QUOTE: <exact substring from that one line> | NONE\n\nFor a FINDING in a supplied repository fixture, give one exact file line and quote.\nDo not invent a path, line, or quote. A citation is only localization, not proof\nthat the cited text establishes the finding. For CLEAN return NONE for both.\n\nUse FINDING only when this skill's own invariant is violated. Use CLEAN when the scenario is safe or belongs to another specialist.`;
+  return `${skillText}\n\n# Behavioral evaluation overlay\n\nApply only the invariant owned by \`${skillName}\`.\nDo not manufacture a finding because this is an evaluation.\nDo not claim a neighboring specialist's defect as this skill's finding.\nUse repository evidence when a fixture is supplied.\nAfter the normal skill-defined review append exactly:\n\nEVAL_VERDICT: FINDING|CLEAN\nEVAL_SCOPE: ${skillName}|NONE\nEVAL_EVIDENCE: <one concise evidence statement>\nEVAL_EVIDENCE_LOCATION: relative/path:line | NONE\nEVAL_EVIDENCE_QUOTE: <exact substring from that one line> | NONE\n\nFor a FINDING in a supplied repository fixture, give exact file lines and quotes.\nIf two separate source locations prove the finding, separate locations and quotes\nwith semicolons in matching order.\nDo not invent a path, line, or quote. A citation is only localization, not proof\nthat the cited text establishes the finding. For CLEAN return NONE for both.\n\nUse FINDING only when this skill's own invariant is violated. Use CLEAN when the scenario is safe or belongs to another specialist.`;
 }
 
 function casePrompt(item) {
@@ -222,6 +241,7 @@ function executeCase(item, options) {
     quote: parsed.quote,
     fixture: item.fixture ? cwd : null,
     expected: item.expected,
+    anchors: item.evidence_contract ? item.evidence_contract.anchors : null,
   });
   const pass = execution.status === 0 && parsed.verdict === item.expected
     && parsed.scope === expectedScope
