@@ -1042,3 +1042,132 @@ make benchmark-eval-readiness
 key custody and external durable signatures; real matched interventions and
 frozen randomized assignments; independent review of oracle cases. Never
 upgrade these to complete merely because the code and tests pass.
+
+
+## E237–E240: frozen host execution and independent campaign qualification
+
+This is the follow-on to E233–E236. The shipped Python adapter can be
+integrated into a **privileged provider-invoking host** using the exact
+request bytes and the original Hashmarks return. It is *not* installed into
+the current third-party Codex/OpenCode/Claude Code hosts or silently injected
+by Harbor. Until a genuine host invokes it on its actual outbound request,
+there is **no real host-delivery observation** and no qualifying campaign.
+
+### E237: provider host adapter — actual request, exact message, no forge CLI
+
+`benchmarks/harness/trusted_host_capture.py` exposes
+`TrustedModelRequestCapture`. A privileged host must initialize it
+**outside the evaluated workspace**, with the frozen manifest, an
+owner-only external key, and the exact planned trial. The host then calls
+`observe_outbound_request(...)` on the *serialized provider request*
+at its outbound request boundary, supplying the corresponding original
+Hashmarks return, selected treatment input, and host-observed
+catalog/prompt/oracle/workspace identities.
+
+Only the explicit JSON provider envelope with `model` and
+`messages=[{"role":"tool","tool_call_id":...,"content":...}]` is
+supported. Unknown provider formats reject instead of guessing.
+The adapter checks the exact designated tool-call message content,
+provider model, returned-packet/source consistency, immutable
+manifest assignment, and hashes the actual request bytes.
+`prompt_sha256` must match the observed request's non-tool messages
+and request settings. The selection must already be reflected in the
+request; simply requesting a treatment does not mark it delivered.
+
+After final ATIF capture, the trusted host invokes `finalize()`.
+This requires complete immutable ATIF call/result bindings, then
+creates an external HMAC receipt without overwriting existing files.
+There is **no executable for signing agent-provided data**. The adapter
+cannot independently prove that an arbitrary caller is a real
+provider host, that provider dispatch succeeded, or that the model
+attended to or used the information. Those facts remain separate.
+
+### E238: plan all controlled treatments before work
+
+`benchmarks/harness/trusted_treatments.py` deterministically fixes the
+entire `harness × task × replicate × arm` assignment grid under the
+original intervention design, one declared seed digest, frozen host
+build digest, and source-contract identity. The manifest includes an
+identity for each planned trial, paired experiment identity, and explicit
+within-pair execution ordinal. It is create-only, and changed arm
+assignments, source, design, or missing cells reject on admission.
+
+```sh
+make benchmark-treatment-freeze \
+  DESIGN=/external/design.json \
+  MANIFEST_OUTPUT=/external/pre-work/frozen-manifest.json \
+  SOURCE_CONTRACT_ID=sha256:pinned-hashmarks-source \
+  HOST_BUILD_SHA256=<64-hex-host-build-digest> \
+  ASSIGNMENT_SEED_SHA256=<64-hex-declared-seed-digest>
+```
+
+Selection is pure and fail-before-work. Presentation uses **one**
+pinned semantic/generation source, returning the same JSON facts
+structured or as canonical JSON text. Freshness requires explicit
+current and replaced source identities with unequal generations and
+semantic digests. Every host must actually install the selected
+message into the provider request. The deterministic seed **does
+not prove randomized assignment** or externally timestamped preregistration.
+
+### E239: tie Harbor execution back to the frozen assignments
+
+`validate_trial_alignment` enumerates each planned trial and rejects
+absent, foreign, duplicate, symlink, mismatched model/harness/task/replicate,
+missing full Hashmarks contract, changed contract identity, substituted
+host build, wrong arm, or unbound host receipt. The existing intervention
+audit additionally verifies external host MACs and exact input facets.
+A complete generic Harbor pair report cannot replace these checks.
+Identity is resolved once, transported once, executed once, reported once.
+
+### E240: separate custodial seal and conservative decision
+
+`benchmarks/harness/independent_campaign_qualification.py` accepts a
+separately signed `agentscookbook.independent-campaign-seal.v1` JSON,
+bound to the frozen campaign, manifest digest, design digest, external
+anchor digest, review-corpus digest, custodian ID, and boolean assertions
+`pre_work_frozen` and `independent_oracle_review_completed`.
+Its `mac_sha256` is
+`HMAC-SHA256(independent_key, b"agentscookbook:independent-campaign-seal:v1\\x00"
++ canonical_json(seal_without_mac))`.
+
+The review/anchor authority must generate and custody its seal and
+secret independently of the host, agent, and Hashmarks. No self-approval
+signing command is provided. The qualifier rejects an unverified,
+stale, absent or host-key-reused seal, incomplete ATIF delivery,
+missing pairs, corrupt/unmatched immutable bundles, and missing
+review assertions. Real reviewer labor and externally established
+pre-work chronology **must still be independently checked**: a
+custodian's signed assertion alone is not a timestamp, proof of
+independence, a randomization certificate, or causal evidence.
+
+```sh
+make benchmark-independent-campaign-qualify \
+  MANIFEST=/external/pre-work/frozen-manifest.json \
+  RESULTS_ROOT=/immutable/run/bundles \
+  ATTESTATIONS_ROOT=/external-host/receipts \
+  HOST_KEY_FILE=/trusted-host/host.key \
+  SEAL=/external-reviewer/seal.json \
+  INDEPENDENT_KEY_FILE=/external-reviewer/review.key
+```
+
+`descriptive_campaign_admitted=true` means that the immutable grid,
+host-input boundary receipts, source identities, and externally
+key-authenticated custodian claims are consistent. It is not a
+causal-impact qualification. Reports always reserve
+`causal_effect_proven=false`, `model_attention_proven=false`,
+`real_randomization_proven=false`, and
+`trusted_pre_work_timestamp_proven=false`.
+
+Regression and model-free evidence:
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_trusted_host_campaign -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+make benchmark-eval-readiness
+```
+
+**Remaining operational work**: add a native provider-host SDK integration
+which invokes the boundary adapter on real outgoing requests, independently
+custody and anchor the pre-work manifest, verify source and oracle reviews
+through actual people, and run the controlled model trials. CI passing
+does not close those dependencies.
