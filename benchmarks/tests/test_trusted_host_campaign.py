@@ -131,7 +131,9 @@ class FrozenTreatmentsTest(unittest.TestCase):
                 task=cell["task"], replicate=cell["replicate"], arm=cell["arm"],
             ), cell)
         changed = copy.deepcopy(m)
-        changed["assignments"][0]["arm"] = "variant"
+        changed["assignments"][0]["arm"] = (
+            "variant" if changed["assignments"][0]["arm"] == "control" else "control"
+        )
         with self.assertRaises(ValueError):
             verify_manifest(changed)
         with self.assertRaises(ValueError):
