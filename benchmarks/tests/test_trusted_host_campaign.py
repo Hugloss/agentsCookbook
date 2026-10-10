@@ -63,7 +63,7 @@ def plan(study: str = "presentation") -> dict:
 def source(label: str = "current") -> dict:
     return {
         "generation_sha256": H(label),
-        "semantic_sha256": H("semantic:" + label),
+        "semantic_sha256": sha({"owner": "src/owner.py" if label == "current" else "src/old.py"}),
         "content": {"owner": "src/owner.py" if label == "current" else "src/old.py"},
     }
 
@@ -178,6 +178,17 @@ class FrozenTreatmentsTest(unittest.TestCase):
                                  if x["arm"] == "variant"),
                 harness="codex", task="owner", replicate=1, arm="variant",
                 current=source(), replaced=source(),
+            )
+
+    def test_semantic_source_content_digest_cannot_be_forged(self) -> None:
+        manifest = plan()
+        cell = next(x for x in manifest["assignments"] if x["arm"] == "control")
+        forged = source()
+        forged["semantic_sha256"] = H("unrelated")
+        with self.assertRaisesRegex(ValueError, "semantic-source-digest"):
+            select_treatment(
+                manifest, trial_id=cell["trial_id"], harness="codex",
+                task="owner", replicate=1, arm="control", current=forged,
             )
 
     def test_create_only_authority_and_tampering(self) -> None:
