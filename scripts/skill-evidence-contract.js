@@ -88,13 +88,13 @@ function qualifyEvidence({ verdict, evidence, location, quote, fixture, expected
   const expectedAnchors = anchors.map((a) => JSON.stringify([a.path + ':' + a.line, a.quote]));
   if (new Set(actual).size !== anchors.length
     || JSON.stringify(actual.slice().sort()) !== JSON.stringify(expectedAnchors.sort())) {
-    return { state: 'UNQUALIFIED', reason: 'citation-does-not-match-reviewed-oracle-anchors' };
+    return { state: 'UNQUALIFIED', reason: 'citation-does-not-match-pinned-fixture-anchors' };
   }
   return {
     state: 'LOCATED_NOT_ADJUDICATED',
     reason: null,
     location: actual.length === 1 ? citations[0] : citations.join(' ||| '),
-    reviewed_anchor_count: anchors.length,
+    pinned_anchor_count: anchors.length,
   };
 }
 
