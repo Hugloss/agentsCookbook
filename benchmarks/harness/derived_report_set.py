@@ -198,10 +198,11 @@ def inspect_report_set(
             "reason": str(exc),
         }
     score_artifact = manifest.get("score_artifact")
+    score_bound = isinstance(score_artifact, str)
     return {
-        "status": "VERIFIED",
+        "status": "VERIFIED" if score_bound else "VERIFIED_REPORT_ONLY",
         "verified": True,
-        "score_bound": isinstance(score_artifact, str),
+        "score_bound": score_bound,
         "score_artifact": score_artifact,
         "generation_id": manifest["generation_id"],
         "run_id": manifest["run_id"],
