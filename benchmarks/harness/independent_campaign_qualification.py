@@ -156,6 +156,8 @@ def qualify_campaign(manifest: Mapping[str, Any], bundles_root: Path,
     issues: Counter[str] = Counter()
     if audit["coverage_state"] != "COMPLETE":
         issues["unqualified-host-attested-intervention-coverage"] += 1
+    if audit.get("comparison_publication_state") != "PUBLISHED_COMPLETE_DESCRIPTIVE":
+        issues["matched-effect-publication-unqualified"] += 1
     if not alignment["complete"]:
         issues["incomplete-or-misaligned-frozen-plan"] += 1
     verified_submission_trials = 0
