@@ -212,7 +212,7 @@ class NestedHostBoundaryTests(unittest.TestCase):
             evidence_paths: dict[str, Path] = {}
             for subject in ("none", "hashmarks"):
                 case_id = f"def-{subject}"
-                trial_id = digest({"campaign": CAMPAIGN, "definition": case_id})
+                trial_id = digest({"campaign_id": CAMPAIGN, "definition_id": case_id})
                 job = f"h{trial_id[:24]}-a000001"
                 harbor = {
                     "schema": "agentscookbook.harbor-harness-trial.v1",
