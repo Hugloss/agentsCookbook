@@ -970,9 +970,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "tool-probe-smoke-gate":
         try:
             saved = select_saved_run(args.root)
-            score = json.loads((saved.root / "reports/score.json").read_text(encoding="utf-8"))
+            score_path = verified_score_path(
+                run_root=saved.root,
+                expected_run_id=saved.run_id,
+            )
+            score = json.loads(score_path.read_text(encoding="utf-8"))
             smoke_gate(score, subject=args.subject)
-        except (RunStoreError, OSError, ValueError) as exc:
+        except (
+            RunStoreError,
+            DerivedReportSetError,
+            OSError,
+            ValueError,
+        ) as exc:
             raise SystemExit(f"tool probe smoke gate failed: {exc}") from exc
         print(f"tool probe smoke gate passed: {saved.run_id}")
         return 0
