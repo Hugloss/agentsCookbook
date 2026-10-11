@@ -203,7 +203,11 @@ class SemanticOutcomeBundleTests(unittest.TestCase):
 
     def test_adverse_but_not_causal_echo_and_complete_controls(self) -> None:
         row = _quartet(
-            full=_semantic("DIVERGENT_ONLY", final_echo="divergent"),
+            full=_semantic(
+                "DIVERGENT_ONLY",
+                divergent_arrival="BEFORE_NATIVE_DISCOVERY",
+                final_echo="divergent",
+            ),
             only=_semantic("ALIGNED_ONLY", final_echo="aligned"),
             statuses={"bare": "FAIL", "full": "FAIL", "remove": "PASS", "only": "PASS"},
         )
