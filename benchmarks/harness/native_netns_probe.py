@@ -102,6 +102,42 @@ def validate_kernel_probe(
     }
 
 
+
+def kernel_probe_receipt_valid(value: object, *, expected_bwrap_sha256: str) -> bool:
+    """Strict model-free validator for an already signed host observation.
+
+    Signature/custody is checked by native_netns_pilot_readiness. This
+    predicate alone does not attest that a kernel probe was executed.
+    """
+    if not isinstance(value, dict) or set(value) != {
+        "schema", "kernel_probe_qualified", "host_netns_inode",
+        "guest_netns_inode", "only_loopback_interface_observed",
+        "loopback_socket_bind_observed", "representative_external_tcp_denied",
+        "bwrap_sha256", "python_sha256", "probe_program_sha256",
+        "exclusive_egress_independently_attested",
+        "native_child_process_origin_proven",
+    }:
+        return False
+    return (
+        value["schema"] == SCHEMA
+        and value["kernel_probe_qualified"] is True
+        and type(value["host_netns_inode"]) is int
+        and value["host_netns_inode"] > 0
+        and type(value["guest_netns_inode"]) is int
+        and value["guest_netns_inode"] > 0
+        and value["host_netns_inode"] != value["guest_netns_inode"]
+        and value["only_loopback_interface_observed"] is True
+        and value["loopback_socket_bind_observed"] is True
+        and value["representative_external_tcp_denied"] is True
+        and _hex(value["bwrap_sha256"])
+        and value["bwrap_sha256"] == expected_bwrap_sha256
+        and _hex(value["python_sha256"])
+        and value["probe_program_sha256"] == hashlib.sha256(PROBE_CODE.encode()).hexdigest()
+        and value["exclusive_egress_independently_attested"] is False
+        and value["native_child_process_origin_proven"] is False
+    )
+
+
 def probe_netns_kernel(substrate: Mapping[str, str]) -> dict[str, Any]:
     """Single bounded probe; failure occurs before run-root/gateway creation."""
     if sys.platform != "linux":
@@ -146,3 +182,22 @@ def probe_netns_kernel(substrate: Mapping[str, str]) -> dict[str, Any]:
         bwrap_sha256=substrate["bwrap_sha256"],
         python_sha256=substrate["python_sha256"],
     )
+
+def main() -> int:
+    from .native_bwrap_execution import admit_netns_substrate
+    try:
+        report = probe_netns_kernel(admit_netns_substrate())
+    except (OSError, ValueError, TypeError) as exc:
+        print(json.dumps({
+            "schema": SCHEMA, "kernel_probe_qualified": False,
+            "reason": str(exc),
+            "exclusive_egress_independently_attested": False,
+            "native_child_process_origin_proven": False,
+        }, indent=2, sort_keys=True))
+        return 2
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
