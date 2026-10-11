@@ -290,7 +290,11 @@ def verify_report_set(
             "artifacts",
             "generation_id",
         }
-        score_artifact = _score_artifact_name(str(manifest.get("score_artifact") or ""))
+        if not isinstance(manifest.get("score_artifact"), str):
+            raise DerivedReportSetError(
+                "derived report-set score artifact identity mismatch"
+            )
+        score_artifact = _score_artifact_name(manifest["score_artifact"])
         expected_artifacts = set(REPORT_SET_CORE_ARTIFACTS) | {score_artifact}
         identity_keys = ("contract", "run_id", "score_artifact", "artifacts")
     else:
