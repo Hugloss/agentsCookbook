@@ -1952,3 +1952,78 @@ uv run --no-project python -m unittest benchmarks.tests.test_native_netns_kernel
 uv run --no-project python -m unittest benchmarks.tests.test_native_netns_pilot_readiness benchmarks.tests.test_native_netns_relay -v
 uv run --no-project python -m unittest discover -s benchmarks/tests
 ```
+
+
+### Host-attested direct-vs-deferred information delivery pilot
+
+The `benchmarks/harbor/trusted-delivery-timing-v1.json` sample freezes a
+third **external-host** intervention alongside the existing presentation and
+freshness studies. It is **not runnable with unmodified Codex/OpenCode/Claude
+Code**: those harnesses do not yet expose trustworthy provider-request
+boundaries to this evaluation code. The sample model string is a placeholder;
+choose a real, pinned model and the same frozen task/repository/oracle for
+both arms before freezing a manifest.
+
+Study `timing` uses two assigned arms (the existing deterministic,
+seed-bound `trusted_treatments.build_manifest`):
+
+- `control = direct-first-request`: send the identical structured,
+  pinned Hashmarks packet in **provider request 1**, with no earlier
+  model invocation.
+- `variant = deferred-second-request`: send **provider request 1**
+  with the same model, settings and non-tool prompt but *no tool message*,
+  call `TrustedModelRequestCapture.begin_pre_exposure_transport()` and
+  `record_pre_exposure_submission()` after observing a bounded 2xx response;
+  send the identical structured tool result in **provider request 2**,
+  with the identical non-tool prompt/settings. The second request also
+  requires `begin_provider_transport()` and
+  `record_provider_submission()`.
+
+Only the host possessing the independent key may capture actual outbound
+request bytes and write the create-only, MAC-bound model-input receipts;
+agent messages, MCP outputs and ATIF text cannot attest delivery. Both
+requests must use the same canonical settings/non-tool prompt; the first
+request must contain no tool message; the final delivered packet must be
+bound to the actual returned Hashmarks packet and the frozen task identity.
+Skipping the prior request, omitting a provider submission, changing a
+model/prompt/packet, using the wrong sequence, or repeating a transport
+attempt **fails before a delivery receipt can be published**. The
+host-input verifier checks both request-sequence and authenticated
+intervention facets; the live intervention audit requires complete,
+signed **final provider submission** for timing, with an authenticated
+digest of the prior request and its successful response.
+
+The trusted assignment manifest can be frozen using the existing CLI:
+
+```sh
+uv run --no-project python -m benchmarks.harness.trusted_treatments \
+  --design benchmarks/harbor/trusted-delivery-timing-v1.json \
+  --output /secure-external-host/timing-manifest.json \
+  --source-contract-identity sha256:<reviewed-source-contract> \
+  --host-build-sha256 <64-lowercase-hex> \
+  --assignment-seed-sha256 <64-lowercase-hex>
+```
+
+The named secure output directory, pinned digests and host-side integration
+must be supplied by the independent operator; these placeholders are not
+working execution credentials. The existing
+`benchmarks.harness.intervention_audit` and
+`independent_campaign_qualification` paths analyze immutable Harbor
+bundles plus external host attestations. The model-free regression ring is:
+
+```sh
+uv run --no-project python -m unittest \
+  benchmarks.tests.test_trusted_host_campaign \
+  benchmarks.tests.test_host_attested_interventions -v
+```
+
+**Interpretation boundary:** the variant issues one extra provider request,
+and the model may acquire extra conversation state before evidence arrives.
+That is a **request-count and model-state confound**, not isolated clock
+timing; no pure timing causal claim is made. Source selection, frozen
+assignment, signed transport observations and descriptive matched outcomes
+make this design auditable, but they do not prove randomization,
+pre-registration time, provider cognition, or causal uplift. A genuine
+single-variable timing study would require a host capable of enforcing
+delivery delay without adding a provider invocation, with separately
+attested model-input ordering and equivalent model state.
