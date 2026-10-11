@@ -776,6 +776,11 @@ class HarborAblationAttributionTests(unittest.TestCase):
             "aligned_fields": ["winner"],
             "divergent_fields": [],
             "conflicted_fields": [],
+            "aligned_repeated_in_final": ["winner"],
+            "divergent_repeated_in_final": [],
+            "aligned_claim_arrival": timing,
+            "divergent_claim_arrival": "NOT_OBSERVED",
+            "claim_arrival_order": "ALIGNED_ONLY",
             "causal_influence_claimed": False,
         }
 
@@ -845,6 +850,36 @@ class HarborAblationAttributionTests(unittest.TestCase):
             report["by_harness"]["codex"]["qualified_complete_quartets"], 2
         )
         self.assertFalse(summary["positive_causal_proof_claimed"])
+
+    def test_ablation_report_bundles_semantic_information_outcomes_without_regrading(self) -> None:
+        valid = _quartet()
+        valid["hashmarks"]["component_semantic_information"] = self._semantic_component(
+            timing="AFTER_NATIVE_DISCOVERY"
+        )
+        valid["hashmarks-task-evidence-only"][
+            "component_semantic_information"
+        ] = self._semantic_component(timing="BEFORE_NATIVE_DISCOVERY")
+        report = self._report_from_quartets([valid])
+        self.assertEqual(report["summary"]["semantic_qualified_quartets"], 1)
+        diagnostic = report["quartets"][0]["semantic_information_outcomes"]
+        self.assertTrue(diagnostic["qualified"])
+        self.assertEqual([row["outcome_transition"] for row in diagnostic["comparisons"]], [
+            "FAIL_TO_PASS", "FAIL_TO_PASS",
+        ])
+        self.assertEqual(
+            diagnostic["comparisons"][0]["exposure"]["aligned_claim_arrival"],
+            "AFTER_NATIVE_DISCOVERY",
+        )
+        self.assertEqual(
+            diagnostic["comparisons"][1]["exposure"]["aligned_claim_arrival"],
+            "BEFORE_NATIVE_DISCOVERY",
+        )
+        summary = report["summary"]["semantic_information_outcomes"]
+        self.assertEqual(summary["qualified_quartets"], 1)
+        self.assertEqual(summary["excluded_quartets"], 0)
+        self.assertEqual(len(summary["conditional_outcome_cells"]), 2)
+        self.assertFalse(summary["causal_influence_claimed"])
+        self.assertEqual(report["by_harness"]["codex"]["qualified_complete_quartets"], 1)
 
     def test_incomplete_outcomes_excluded_even_with_valid_information(self) -> None:
         arms = _quartet(only="INCOMPLETE")
