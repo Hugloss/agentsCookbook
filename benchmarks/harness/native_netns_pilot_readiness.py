@@ -25,7 +25,7 @@ from .native_chat_pair_admission import verify_native_chat_pair_claim
 from .native_chat_transport_parity import audit_frozen_chat_treatments
 from .trusted_treatments import load_manifest, verify_manifest
 
-SCHEMA = "agentscookbook.netns-paired-pilot-readiness.v3"
+SCHEMA = "agentscookbook.netns-paired-pilot-readiness.v4"
 HEX = set("0123456789abcdef")
 
 
@@ -94,6 +94,13 @@ def evaluate_native_netns_pilot(
             evidence.get("native_process_origin_proven") is not False,
             evidence.get("causal_improvement_proven") is not False,
             evidence["gateway"].get("native_chat_tool_wire_contract_enforced") is not True,
+            evidence["gateway"].get("provider_issued_tool_observed") is not True,
+            evidence["gateway"].get("provider_issued_tool_continuation_verified") is not True,
+            not isinstance(evidence["gateway"].get("provider_issued_response_sha256"), str),
+            not (
+                isinstance(evidence["gateway"].get("provider_issued_response_sha256"), str)
+                and _hex64(evidence["gateway"]["provider_issued_response_sha256"])
+            ),
             not verify_native_chat_pair_claim(
                 evidence.get("native_chat_pair_preflight"),
                 trial_id=cell["trial_id"],
@@ -166,6 +173,10 @@ def evaluate_native_netns_pilot(
         "independently_checked_chat_pairs": pairs,
         "paired_pilot_observations_ready_for_independent_grading": not issues,
         "blockers": dict(sorted(issues.items())),
+        "provider_issued_call_observations_host_mac_verified": (
+            checked == len(frozen["assignments"]) and not issues
+        ),
+        "provider_execution_or_attention_independently_proven": False,
         "network_namespace_peer_observations_host_mac_verified": (
             checked == len(frozen["assignments"])
         ),

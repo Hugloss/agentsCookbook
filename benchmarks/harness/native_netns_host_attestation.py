@@ -21,7 +21,7 @@ from .native_netns_probe import kernel_probe_receipt_valid
 from .native_mount_probe import inspect_mount_probe
 from .native_chat_pair_admission import verify_native_chat_pair_claim
 
-SCHEMA = "agentscookbook.native-netns-host-isolation-attestation.v3"
+SCHEMA = "agentscookbook.native-netns-host-isolation-attestation.v4"
 DOMAIN = b"agentscookbook.netns-host-execution-hmac.v1\0"
 
 
@@ -46,6 +46,12 @@ def sign_isolation_report(
             or report.get("linux_network_namespace_requested") is not True
             or not isinstance(report.get("gateway"), Mapping)
             or report["gateway"].get("native_chat_tool_wire_contract_enforced") is not True
+            or report["gateway"].get("provider_issued_tool_observed") is not True
+            or report["gateway"].get("provider_issued_tool_continuation_verified") is not True
+            or not isinstance(report["gateway"].get("provider_issued_response_sha256"), str)
+            or len(report["gateway"]["provider_issued_response_sha256"]) != 64
+            or any(c not in "0123456789abcdef" for c in
+                   report["gateway"]["provider_issued_response_sha256"])
             or not verify_native_chat_pair_claim(
                 report.get("native_chat_pair_preflight"),
                 trial_id=report.get("trial_id"),

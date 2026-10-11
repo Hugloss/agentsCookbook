@@ -38,6 +38,9 @@ from .trusted_http_provider import (
 from .trusted_treatments import assigned_cell, select_treatment, verify_manifest
 from .native_chat_transport_parity import require_chat_tool_content
 from .native_chat_request_integrity import require_assistant_tool_ancestry
+from .native_provider_tool_provenance import (
+    extract_provider_issued_tool, require_issued_tool_continuation,
+)
 
 SCHEMA = "agentscookbook.opencode-v1-gateway-launch.v1"
 MAX_REQUEST_BYTES = 8_388_608
@@ -281,6 +284,9 @@ class NativeOpenCodeGateway:
         self.unauthenticated_attempts = 0
         self.pre_evidence_requests = 0
         self.post_evidence_submissions = 0
+        self.provider_issued_tool: dict[str, str] | None = None
+        self.provider_issued_tool_observed = False
+        self.provider_issued_response_sha256: str | None = None
 
     def _handle_request(self, body: bytes, *, authorization: str) -> bytes:
         if not hmac.compare_digest(authorization, "Bearer " + self.token):
@@ -305,21 +311,46 @@ class NativeOpenCodeGateway:
             if self._state != "PRE_EVIDENCE":
                 raise ValueError("gateway-extra-request-after-treatment")
             if not tool_messages:
+                if self.enforce_chat_tool_wire_contract and self.provider_issued_tool is not None:
+                    raise ValueError("gateway-tool-issued-but-continuation-absent")
                 if self.pre_evidence_requests >= 4:
                     raise ValueError("gateway-pre-evidence-request-budget")
                 self.pre_evidence_requests += 1
-                return _forward_pre_evidence(
-                    body, upstream=self.upstream, api_key=self.upstream_api_key,
-                    timeout_seconds=self.timeout_seconds,
-                    stream=request.get("stream") is True,
-                )
+                try:
+                    response = _forward_pre_evidence(
+                        body, upstream=self.upstream, api_key=self.upstream_api_key,
+                        timeout_seconds=self.timeout_seconds,
+                        stream=request.get("stream") is True,
+                    )
+                    if self.enforce_chat_tool_wire_contract:
+                        # The host, not a client-authored assistant turn,
+                        # witnesses the exact upstream tool call before
+                        # accepting any Hashmarks result on the next turn.
+                        issued = extract_provider_issued_tool(
+                            response, streamed=request.get("stream") is True,
+                        )
+                        if issued is not None:
+                            self.provider_issued_tool = issued
+                            self.provider_issued_tool_observed = True
+                            self.provider_issued_response_sha256 = issued[
+                                "provider_response_sha256"
+                            ]
+                    return response
+                except ValueError:
+                    # No retry or later "recovery" from a response with
+                    # unqualified provider-issued tool authority.
+                    self._state = "PRE_EVIDENCE_UNQUALIFIED"
+                    raise
             if len(tool_messages) != 1:
                 raise ValueError("gateway-uncontrolled-foreign-tool-observations")
             call_id = tool_messages[0].get("tool_call_id")
             if not isinstance(call_id, str) or not call_id:
                 raise ValueError("gateway-missing-observed-tool-call-id")
             if self.enforce_chat_tool_wire_contract:
-                require_assistant_tool_ancestry(request, call_id=call_id)
+                require_issued_tool_continuation(
+                    request, call_id=call_id,
+                    provider_issued=self.provider_issued_tool,
+                )
                 require_chat_tool_content(
                     self.selected,
                     actual_tool_content=tool_messages[0].get("content"),
@@ -520,6 +551,13 @@ class NativeOpenCodeGateway:
                 self.enforce_chat_tool_wire_contract
             ),
             "host_submission_recorded": self.post_evidence_submissions == 1,
+            "provider_issued_tool_observed": self.provider_issued_tool_observed,
+            "provider_issued_response_sha256": self.provider_issued_response_sha256,
+            "provider_issued_tool_continuation_verified": (
+                self.enforce_chat_tool_wire_contract
+                and self.post_evidence_submissions == 1
+                and self.provider_issued_tool_observed
+            ),
             "native_process_origin_proven": False,
             "unix_peer_credentials_observed": len(self.peer_credentials_observed),
             "distinct_netns_peer_connections": self.network_namespace_verified_peers,
