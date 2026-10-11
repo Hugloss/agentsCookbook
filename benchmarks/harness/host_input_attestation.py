@@ -38,6 +38,9 @@ INTERVENTION_FIELDS = frozenset((
     "current_generation_sha256", "semantic_sha256", "catalog_sha256",
     "prompt_sha256", "oracle_sha256", "workspace_sha256", "surface_sha256",
 ))
+TIMING_FIELDS = frozenset((
+    "delivery_request_sequence", "prior_request_sha256", "prior_transport_sha256",
+))
 
 
 def canonical(value: object) -> bytes:
@@ -160,14 +163,36 @@ def verify_host_attestations(
             delivery = {field: row[field] for field in FIELDS}
             if "intervention" in row:
                 intervention = row["intervention"]
-                if (not isinstance(intervention, dict)
-                        or set(intervention) != INTERVENTION_FIELDS
-                        or intervention["study"] not in ("presentation", "freshness")
+                if not isinstance(intervention, dict):
+                    raise ValueError("invalid-intervention-binding")
+                timing = intervention.get("study") == "timing"
+                expected_facets = INTERVENTION_FIELDS | (TIMING_FIELDS if timing else frozenset())
+                if (set(intervention) != expected_facets
+                        or intervention["study"] not in ("presentation", "freshness", "timing")
                         or intervention["arm"] not in ("control", "variant")
                         or intervention["presentation"] not in ("structured", "text")
                         or not all(_hex64(intervention[name]) for name in
-                                   INTERVENTION_FIELDS - {"study", "arm", "presentation"})):
+                                   expected_facets - {
+                                       "study", "arm", "presentation",
+                                       "delivery_request_sequence",
+                                   })
+                        or (timing and (
+                            type(intervention["delivery_request_sequence"]) is not int
+                            or intervention["delivery_request_sequence"] != (
+                                1 if intervention["arm"] == "control" else 2
+                            )
+                            or (intervention["arm"] == "control" and (
+                                intervention["prior_request_sha256"] != "0" * 64
+                                or intervention["prior_transport_sha256"] != "0" * 64
+                            ))
+                            or (intervention["arm"] == "variant" and (
+                                intervention["prior_request_sha256"] == "0" * 64
+                                or intervention["prior_transport_sha256"] == "0" * 64
+                            ))
+                        ))):
                     raise ValueError("invalid-intervention-binding")
+                if timing and delivery["model_request_sequence"] != intervention["delivery_request_sequence"]:
+                    raise ValueError("timing-attested-request-sequence-mismatch")
                 delivery["intervention"] = intervention
             if "transport" in row:
                 transport = row["transport"]
