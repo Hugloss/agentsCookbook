@@ -18,6 +18,9 @@ import hmac
 import json
 import os
 import re
+import socket
+import socketserver
+import struct
 import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -219,6 +222,10 @@ class NativeOpenCodeGateway:
                 raise ValueError("unpinned-native-run-context")
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+        self._unix_server: socketserver.ThreadingUnixStreamServer | None = None
+        self._unix_thread: threading.Thread | None = None
+        self._unix_path: Path | None = None
+        self.peer_credentials_observed: list[tuple[int, int, int]] = []
         self._lock = threading.Lock()
         self._state = "PRE_EVIDENCE"
         self.unauthenticated_attempts = 0
@@ -337,7 +344,82 @@ class NativeOpenCodeGateway:
         self._thread.start()
         return int(self._server.server_address[1])
 
+    def start_unix(self, socket_path: Path) -> None:
+        """Private host Unix gateway for Linux network-isolated OpenCode.
+
+        The sandbox receives a bind mount of the socket directory, *not*
+        the upstream provider secret or the host network namespace. UDS
+        SO_PEERCRED identifies an OS peer but cannot attest its executable.
+        """
+        if (self._unix_server is not None or self._server is not None
+                or socket_path.exists() or socket_path.is_symlink()
+                or not socket_path.parent.is_dir()
+                or socket_path.parent.stat().st_mode & 0o077):
+            raise ValueError("unsafe-or-duplicate-native-unix-gateway")
+        parent = self
+
+        class Handler(socketserver.BaseRequestHandler):
+            def handle(self):
+                conn = self.request
+                conn.settimeout(75)
+                try:
+                    def read_exact(size: int) -> bytes:
+                        data = bytearray()
+                        while len(data) < size:
+                            part = conn.recv(size - len(data))
+                            if not part:
+                                raise ValueError("unix-gateway-incomplete-frame")
+                            data.extend(part)
+                        return bytes(data)
+
+                    if hasattr(socket, "SO_PEERCRED"):
+                        raw_peer = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
+                        peer = struct.unpack("3i", raw_peer)
+                        with parent._lock:
+                            parent.peer_credentials_observed.append(peer)
+                    token_length = struct.unpack("!I", read_exact(4))[0]
+                    if not 0 < token_length <= 512:
+                        raise ValueError("unix-gateway-auth-size")
+                    authorization = read_exact(token_length).decode("utf-8")
+                    body_length = struct.unpack("!I", read_exact(4))[0]
+                    if not 0 < body_length <= MAX_REQUEST_BYTES:
+                        raise ValueError("unix-gateway-body-size")
+                    body = read_exact(body_length)
+                    result = parent._handle_request(body, authorization=authorization)
+                    if not 0 < len(result) <= MAX_RESPONSE_BYTES:
+                        raise ValueError("unix-gateway-response-size")
+                    conn.sendall(struct.pack("!I", len(result)) + result)
+                except (OSError, ValueError, UnicodeError, struct.error):
+                    try:
+                        conn.sendall(struct.pack("!I", 0))
+                    except OSError:
+                        pass
+
+        class UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+            daemon_threads = True
+
+        # Parent directory is expected to have mode 0700; the socket itself
+        # gets 0600 and is mounted only into the trial's isolated namespace.
+        self._unix_server = UnixServer(str(socket_path), Handler)
+        self._unix_path = socket_path
+        socket_path.chmod(0o600)
+        self._unix_thread = threading.Thread(
+            target=self._unix_server.serve_forever, daemon=True,
+            name="agentscookbook-privileged-unix-provider",
+        )
+        self._unix_thread.start()
+
     def close(self) -> None:
+        if self._unix_server is not None:
+            self._unix_server.shutdown()
+            self._unix_server.server_close()
+            if self._unix_thread is not None:
+                self._unix_thread.join(timeout=5)
+            if self._unix_path is not None:
+                self._unix_path.unlink(missing_ok=True)
+            self._unix_server = None
+            self._unix_thread = None
+            self._unix_path = None
         if self._server is not None:
             self._server.shutdown()
             self._server.server_close()
@@ -357,6 +439,8 @@ class NativeOpenCodeGateway:
             "model_request_attested": False,
             "host_submission_recorded": self.post_evidence_submissions == 1,
             "native_process_origin_proven": False,
+            "unix_peer_credentials_observed": len(self.peer_credentials_observed),
+            "socket_peer_executable_verified": False,
             "provider_response_relay_qualified": self.post_evidence_submissions == 1,
             "causal_improvement_proven": False,
         }
