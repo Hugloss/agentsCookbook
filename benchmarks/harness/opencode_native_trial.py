@@ -29,6 +29,7 @@ from .opencode_native_gateway import (
 )
 from .trusted_treatments import load_manifest, verify_manifest
 from .opencode_native_export import acquire_native_export, native_export_preflight
+from .native_netns_probe import probe_netns_kernel
 from .native_bwrap_execution import (
     admit_netns_substrate, build_isolated_argv, verify_substrate_unchanged,
 )
@@ -110,6 +111,9 @@ def launch_native_trial(
     # succeed. Reject missing Linux capture authority before creating the
     # workspace/run root or starting the native model.
     native_export_preflight()
+    # This exercises the actual kernel boundary while no native run root,
+    # socket, child workspace mutation, or model dispatch exists.
+    kernel_probe = probe_netns_kernel(substrate) if substrate is not None else None
     gateway = NativeOpenCodeGateway(
         frozen, trial_id=trial_id, host_key_file=host_key_file,
         host_identity=host_identity, current=current, replaced=replaced,
@@ -263,6 +267,7 @@ def launch_native_trial(
                 substrate is not None
                 and observation["distinct_netns_peer_connections"] >= 1
             ),
+            "native_kernel_preflight": kernel_probe,
             "native_model_input_delivered_proven": False,
             "causal_improvement_proven": False,
         }
