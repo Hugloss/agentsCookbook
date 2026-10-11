@@ -115,6 +115,17 @@ def inspect_mount_probe(proof: object, *, expected_bwrap_sha256: str,
     )
 
 
+def verify_worker_source_unchanged(proof: Mapping[str, Any]) -> None:
+    """Verify the exact worker source pinned by the successful guest probe."""
+    worker = Path(__file__).with_name("native_netns_worker.py")
+    if (not isinstance(proof, Mapping)
+            or not isinstance(proof.get("worker_sha256"), str)
+            or not HEX.fullmatch(proof["worker_sha256"])
+            or worker.is_symlink() or not worker.is_file()
+            or _sha(worker.read_bytes()) != proof["worker_sha256"]):
+        raise ValueError("native-runtime-worker-source-drift")
+
+
 def probe_native_mounts(
     substrate: Mapping[str, str], *, executable: Path, hashmarks: Path,
     workspace: Path, run_root: Path, host_key_file: Path,
