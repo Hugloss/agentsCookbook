@@ -140,6 +140,7 @@ class RelationshipScopeTimingTests(unittest.TestCase):
         self.assertEqual(result["arrival_timing"], "SAME_STEP_UNORDERED")
         self.assertEqual(result["native_search_before_return"], 0)
         self.assertEqual(result["native_search_after_return"], 0)
+        self.assertEqual(result["native_search_same_step"], 1)
 
     def test_wrong_detail_target_does_not_claim_followthrough(self) -> None:
         result = _run([
@@ -159,6 +160,85 @@ class RelationshipScopeTimingTests(unittest.TestCase):
         result = _run([_step(TOOL, "h1", response={"content": response})])
         self.assertTrue(result["qualified"])
         self.assertEqual(result["arrival_timing"], "NO_NATIVE_DISCOVERY")
+
+    def test_hidden_router_before_return_cannot_prove_first_choice(self) -> None:
+        result = _run([
+            _step("functions.exec", "router-1", arguments={"input": "opaque"}),
+            _step(TOOL, "h1", response=_packet()),
+            _step("rg", "native-1", arguments={"pattern": "owner"}),
+        ])
+        self.assertTrue(result["qualified"])
+        self.assertEqual(result["arrival_timing"], "UNKNOWN_OPAQUE_ROUTER")
+        self.assertEqual(result["first_native_discovery_step"], 3)
+        self.assertEqual(result["native_search_observability"], "PARTIAL_OPAQUE_TOOL")
+        self.assertEqual(result["native_search_before_return"], 0)
+        self.assertEqual(result["native_search_after_return"], 1)
+        self.assertFalse(result["causal_influence_claimed"])
+
+    def test_hidden_router_after_return_cannot_prove_no_discovery_or_detail(self) -> None:
+        result = _run([
+            _step(TOOL, "h1", response=_packet(outgoing=0, associated=1)),
+            _step("functions.exec", "router-1"),
+        ])
+        self.assertTrue(result["qualified"])
+        self.assertEqual(result["arrival_timing"], "UNKNOWN_OPAQUE_ROUTER")
+        self.assertEqual(result["detail_followthrough"], "UNKNOWN_OPAQUE_DETAIL_REQUEST")
+        self.assertEqual(result["native_search_observability"], "PARTIAL_OPAQUE_TOOL")
+        self.assertEqual(result["native_search_after_return"], 0)
+        self.assertFalse(result["agent_attention_proven"])
+
+    def test_explicit_native_discovery_before_opaque_router_stays_observed(self) -> None:
+        result = _run([
+            _step("rg", "native-1", arguments={"pattern": "owner"}),
+            _step("functions.exec", "router-1"),
+            _step(TOOL, "h1", response=_packet()),
+        ])
+        self.assertTrue(result["qualified"])
+        self.assertEqual(result["arrival_timing"], "AFTER_NATIVE_DISCOVERY")
+        self.assertEqual(result["native_search_before_return"], 1)
+        self.assertEqual(result["native_search_observability"], "PARTIAL_OPAQUE_TOOL")
+
+    def test_explicit_exact_detail_remains_positive_despite_opaque_router(self) -> None:
+        result = _run([
+            _step(TOOL, "h1", response=_packet()),
+            _step("functions.exec", "router-1"),
+            _step(
+                DETAIL, "detail-1",
+                arguments={"target": SUBJECT, "result_mode": "relationships"},
+            ),
+        ])
+        self.assertEqual(
+            result["detail_followthrough"], "EXACT_DETAIL_REQUEST_AFTER_RETURN"
+        )
+        self.assertEqual(result["first_exact_detail_request_step"], 3)
+
+    def test_shell_discovery_does_not_prove_no_hidden_detail_or_exact_search(self) -> None:
+        result = _run([
+            _step(TOOL, "h1", response=_packet()),
+            _step("shell", "shell-1", arguments={"command": "rg widget src"}),
+        ])
+        self.assertTrue(result["qualified"])
+        self.assertEqual(result["arrival_timing"], "BEFORE_NATIVE_DISCOVERY")
+        self.assertEqual(result["detail_followthrough"], "UNKNOWN_OPAQUE_DETAIL_REQUEST")
+        self.assertEqual(result["native_search_observability"], "PARTIAL_OPAQUE_TOOL")
+        self.assertEqual(result["native_search_after_return"], 0)
+
+    def test_unrelated_tool_return_before_call_invalidates_timeline(self) -> None:
+        early = {
+            "source": "environment",
+            "observation": {
+                "results": [
+                    {"source_call_id": "native-1", "content": {"path": "src/x.py"}}
+                ]
+            },
+        }
+        result = _run([
+            early,
+            _step(TOOL, "h1", response=_packet()),
+            _step("read_file", "native-1", arguments={"path": "src/x.py"}),
+        ])
+        self.assertFalse(result["qualified"])
+        self.assertEqual(result["reason"], "atif-order-or-link-invalid")
 
     def test_unknown_text_and_error_are_not_evidence_absence(self) -> None:
         for response in (
