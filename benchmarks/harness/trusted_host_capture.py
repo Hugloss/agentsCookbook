@@ -108,16 +108,25 @@ class TrustedModelRequestCapture:
             "provider_submission_proven": "false",
         }
 
+    def begin_pre_exposure_transport(self) -> None:
+        """Arm exactly one real transport attempt for the prior model request."""
+        if self._prior_request is None or self._prior_transport_attempted:
+            raise ValueError("timing-prior-transport-retry-or-missing-request")
+        self._prior_transport_attempted = True
+
     def record_pre_exposure_submission(
         self, *, serialized_model_request: bytes,
         endpoint_sha256: str, status: int,
         response_sha256: str, response_bytes: int,
     ) -> None:
-        """Host transports the earlier tool-free request, one attempt only."""
+        """Only the host can attest a bounded 2xx response after a begun attempt."""
         prior = self._prior_request
-        if prior is None or self._prior_transport_attempted:
+        if (
+            prior is None
+            or not self._prior_transport_attempted
+            or prior["transport_sha256"] is not None
+        ):
             raise ValueError("timing-prior-transport-not-admitted-or-retried")
-        self._prior_transport_attempted = True
         if (
             not isinstance(serialized_model_request, bytes)
             or hashlib.sha256(serialized_model_request).hexdigest() != prior["input_sha256"]
