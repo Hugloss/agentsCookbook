@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from benchmarks.harness.identity import canonical_json, digest
 from benchmarks.harness.derived_report_set import (
     DerivedReportSetError,
     REPORT_SET_ARTIFACTS,
@@ -145,6 +146,49 @@ class DerivedReportSetTests(unittest.TestCase):
                 "does not match manifest",
             ):
                 verify_report_set(
+                    run_root=root,
+                    expected_run_id="000001",
+                )
+
+    def test_v1_report_generation_is_readable_but_score_is_not_authoritative(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            reports = root / "reports"
+            reports.mkdir()
+            artifacts = {}
+            for name in REPORT_SET_ARTIFACTS:
+                payload = (json.dumps({"artifact": name}) + "\n").encode("utf-8")
+                (reports / name).write_bytes(payload)
+                artifacts[name] = {
+                    "sha256": __import__("hashlib").sha256(payload).hexdigest(),
+                    "bytes": len(payload),
+                }
+            identity = {
+                "contract": "agents-cookbook-derived-report-set.v1",
+                "run_id": "000001",
+                "artifacts": artifacts,
+            }
+            manifest = {**identity, "generation_id": digest(identity)}
+            (reports / REPORT_SET_MANIFEST).write_bytes(canonical_json(manifest))
+            (reports / "score.json").write_text(
+                json.dumps({"legacy": True}) + "\n",
+                encoding="utf-8",
+            )
+
+            health = inspect_report_set(
+                run_root=root,
+                expected_run_id="000001",
+            )
+            self.assertEqual(health["status"], "VERIFIED_REPORT_ONLY")
+            self.assertTrue(health["verified"])
+            self.assertFalse(health["score_bound"])
+            with self.assertRaisesRegex(
+                DerivedReportSetError,
+                "score is not generation-bound",
+            ):
+                verified_score_path(
                     run_root=root,
                     expected_run_id="000001",
                 )
