@@ -18,10 +18,11 @@ from .host_input_attestation import (
     _load_receipt, canonical, load_host_key, verify_host_attestations,
 )
 from .intervention_audit import _facet_compare
+from .mechanism_attribution import project_atif
 from .opencode_native_session import inspect_native_export, MAX_EXPORT_BYTES
 from .trusted_treatments import load_manifest, select_treatment, verify_manifest
 
-SCHEMA = "agentscookbook.native-session-cohort-audit.v1"
+SCHEMA = "agentscookbook.native-session-cohort-audit.v2"
 
 
 def _json_file(path: Path, limit: int) -> object:
@@ -134,10 +135,20 @@ def audit_native_session_cohort(
                 atif = _json_file(trace, MAX_EXPORT_BYTES)
                 if canonical(atif) != canonical(inspected["atif"]):
                     raise ValueError("native-atif-is-not-projected-from-export")
+                trace_evidence = project_atif(trace)
+                if (trace_evidence.get("available") is not True
+                        or trace_evidence.get("tool_order_complete") is not True
+                        or trace_evidence.get("tool_calls") != inspected["native_tool_parts_observed"]
+                        or trace_evidence.get("subject_tool_calls") != 1):
+                    raise ValueError("native-trace-order-or-subject-count-not-qualified")
                 admitted[(cell["harness"], cell["task"],
                           cell["replicate"], cell["arm"])] = {
                     "trial_id": trial_id, "facets": meta,
                     "native_export_sha256": hashlib.sha256(native_bytes).hexdigest(),
+                    "native_tool_calls": trace_evidence["tool_calls"],
+                    "native_search_calls": trace_evidence["native_search_calls"],
+                    "native_read_calls": trace_evidence["native_read_calls"],
+                    "subject_routing_timing": trace_evidence["subject_routing_timing"],
                 }
             except (OSError, ValueError, TypeError, KeyError, RecursionError):
                 issues["native-trial-session-or-provider-mismatch"] += 1
@@ -170,6 +181,18 @@ def audit_native_session_cohort(
             not issues and len(admitted) == len(expected)
         ),
         "issues": dict(sorted(issues.items())),
+        "native_tool_order_evidence": {
+            "observed_tool_calls": sum(row["native_tool_calls"] for row in admitted.values()),
+            "observed_native_search_calls": sum(row["native_search_calls"] for row in admitted.values()),
+            "observed_native_read_calls": sum(row["native_read_calls"] for row in admitted.values()),
+            "routing_by_arm": {
+                arm: dict(sorted(Counter(row["subject_routing_timing"] for key, row in admitted.items() if key[3] == arm).items()))
+                for arm in ("control", "variant")
+            },
+            "export_tool_part_projection_qualified": not issues and len(admitted) == len(expected),
+            "host_wide_capture_exhaustiveness_proven": False,
+            "native_model_attention_proven": False,
+        },
         "native_process_origin_proven": False,
         "exclusive_network_egress_proven": False,
         "independent_oracle_review_proven": False,

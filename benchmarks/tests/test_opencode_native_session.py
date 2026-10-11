@@ -170,6 +170,36 @@ class NativeSessionBindingTests(unittest.TestCase):
                 original_packet=source()["content"],
             )
 
+    def test_native_pre_subject_search_preserves_gateway_receipt_and_full_trace(self):
+        native = json.loads(self.raw())
+        native["messages"][0]["parts"].insert(0, {
+            "type": "tool", "tool": "grep", "callID": "native-grep-first",
+            "state": {"status": "completed",
+                      "input": {"pattern": "resolve"},
+                      "output": "src/unrelated.py"},
+        })
+        saved = finalize_native_export(
+            canonical(native), capture=self.capture, session_id=self.session_id,
+            title=self.title, workspace=self.workspace, run_root=self.run_root,
+            expected_provider="agentscookbook-captured",
+            expected_model="gpt-fixture", original_packet=source()["content"],
+        )
+        self.assertTrue(saved["signed_host_input_and_transport_verified"])
+        atif = json.loads((self.run_root / "trajectory.json").read_bytes())
+        self.assertEqual(
+            [step["tool_calls"][0]["function_name"] for step in atif["steps"]],
+            ["grep", "mcp__hashmarks__task_evidence"],
+        )
+        self.assertEqual(atif["source_capture_exhaustiveness"], "UNKNOWN")
+        report = verify_host_attestations(
+            self.run_root / "trajectory.json",
+            self.run_root / "host-attestation.json", KEY,
+            campaign_id=self.plan["design"]["campaign_id"],
+            trial_id=self.cell["trial_id"],
+        )
+        self.assertEqual(report["verified_model_input_packets"], 1)
+        self.assertEqual(report["provider_submission_state"], "SUBMITTED")
+
     def test_native_identity_and_model_tampering_reject_before_artifacts(self):
         bad = [
             self.raw(call_id="foreign-call-id"),
