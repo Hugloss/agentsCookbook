@@ -47,6 +47,12 @@ def _relay(unix_path: str, auth: str, payload: bytes) -> bytes:
         if not 0 < length <= MAX_RESPONSE:
             raise ValueError("relay-host-rejected-or-oversized")
         return _exact(sock, length)
+    # A rejecting privileged gateway may close immediately after the peer
+    # namespace check, before either framed write completes. The kernel can
+    # report EPIPE or ECONNRESET depending on scheduling. Both are terminal
+    # denials, never a retry or evidence of a successful provider submission.
+    except (BrokenPipeError, ConnectionResetError) as exc:
+        raise ValueError("relay-host-closed-before-response") from exc
 
 
 def serve_child(port: int, socket_path: str, argv: list[str]) -> int:

@@ -256,6 +256,32 @@ class UnixSocketNativeGatewayTests(unittest.TestCase):
         self.assertEqual(self.gateway.result()["distinct_netns_peer_connections"], 0)
         self.assertFalse(self.gateway.result()["native_process_origin_proven"])
 
+    def test_early_gateway_disconnect_is_a_terminal_relay_denial(self):
+        # Peer-namespace rejection can race with either sendall() or recv().
+        # Both kernel outcomes must be a stable fail-closed ValueError rather
+        # than an uncaught transport exception or a retry.
+        for stage, error in (
+            ("write", BrokenPipeError("gateway-refused-peer")),
+            ("read", ConnectionResetError("gateway-refused-peer")),
+        ):
+            with self.subTest(stage=stage):
+                with patch("benchmarks.harness.native_netns_worker.socket.socket") as factory:
+                    client = factory.return_value.__enter__.return_value
+                    if stage == "write":
+                        client.sendall.side_effect = error
+                    else:
+                        client.recv.side_effect = error
+                    with self.assertRaisesRegex(
+                        ValueError, "relay-host-closed-before-response"
+                    ):
+                        _relay(str(self.sock), "Bearer " + self.gateway.token, b"{}")
+                    factory.assert_called_once_with(socket.AF_UNIX, socket.SOCK_STREAM)
+                    self.assertEqual(client.connect.call_count, 1)
+                self.assertEqual(self.gateway.result()["post_evidence_submissions"], 0)
+                self.assertEqual(
+                    self.gateway.result()["distinct_netns_peer_connections"], 0
+                )
+
     def test_bad_token_or_foreign_packet_refuses_host_submission(self):
         with patch(
             "benchmarks.harness.opencode_native_gateway.dispatch_verified_chat_response",
