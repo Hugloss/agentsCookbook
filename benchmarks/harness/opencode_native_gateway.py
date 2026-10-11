@@ -87,7 +87,9 @@ def admit_opencode_binary(executable: Path, *, expected_sha256: str,
 
 def gateway_config(*, port: int, model_id: str,
                    hashmarks_executable: Path | None = None,
-                   workspace: Path | None = None) -> dict[str, Any]:
+                   workspace: Path | None = None,
+                   bridge_python: Path | None = None,
+                   bridge_hashmarks_sha256: str | None = None) -> dict[str, Any]:
     """Only one visible provider; no inherited provider fallback in overlay.
 
     The caller must also isolate the home and XDG config/data directories:
@@ -108,6 +110,16 @@ def gateway_config(*, port: int, model_id: str,
         or not workspace.is_dir()
     ):
         raise ValueError("untrusted-pinned-hashmarks-mcp-authority")
+    bridge_enabled = bridge_python is not None or bridge_hashmarks_sha256 is not None
+    if bridge_enabled and (
+        hashmarks_executable is None or bridge_python is None
+        or not bridge_python.is_absolute()
+        or not bridge_python.is_file()
+        or not isinstance(bridge_hashmarks_sha256, str)
+        or len(bridge_hashmarks_sha256) != 64
+        or any(c not in "0123456789abcdef" for c in bridge_hashmarks_sha256)
+    ):
+        raise ValueError("incomplete-native-mcp-bridge-configuration")
     payload = {
         "$schema": "https://opencode.ai/config.json",
         "enabled_providers": [PROVIDER_ID],
@@ -130,10 +142,18 @@ def gateway_config(*, port: int, model_id: str,
         payload["mcp"] = {
             "hashmarks": {
                 "type": "local",
-                "command": [
-                    str(hashmarks_executable), "--workspace",
-                    str(workspace), "mcp",
-                ],
+                "command": (
+                    [
+                        str(bridge_python), "/run/native-mcp-bridge.py",
+                        "--hashmarks", str(hashmarks_executable),
+                        "--sha256", bridge_hashmarks_sha256,
+                        "--workspace", str(workspace),
+                        "--contract", "/run/native-mcp-contract.json",
+                    ] if bridge_enabled else [
+                        str(hashmarks_executable), "--workspace",
+                        str(workspace), "mcp",
+                    ]
+                ),
                 "enabled": True,
             },
         }
