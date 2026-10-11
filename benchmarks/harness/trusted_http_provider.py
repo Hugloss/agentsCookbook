@@ -252,7 +252,7 @@ def _dispatch_verified_pre_exposure_chat_request(
     url = _endpoint(endpoint, approved_origin=approved_origin)
     if (
         not isinstance(api_key, str) or not 1 <= len(api_key) <= 4096
-        or any(ch in api_key for ch in ("\\r", "\\n"))
+        or any(ch in api_key for ch in ("\r", "\n"))
         or type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 300
         or not isinstance(serialized_model_request, bytes)
         or not 0 < len(serialized_model_request) <= MAX_BODY_BYTES
