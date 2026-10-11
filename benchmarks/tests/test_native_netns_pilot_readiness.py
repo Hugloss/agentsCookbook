@@ -174,7 +174,7 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
         report["native_kernel_preflight"] = None
         with self.assertRaisesRegex(ValueError, "unqualified-netns-host-observation"):
             sign_isolation_report(
-                report, execution_bytes=canonical(report) + b"\\n",
+                report, execution_bytes=canonical(report) + b"\n",
                 provider_attestation_bytes=b'{"synthetic-provider-packet-receipt":true}',
                 host_identity="privileged-host", host_key=KEY,
             )
