@@ -37,16 +37,17 @@ def _exact(stream: socket.socket, length: int) -> bytes:
 def _relay(unix_path: str, auth: str, payload: bytes) -> bytes:
     if not 0 < len(payload) <= MAX_BODY or not 0 < len(auth) <= MAX_AUTH:
         raise ValueError("relay-invalid-input")
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-        sock.settimeout(70)
-        sock.connect(unix_path)
-        token = auth.encode("utf-8")
-        sock.sendall(struct.pack("!I", len(token)) + token)
-        sock.sendall(struct.pack("!I", len(payload)) + payload)
-        length = struct.unpack("!I", _exact(sock, 4))[0]
-        if not 0 < length <= MAX_RESPONSE:
-            raise ValueError("relay-host-rejected-or-oversized")
-        return _exact(sock, length)
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(70)
+            sock.connect(unix_path)
+            token = auth.encode("utf-8")
+            sock.sendall(struct.pack("!I", len(token)) + token)
+            sock.sendall(struct.pack("!I", len(payload)) + payload)
+            length = struct.unpack("!I", _exact(sock, 4))[0]
+            if not 0 < length <= MAX_RESPONSE:
+                raise ValueError("relay-host-rejected-or-oversized")
+            return _exact(sock, length)
     # A rejecting privileged gateway may close immediately after the peer
     # namespace check, before either framed write completes. The kernel can
     # report EPIPE or ECONNRESET depending on scheduling. Both are terminal
