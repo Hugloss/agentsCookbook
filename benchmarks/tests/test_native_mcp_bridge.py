@@ -22,6 +22,7 @@ from benchmarks.harness.native_mcp_bridge_contract import (
 )
 from benchmarks.harness.native_mcp_stdio_bridge import run_stdio, sha_file
 from benchmarks.harness.native_mcp_live_smoke import smoke_real_native_mcp
+from benchmarks.harness.native_mcp_wire_probe import probe_native_mcp
 from benchmarks.harness.native_bwrap_execution import build_isolated_argv
 from benchmarks.harness.opencode_native_gateway import gateway_config
 from benchmarks.harness.trusted_treatments import select_treatment
@@ -180,6 +181,90 @@ class NativeMcpBridgeContractAttacks(unittest.TestCase):
             with self.assertRaises(ValueError):
                 BridgeState(self.contract).receive_request(malicious)
 
+    def test_catalog_server_identity_and_schema_gate_subject_release(self):
+        for bad_init in (
+            {"serverInfo": {"name": "Alien", "version": "1"}},
+            {"serverInfo": {"name": "Hashmarks", "version": ""}},
+        ):
+            state = BridgeState(self.contract)
+            state.receive_request(canonical({
+                "jsonrpc": "2.0", "id": "init", "method": "initialize",
+                "params": {},
+            }))
+            with self.subTest(info=bad_init), self.assertRaisesRegex(
+                ValueError, "server-identity",
+            ):
+                state.receive_response(canonical({
+                    "jsonrpc": "2.0", "id": "init", "result": bad_init,
+                }))
+        # Missing listed tool: the same original packet is not enough.
+        state = BridgeState(self.contract)
+        state.receive_request(canonical({
+            "jsonrpc": "2.0", "id": "init", "method": "initialize",
+            "params": {},
+        }))
+        state.receive_request(canonical({
+            "jsonrpc": "2.0", "id": "catalog", "method": "tools/list",
+            "params": {},
+        }))
+        state.receive_response(canonical({
+            "jsonrpc": "2.0", "id": "init",
+            "result": {"serverInfo": {"name": "Hashmarks", "version": "1"}},
+        }))
+        state.receive_response(canonical({
+            "jsonrpc": "2.0", "id": "catalog",
+            "result": {"tools": [{
+                "name": "find", "inputSchema": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            }]},
+        }))
+        state.receive_request(call_frame())
+        with self.assertRaisesRegex(ValueError, "not-listed"):
+            state.receive_response(result_frame())
+        for schema in (
+            {"type": "array", "properties": {}},
+            {"type": "object", "properties": {"task": {}},
+             "required": ["absent"]},
+        ):
+            state = BridgeState(self.contract)
+            state.receive_request(canonical({
+                "jsonrpc": "2.0", "id": "init", "method": "initialize",
+                "params": {},
+            }))
+            state.receive_request(canonical({
+                "jsonrpc": "2.0", "id": "catalog", "method": "tools/list",
+                "params": {},
+            }))
+            state.receive_response(canonical({
+                "jsonrpc": "2.0", "id": "init",
+                "result": {"serverInfo": {"name": "Hashmarks", "version": "1"}},
+            }))
+            with self.subTest(schema=schema), self.assertRaisesRegex(
+                ValueError, "catalog-unqualified",
+            ):
+                state.receive_response(canonical({
+                    "jsonrpc": "2.0", "id": "catalog",
+                    "result": {"tools": [{
+                        "name": "task_evidence", "inputSchema": schema,
+                    }]},
+                }))
+
+    def test_catalog_required_argument_and_type_mismatch_block_original(self):
+        for params in ({}, {"task": 123}, {"task": "owner", "injected": "x"}):
+            state = admitted_state(self.contract)
+            raw = canonical({
+                "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                "params": {"name": "task_evidence", "arguments": params},
+            })
+            state.receive_request(raw)
+            with self.subTest(params=params), self.assertRaisesRegex(
+                ValueError, "catalog-",
+            ):
+                state.receive_response(result_frame())
+
     def test_create_only_contract_and_guest_mcp_binding(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -303,6 +388,38 @@ for line in sys.stdin.buffer:
                     tool_name="task_evidence",
                     tool_args={"task": "Find owner of src/owner.py"},
                 )
+
+    def test_direct_pinned_mcp_wire_probe_binds_server_catalog_and_packet(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            work = root / "repo"
+            (work / ".git").mkdir(parents=True)
+            executable = root / "hashmarks"
+            self._fixture(executable)
+            kwargs = {
+                "binary": executable, "expected_sha256": sha_file(executable),
+                "workspace": work, "tool_name": "task_evidence",
+                "tool_args": {"task": "Find owner of src/owner.py"},
+                "expected_original_packet": source()["content"],
+            }
+            report = probe_native_mcp(**kwargs)
+            self.assertEqual(report["server_name"], "Hashmarks")
+            self.assertEqual(report["server_version"], "fixture")
+            self.assertTrue(report["bridge_response_shape_compatible"])
+            self.assertTrue(report["original_structured_matches_frozen_packet"])
+            self.assertTrue(report["original_text_matches_frozen_packet"])
+            self.assertFalse(report["native_opencode_sdk_proven"])
+            self.assertFalse(report["original_response_host_attested"])
+            self.assertEqual(report["model_calls_performed"], 0)
+            altered = probe_native_mcp(**{
+                **kwargs, "expected_original_packet": {"owner": "foreign.py"},
+            })
+            self.assertFalse(altered["bridge_response_shape_compatible"])
+            self.assertFalse(altered["original_text_matches_frozen_packet"])
+            self.assertTrue(altered["real_installed_mcp_process_observed_locally"])
+            self._fixture(executable, wrong=True)
+            with self.assertRaisesRegex(ValueError, "admission-failed"):
+                probe_native_mcp(**kwargs)
 
     def test_real_subprocess_native_stdio_roundtrip_and_fail_closed_drift(self):
         with tempfile.TemporaryDirectory() as td:
