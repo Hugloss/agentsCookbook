@@ -13,6 +13,7 @@ from benchmarks.harness.derived_report_set import (
     REPORT_SET_MANIFEST,
     inspect_report_set,
     publish_report_set,
+    verified_score_path,
     verify_report_set,
 )
 
@@ -25,6 +26,11 @@ class DerivedReportSetTests(unittest.TestCase):
             report={"kind": "report", "marker": marker},
             trace_diagnostics={"kind": "trace", "marker": marker},
             decision_evidence={"kind": "decision", "marker": marker},
+            score_artifact="score.json",
+            score_bytes=(
+                json.dumps({"kind": "score", "marker": marker}, sort_keys=True)
+                + "\n"
+            ).encode("utf-8"),
         )
 
     def test_publish_binds_exact_persisted_report_generation(self) -> None:
@@ -41,7 +47,15 @@ class DerivedReportSetTests(unittest.TestCase):
             )
             self.assertEqual(
                 set(manifest["artifacts"]),
-                set(REPORT_SET_ARTIFACTS),
+                set(REPORT_SET_ARTIFACTS) | {"score.json"},
+            )
+            self.assertEqual(manifest["score_artifact"], "score.json")
+            self.assertEqual(
+                verified_score_path(
+                    run_root=root,
+                    expected_run_id="000001",
+                ),
+                root / "reports" / "score.json",
             )
             self.assertTrue((root / "reports" / REPORT_SET_MANIFEST).is_file())
 
@@ -49,6 +63,24 @@ class DerivedReportSetTests(unittest.TestCase):
                 (root / "reports" / "report.json").read_text(encoding="utf-8")
             )
             self.assertEqual(report["marker"], "one")
+
+    def test_mutated_score_fails_generation_verification(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._publish(root, "one")
+            (root / "reports" / "score.json").write_text(
+                json.dumps({"kind": "score", "marker": "tampered"}) + "\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                DerivedReportSetError,
+                "does not match manifest: score.json",
+            ):
+                verified_score_path(
+                    run_root=root,
+                    expected_run_id="000001",
+                )
 
     def test_mutated_artifact_fails_manifest_verification(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
