@@ -229,7 +229,8 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
         self.assertFalse(rejected["paired_pilot_observations_ready_for_independent_grading"])
         self.assertIn("incompatible-frozen-native-chat-pairs", rejected["blockers"])
         self.synthetic_wire_pairs["fully_compatible_for_paired_study"] = True
-        trial = self.frozen["assignments"][0]["trial_id"]
+        trial = next(c["trial_id"] for c in self.frozen["assignments"]
+                     if c["arm"] == "variant")
         receipt = self.results / trial / "trial-execution.json"
         info = json.loads(receipt.read_bytes())
         info["native_chat_pair_preflight"]["diagnostic_only"] = True
