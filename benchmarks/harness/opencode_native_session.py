@@ -176,13 +176,32 @@ def inspect_native_export(raw: bytes, *, session_id: str,
             or _digest(canonical(item["packet"])) != expected_packet_sha256):
         raise ValueError("native-tool-result-not-bound-to-observed-provider-input")
     if require_provider_issued or provider_issued is not None:
+        # Native and provider gateways can spell the same approved Hashmarks
+        # operation differently. Normalize ONLY the two explicitly supported
+        # operations; do not alias arbitrary tools or allow cross-operation
+        # substitution.
+        def operation(name: object) -> str | None:
+            if name in {
+                "hashmarks_find", "hashmarks.find",
+                "mcp__hashmarks__find", "tools.hashmarks.find",
+            }:
+                return "find"
+            if name in {
+                "hashmarks_task_evidence", "hashmarks.task_evidence",
+                "mcp__hashmarks__task_evidence", "tools.hashmarks.task_evidence",
+            }:
+                return "task_evidence"
+            return None
+
         # This is the actual provider response previously captured by the
         # host gateway, not a reconstructed assistant call in native text.
         from .native_provider_tool_provenance import SCHEMA as ISSUED_SCHEMA
         if (not isinstance(provider_issued, Mapping)
                 or provider_issued.get("schema") != ISSUED_SCHEMA
                 or provider_issued.get("call_id") != item["call_id"]
-                or provider_issued.get("function_name") != item["tool_name"]
+                or operation(provider_issued.get("function_name")) is None
+                or operation(provider_issued.get("function_name"))
+                != operation(item["tool_name"])
                 or provider_issued.get("arguments_semantic_sha256")
                 != native_subject_arguments_sha256
                 or not isinstance(provider_issued.get("provider_response_sha256"), str)
