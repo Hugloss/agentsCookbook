@@ -230,7 +230,7 @@ def launch_native_trial(
             except (OSError, ValueError, TypeError, UnicodeError):
                 session_error = "native-session-not-bound-to-observed-provider-submission"
         qualified = routed and session_result is not None
-        return {
+        report = {
             "schema": SCHEMA,
             "trial_id": trial_id,
             "manifest_sha256": frozen["manifest_sha256"],
@@ -262,6 +262,21 @@ def launch_native_trial(
             "native_model_input_delivered_proven": False,
             "causal_improvement_proven": False,
         }
+        if substrate is not None:
+            # Host-owned create-only report. The independent E260 audit
+            # rechecks this against raw session, signed transport and source;
+            # self-reported isolation alone cannot establish causal uplift.
+            data = json.dumps(report, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+            output = run_root / "trial-execution.json"
+            flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            fd = os.open(output, flags, 0o600)
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+        return report
     finally:
         if started:
             gateway.close()
