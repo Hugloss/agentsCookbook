@@ -159,20 +159,33 @@ def qualify_campaign(manifest: Mapping[str, Any], bundles_root: Path,
     if not alignment["complete"]:
         issues["incomplete-or-misaligned-frozen-plan"] += 1
     verified_submission_trials = 0
-    if require_provider_submission:
+    effective_submission_requirement = (
+        require_provider_submission or frozen["design"]["study"] == "timing"
+    )
+    if effective_submission_requirement:
         # Independent read-back, never from ATIF agent prose, unsigned file
         # metadata or source-provided claim of provider dispatch.
         for cell in frozen["assignments"]:
             trial_id = cell["trial_id"]
-            verified = verify_host_attestations(
-                bundles_root / trial_id / "trajectory.json",
-                attestations_root / (trial_id + ".json"), host_key,
-                campaign_id=frozen["design"]["campaign_id"],
-                trial_id=trial_id,
-            )
-            if (verified["attestation_state"] == "VERIFIED"
+            try:
+                verified = verify_host_attestations(
+                    bundles_root / trial_id / "trajectory.json",
+                    attestations_root / (trial_id + ".json"), host_key,
+                    campaign_id=frozen["design"]["campaign_id"],
+                    trial_id=trial_id,
+                )
+                submitted = (
+                    verified["attestation_state"] == "VERIFIED"
                     and verified["delivery_state"] == "PROVEN"
-                    and verified["provider_submission_state"] == "SUBMITTED"):
+                    and verified["provider_submission_state"] == "SUBMITTED"
+                    and verified["verified_provider_submission_packets"]
+                    == verified["returned_packets"]
+                    and type(verified["returned_packets"]) is int
+                    and verified["returned_packets"] > 0
+                )
+            except (OSError, ValueError, KeyError, TypeError):
+                submitted = False
+            if submitted:
                 verified_submission_trials += 1
             else:
                 issues["missing-or-unverified-provider-submission"] += 1
@@ -197,22 +210,33 @@ def qualify_campaign(manifest: Mapping[str, Any], bundles_root: Path,
         issues["host-and-independent-authority-keys-must-differ"] += 1
         reviewed = False
     qualification = not issues
+    # Host-intervention comparisons are only eligible for publication after
+    # independent plan/alignment/seal qualification, never on audit alone.
+    publication_admitted = (
+        qualification
+        and audit.get("comparison_publication_state") == "PUBLISHED_COMPLETE_DESCRIPTIVE"
+    )
     return {
         "schema": REPORT_SCHEMA,
         "campaign_id": frozen["design"]["campaign_id"],
         "manifest_sha256": frozen["manifest_sha256"],
         "host_intervention_coverage": audit,
         "frozen_trial_alignment": alignment,
-        "require_provider_submission": require_provider_submission,
+        "require_provider_submission": effective_submission_requirement,
+        "provider_submission_policy": (
+            "MANDATORY_TIMING" if frozen["design"]["study"] == "timing"
+            else "EXPLICIT" if require_provider_submission else "OPTIONAL"
+        ),
         "verified_provider_submission_trials": verified_submission_trials,
         "expected_provider_submission_trials": (
-            len(frozen["assignments"]) if require_provider_submission else None
+            len(frozen["assignments"]) if effective_submission_requirement else None
         ),
         "provider_processing_proven": False,
         "independent_seal_authenticated": seal_valid,
         "independent_review_custodian_claim_authenticated": reviewed,
         "external_pre_work_claim_authenticated": alleged_pre_work,
         "descriptive_campaign_admitted": qualification,
+        "descriptive_comparison_publication_admitted": publication_admitted,
         "qualification_blockers": dict(sorted(issues.items())),
         "real_randomization_proven": False,
         "trusted_pre_work_timestamp_proven": False,
