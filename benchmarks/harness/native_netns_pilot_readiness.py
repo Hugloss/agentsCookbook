@@ -21,9 +21,11 @@ from .opencode_native_trial import SCHEMA as TRIAL_SCHEMA
 from .native_netns_host_attestation import verify_isolation_attestation
 from .native_netns_probe import kernel_probe_receipt_valid
 from .native_mount_probe import inspect_mount_probe
+from .native_chat_pair_admission import verify_native_chat_pair_claim
+from .native_chat_transport_parity import audit_frozen_chat_treatments
 from .trusted_treatments import load_manifest, verify_manifest
 
-SCHEMA = "agentscookbook.netns-paired-pilot-readiness.v2"
+SCHEMA = "agentscookbook.netns-paired-pilot-readiness.v3"
 HEX = set("0123456789abcdef")
 
 
@@ -47,6 +49,15 @@ def evaluate_native_netns_pilot(
         approved_endpoint_sha256=approved_endpoint_sha256,
     )
     issues: Counter[str] = Counter()
+    # Independent frozen-source observation. A successful *single* arm
+    # cannot promote a presentation comparison that the wire cannot carry.
+    try:
+        pairs = audit_frozen_chat_treatments(frozen, sources_root=sources_root)
+        if not pairs["fully_compatible_for_paired_study"]:
+            issues["incompatible-frozen-native-chat-pairs"] += 1
+    except (OSError, ValueError, TypeError, KeyError):
+        pairs = None
+        issues["native-chat-frozen-pair-admission-unavailable"] += 1
     if not cohort["native_session_cohort_observationally_consistent"]:
         issues["unqualified-native-session-cohort"] += 1
     checked = 0
@@ -82,6 +93,12 @@ def evaluate_native_netns_pilot(
             evidence["gateway"].get("distinct_netns_peer_connections", 0) < 1,
             evidence.get("native_process_origin_proven") is not False,
             evidence.get("causal_improvement_proven") is not False,
+            evidence["gateway"].get("native_chat_tool_wire_contract_enforced") is not True,
+            not verify_native_chat_pair_claim(
+                evidence.get("native_chat_pair_preflight"),
+                trial_id=cell["trial_id"],
+                manifest_sha256=frozen["manifest_sha256"],
+            ),
             not kernel_probe_receipt_valid(
                 evidence.get("native_kernel_preflight"),
                 expected_bwrap_sha256=expected_bwrap_sha256,
@@ -94,6 +111,24 @@ def evaluate_native_netns_pilot(
         )):
             issues["inconsistent-or-self-upgraded-native-isolation-receipt"] += 1
             continue
+        pair_report = evidence["native_chat_pair_preflight"]
+        if (pair_report["pair_id"] != cell["pair_id"]
+                or pair_report["arm"] != cell["arm"]
+                or pair_report["diagnostic_only"] is not False
+                or pair_report["paired_transport_compatible"] is not True):
+            issues["native-chat-diagnostic-or-incompatible-paired-receipt"] += 1
+            continue
+        if pairs is not None:
+            expected_row = next(
+                (row for row in pairs["rows"] if row["trial_id"] == cell["trial_id"]),
+                None,
+            )
+            if (expected_row is None
+                    or pair_report["representations"][cell["arm"]]
+                    != expected_row["model_input_representation"]
+                    or expected_row["chat_tool_content_wire_compatible"] is not True):
+                issues["native-chat-signed-pair-differs-from-frozen-source"] += 1
+                continue
         binding = evidence.get("native_session_binding")
         if (not isinstance(binding, dict)
                 or binding.get("native_session_to_gateway_packet_bound") is not True
@@ -128,6 +163,7 @@ def evaluate_native_netns_pilot(
         "planned_trials": len(frozen["assignments"]),
         "verified_local_isolation_receipts": checked,
         "native_session_cohort": cohort,
+        "independently_checked_chat_pairs": pairs,
         "paired_pilot_observations_ready_for_independent_grading": not issues,
         "blockers": dict(sorted(issues.items())),
         "network_namespace_peer_observations_host_mac_verified": (
@@ -146,6 +182,7 @@ def evaluate_native_netns_pilot(
         "independent_oracle_grading_completed": False,
         "pre_work_timestamp_independently_proven": False,
         "randomized_causal_hashmarks_uplift_proven": False,
+        "native_pair_diagnostic_only_counts_as_paired_trial": False,
     }
 
 

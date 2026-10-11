@@ -40,6 +40,19 @@ def selected(*, arm: str) -> dict:
     )
 
 
+def bound_request(*, selected: object) -> bytes:
+    body = json.loads(request(selected=selected, tool=True))
+    body["messages"].insert(-1, {
+        "role": "assistant",
+        "tool_calls": [{
+            "id": "native-tool-1",
+            "type": "function",
+            "function": {"name": "hashmarks_task_evidence", "arguments": "{}"},
+        }],
+    })
+    return canonical(body)
+
+
 class NativeChatWireContractAttacks(unittest.TestCase):
     def test_original_structured_json_is_not_openai_role_tool_text(self):
         visible = selected(arm="control")
@@ -117,16 +130,16 @@ class NativeChatWireContractAttacks(unittest.TestCase):
                 workspace_sha256=H("workspace"),
                 enforce_chat_tool_wire_contract=True,
             )
-            body = request(
-                selected=gateway.selected["selected_content"], tool=True,
+            body = bound_request(
+                selected=gateway.selected["selected_content"],
             )
             observed = []
             with patch(
                 "benchmarks.harness.opencode_native_gateway.dispatch_verified_chat_response",
                 side_effect=lambda **kw: (observed.append(kw), RESPONSE)[1],
             ) as upstream:
-                other = request(
-                    selected=json.loads(gateway.selected["selected_content"]), tool=True,
+                other = bound_request(
+                    selected=json.loads(gateway.selected["selected_content"]),
                 )
                 with self.assertRaisesRegex(ValueError, "not-byte-identical"):
                     gateway._handle_request(

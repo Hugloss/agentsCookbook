@@ -17,6 +17,7 @@ from unittest.mock import patch
 from benchmarks.harness.native_netns_pilot_readiness import evaluate_native_netns_pilot
 from benchmarks.harness.opencode_native_trial import SCHEMA as TRIAL_SCHEMA
 from benchmarks.harness.native_netns_probe import validate_kernel_probe
+from benchmarks.harness.native_chat_pair_admission import SCHEMA as PAIR_SCHEMA
 from benchmarks.harness.native_mount_probe import GUEST_PROBE, SCHEMA as MOUNT_SCHEMA
 from benchmarks.harness.native_netns_host_attestation import (
     sign_isolation_report, write_isolation_attestation,
@@ -41,6 +42,19 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
             "native_session_cohort_observationally_consistent": True,
             "verified_native_trial_exports": 2,
         }
+        # This mocked compatible population tests receipt validation only.
+        # The real audit correctly rejects structured-vs-text native pairs.
+        self.synthetic_wire_pairs = {
+            "fully_compatible_for_paired_study": True,
+            "rows": [
+                {
+                    "trial_id": cell["trial_id"],
+                    "model_input_representation": "openai-chat-tool-plain-text-v1",
+                    "chat_tool_content_wire_compatible": True,
+                }
+                for cell in self.frozen["assignments"]
+            ],
+        }
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -57,6 +71,22 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
                 "native_trial_evidence_qualified": True,
                 "host_receipt_finalized": True,
                 "native_gateway_route_completed": True,
+                "native_chat_pair_preflight": {
+                    "schema": PAIR_SCHEMA,
+                    "trial_id": cell["trial_id"], "pair_id": cell["pair_id"],
+                    "manifest_sha256": self.frozen["manifest_sha256"],
+                    "arm": cell["arm"],
+                    "representations": {
+                        "control": "openai-chat-tool-plain-text-v1",
+                        "variant": "openai-chat-tool-plain-text-v1",
+                    },
+                    "selected_wire_compatible": True,
+                    "paired_transport_compatible": True,
+                    "diagnostic_only": False,
+                    "native_model_runs_performed_by_admission": 0,
+                    "model_attention_proven": False,
+                    "causal_uplift_proven": False,
+                },
                 "config_sha256": H("pinned-confined-config"),
                 "native_mount_preflight": {
                     "schema": MOUNT_SCHEMA,
@@ -93,6 +123,7 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
                 "causal_improvement_proven": False,
                 "gateway": {
                     "kernel_netns_peer_check_required": True,
+                    "native_chat_tool_wire_contract_enforced": True,
                     "distinct_netns_peer_connections": 1,
                 },
                 "native_session_binding": {
@@ -115,6 +146,9 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
 
     def assess(self):
         with patch(
+            "benchmarks.harness.native_netns_pilot_readiness.audit_frozen_chat_treatments",
+            return_value=self.synthetic_wire_pairs,
+        ), patch(
             "benchmarks.harness.native_netns_pilot_readiness.audit_native_session_cohort",
             return_value=self.cohort,
         ) as cohort:
@@ -188,6 +222,27 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
                 self.assertFalse(result["paired_pilot_observations_ready_for_independent_grading"])
                 self.assertIn("inconsistent-or-self-upgraded-native-isolation-receipt", result["blockers"])
         path.write_bytes(original)
+
+    def test_realistic_incompatible_pair_or_diagnostic_never_qualifies(self):
+        self.synthetic_wire_pairs["fully_compatible_for_paired_study"] = False
+        rejected = self.assess()
+        self.assertFalse(rejected["paired_pilot_observations_ready_for_independent_grading"])
+        self.assertIn("incompatible-frozen-native-chat-pairs", rejected["blockers"])
+        self.synthetic_wire_pairs["fully_compatible_for_paired_study"] = True
+        trial = next(c["trial_id"] for c in self.frozen["assignments"]
+                     if c["arm"] == "variant")
+        receipt = self.results / trial / "trial-execution.json"
+        info = json.loads(receipt.read_bytes())
+        info["native_chat_pair_preflight"]["diagnostic_only"] = True
+        info["native_chat_pair_preflight"]["paired_transport_compatible"] = False
+        info["native_chat_pair_preflight"]["representations"]["control"] = (
+            "unsupported-nested-json-tool-content"
+        )
+        receipt.write_bytes(canonical(info) + b"\n")
+        rejected = self.assess()
+        self.assertFalse(rejected["paired_pilot_observations_ready_for_independent_grading"])
+        self.assertIn("native-chat-diagnostic-or-incompatible-paired-receipt",
+                      rejected["blockers"])
 
     def test_missing_or_mutated_mount_layout_cannot_be_signed_or_counted(self):
         trial = self.frozen["assignments"][0]["trial_id"]
