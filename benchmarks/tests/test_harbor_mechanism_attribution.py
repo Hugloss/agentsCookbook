@@ -399,6 +399,15 @@ class HarborMechanismAttributionTests(unittest.TestCase):
         )
         self.assertIsNone(legacy["native_search_comparison"]["qualified_delta"])
 
+        treated["trace"]["native_search_observability"] = "EXPLICIT_TOOL_CALLS_ONLY"
+        del treated["trace"]["tool_order_complete"]
+        unknown_order = pair_projection(bare, treated)
+        self.assertFalse(unknown_order["native_search_comparison"]["qualified"])
+        self.assertEqual(
+            unknown_order["native_search_comparison"]["reason"],
+            "tool-order-unestablished",
+        )
+
     def test_project_atif_exposes_opaque_tool_search_observability(self) -> None:
         def project(names: list[str]) -> dict:
             trajectory = {
