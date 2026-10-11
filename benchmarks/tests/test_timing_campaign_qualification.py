@@ -196,7 +196,11 @@ class SignedTwoStageCampaignTests(unittest.TestCase):
         self.assertFalse(result["causal_effect_proven"])
 
     def test_lost_or_modified_receipts_deny_campaign_publication(self) -> None:
-        path = self.attestations / (self.manifest["assignments"][1]["trial_id"] + ".json")
+        variant = next(
+            cell for cell in self.manifest["assignments"]
+            if cell["arm"] == "variant"
+        )
+        path = self.attestations / (variant["trial_id"] + ".json")
         original = path.read_bytes()
         try:
             for scenario in ("lost", "bad-mac", "unsigned-prior-transport"):
