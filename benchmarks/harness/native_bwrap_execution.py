@@ -64,6 +64,7 @@ def build_isolated_argv(
     workspace: Path, run_root: Path, gateway_dir: Path,
     environment: Mapping[str, str], command: list[str],
     worker_port: int | None,
+    hashmarks_executable: Path | None = None,
 ) -> list[str]:
     if (not command or not executable.is_absolute()
             or not workspace.is_absolute() or not run_root.is_absolute()
@@ -80,6 +81,13 @@ def build_isolated_argv(
         type(worker_port) is not int or not 1024 <= worker_port <= 65535
     ):
         raise ValueError("invalid-native-worker-port")
+    if hashmarks_executable is not None and (
+        not hashmarks_executable.is_absolute()
+        or not hashmarks_executable.is_file()
+        or hashmarks_executable.is_symlink()
+        or hashmarks_executable == executable
+    ):
+        raise ValueError("unadmitted-native-hashmarks-executable")
     # These runtime roots are system-owned and read-only to the child.
     # Never mount root, arbitrary /etc, user home, or host /var.
     argv = [
@@ -106,6 +114,8 @@ def build_isolated_argv(
     ]
     if not executable.is_relative_to(Path("/usr")):
         mounts.append((executable, executable, "ro"))
+    if hashmarks_executable is not None and not hashmarks_executable.is_relative_to(Path("/usr")):
+        mounts.append((hashmarks_executable, hashmarks_executable, "ro"))
     if worker_port is not None:
         worker_file = Path(__file__).with_name("native_netns_worker.py")
         mounts.append((worker_file, Path("/run/native-netns-worker.py"), "ro"))
