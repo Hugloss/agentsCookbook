@@ -82,13 +82,16 @@ class NativeMcpRequestLedgerTests(unittest.TestCase):
         self.assertEqual(bridge.receive_response(response(1)), response(1))
         with self.assertRaises(ValueError):
             bridge.receive_request(request(1))
-        for i in range(MAX_INFLIGHT_REQUESTS - 1):
+        # The first successful ID is already completed, so all 128
+        # outstanding slots are available for the next batch.
+        for i in range(MAX_INFLIGHT_REQUESTS):
             bridge.receive_request(request("pending-" + str(i)))
         with self.assertRaisesRegex(ValueError, "unbounded-request-id"):
             bridge.receive_request(request("over-budget"))
-        for i in range(MAX_INFLIGHT_REQUESTS - 1):
+        for i in range(MAX_INFLIGHT_REQUESTS):
             bridge.receive_response(response("pending-" + str(i)))
-        for i in range(MAX_REQUEST_IDS - MAX_INFLIGHT_REQUESTS):
+        # One initial completed ID plus 128 completed pending IDs.
+        for i in range(MAX_REQUEST_IDS - MAX_INFLIGHT_REQUESTS - 1):
             bridge.receive_request(request("batch-" + str(i)))
             bridge.receive_response(response("batch-" + str(i)))
         self.assertEqual(len(bridge.seen_ids), MAX_REQUEST_IDS)
