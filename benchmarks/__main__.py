@@ -64,6 +64,12 @@ from benchmarks.harness.campaign_authority import (
 )
 from benchmarks.harness.preflight import preflight_trial
 from benchmarks.harness.decision_evidence import build_decision_evidence
+from benchmarks.harness.derived_report_set import (
+    DerivedReportSetError,
+    REPORT_SET_MANIFEST,
+    inspect_report_set,
+    publish_report_set,
+)
 from benchmarks.harness.oracle_reviews import (
     OracleReviewError,
     oracle_review_guide,
@@ -704,6 +710,10 @@ def _refresh_canonical_status(
             status["run_id"] = paths.run_id
             status["selection"] = _selection_metadata(suite, rows)
             status["paths"]["reports"] = str(_reports_dir(paths.root))
+            status["derived_report_set"] = inspect_report_set(
+                run_root=paths.root,
+                expected_run_id=paths.run_id,
+            )
             gap = _canonical_campaign_persistence_gap(
                 suite=suite,
                 results_root=paths.results,
@@ -764,24 +774,39 @@ def _refresh_canonical_report(
             )
             report_data["run_id"] = paths.run_id
             report_data["reports_dir"] = str(_reports_dir(paths.root))
-            _write_derived_json(paths.root, "report.json", report_data)
             trace_diagnostics, decision = _derive_trace_and_decision(
                 report_data=report_data,
                 results_root=paths.results,
             )
-            _write_derived_json(
-                paths.root,
-                "trace-diagnostics.json",
-                trace_diagnostics,
-            )
             decision["run_id"] = paths.run_id
-            _write_derived_json(
-                paths.root,
-                "decision-evidence.json",
-                decision,
+            report_set = publish_report_set(
+                run_root=paths.root,
+                run_id=str(paths.run_id),
+                report=report_data,
+                trace_diagnostics=trace_diagnostics,
+                decision_evidence=decision,
             )
+            status = campaign_status(
+                suite=suite,
+                results_root=paths.results,
+                selected_definitions={
+                    str(row["definition_id"]) for row in rows
+                },
+            )
+            status["paths"] = paths.as_dict()
+            status["run_id"] = paths.run_id
+            status["selection"] = _selection_metadata(suite, rows)
+            status["paths"]["reports"] = str(_reports_dir(paths.root))
+            status["derived_report_set"] = {
+                "status": "VERIFIED",
+                "verified": True,
+                "generation_id": report_set["generation_id"],
+                "run_id": report_set["run_id"],
+                "artifacts": sorted(report_set["artifacts"]),
+            }
+            _write_derived_json(paths.root, "status.json", status)
             return report_data, None
-    except (RunStoreError, ReportError) as exc:
+    except (RunStoreError, ReportError, DerivedReportSetError) as exc:
         return None, f"run store is active or changed: {exc}"
 
 
@@ -1542,6 +1567,10 @@ def main(argv: list[str] | None = None) -> int:
                 status["conflicting_trials"]
                 or status["corrupt_bundles"]
                 or status["foreign_bundles"]
+                or (
+                    isinstance(status.get("derived_report_set"), dict)
+                    and status["derived_report_set"].get("status") == "INVALID"
+                )
                 or (args.require_qualified and not status["qualified"])
             )
             else 0
@@ -1836,16 +1865,25 @@ def _persist_completed_run_reports(
         if not staged_score.is_file() or staged_score.stat().st_size == 0:
             raise ReportError("benchmark score generation produced no output")
 
+        report_set = publish_report_set(
+            run_root=paths.root,
+            run_id=str(paths.run_id),
+            report=report_data,
+            trace_diagnostics=trace_data,
+            decision_evidence=decision_data,
+        )
+        status_payload["derived_report_set"] = {
+            "status": "VERIFIED",
+            "verified": True,
+            "generation_id": report_set["generation_id"],
+            "run_id": report_set["run_id"],
+            "artifacts": sorted(report_set["artifacts"]),
+        }
         status_path = _write_derived_json(paths.root, "status.json", status_payload)
-        report_path = _write_derived_json(paths.root, "report.json", report_data)
-        trace_path = _write_derived_json(
-            paths.root, "trace-diagnostics.json", trace_data
-        )
-        decision_path = _write_derived_json(
-            paths.root,
-            "decision-evidence.json",
-            decision_data,
-        )
+        report_path = reports_dir / "report.json"
+        trace_path = reports_dir / "trace-diagnostics.json"
+        decision_path = reports_dir / "decision-evidence.json"
+        report_set_path = reports_dir / REPORT_SET_MANIFEST
         os.replace(staged_score, score_path)
         directory_fd = os.open(reports_dir, os.O_RDONLY)
         try:
@@ -1860,6 +1898,7 @@ def _persist_completed_run_reports(
         "report": report_path,
         "decision_evidence": decision_path,
         "trace_diagnostics": trace_path,
+        "report_set": report_set_path,
         "score": score_path,
     }
 
@@ -2118,6 +2157,7 @@ def _execute_run(args, suite, rows, paths, campaign, runtime_source, config) -> 
         f"report {report_paths['report']} | "
         f"decision {report_paths['decision_evidence']} | "
         f"trace-diagnostics {report_paths['trace_diagnostics']} | "
+        f"report-set {report_paths['report_set']} | "
         f"score {report_paths['score']}",
         file=sys.stderr,
         flush=True,
