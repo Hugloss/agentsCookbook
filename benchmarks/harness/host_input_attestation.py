@@ -174,11 +174,21 @@ def verify_host_attestations(
                             "structured", "text", "compact-json-text",
                             "indented-json-text",
                         )
-                        or (intervention["study"] == "text_presentation"
-                            and intervention["presentation"] != (
-                                "compact-json-text" if intervention["arm"] == "control"
-                                else "indented-json-text"
-                            ))
+                        or intervention["presentation"] != {
+                            "presentation": {
+                                "control": "structured", "variant": "text",
+                            },
+                            "text_presentation": {
+                                "control": "compact-json-text",
+                                "variant": "indented-json-text",
+                            },
+                            "freshness": {
+                                "control": "structured", "variant": "structured",
+                            },
+                            "timing": {
+                                "control": "structured", "variant": "structured",
+                            },
+                        }[intervention["study"]][intervention["arm"]]
                         or not all(_hex64(intervention[name]) for name in
                                    expected_facets - {
                                        "study", "arm", "presentation",
