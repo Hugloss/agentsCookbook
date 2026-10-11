@@ -18,8 +18,9 @@ from typing import Any, Mapping
 
 from .host_input_attestation import canonical
 from .native_netns_probe import kernel_probe_receipt_valid
+from .native_mount_probe import inspect_mount_probe
 
-SCHEMA = "agentscookbook.native-netns-host-isolation-attestation.v1"
+SCHEMA = "agentscookbook.native-netns-host-isolation-attestation.v2"
 DOMAIN = b"agentscookbook.netns-host-execution-hmac.v1\0"
 
 
@@ -45,6 +46,11 @@ def sign_isolation_report(
             or not kernel_probe_receipt_valid(
                 report.get("native_kernel_preflight"),
                 expected_bwrap_sha256=report.get("native_sandbox_binary_sha256"),
+            )
+            or not inspect_mount_probe(
+                report.get("native_mount_preflight"),
+                expected_bwrap_sha256=report.get("native_sandbox_binary_sha256"),
+                expected_config_sha256=report.get("config_sha256"),
             )
             or not isinstance(report.get("gateway"), Mapping)
             or report["gateway"].get("kernel_netns_peer_check_required") is not True

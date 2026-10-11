@@ -17,6 +17,7 @@ from unittest.mock import patch
 from benchmarks.harness.native_netns_pilot_readiness import evaluate_native_netns_pilot
 from benchmarks.harness.opencode_native_trial import SCHEMA as TRIAL_SCHEMA
 from benchmarks.harness.native_netns_probe import validate_kernel_probe
+from benchmarks.harness.native_mount_probe import GUEST_PROBE, SCHEMA as MOUNT_SCHEMA
 from benchmarks.harness.native_netns_host_attestation import (
     sign_isolation_report, write_isolation_attestation,
 )
@@ -56,6 +57,25 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
                 "native_trial_evidence_qualified": True,
                 "host_receipt_finalized": True,
                 "native_gateway_route_completed": True,
+                "config_sha256": H("pinned-confined-config"),
+                "native_mount_preflight": {
+                    "schema": MOUNT_SCHEMA,
+                    "runtime_mount_probe_qualified": True,
+                    "bwrap_sha256": H("approved-bwrap"),
+                    "python_sha256": H("approved-python"),
+                    "worker_sha256": H("pinned-worker"),
+                    "probe_program_sha256": __import__("hashlib").sha256(
+                        GUEST_PROBE.encode("utf-8")
+                    ).hexdigest(),
+                    "config_sha256": H("pinned-confined-config"),
+                    "workspace_binding_observed": True,
+                    "readonly_config_observed": True,
+                    "isolated_xdg_write_observed": True,
+                    "gateway_socket_observed": True,
+                    "host_key_not_mounted_observed": True,
+                    "provider_model_execution_observed": False,
+                    "independent_process_origin_proven": False,
+                },
                 "native_kernel_preflight": validate_kernel_probe({
                     "guest_netns_inode": 9124,
                     "interfaces": ["lo"],
@@ -113,6 +133,8 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
         result = self.assess()
         self.assertTrue(result["paired_pilot_observations_ready_for_independent_grading"])
         self.assertTrue(result["native_kernel_preflight_receipts_host_mac_verified"])
+        self.assertTrue(result["native_mount_preflight_receipts_host_mac_verified"])
+        self.assertFalse(result["point_in_time_mount_probe_is_independent_process_proof"])
         self.assertFalse(result["point_in_time_kernel_probe_is_exhaustive_egress_proof"])
         self.assertEqual(result["verified_local_isolation_receipts"], 2)
         for flag in (
@@ -166,6 +188,46 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
                 self.assertFalse(result["paired_pilot_observations_ready_for_independent_grading"])
                 self.assertIn("inconsistent-or-self-upgraded-native-isolation-receipt", result["blockers"])
         path.write_bytes(original)
+
+    def test_missing_or_mutated_mount_layout_cannot_be_signed_or_counted(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        path = self.results / trial / "trial-execution.json"
+        saved = path.read_bytes()
+        report = json.loads(saved)
+        invalid = (
+            None,
+            {**report["native_mount_preflight"], "readonly_config_observed": False},
+            {**report["native_mount_preflight"], "host_key_not_mounted_observed": False},
+            {**report["native_mount_preflight"], "worker_sha256": "not-a-digest"},
+            {**report["native_mount_preflight"], "provider_model_execution_observed": True},
+            {**report["native_mount_preflight"], "config_sha256": H("different-config")},
+        )
+        for candidate in invalid:
+            with self.subTest(candidate=candidate):
+                changed = copy.deepcopy(report)
+                changed["native_mount_preflight"] = candidate
+                path.write_bytes(canonical(changed) + b"\n")
+                verdict = self.assess()
+                self.assertFalse(verdict["paired_pilot_observations_ready_for_independent_grading"])
+                self.assertIn("inconsistent-or-self-upgraded-native-isolation-receipt",
+                              verdict["blockers"])
+                with self.assertRaises(ValueError):
+                    sign_isolation_report(
+                        changed, execution_bytes=path.read_bytes(),
+                        provider_attestation_bytes=b"synthetic-provider",
+                        host_identity="privileged-host", host_key=KEY,
+                    )
+        path.write_bytes(saved)
+
+    def test_unsigned_mount_probe_drift_is_blocked_by_mac(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        path = self.results / trial / "trial-execution.json"
+        report = json.loads(path.read_bytes())
+        report["native_mount_preflight"]["worker_sha256"] = H("another-valid-sha")
+        path.write_bytes(canonical(report) + b"\n")
+        result = self.assess()
+        self.assertFalse(result["paired_pilot_observations_ready_for_independent_grading"])
+        self.assertIn("host-isolation-attestation-unverified", result["blockers"])
 
     def test_host_custodian_refuses_to_sign_missing_kernel_admission(self):
         trial = self.frozen["assignments"][0]["trial_id"]
