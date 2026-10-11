@@ -107,6 +107,10 @@ def _pair(task: str, transition: str, *, harness: str = "codex", qualified: bool
         "task": task, "harness": harness, "model": "model", "replicate_id": 1,
         "outcome_transition": transition, "tool_order_qualified": qualified,
         "treatment": treatment, "native_search_delta": -2, "token_delta": 30,
+        "native_search_comparison": {
+            "qualified": True, "reason": None, "qualified_delta": -2,
+            "causal_savings_proven": False,
+        },
         "delivery_evidence": {
             "qualified": True, "return_state": "RETURNED",
             "delivery_state": "UNKNOWN", "presentation_parity": "EQUIVALENT",
@@ -150,6 +154,31 @@ class AssuranceReportAttacks(unittest.TestCase):
         self.assertEqual(result["bare_control"]["failures"], 1)
         self.assertEqual(result["interactions"]["state"], "NOT_IDENTIFIABLE")
         self.assertEqual(result["context_and_freshness"]["state"], "NOT_ASSESSED")
+
+    def test_search_economics_excludes_opaque_and_unattested_pairs(self) -> None:
+        explicit = _pair("explicit", "PASS_TO_PASS")
+        opaque = _pair("opaque", "FAIL_TO_PASS")
+        opaque["native_search_delta"] = -99
+        opaque["native_search_comparison"] = {
+            "qualified": False,
+            "reason": "opaque-tool-boundary",
+            "qualified_delta": None,
+        }
+        legacy = _pair("legacy", "PASS_TO_PASS")
+        del legacy["native_search_comparison"]
+        incomplete = _pair("incomplete", "INCOMPLETE")
+        report = build_assurance_summary([explicit, opaque, legacy, incomplete])
+        economics = report["economics"]
+        self.assertEqual(economics["native_search_delta"]["observations"], 1)
+        self.assertEqual(economics["native_search_delta"]["mean"], -2.0)
+        self.assertEqual(economics["native_search_comparable_pairs"], 1)
+        self.assertEqual(
+            economics["native_search_comparison_exclusions"],
+            {"opaque-tool-boundary": 1, "comparison-unavailable": 1},
+        )
+        self.assertFalse(economics["native_search_savings_proven"])
+        self.assertEqual(report["qualified_pairs"], 3)
+        self.assertEqual(report["excluded_pairs"], 1)
 
     def test_cross_harness_results_are_separated(self) -> None:
         report = build_assurance_summary([
