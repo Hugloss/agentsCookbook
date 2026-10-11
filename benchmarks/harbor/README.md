@@ -1706,7 +1706,61 @@ uv run --no-project python -m unittest benchmarks.tests.test_opencode_native_ses
 uv run --no-project python -m unittest discover -s benchmarks/tests -v
 ```
 
-## E257–E260: opt-in Linux network namespace with private provider relay
+
+### Claim-specific arrival versus controlled-ablation outcomes
+
+The component semantic evaluator also now distinguishes the **first tool return**
+from the **first actual oracle-aligned or divergent claim**. An early
+`repository_declarations` response with unrelated metadata does not make a
+correct `winner` claim that arrived three steps later "early."
+
+The existing `make benchmark-harness-ablation RUN_ID=000001` JSON includes:
+
+- Per component result, `aligned_claim_arrival`,
+  `divergent_claim_arrival`, and `claim_arrival_order`, derived from the
+  first *unconflicted* aligned/divergent field observation. Each is compared
+  against the first native discovery step, retaining
+  `UNKNOWN_SAME_STEP`, `NO_NATIVE_DISCOVERY`, and `NOT_OBSERVED` rather
+  than inventing a sequence.
+- Per complete qualified quartet,
+  `semantic_information_outcomes`: two comparisons, `full_vs_remove`
+  and `only_vs_bare`, with the matched control/observed outcomes and
+  component-specific exposure profiles. Profiles separate aligned, divergent
+  and conflicted field counts, final-answer value overlap, and claim arrival.
+- `summary.semantic_information_outcomes`: qualification/exclusion counts
+  and `conditional_outcome_cells`, grouping the observed exposure signature
+  with `FAIL_TO_PASS`, `PASS_TO_FAIL`, `PASS_TO_PASS` or
+  `FAIL_TO_FAIL`. Each cell includes **replicate count** and a distinct
+  task/harness/model-cluster count; no regression coefficient, p-value or
+  apparent timing-caused uplift is produced.
+- Explicit exclusion reasons if the semantic projection is missing or
+  inconsistent, the result is incomplete, or a component-specific return
+  cannot be compared against the post-grade frozen oracle. Old v2 ablation
+  reports remain readable: this is an additive diagnostic, not a new score
+  or reward authority.
+
+For example, a `PASS_TO_FAIL` full-versus-remove contrast with
+`DIVERGENT_CLAIM_REPEATED` means an incorrect field was *observable in
+the component output* and the verifier-observed final answer also contained
+that exact field value. It **does not prove** the model copied it or that
+the component caused failure. Conversely, `ALIGNED_AVAILABLE_NOT_REPEATED`
+separates correct available evidence from missing final-answer overlap,
+without claiming what the model read or mentally used. Conflicting values for
+a single field remain `CONFLICTED_FIELDS`; an evaluator cannot cherry-pick
+the later correct value to erase the earlier contradictory observation.
+
+**Experimental interpretation:** these groups are post-treatment strata
+created by the agent's choice of tool calls and by observed information.
+They are **not independently randomized information treatments**. The
+unchanged four-arm contrast remains the experiment; conditioned cells help
+form follow-up hypotheses about information quality and timing. To test
+whether delivering a claim at a particular time *causes* improved outcomes,
+design a separate admitted experiment with the timing/presentation treatment
+assigned in advance, with matched model/repository/task/attempt controls and
+run-level completeness gates. Never convert unknown, opaque, or unavailable
+tool returns into negative information evidence.
+
+## Native Linux network namespace provider relay (PR #227; E257–E260 companion)
 
 This bundle adds a **new confined native OpenCode execution mode** while
 preserving the earlier E249 unconfined launcher only as an explicitly
