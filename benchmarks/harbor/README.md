@@ -1651,3 +1651,131 @@ uv run --no-project python -m unittest benchmarks.tests.test_opencode_native_ses
 uv run --no-project python -m unittest benchmarks.tests.test_native_session_cohort_audit -v
 uv run --no-project python -m unittest discover -s benchmarks/tests
 ```
+
+
+## E257–E260: opt-in Linux network namespace with private provider relay
+
+This bundle adds a **new confined native OpenCode execution mode** while
+preserving the earlier E249 unconfined launcher only as an explicitly
+authorized diagnostic. `main` contained E253–E256 before this work.
+
+### E257 — fail-before-work namespace and executable admission
+
+`benchmark-opencode-native-netns` requires Linux, an available `bwrap`
+and `ip` executable, a supported Python runtime path, the exact
+SHA-256/version-pinned OpenCode executable, an exact SHA-256-pinned
+standalone Hashmarks MCP executable, the frozen E238 trial manifest, a
+private host run root, and the same pinned source/oracle/workspace evidence
+used by E253. Missing or stale authority rejects **before** model work.
+No fallback to the host network is permitted.
+
+The native child executes under `bwrap` with
+`--unshare-user --unshare-pid --unshare-net --clearenv`, readonly
+system-runtime mounts, an explicit writable **disposable workspace**,
+isolated home/XDG directories, readonly OpenCode provider config and
+Hashmarks executable, and only one host-owned private Unix socket
+directory. It does **not** bind mount host `/`, an arbitrary user home,
+or the host's `/etc`/network namespace. The pinned Hashmarks MCP
+command is configured explicitly as
+`[<hashmarks>, "--workspace", <workspace>, "mcp"]` in the OpenCode
+local MCP V1 configuration.
+
+This is an intentionally narrow Linux implementation. Missing kernel
+user/network namespace support, inaccessible interpreter/runtime
+libraries, unsupported OpenCode config, or inability to bring up
+isolated loopback must fail rather than silently escaping containment.
+A passing argv unit test is not evidence of a functioning sandbox on
+a particular deployment host.
+
+### E258 — inside-namespace loopback to outside-namespace provider
+
+The child network namespace has no host-network interfaces. A small
+stdlib worker brings up its own `lo` interface, serves the configured
+OpenAI-compatible loopback HTTP endpoint, and forwards bounded request
+frames through `AF_UNIX` to the independently held gateway on the
+host. The host owns the external TLS client, URL pin, and API credential.
+Only the gateway response bytes return to the child. No child can
+directly ask the host transport to send an arbitrary URL.
+
+The host Unix gateway validates `SO_PEERCRED` when Linux provides it.
+In confined mode it checks the peer process's **kernel**
+`/proc/<pid>/ns/net` inode against its own and rejects a peer still
+in the host network namespace. This proves a distinct network
+namespace at the connection boundary, not which specific OpenCode
+binary produced the packet. The gateway still verifies one frozen
+Hashmarks packet, single original call ID, arm and prompt and refuses
+retries or extra post-treatment requests.
+
+### E259 — same containment for native session read-back
+
+The exact post-run `opencode session list` and `opencode export`
+commands run under fresh deny-egress bwrap namespaces using the same
+isolated config/data mounts. They cannot regain ambient host network
+access merely because the provider call finished. The E253 raw
+OpenCode export is still required to match the exact provider request
+before ATIF or a host receipt is published.
+
+A successful confined run writes a create-only
+`trial-execution.json` outside the evaluated workspace, preserving
+its observed gateway namespace peers, bwrap binary SHA-256, Hashmarks
+SHA-256, session/ATIF/host-receipt result and any failure state.
+These local reports are host-observed evidence, not remote provider
+signatures or independent provenance attestation.
+
+### E260 — paired pilot readiness; no invented causal result
+
+`benchmark-netns-pilot-readiness` reads every planned trial's host
+execution report and calls the separate E256 native-session cohort
+verifier. Admission requires both arms, exact source treatment,
+native export, HMAC-signed host packet delivery, complete provider
+submission, a kernel-distinct namespace peer, single response relay,
+pinned bubblewrap/Hashmarks executables and unchanged campaign identity.
+Missing arms, altered reports, source changes, or failed transport
+cannot become a completed paired pilot.
+
+```sh
+export BENCHMARK_UPSTREAM_API_KEY=<privileged-host-secret>
+make benchmark-opencode-native-netns \
+  MANIFEST=/frozen/manifest.json TRIAL_ID=<frozen-opencode-trial-id> \
+  OPENCODE_BIN=/trusted/opencode OPENCODE_SHA256=<64-hex> \
+  OPENCODE_VERSION=<exact-version> \
+  HASHMARKS_BIN=/trusted/hashmarks HASHMARKS_SHA256=<64-hex> \
+  RUN_ROOT=/isolated/results/<trial-id> WORKSPACE=/disposable/workspace \
+  PROMPT_FILE=/frozen/prompt.txt CURRENT_SOURCE=/frozen/source.json \
+  HOST_KEY_FILE=/trusted-host/host.key HOST_IDENTITY=<host-id> \
+  UPSTREAM=https://api.openai.com/v1/chat/completions \
+  APPROVED_ORIGIN=https://api.openai.com \
+  CATALOG_SHA256=<64-hex> ORACLE_SHA256=<64-hex> \
+  WORKSPACE_SHA256=<64-hex>
+
+make benchmark-netns-pilot-readiness \
+  MANIFEST=/frozen/manifest.json \
+  NATIVE_RESULTS_ROOT=/isolated/results SOURCES_ROOT=/frozen/sources \
+  WORKSPACE=/disposable/workspace HOST_KEY_FILE=/trusted-host/host.key \
+  HOST_IDENTITY=<host-id> APPROVED_ENDPOINT_SHA256=<64-hex> \
+  BWRAP_SHA256=<64-hex> HASHMARKS_SHA256=<64-hex>
+```
+
+**Operational limitation:** The current OpenCode V1 Chat Completions
+tool-result envelope and the model presentation treatment must be
+verified with the exact pinned OpenCode/provider version before
+interpreting a live treatment contrast. These APIs do not establish
+the true information retained or used by the model. This feature also
+does not solve independent timestamp anchoring, execution filesystem
+snapshot parity, reviewer-oracle custody or statistically valid paired
+grading. The strongest result is
+`paired_pilot_observations_ready_for_independent_grading`, *not*
+provider cognition or causal Hashmarks improvement.
+
+The new attack ring is entirely model-free:
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_native_netns_relay -v
+uv run --no-project python -m unittest benchmarks.tests.test_native_netns_pilot_readiness -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
+
+The static tests verify bwrap flags/mounts and fail-before-work, and the
+socket tests perform real local TCP/Unix traffic with a mocked upstream
+provider. No running provider-backed or independently graded matched
+campaign is claimed by CI.
