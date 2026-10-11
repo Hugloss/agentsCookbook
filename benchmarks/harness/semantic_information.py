@@ -44,6 +44,10 @@ def unavailable_semantic(reason: str) -> dict[str, Any]:
         "first_subject_observation_step": None,
         "first_aligned_observation_step": None,
         "first_divergent_observation_step": None,
+        "first_conflicted_observation_step": None,
+        "aligned_claim_arrival": "UNKNOWN",
+        "divergent_claim_arrival": "UNKNOWN",
+        "claim_arrival_order": "UNKNOWN",
         "first_native_discovery_step": None,
         "message_content_consumed": False,
         "reasoning_content_consumed": False,
@@ -161,6 +165,29 @@ def _oracle_contract(answer: object) -> tuple[dict[str, object], dict[str, objec
     ):
         return None
     return expected, observed
+
+
+def _claim_arrival(step: int | None, native_step: int | None) -> str:
+    """Time the actual claim, not the first possibly unrelated tool return."""
+    if step is None:
+        return "NOT_OBSERVED"
+    if native_step is None:
+        return "NO_NATIVE_DISCOVERY"
+    if step == native_step:
+        return "UNKNOWN_SAME_STEP"
+    return "BEFORE_NATIVE_DISCOVERY" if step < native_step else "AFTER_NATIVE_DISCOVERY"
+
+
+def _claim_order(aligned: int | None, divergent: int | None) -> str:
+    if aligned is None and divergent is None:
+        return "NO_UNCONFLICTED_CLAIMS"
+    if aligned is None:
+        return "DIVERGENT_ONLY"
+    if divergent is None:
+        return "ALIGNED_ONLY"
+    if aligned == divergent:
+        return "UNKNOWN_SAME_STEP"
+    return "ALIGNED_FIRST" if aligned < divergent else "DIVERGENT_FIRST"
 
 
 def project_semantic_information(
@@ -299,12 +326,14 @@ def project_semantic_information(
     conflicted: list[str] = []
     aligned_steps: list[int] = []
     divergent_steps: list[int] = []
+    conflicted_steps: list[int] = []
     final_good: list[str] = []
     final_bad: list[str] = []
     for field, candidates in sorted(atom_steps.items()):
         values = {_identity(value) for _, value in candidates}
         if len(values) > 1:
             conflicted.append(field)
+            conflicted_steps.append(min(step for step, _ in candidates))
             continue
         value = candidates[0][1]
         if _identity(value) == _identity(expected[field]):
@@ -335,6 +364,8 @@ def project_semantic_information(
             else "BEFORE_NATIVE_DISCOVERY" if first_step < native_step
             else "AFTER_NATIVE_DISCOVERY"
         )
+    aligned_step = min(aligned_steps) if aligned_steps else None
+    divergent_step = min(divergent_steps) if divergent_steps else None
     overlap = (
         "BOTH_ALIGNED_AND_DIVERGENT_REPEATED" if final_good and final_bad
         else "ALIGNED_REPEATED" if final_good
@@ -356,8 +387,14 @@ def project_semantic_information(
         "aligned_repeated_in_final": final_good,
         "divergent_repeated_in_final": final_bad,
         "first_subject_observation_step": first_step,
-        "first_aligned_observation_step": min(aligned_steps) if aligned_steps else None,
-        "first_divergent_observation_step": min(divergent_steps) if divergent_steps else None,
+        "first_aligned_observation_step": aligned_step,
+        "first_divergent_observation_step": divergent_step,
+        "first_conflicted_observation_step": (
+            min(conflicted_steps) if conflicted_steps else None
+        ),
+        "aligned_claim_arrival": _claim_arrival(aligned_step, native_step),
+        "divergent_claim_arrival": _claim_arrival(divergent_step, native_step),
+        "claim_arrival_order": _claim_order(aligned_step, divergent_step),
         "first_native_discovery_step": native_step,
         "message_content_consumed": False,
         "reasoning_content_consumed": False,
