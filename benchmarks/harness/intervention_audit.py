@@ -253,21 +253,32 @@ def audit_intervention_observations(
         issues["missing-or-unqualified-matched-pair"] = total_pairs - len(pairs)
     if corrupt_bundles:
         issues["corrupt-or-unverifiable-bundle"] += corrupt_bundles
+    complete = not issues and len(registered) == len(expected) and len(pairs) == total_pairs
+    # Never turn selective trial survival into a published treatment effect.
+    # Keep only completeness diagnostics when any assigned arm is unresolved.
+    published_pairs = pairs if complete else []
+    published_effects = (
+        {h: _bootstrap(groups[h]) for h in plan["harnesses"]}
+        if complete else {}
+    )
     return {
         "schema": REPORT_SCHEMA,
         "study": plan["study"],
         "campaign_id": plan["campaign_id"],
         "design_sha256": hashlib.sha256(canonical(plan)).hexdigest(),
-        "coverage_state": "COMPLETE" if not issues and len(registered) == len(expected) else "INCOMPLETE",
+        "coverage_state": "COMPLETE" if complete else "INCOMPLETE",
+        "comparison_publication_state": (
+            "PUBLISHED_COMPLETE_DESCRIPTIVE" if complete
+            else "WITHHELD_INCOMPLETE_CAMPAIGN"
+        ),
+        "partial_observed_matched_pairs": len(pairs) if not complete else 0,
         "expected_cells": len(expected),
         "observed_unique_cells": len(registered),
         "qualified_matched_pairs": len(pairs),
         "expected_matched_pairs": total_pairs,
         "issues": dict(sorted(issues.items())),
-        "matched_pairs": pairs,
-        "per_harness_descriptive_effect": {
-            h: _bootstrap(groups[h]) for h in plan["harnesses"]
-        },
+        "matched_pairs": published_pairs,
+        "per_harness_descriptive_effect": published_effects,
         "independent_oracle_review_attested": False,
         "randomization_or_pre_registration_attested": False,
         "causal_effect_qualified": False,
@@ -280,7 +291,9 @@ def audit_intervention_observations(
             "with delay: this is not a pure timing causal experiment. "
             "Only externally keyed host-model-request delivery plus immutable Harbor "
             "grade and exact within-pair facet isolation can enter descriptive "
-            "contrasts. A signed design is not a trusted timestamp, a host MAC "
+            "contrasts. Descriptive effects and pair outcomes are withheld "
+            "unless every assigned arm is present, valid and matched. "
+            "A signed design is not a trusted timestamp, a host MAC "
             "is not model cognition, and complete coverage cannot prove randomization "
             "or causal uplift. Incomplete trials are never silently dropped."
         ),
