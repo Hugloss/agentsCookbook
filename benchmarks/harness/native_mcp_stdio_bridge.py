@@ -20,9 +20,16 @@ import sys
 import threading
 from pathlib import Path
 
-from .native_mcp_bridge_contract import (
-    BridgeState, MAX_FRAME, validate_bridge_contract,
-)
+if __package__:
+    from .native_mcp_bridge_contract import (
+        BridgeState, MAX_FRAME, validate_bridge_contract,
+    )
+else:
+    # The same executable is mounted with its contract module under /run.
+    # This is an explicit invocation mode, never a transport fallback.
+    from native_mcp_bridge_contract import (
+        BridgeState, MAX_FRAME, validate_bridge_contract,
+    )
 
 
 def sha_file(path: Path) -> str:
