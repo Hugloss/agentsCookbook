@@ -252,6 +252,8 @@ class UnixSocketNativeGatewayTests(unittest.TestCase):
                 ))
             upstream.assert_not_called()
         self.assertEqual(self.gateway.result()["post_evidence_submissions"], 0)
+        self.assertEqual(self.gateway.result()["unix_peer_credentials_observed"], 0)
+        self.assertEqual(self.gateway.result()["distinct_netns_peer_connections"], 0)
 
     def test_guest_loopback_relay_forwards_only_to_unix_socket(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as port_probe:
