@@ -96,7 +96,16 @@ def build_isolated_argv(
         "--clearenv",
     ]
     for dirname in ("/usr", "/lib", "/lib64", "/bin", "/sbin"):
-        if Path(dirname).exists():
+        entry = Path(dirname)
+        if entry.is_symlink():
+            # On merged-/usr distributions /bin and /lib are symlinks.
+            # Re-create the same symlink inside the empty guest root rather
+            # than attempting to bind-mount onto an unresolved symlink.
+            target = os.readlink(dirname)
+            if target.startswith("/"):
+                target = os.path.relpath(target, "/")
+            argv += ["--symlink", target, dirname]
+        elif entry.is_dir():
             argv += ["--ro-bind", dirname, dirname]
     # Sandbox temporary files are not the host's /tmp. The actual
     # workspace/XDG destinations are mounted after creating these roots.
