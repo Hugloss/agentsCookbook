@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import http.server
+import json
 import os
 import socket
 import socketserver
@@ -64,13 +65,16 @@ def serve_child(port: int, socket_path: str, argv: list[str]) -> int:
                 body = self.rfile.read(int(size))
                 if len(body) != int(size):
                     raise ValueError("truncated-relay-request")
+                doc = json.loads(body)
+                if not isinstance(doc, dict):
+                    raise ValueError("invalid-relay-json")
                 result = _relay(
                     socket_path, self.headers.get("Authorization", ""), body,
                 )
                 self.send_response(200)
                 self.send_header(
                     "Content-Type",
-                    "text/event-stream" if b'"stream":true' in body
+                    "text/event-stream" if doc.get("stream") is True
                     else "application/json",
                 )
                 self.send_header("Content-Length", str(len(result)))
