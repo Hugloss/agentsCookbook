@@ -2178,3 +2178,55 @@ pre-registration time, provider cognition, or causal uplift. A genuine
 single-variable timing study would require a host capable of enforcing
 delivery delay without adding a provider invocation, with separately
 attested model-input ordering and equivalent model state.
+
+## E269–E272: paired native transport and tool-call ancestry
+
+The OpenAI-compatible Chat Completions boundary only admits **text**
+`role=tool` content. The frozen presentation intervention currently
+contrasts a nested structured JSON control against a plain-text variant;
+the structured control is not representable on that boundary without
+changing the preregistered treatment. An isolated run now checks **both**
+frozen arms before constructing a gateway or executing an agent. If only
+the selected text variant is wire-compatible, the paired study fails
+before any model work by default.
+
+`--allow-unpaired-native-diagnostic` is an explicit opt-in **for a
+compatible single text arm only**. It permits a plumbing/transport
+diagnostic without inventing a compatible paired control. Its
+`native_chat_pair_preflight` receipt is labeled `diagnostic_only=true`
+and `paired_transport_compatible=false`; downstream paired pilot
+read-back refuses to grade it as a randomized contrast. This is
+not a workaround for the missing structured transport.
+
+In isolated mode the gateway now enforces the strict native Chat
+tool-content wire contract rather than the permissive legacy host
+fixture path. The host-observed request must also contain an actual
+assistant `tool_calls` entry for the known Hashmarks function and
+exact `tool_call_id` immediately preceding the sole corresponding
+`role=tool` result. Orphaned, foreign, duplicated, or parallel
+tool calls are rejected before any privileged provider dispatch. The
+original request bytes are relayed unchanged; no automatic conversion
+of structured JSON into strings is accepted.
+
+The independent paired pilot verifier reopens the frozen source files
+to check the entire population's wire compatibility and compares each
+signed `native_chat_pair_preflight` against the source representation
+and assigned pair identity. Its signer and verifier both require the
+strict gateway enforcement flag, refuse missing or modified receipts,
+and never treat diagnostic-only trials as eligible paired trials.
+
+**Limits:** Assistant-to-tool ancestry is syntactic in a captured
+request; it is not proof of actual MCP execution, provider attention,
+independent process origin, or causal improvement. The current
+structured-versus-text design remains incompatible with a *native*
+Chat Completions paired experiment. Change the preregistered
+representation design or use an independently validated transport;
+never silently rewrite the frozen intervention.
+
+Model-free regressions:
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_native_chat_pair_integrity -v
+uv run --no-project python -m unittest benchmarks.tests.test_native_chat_transport_parity benchmarks.tests.test_native_netns_pilot_readiness -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
