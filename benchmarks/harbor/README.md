@@ -2653,6 +2653,46 @@ uv run --no-project python -m unittest \
   benchmarks.tests.test_host_attested_interventions -v
 ```
 
+## E277–E280: one authority for native MCP request/response correlation
+
+The verified stdio bridge added by E273–E276 binds the *selected* Hashmarks
+reply to a frozen source. It did not bind **other JSON-RPC responses** to
+requests actually sent by OpenCode. An unsolicited success, duplicate
+`tools/list` reply, or type-confused request ID could therefore pass through
+as model-visible context without an observed owning request.
+
+The native bridge now keeps a bounded, type-exact request ledger. It records
+each forwarded request ID exactly once, admits only one correlated response
+(even when unrelated replies arrive out of order), denies unsolicited,
+duplicate and ambiguous response envelopes, and distinguishes integer and
+string IDs from booleans. Notifications with no IDs remain pass-through only
+when they use the JSON-RPC `notifications/` method family with no synthetic
+result. The already pinned **single Hashmarks subject result** retains its
+one-use, original-packet equality and selected text transformation.
+
+Admission is deliberately finite: at most 128 simultaneous outstanding IDs
+and 2,048 IDs per stdio session. Exceeding either bound fails the local trial,
+not an automatic retry or a reclassification as evidence absence.
+
+The operator's live stdio smoke also requires exactly one well-formed reply
+to each of `native-init`, `native-list`, and `native-subject`; extra,
+duplicate, malformed or missing replies cannot be silently dropped by an ID
+map before reporting success. A deterministic **real local subprocess** attack
+verifies that a fake successful response for an unissued ID terminates the
+bridge without emitting the frozen Hashmarks treatment.
+
+Run the bundled model-free local bridge regression:
+
+```sh
+make benchmark-native-mcp-bridge-tests
+```
+
+These checks prove **local protocol correlation**, not authenticity of the
+installed Hashmarks release, native model use, an independent original MCP
+response signature, an upstream provider call, or causal uplift. Host-side
+provider-issued tool-call provenance and externally attested final outcome
+qualification remain separate authorities.
+
 ### Opt-in host-authenticated nested search comparison
 
 Opaque ATIF shell and tool-router calls never qualify as zero hidden searches. The

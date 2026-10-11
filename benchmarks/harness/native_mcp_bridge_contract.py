@@ -23,6 +23,8 @@ def canonical(value: object) -> bytes:
 
 SCHEMA = "agentscookbook.native-hashmarks-mcp-bridge-contract.v1"
 MAX_FRAME = 1_048_576
+MAX_REQUEST_IDS = 2048
+MAX_INFLIGHT_REQUESTS = 128
 SUPPORTED_TOOLS = frozenset(("task_evidence", "find", "hashmarks_task_evidence", "hashmarks_find"))
 
 
@@ -147,6 +149,11 @@ class BridgeState:
         self.subject_responses = 0
         self.subject_tool: str | None = None
         self.completed_subject_id: object | None = None
+        # One bounded, type-exact JSON-RPC authority for all forwarded calls,
+        # not just the selected subject. Unsolicited MCP replies must never
+        # become model-visible observations through the transparent bridge.
+        self.seen_ids: set[tuple[type, str | int]] = set()
+        self.inflight: dict[tuple[type, str | int], str] = {}
 
     def receive_request(self, frame: bytes) -> bytes:
         if not isinstance(frame, bytes) or not 0 < len(frame) <= MAX_FRAME:
@@ -157,7 +164,21 @@ class BridgeState:
             raise ValueError("native-mcp-invalid-request-json") from exc
         if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
             raise ValueError("native-mcp-non-jsonrpc-request")
-        if message.get("method") == "tools/call":
+        method = message.get("method")
+        if (type(method) is not str or not method
+                or "result" in message or "error" in message):
+            raise ValueError("native-mcp-invalid-client-request-envelope")
+        token = None
+        if "id" in message:
+            request_id = _id(message)
+            token = (type(request_id), request_id)
+            if (token in self.seen_ids
+                    or len(self.seen_ids) >= MAX_REQUEST_IDS
+                    or len(self.inflight) >= MAX_INFLIGHT_REQUESTS):
+                raise ValueError("native-mcp-duplicate-or-unbounded-request-id")
+        elif method == "tools/call":
+            raise ValueError("native-mcp-subject-request-id-required")
+        if method == "tools/call":
             if self.subject_calls != 0 or self.pending is not None:
                 raise ValueError("native-mcp-extra-subject-call-denied")
             params = message.get("params")
@@ -169,6 +190,9 @@ class BridgeState:
             self.pending = _id(message)
             self.subject_calls = 1
             self.subject_tool = params["name"]
+        if token is not None:
+            self.seen_ids.add(token)
+            self.inflight[token] = method
         return frame
 
     def receive_response(self, frame: bytes) -> bytes:
@@ -180,18 +204,34 @@ class BridgeState:
             raise ValueError("native-mcp-invalid-response-json") from exc
         if not isinstance(response, dict) or response.get("jsonrpc") != "2.0":
             raise ValueError("native-mcp-non-jsonrpc-response")
-        received_id = response.get("id")
+        if "id" not in response:
+            # MCP notifications have no correlation id and no result body.
+            # Server-initiated requests and unsolicited success are not
+            # admitted: no response is fabricated to satisfy them.
+            method = response.get("method")
+            if (type(method) is str and method.startswith("notifications/")
+                    and "result" not in response and "error" not in response):
+                return frame
+            raise ValueError("native-mcp-unrequested-server-message")
+        received_id = response["id"]
         if (self.completed_subject_id is not None
+                and type(received_id) is type(self.completed_subject_id)
                 and received_id == self.completed_subject_id):
             raise ValueError("native-mcp-replayed-subject-response")
-        if self.pending is None:
-            return frame
-        if (type(received_id) is not type(self.pending)
-                or received_id != self.pending):
-            # An attempt to pair a boolean response ID to integer 1/0
-            # is not a valid JSON-RPC correlation.
-            if received_id == self.pending:
-                raise ValueError("native-mcp-subject-id-type-confusion")
+        if (self.pending is not None and received_id == self.pending
+                and type(received_id) is not type(self.pending)):
+            raise ValueError("native-mcp-subject-id-type-confusion")
+        response_id = _id(response)
+        token = (type(response_id), response_id)
+        if token not in self.inflight:
+            raise ValueError("native-mcp-orphan-or-replayed-response")
+        if (("result" in response) == ("error" in response)
+                or "method" in response):
+            raise ValueError("native-mcp-ambiguous-response-envelope")
+        if self.pending is None or token != (type(self.pending), self.pending):
+            # Exact one-to-one request ownership for ordinary initialization,
+            # tools/list and other calls, even when replies arrive out of order.
+            del self.inflight[token]
             return frame
         if "error" in response or not isinstance(response.get("result"), dict):
             raise ValueError("native-mcp-original-hashmarks-call-failed")
@@ -225,6 +265,7 @@ class BridgeState:
             "content": [{"type": "text", "text": self.contract["selected_text"]}],
         }
         self.completed_subject_id = self.pending
+        self.inflight.pop(token)
         self.pending = None
         self.subject_responses += 1
         return canonical(updated)
