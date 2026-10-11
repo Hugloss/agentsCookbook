@@ -1898,3 +1898,57 @@ uv run --no-project python -m unittest benchmarks.tests.test_native_netns_kernel
 uv run --no-project python -m unittest benchmarks.tests.test_native_netns_pilot_readiness benchmarks.tests.test_native_netns_relay -v
 uv run --no-project python -m unittest discover -s benchmarks/tests
 ```
+
+## E265–E268: native mount isolation / real worker pre-model admission
+
+An operating kernel `--unshare-net` boundary alone is not proof that
+the **full** OpenCode execution container has the intended file mounts.
+After E261's point-in-time kernel check, the privileged launcher now
+executes a second, fixed, bounded stdlib preflight using precisely the
+same `build_isolated_argv` worker wrapper (including the native Python
+relay, guest loopback server and provider Unix-socket mount) that is
+used for the actual OpenCode trial. A sandbox probe failure is terminal
+**before the first model/provider invocation**. It leaves host-side
+diagnostics possible without any model or native-agent work.
+
+The guest checks that the bound Git workspace, pinned executables, and
+selected Hashmarks MCP command are visible; provider configuration has
+the exact captured-provider allowlist and **cannot be opened for writing**;
+the five isolated HOME/XDG roots support create/delete; and the Unix
+provider socket appears as a real socket at `/run/gateway/upstream.sock`.
+The host secret path must **not** exist inside the guest and the child's
+environment must not expose provider API-key names. The probe itself does
+not connect to an upstream provider, execute Hashmarks, or issue a
+model request. No alternative unconfined launch is attempted.
+
+Before creating run-root or gateway, host admission also rejects
+workspaces/run roots or the privately held host key under any readonly
+runtime root (`/usr`, merged system roots), under the evaluated workspace,
+or under publicly mounted per-trial outputs. It rejects symlinked aliases,
+and refuses OpenCode/Hashmarks binaries inside agent-writable workspaces
+or XDG/output roots. This stops a trusted signing key from being
+accidentally included in the broad system runtime bind even when it is
+not explicitly mounted as a secret.
+
+The privileged runner writes `native_mount_preflight` into the
+create-only execution report **only after** the probe actually exits
+successfully. The existing independent host MAC covers those exact
+bytes together with the signed model-input/provider-submission receipt.
+The pilot read-back must validate this new fixed probe program digest,
+worker source SHA-256, bwrap identity, gateway config digest, and every
+true/false claim **for every frozen arm**; old reports without it cannot
+qualify. Both trial and isolation receipt schemas advance to v2.
+
+These are **local host observations**, not independent live
+process-origin attestations, full network-egress proof, MCP semantic
+parity, model attention, preregistration, independent oracle review,
+or causal uplift. Real target-host bwrap/OpenCode/Hashmarks and
+model-backed paired pilots still need independent field validation.
+
+Model-free tests:
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_native_mount_preflight -v
+uv run --no-project python -m unittest benchmarks.tests.test_native_netns_pilot_readiness -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
