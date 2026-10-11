@@ -211,7 +211,10 @@ class StrictCampaignAdmissionTests(unittest.TestCase):
         m = plan()
         with patch(
             "benchmarks.harness.independent_campaign_qualification.audit_intervention_bundles",
-            return_value={"coverage_state": "COMPLETE"},
+            return_value={
+                "coverage_state": "COMPLETE",
+                "comparison_publication_state": "PUBLISHED_COMPLETE_DESCRIPTIVE",
+            },
         ), patch(
             "benchmarks.harness.independent_campaign_qualification.validate_trial_alignment",
             return_value={"complete": True},
@@ -239,7 +242,10 @@ class StrictCampaignAdmissionTests(unittest.TestCase):
         m = plan()
         with patch(
             "benchmarks.harness.independent_campaign_qualification.audit_intervention_bundles",
-            return_value={"coverage_state": "COMPLETE"},
+            return_value={
+                "coverage_state": "COMPLETE",
+                "comparison_publication_state": "PUBLISHED_COMPLETE_DESCRIPTIVE",
+            },
         ), patch(
             "benchmarks.harness.independent_campaign_qualification.validate_trial_alignment",
             return_value={"complete": True},
@@ -248,6 +254,8 @@ class StrictCampaignAdmissionTests(unittest.TestCase):
             return_value={
                 "attestation_state": "VERIFIED", "delivery_state": "PROVEN",
                 "provider_submission_state": "SUBMITTED",
+                "verified_provider_submission_packets": 1,
+                "returned_packets": 1,
             },
         ) as verify:
             report = qualify_campaign(

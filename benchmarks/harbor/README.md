@@ -2604,3 +2604,51 @@ and native-session evidence still independently check whether the
 selected text reached an outbound model request. No model attention,
 exclusive process origin, completed paired empirical pilot or causal
 effect is claimed.
+
+
+### Campaign-wide publication gate for host-attested timing trials
+
+A complete matched treatment campaign is an **all-assigned-cells**
+contract, not an average computed from whichever trials survived. The
+existing `benchmarks.harness.intervention_audit` now keeps
+`coverage_state`, `qualified_matched_pairs`, `expected_matched_pairs`,
+`partial_observed_matched_pairs`, and structured issue counts for
+diagnostics. But `matched_pairs` and `per_harness_descriptive_effect`
+are published **only** when there are no coverage, duplicate,
+foreign-cell, treatment-drift, or corrupt-bundle issues and all assigned
+matched pairs qualify. In every other case,
+`comparison_publication_state=WITHHELD_INCOMPLETE_CAMPAIGN` and both
+comparison payloads are empty. This avoids accidental positive results
+from survivorship-biased subsets. The existing scoring oracle is unchanged.
+
+The independent campaign qualifier now also **requires** the audit's
+`PUBLISHED_COMPLETE_DESCRIPTIVE` state and complete manifest alignment
+before it can admit a descriptive comparison. For every `study: timing`,
+provider submission read-back is mandatory even if the operator omitted
+`--require-provider-submission`. Every assigned trial must have
+MAC-verified complete model-input evidence and provider submission
+covering each returned packet. Missing/changed host receipts or
+partial provider submission invalidate publication. The report identifies
+`provider_submission_policy=MANDATORY_TIMING`, expected versus
+verified submission-trial counts, and
+`descriptive_comparison_publication_admitted`.
+
+An authenticated reviewer seal and complete trial coverage support only
+an **evidence-qualified descriptive comparison**, never a causal timing
+uplift claim: the deferred arm still incurs an additional model request,
+and external reviewer claims do not prove trustworthy time ordering or
+model attention. A standalone intervention audit is diagnostic; the
+independent manifest/seal and provider-readback qualifier is the final
+publication boundary.
+
+Model-free regressions use the actual two-stage fake HTTPS dispatch,
+create-only signed host receipts, immutable ATIF packet identities and
+real host MAC verification. Only Harbor's immutable bundle loader is
+replaced with synthetic scored receipts.
+
+```sh
+uv run --no-project python -m unittest \
+  benchmarks.tests.test_timing_campaign_qualification \
+  benchmarks.tests.test_trusted_http_provider \
+  benchmarks.tests.test_host_attested_interventions -v
+```
