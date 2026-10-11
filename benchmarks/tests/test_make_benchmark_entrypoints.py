@@ -30,96 +30,68 @@ BENCHMARK_LAUNCHER = ROOT / "benchmark"
 
 
 class BenchmarkMakeEntrypointTests(unittest.TestCase):
-    def test_decision_projection_is_published_with_its_trace_generation(self) -> None:
-        paths = mock.Mock()
-        paths.run_id = "000001"
-        paths.root = Path("/campaign/runs/000001")
-        paths.results = paths.root / "results"
-        paths.as_dict.return_value = {
-            "root": str(paths.root),
-            "results": str(paths.results),
-            "run_id": paths.run_id,
-        }
-        trace = {
-            "summary": {
-                "repository_intelligence_quality": {
-                    "state": "observed",
-                    "subjects": [],
-                }
-            }
-        }
-        report_payload = {"decision_summary": {}}
-        decision_payload = {"authority": {"derived_only": True}}
-
-        with (
-            mock.patch("benchmarks.__main__.exclusive_store", return_value=nullcontext()),
-            mock.patch("benchmarks.__main__._same_saved_run_under_lock"),
-            mock.patch(
-                "benchmarks.__main__._canonical_campaign_persistence_gap",
-                return_value=None,
-            ),
-            mock.patch(
-                "benchmarks.__main__._selection_metadata",
-                return_value={},
-            ),
-            mock.patch(
-                "benchmarks.__main__.build_report",
-                return_value=report_payload,
-            ),
-            mock.patch(
-                "benchmarks.__main__.build_trace_diagnostics",
-                return_value=trace,
-            ),
-            mock.patch(
-                "benchmarks.__main__.build_decision_evidence",
-                return_value=decision_payload,
-            ) as decision,
-            mock.patch(
-                "benchmarks.__main__.publish_report_set",
-                return_value={
-                    "generation_id": "g" * 64,
-                    "run_id": "000001",
-                    "artifacts": {
-                        "report.json": {},
-                        "trace-diagnostics.json": {},
-                        "decision-evidence.json": {},
-                    },
-                },
-            ) as publish,
-            mock.patch(
-                "benchmarks.__main__.campaign_status",
-                return_value={"qualified": True},
-            ),
-            mock.patch(
-                "benchmarks.__main__._write_derived_json",
-            ) as write,
-        ):
-            report, error = _refresh_canonical_report(
-                store_root=Path("/campaign"),
-                paths=paths,
-                suite=mock.Mock(),
-                rows=[{"definition_id": "definition"}],
+    def test_canonical_report_refresh_uses_full_generation_persistence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "runs/000001"
+            results = root / "results"
+            results.mkdir(parents=True)
+            report_path = root / "reports/report.json"
+            report_path.parent.mkdir(parents=True)
+            report_payload = {"run_id": "000001", "expected_trials": 1}
+            report_path.write_text(
+                json.dumps(report_payload) + "\n",
+                encoding="utf-8",
             )
+            paths = mock.Mock()
+            paths.run_id = "000001"
+            paths.root = root
+            paths.results = results
+            args = mock.Mock()
+            config = mock.Mock()
+            suite = mock.Mock()
+            rows = [{"definition_id": "definition"}]
+            final_status = {"complete": True, "qualified": True}
 
-        self.assertIsNone(error)
-        self.assertIsNotNone(report)
-        decision.assert_called_once_with(
-            report,
-            trace_diagnostics=trace,
-        )
-        publish.assert_called_once_with(
-            run_root=paths.root,
-            run_id="000001",
-            report=report,
-            trace_diagnostics=trace,
-            decision_evidence=decision_payload,
-        )
-        write.assert_called_once()
-        self.assertEqual(write.call_args.args[1], "status.json")
-        self.assertEqual(
-            write.call_args.args[2]["derived_report_set"]["generation_id"],
-            "g" * 64,
-        )
+            with (
+                mock.patch(
+                    "benchmarks.__main__.exclusive_store",
+                    return_value=nullcontext(),
+                ),
+                mock.patch("benchmarks.__main__._same_saved_run_under_lock"),
+                mock.patch(
+                    "benchmarks.__main__._canonical_campaign_persistence_gap",
+                    return_value=None,
+                ),
+                mock.patch(
+                    "benchmarks.__main__.campaign_status",
+                    return_value=final_status,
+                ),
+                mock.patch(
+                    "benchmarks.__main__._persist_completed_run_reports",
+                    return_value={"report": report_path},
+                ) as persist,
+            ):
+                report, error = _refresh_canonical_report(
+                    store_root=Path(temporary),
+                    paths=paths,
+                    suite=suite,
+                    rows=rows,
+                    args=args,
+                    config=config,
+                    runtime_source={"TOKEN": "value"},
+                )
+
+            self.assertIsNone(error)
+            self.assertEqual(report, report_payload)
+            persist.assert_called_once_with(
+                args=args,
+                config=config,
+                suite=suite,
+                rows=rows,
+                paths=paths,
+                runtime_source={"TOKEN": "value"},
+                final_status=final_status,
+            )
 
     def test_local_campaign_example_is_durable_and_ignored(self) -> None:
         env_example = ENV_EXAMPLE.read_text(encoding="utf-8")
@@ -367,6 +339,122 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             ]
             self.assertEqual(observed, ["a" * 64, "b" * 64])
 
+    def test_canonical_score_refresh_uses_full_generation_persistence(self) -> None:
+        suite_path = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
+        suite = load_suite(suite_path)
+        definition = str(suite.trial_definitions()[0]["definition_id"])
+        score_script = suite_path / "score.py"
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Path(temporary)
+            run_root = store / "runs/000001"
+            (run_root / "results").mkdir(parents=True)
+            saved = SavedRun("000001", run_root)
+            score_path = run_root / "reports/score.json"
+            manifest = {
+                "selected_definitions": [definition],
+                "agents": {"opencode-native": {}},
+            }
+            config = mock.Mock()
+            config.runtime_environment.return_value = {}
+
+            def resolve(args):
+                args.score_script = score_script
+                args.output = Path("score.json")
+                return config
+
+            with (
+                mock.patch("benchmarks.__main__._resolve_config", side_effect=resolve),
+                mock.patch("benchmarks.__main__._validate_score_cli"),
+                mock.patch("benchmarks.__main__.select_saved_run", return_value=saved),
+                mock.patch(
+                    "benchmarks.__main__._assert_saved_run_agents",
+                    return_value=manifest,
+                ),
+                mock.patch("benchmarks.__main__.verify_campaign_suite_authority"),
+                mock.patch(
+                    "benchmarks.__main__.select_scoring_definitions",
+                    return_value=[suite.trial_definitions()[0]],
+                ),
+                mock.patch(
+                    "benchmarks.__main__.campaign_status",
+                    return_value={"complete": True, "qualified": True},
+                ),
+                mock.patch(
+                    "benchmarks.__main__._persist_completed_run_reports",
+                    return_value={"score": score_path},
+                ) as persist,
+            ):
+                self.assertEqual(
+                    main(
+                        [
+                            "score",
+                            "--env-file",
+                            str(store / "unused.env"),
+                            "--suite",
+                            str(suite_path),
+                            "--root",
+                            str(store),
+                            "--agent",
+                            "opencode-native",
+                        ]
+                    ),
+                    0,
+                )
+
+            persist.assert_called_once()
+            self.assertEqual(
+                persist.call_args.kwargs["score_contract"],
+                (score_script.resolve(), Path("score.json")),
+            )
+
+    def test_tool_probe_smoke_gate_requires_generation_bound_score(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Path(temporary)
+            run_root = store / "runs/000001"
+            reports = run_root / "reports"
+            reports.mkdir(parents=True)
+            score_path = reports / "score.json"
+            score = {
+                "schema": "agents-cookbook-tool-probe-score.v3",
+                "subject": "hashmarks",
+                "required_tool": "hashmarks_task_evidence",
+                "expected_trials": 0,
+                "observed_trials": 0,
+                "required_tool_results": [],
+            }
+            score_path.write_text(json.dumps(score) + "\n", encoding="utf-8")
+            saved = SavedRun("000001", run_root)
+
+            with (
+                mock.patch(
+                    "benchmarks.__main__.select_saved_run",
+                    return_value=saved,
+                ),
+                mock.patch(
+                    "benchmarks.__main__.verified_score_path",
+                    return_value=score_path,
+                ) as verified,
+                mock.patch("benchmarks.__main__.smoke_gate") as gate,
+            ):
+                self.assertEqual(
+                    main(
+                        [
+                            "tool-probe-smoke-gate",
+                            "--root",
+                            str(store),
+                            "--subject",
+                            "hashmarks",
+                        ]
+                    ),
+                    0,
+                )
+
+            verified.assert_called_once_with(
+                run_root=run_root,
+                expected_run_id="000001",
+            )
+            gate.assert_called_once_with(score, subject="hashmarks")
+
     def test_manual_score_cannot_race_active_campaign_owner(self) -> None:
         suite = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
         score_script = suite / "score.py"
@@ -605,6 +693,80 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 str(run_root / "reports"),
             )
 
+            def persist_generation(**_kwargs):
+                reports = run_root / "reports"
+                reports.mkdir(parents=True, exist_ok=True)
+                report_payload = {
+                    "schema": {"version": 7},
+                    "expected_trials": 108,
+                    "run_id": "000001",
+                    "reports_dir": str(reports),
+                }
+                trace_payload = {
+                    "schema": "agents-cookbook-trace-diagnostics.v6",
+                    "trials": [],
+                    "summary": {
+                        "repository_intelligence_quality": {
+                            "state": "observed",
+                            "claim_scope": "descriptive-diagnostic-only",
+                            "subjects": [
+                                {
+                                    "subject_id": "hashmarks",
+                                    "operation": "task_evidence",
+                                    "calls": 1,
+                                }
+                            ],
+                        },
+                        "repository_intelligence_search_efficiency": {
+                            "state": "observed",
+                            "claim_scope": "descriptive-behavioral-only",
+                            "correctness_joined": False,
+                            "subjects": [],
+                        },
+                        "repository_intelligence_evidence_to_action": {
+                            "state": "observed",
+                            "claim_scope": "descriptive-behavioral-only",
+                            "oracle_relative": False,
+                            "correctness_joined": False,
+                            "subjects": [],
+                        },
+                    },
+                }
+                decision_payload = {
+                    "schema": "agents-cookbook-benchmark-decision-evidence.v8",
+                    "run_id": "000001",
+                    "authority": {"derived_only": True},
+                    "repository_intelligence_quality": trace_payload["summary"][
+                        "repository_intelligence_quality"
+                    ],
+                    "repository_intelligence_search_efficiency": trace_payload[
+                        "summary"
+                    ]["repository_intelligence_search_efficiency"],
+                    "repository_intelligence_evidence_to_action": trace_payload[
+                        "summary"
+                    ]["repository_intelligence_evidence_to_action"],
+                }
+                report_path = reports / "report.json"
+                trace_path = reports / "trace-diagnostics.json"
+                decision_path = reports / "decision-evidence.json"
+                report_path.write_text(
+                    json.dumps(report_payload) + "\n",
+                    encoding="utf-8",
+                )
+                trace_path.write_text(
+                    json.dumps(trace_payload) + "\n",
+                    encoding="utf-8",
+                )
+                decision_path.write_text(
+                    json.dumps(decision_payload) + "\n",
+                    encoding="utf-8",
+                )
+                return {
+                    "report": report_path,
+                    "trace_diagnostics": trace_path,
+                    "decision_evidence": decision_path,
+                }
+
             with (
                 mock.patch("benchmarks.__main__.select_saved_run", return_value=saved),
                 mock.patch(
@@ -658,6 +820,14 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 mock.patch(
                     "benchmarks.__main__._canonical_campaign_persistence_gap",
                     return_value=None,
+                ),
+                mock.patch(
+                    "benchmarks.__main__.campaign_status",
+                    return_value={**status_payload, "complete": True},
+                ),
+                mock.patch(
+                    "benchmarks.__main__._persist_completed_run_reports",
+                    side_effect=persist_generation,
                 ),
                 redirect_stdout(io.StringIO()),
             ):

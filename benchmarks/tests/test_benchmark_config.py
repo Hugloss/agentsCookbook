@@ -132,30 +132,56 @@ class BenchmarkConfigTests(unittest.TestCase):
                         str(SUITE.parent / "multidomain-v2/score.py"),
                     ]
                 )
-            with patch(
-                "benchmarks.__main__.subprocess.run",
-                return_value=SimpleNamespace(
-                    returncode=0,
-                    stdout="--results --output --agent --definition-id",
-                    stderr="",
+
+            saved = SimpleNamespace(run_id="000001", root=root)
+            manifest = {
+                "selected_definitions": ["a" * 64],
+                "agents": {
+                    "codex-native": {},
+                    "opencode-native": {},
+                },
+            }
+            row = {
+                "definition_id": "a" * 64,
+                "task_id": "task-a",
+                "condition_id": "bare",
+                "trial": 0,
+            }
+            score_path = root / "reports/score.json"
+            with (
+                patch("benchmarks.__main__._validate_score_cli"),
+                patch(
+                    "benchmarks.__main__.select_saved_run",
+                    return_value=saved,
                 ),
-            ) as run, patch(
-                "benchmarks.__main__.select_saved_run",
-                return_value=SimpleNamespace(run_id="000001", root=root),
-            ), patch(
-                "benchmarks.__main__._assert_saved_run_agents"
-            ), patch(
-                "benchmarks.__main__.verify_campaign_suite_authority"
+                patch(
+                    "benchmarks.__main__._assert_saved_run_agents",
+                    return_value=manifest,
+                ),
+                patch("benchmarks.__main__.verify_campaign_suite_authority"),
+                patch(
+                    "benchmarks.__main__.select_scoring_definitions",
+                    return_value=[row],
+                ),
+                patch(
+                    "benchmarks.__main__.campaign_status",
+                    return_value={"complete": True, "qualified": True},
+                ),
+                patch(
+                    "benchmarks.__main__._persist_completed_run_reports",
+                    return_value={"score": score_path},
+                ) as persist,
             ):
                 self.assertEqual(
                     main(["score", "--env-file", str(file), "--root", str(root)]), 0
                 )
-            command = run.call_args.args[0]
-            self.assertIn(str(root / "results"), command)
-            output_index = command.index("--output") + 1
+
+            persist.assert_called_once()
             self.assertEqual(
-                command[output_index],
-                str(root / "reports" / "score.json"),
+                persist.call_args.kwargs["score_contract"],
+                (scorer.resolve(), Path("score.json")),
             )
-            self.assertTrue((root / "reports").is_dir())
-            self.assertEqual(command.count("--agent"), 2)
+            self.assertEqual(
+                persist.call_args.kwargs["args"].agent,
+                ["codex-native", "opencode-native"],
+            )

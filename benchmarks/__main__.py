@@ -69,6 +69,7 @@ from benchmarks.harness.derived_report_set import (
     REPORT_SET_MANIFEST,
     inspect_report_set,
     publish_report_set,
+    verified_score_path,
 )
 from benchmarks.harness.oracle_reviews import (
     OracleReviewError,
@@ -747,8 +748,11 @@ def _refresh_canonical_report(
     paths,
     suite,
     rows,
+    args,
+    config: BenchmarkConfig,
+    runtime_source,
 ) -> tuple[dict[str, object] | None, str | None]:
-    """Recompute and persist the report projection under the campaign store lock."""
+    """Refresh the entire canonical derived generation under the store lock."""
     try:
         with exclusive_store(store_root):
             _same_saved_run_under_lock(
@@ -763,50 +767,37 @@ def _refresh_canonical_report(
             )
             if gap is not None:
                 return None, gap
-            report_data = build_report(
-                suite=suite,
-                results_root=paths.results,
-                require_complete=True,
-                selected_definitions={
-                    str(row["definition_id"]) for row in rows
-                },
-                selection=_selection_metadata(suite, rows),
-            )
-            report_data["run_id"] = paths.run_id
-            report_data["reports_dir"] = str(_reports_dir(paths.root))
-            trace_diagnostics, decision = _derive_trace_and_decision(
-                report_data=report_data,
-                results_root=paths.results,
-            )
-            decision["run_id"] = paths.run_id
-            report_set = publish_report_set(
-                run_root=paths.root,
-                run_id=str(paths.run_id),
-                report=report_data,
-                trace_diagnostics=trace_diagnostics,
-                decision_evidence=decision,
-            )
-            status = campaign_status(
+            final_status = campaign_status(
                 suite=suite,
                 results_root=paths.results,
                 selected_definitions={
                     str(row["definition_id"]) for row in rows
                 },
             )
-            status["paths"] = paths.as_dict()
-            status["run_id"] = paths.run_id
-            status["selection"] = _selection_metadata(suite, rows)
-            status["paths"]["reports"] = str(_reports_dir(paths.root))
-            status["derived_report_set"] = {
-                "status": "VERIFIED",
-                "verified": True,
-                "generation_id": report_set["generation_id"],
-                "run_id": report_set["run_id"],
-                "artifacts": sorted(report_set["artifacts"]),
-            }
-            _write_derived_json(paths.root, "status.json", status)
+            if not final_status["complete"]:
+                return None, "canonical report refresh requires a complete campaign"
+            written = _persist_completed_run_reports(
+                args=args,
+                config=config,
+                suite=suite,
+                rows=rows,
+                paths=paths,
+                runtime_source=runtime_source,
+                final_status=final_status,
+            )
+            report_data = json.loads(
+                written["report"].read_text(encoding="utf-8")
+            )
+            if not isinstance(report_data, dict):
+                raise ReportError("canonical report must be one JSON object")
             return report_data, None
-    except (RunStoreError, ReportError, DerivedReportSetError) as exc:
+    except (
+        RunStoreError,
+        ReportError,
+        DerivedReportSetError,
+        OSError,
+        ValueError,
+    ) as exc:
         return None, f"run store is active or changed: {exc}"
 
 
@@ -979,9 +970,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "tool-probe-smoke-gate":
         try:
             saved = select_saved_run(args.root)
-            score = json.loads((saved.root / "reports/score.json").read_text(encoding="utf-8"))
+            score_path = verified_score_path(
+                run_root=saved.root,
+                expected_run_id=saved.run_id,
+            )
+            score = json.loads(score_path.read_text(encoding="utf-8"))
             smoke_gate(score, subject=args.subject)
-        except (RunStoreError, OSError, ValueError) as exc:
+        except (
+            RunStoreError,
+            DerivedReportSetError,
+            OSError,
+            ValueError,
+        ) as exc:
             raise SystemExit(f"tool probe smoke gate failed: {exc}") from exc
         print(f"tool probe smoke gate passed: {saved.run_id}")
         return 0
@@ -1340,8 +1340,9 @@ def main(argv: list[str] | None = None) -> int:
             with exclusive_store(args.root):
                 saved = select_saved_run(args.root, args.run_id)
                 manifest = _assert_saved_run_agents(saved, args.agent)
+                suite_for_score = load_suite(args.suite)
                 verify_campaign_suite_authority(
-                    suite=load_suite(args.suite),
+                    suite=suite_for_score,
                     campaign=manifest,
                 )
                 if not explicit_score_output:
@@ -1350,38 +1351,80 @@ def main(argv: list[str] | None = None) -> int:
                             "BENCHMARK_SCORE_OUTPUT_PATH must be a filename within "
                             "the selected run's reports directory"
                         )
-                    args.output = _reports_dir(saved.root) / args.output
-                    args.output.parent.mkdir(parents=True, exist_ok=True)
-                invocation = [
-                    sys.executable,
-                    str(script),
-                    "--results",
-                    str(saved.root / "results"),
-                    "--output",
-                    str(args.output),
-                ]
-                for agent in args.agent:
-                    invocation.extend(("--agent", agent))
-                for definition_id in sorted(
-                    str(value) for value in manifest["selected_definitions"]
-                ):
-                    invocation.extend(("--definition-id", definition_id))
-                completed = subprocess.run(
-                    invocation,
-                    env=_score_environment(runtime_source),
-                    check=False,
-                )
-                if completed.returncode != 0:
-                    return completed.returncode
+                    frozen_ids = tuple(
+                        str(value) for value in manifest["selected_definitions"]
+                    )
+                    rows = select_scoring_definitions(
+                        suite_for_score,
+                        agents=tuple(args.agent),
+                        definition_ids=frozen_ids,
+                    )
+                    paths = resolve_campaign_paths(
+                        root=saved.root,
+                        cache=None,
+                        work=None,
+                        results=None,
+                        need_execution=False,
+                    )
+                    paths = replace(paths, run_id=saved.run_id)
+                    assert paths.results is not None
+                    final_status = campaign_status(
+                        suite=suite_for_score,
+                        results_root=paths.results,
+                        selected_definitions=set(frozen_ids),
+                    )
+                    if not final_status["complete"]:
+                        raise ReportError(
+                            "canonical score refresh requires a complete campaign"
+                        )
+                    written = _persist_completed_run_reports(
+                        args=args,
+                        config=config,
+                        suite=suite_for_score,
+                        rows=rows,
+                        paths=paths,
+                        runtime_source=runtime_source,
+                        final_status=final_status,
+                        score_contract=(script, args.output),
+                    )
+                    score_path = written["score"]
+                else:
+                    invocation = [
+                        sys.executable,
+                        str(script),
+                        "--results",
+                        str(saved.root / "results"),
+                        "--output",
+                        str(args.output),
+                    ]
+                    for agent in args.agent:
+                        invocation.extend(("--agent", agent))
+                    for definition_id in sorted(
+                        str(value) for value in manifest["selected_definitions"]
+                    ):
+                        invocation.extend(("--definition-id", definition_id))
+                    completed = subprocess.run(
+                        invocation,
+                        env=_score_environment(runtime_source),
+                        check=False,
+                    )
+                    if completed.returncode != 0:
+                        return completed.returncode
+                    score_path = args.output
                 if args.require_analysis_evidence:
                     try:
-                        _require_analysis_evidence(args.output)
+                        _require_analysis_evidence(score_path)
                     except ReportError as exc:
                         raise SystemExit(
                             f"benchmark analysis evidence gate failed: {exc}"
                         ) from exc
                 return 0
-        except (RunStoreError, CampaignAuthorityError) as exc:
+        except (
+            RunStoreError,
+            CampaignAuthorityError,
+            ReportError,
+            SelectionError,
+        ) as exc:
             raise SystemExit(str(exc)) from exc
     suite = (
         load_runtime_suite(args.suite)
@@ -1606,6 +1649,9 @@ def main(argv: list[str] | None = None) -> int:
                     paths=paths,
                     suite=suite,
                     rows=rows,
+                    args=args,
+                    config=config,
+                    runtime_source=runtime_source,
                 )
                 if refreshed is not None:
                     report_data = refreshed
@@ -1794,6 +1840,7 @@ def _persist_completed_run_reports(
     paths,
     runtime_source,
     final_status: dict[str, object],
+    score_contract: tuple[Path, Path] | None = None,
 ) -> dict[str, Path]:
     """Persist derived artifacts after final campaign verification."""
     assert paths.root is not None
@@ -1805,7 +1852,9 @@ def _persist_completed_run_reports(
     )
     selection = _selection_metadata(suite, rows)
     reports_dir = _reports_dir(paths.root)
-    score_script, score_output = _score_contract(config, suite)
+    score_script, score_output = (
+        score_contract if score_contract is not None else _score_contract(config, suite)
+    )
 
     status_payload = dict(final_status)
     status_payload["paths"] = paths.as_dict()
@@ -1865,16 +1914,21 @@ def _persist_completed_run_reports(
         if not staged_score.is_file() or staged_score.stat().st_size == 0:
             raise ReportError("benchmark score generation produced no output")
 
+        score_bytes = staged_score.read_bytes()
         report_set = publish_report_set(
             run_root=paths.root,
             run_id=str(paths.run_id),
             report=report_data,
             trace_diagnostics=trace_data,
             decision_evidence=decision_data,
+            score_artifact=score_output.name,
+            score_bytes=score_bytes,
         )
         status_payload["derived_report_set"] = {
             "status": "VERIFIED",
             "verified": True,
+            "score_bound": True,
+            "score_artifact": report_set["score_artifact"],
             "generation_id": report_set["generation_id"],
             "run_id": report_set["run_id"],
             "artifacts": sorted(report_set["artifacts"]),
@@ -1884,12 +1938,6 @@ def _persist_completed_run_reports(
         trace_path = reports_dir / "trace-diagnostics.json"
         decision_path = reports_dir / "decision-evidence.json"
         report_set_path = reports_dir / REPORT_SET_MANIFEST
-        os.replace(staged_score, score_path)
-        directory_fd = os.open(reports_dir, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
     finally:
         staged_score.unlink(missing_ok=True)
 
