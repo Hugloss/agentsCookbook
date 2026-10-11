@@ -181,6 +181,8 @@ def inspect_native_export(raw: bytes, *, session_id: str,
         # operations; do not alias arbitrary tools or allow cross-operation
         # substitution.
         def operation(name: object) -> str | None:
+            if type(name) is not str:
+                return None
             if name in {
                 "hashmarks_find", "hashmarks.find",
                 "mcp__hashmarks__find", "tools.hashmarks.find",
