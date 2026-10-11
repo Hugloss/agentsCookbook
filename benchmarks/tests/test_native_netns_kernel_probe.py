@@ -167,7 +167,14 @@ class NativeKernelProbeAttacks(unittest.TestCase):
             key.write_bytes(KEY)
             key.chmod(0o600)
             plan = manifest()
-            trial = plan["assignments"][0]["trial_id"]
+            # The historical structured control is deliberately rejected by
+            # pure Chat tool-wire admission *before* the kernel probe. Use
+            # its wire-compatible text variant to exercise the independent
+            # kernel-denial path without weakening fail-before-work.
+            trial = next(
+                row["trial_id"] for row in plan["assignments"]
+                if row["arm"] == "variant"
+            )
             kwargs = {
                 "manifest": plan, "trial_id": trial,
                 "opencode_executable": exe,
