@@ -1788,3 +1788,60 @@ The static tests verify bwrap flags/mounts and fail-before-work, and the
 socket tests perform real local TCP/Unix traffic with a mocked upstream
 provider. No running provider-backed or independently graded matched
 campaign is claimed by CI.
+
+
+## E261–E264: effective netns kernel admission and HMAC-bound diagnostic
+
+PR #227 introduced an explicit `bwrap --unshare-net` configuration and
+Unix-socket provider relay. **A command line is not evidence that this
+Linux host can create the requested kernel boundary.** The next bundle
+adds a point-in-time executable preflight before any native trial run
+root, socket or model request is created.
+
+```sh
+make benchmark-native-kernel-probe
+```
+
+This performs no agent/model run. It SHA-pins the discovered bwrap and
+Python executables, runs a fixed Python probe under bwrap with the same
+single-owner readonly runtime-root allowlist, and independently compares
+host vs guest `/proc/self/ns/net` inode. The probe must observe **only
+`lo`**, successfully bind a loopback socket, and receive a definite
+no-route-to-host/network error for an attempted TCP connection to the
+reserved TEST-NET-2 address `198.51.100.1:443`. A timeout, ambiguous
+return, host namespace reuse, additional guest interface, absent
+kernel permission or changed bwrap/Python bytes rejects the probe.
+The check occurs before trial work; there is no automatic unconfined
+fallback.
+
+Qualified preflight diagnostics are attached to each new
+`trial-execution.json` as `native_kernel_preflight` and are covered
+by #227's privileged host MAC over the execution bytes and the original
+provider submission receipt. The separate paired pilot audit requires
+the exact probe schema, a distinct guest namespace, verified bwrap
+SHA, a pinned probe-program digest, and explicit **false** values for
+independent egress and process-origin claims. Old reports missing that
+field are not silently treated as qualified. No historical campaign
+receipts are overwritten.
+
+The Unix gateway now increments observed namespace-peer counts only
+after a complete authenticated request and validated response. An
+unauthorized peer, malformed request, rejected Hashmarks packet, or
+failed upstream dispatch must not increase this diagnostic.
+
+**Scope and nonclaims:** The preflight observes a *separate test*
+namespace on the same Linux host, not an independent kernel audit of
+the subsequently spawned OpenCode process. One denied external TCP
+route is not exhaustive egress analysis; it also cannot certify process
+origin, external-clock preregistration, independent oracle review,
+provider cognition or Hashmarks uplift. The signed receipt authenticates
+what the privileged host recorded, not whether an external auditor
+witnessed it.
+
+Model-free regressions:
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_native_netns_kernel_probe -v
+uv run --no-project python -m unittest benchmarks.tests.test_native_netns_pilot_readiness benchmarks.tests.test_native_netns_relay -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
