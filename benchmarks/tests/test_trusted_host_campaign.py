@@ -364,6 +364,7 @@ class TrustedTimingTreatmentTest(TrustedHostInputIntegrationTest):
                     serialized_model_request=prior, request_sequence=1,
                 )
                 if altered != "unsubmitted-prior":
+                    host.begin_pre_exposure_transport()
                     host.record_pre_exposure_submission(
                         serialized_model_request=prior, endpoint_sha256=H("endpoint"),
                         status=200, response_sha256=H("response-prior"),
