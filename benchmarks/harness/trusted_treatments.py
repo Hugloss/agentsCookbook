@@ -145,6 +145,26 @@ def select_treatment(manifest: Mapping[str, Any], *, trial_id: str,
             primary["content"] if presentation == "structured"
             else primary_bytes.decode("utf-8")
         )
+    elif design["study"] == "text_presentation":
+        if replaced is not None:
+            raise ValueError("text-presentation-requires-one-unchanged-source")
+        chosen, chosen_bytes = primary, primary_bytes
+        presentation = (
+            "compact-json-text" if arm == "control" else "indented-json-text"
+        )
+        visible = (
+            primary_bytes.decode("utf-8") if arm == "control"
+            else json.dumps(
+                primary["content"], sort_keys=True, ensure_ascii=False,
+                allow_nan=False, indent=2,
+            )
+        )
+        if (not isinstance(visible, str)
+                or visible == primary_bytes.decode("utf-8")
+                and arm == "variant"):
+            raise ValueError("text-presentation-has-no-distinct-visible-surfaces")
+        if json.loads(visible) != primary["content"]:
+            raise ValueError("text-presentation-semantic-drift")
     elif design["study"] == "freshness":
         if replaced is None:
             raise ValueError("freshness-requires-explicit-replaced-generation")
