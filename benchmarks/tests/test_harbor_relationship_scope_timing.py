@@ -234,6 +234,91 @@ class RelationshipScopeTimingTests(unittest.TestCase):
         self.assertFalse(result["qualified"])
         self.assertEqual(result["reason"], "atif-order-or-link-invalid")
 
+    def test_identical_multiple_returns_are_counted_without_double_attribution(self) -> None:
+        packet = _packet(outgoing=0, associated=1)
+        result = _run([
+            _step(TOOL, "h1", response={"result": packet}),
+            _step("rg", "n1", arguments={"pattern": "widget"}),
+            _step(TOOL, "h2", response={"structuredContent": packet}),
+            _step(
+                DETAIL, "h3", arguments={
+                    "target": SUBJECT, "result_mode": "relationships",
+                },
+            ),
+        ])
+        self.assertTrue(result["qualified"])
+        self.assertEqual(result["scoped_return_count"], 2)
+        self.assertEqual(result["first_semantic_return_step"], 1)
+        self.assertEqual(result["arrival_timing"], "BEFORE_NATIVE_DISCOVERY")
+        self.assertEqual(
+            result["detail_followthrough"], "EXACT_DETAIL_REQUEST_AFTER_RETURN"
+        )
+        self.assertEqual(result["summary_count"], 0)
+        self.assertEqual(result["associated_count"], 1)
+        self.assertEqual(len(result["captured_semantic_record_sha256"]), 64)
+        self.assertFalse(result["causal_influence_claimed"])
+
+    def test_multiple_returns_with_disagreeing_counts_fail_closed(self) -> None:
+        result = _run([
+            _step(TOOL, "h1", response=_packet(outgoing=0, associated=1)),
+            _step(TOOL, "h2", response=_packet(outgoing=1, associated=1)),
+        ])
+        self.assertFalse(result["qualified"])
+        self.assertEqual(result["reason"], "conflicting-scoped-semantic-returns")
+        self.assertIsNone(result["summary_count"])
+        self.assertFalse(result["agent_attention_proven"])
+
+    def test_matching_counts_with_different_producer_claims_are_not_parity(self) -> None:
+        first = _packet()
+        second = _packet()
+        second["semantic_relationships"]["producer_bindings"] = ["other-producer"]
+        result = _run([
+            _step(TOOL, "h1", response=first),
+            _step(TOOL, "h2", response=second),
+        ])
+        self.assertFalse(result["qualified"])
+        self.assertEqual(result["reason"], "conflicting-scoped-semantic-returns")
+
+        disagreeing_views = {
+            "structuredContent": first,
+            "content": [{"type": "text", "text": json.dumps(second)}],
+        }
+        result = _run([_step(TOOL, "h1", response=disagreeing_views)])
+        self.assertFalse(result["qualified"])
+        self.assertEqual(result["reason"], "invalid-semantic-observation")
+
+    def test_different_qualified_owners_must_not_be_merged_into_one_subject(self) -> None:
+        other = _packet()
+        other["ownership"]["owner"]["path"] = "src/other.py"
+        other["semantic_relationships"]["subject"] = (
+            "src/other.py::normalize_widget"
+        )
+        result = _run([
+            _step(TOOL, "h1", response=_packet()),
+            _step(TOOL, "h2", response=other),
+        ])
+        self.assertFalse(result["qualified"])
+        self.assertEqual(result["reason"], "conflicting-scoped-semantic-returns")
+
+    def test_orphan_observation_and_malformed_unrelated_step_deny_complete_order(self) -> None:
+        orphan = {
+            "source": "environment",
+            "observation": {
+                "results": [{"source_call_id": "ghost", "content": _packet()}]
+            },
+        }
+        for trace in (
+            [orphan],
+            [_step(TOOL, "h1", response=_packet()), orphan],
+            [_step(TOOL, "h1", response=_packet()), {
+                "source": "environment", "observation": "malformed",
+            }],
+        ):
+            with self.subTest(trace=trace):
+                result = _run(trace)
+                self.assertFalse(result["qualified"])
+                self.assertEqual(result["reason"], "atif-order-or-link-invalid")
+
     def test_never_invoked_or_no_scope_is_not_a_claim_of_absence(self) -> None:
         never = _run([_step("read_file", "n1")])
         self.assertTrue(never["qualified"])

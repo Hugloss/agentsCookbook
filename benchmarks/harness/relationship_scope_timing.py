@@ -6,6 +6,7 @@ live Hashmarks instance. A returned producer claim is not proven model use.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Mapping
@@ -22,6 +23,8 @@ SCHEMA = "agentscookbook.harbor-relationship-scope-timing.v1"
 OUTGOING = "exact-owner-scip-definition-outgoing"
 ASSOCIATED = "explicit-producer-claims-associated-with-owner"
 MAX_OBSERVATION_BYTES = 262_144
+MAX_STEPS = 20_000
+MAX_CALLS = 10_000
 
 
 def unavailable_relationship_scope(reason: str) -> dict[str, Any]:
@@ -36,6 +39,8 @@ def unavailable_relationship_scope(reason: str) -> dict[str, Any]:
         "summary_count": None,
         "associated_count_scope": None,
         "associated_count": None,
+        "captured_semantic_record_sha256": None,
+        "scoped_return_count": None,
         "first_semantic_return_step": None,
         "first_native_discovery_step": None,
         "first_exact_detail_request_step": None,
@@ -98,12 +103,21 @@ def _semantic_record(value: object) -> dict[str, Any] | None:
         (summary == 0) != (row["observation_state"] == "definition-observed-no-direct-claims")
     ):
         return None
+    try:
+        encoded = json.dumps(
+            {"ownership": owner, "semantic_relationships": row},
+            sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError, OverflowError):
+        return None
     return {
         "subject": subject,
         "summary_count_scope": summary_scope,
         "summary_count": summary,
         "associated_count_scope": associated_scope,
         "associated_count": associated,
+        "captured_semantic_record_sha256": hashlib.sha256(encoded).hexdigest(),
     }
 
 
@@ -158,7 +172,7 @@ def _steps(atif: object) -> tuple[list[dict[str, Any]], dict[str, tuple[object, 
         or not isinstance(atif.get("schema_version"), str)
         or not atif["schema_version"].startswith("ATIF-v")
         or not isinstance(atif.get("steps"), list)
-        or not atif["steps"]
+        or not 0 < len(atif["steps"]) <= MAX_STEPS
     ):
         return None
     calls: list[dict[str, Any]] = []
@@ -168,6 +182,8 @@ def _steps(atif: object) -> tuple[list[dict[str, Any]], dict[str, tuple[object, 
         if not isinstance(step, dict):
             return None
         observation = step.get("observation")
+        if observation is not None and not isinstance(observation, dict):
+            return None
         if isinstance(observation, dict):
             results = observation.get("results", [])
             if not isinstance(results, list):
@@ -176,9 +192,15 @@ def _steps(atif: object) -> tuple[list[dict[str, Any]], dict[str, tuple[object, 
                 if not isinstance(result, dict):
                     return None
                 call_id = result.get("source_call_id")
-                if not isinstance(call_id, str) or not call_id or call_id in linked:
+                if (
+                    not isinstance(call_id, str)
+                    or not call_id
+                    or call_id in linked
+                    or "content" not in result
+                    or len(linked) >= MAX_CALLS
+                ):
                     return None
-                linked[call_id] = (result.get("content"), step_index)
+                linked[call_id] = (result["content"], step_index)
         tool_calls = step.get("tool_calls", [])
         if not isinstance(tool_calls, list):
             return None
@@ -192,6 +214,7 @@ def _steps(atif: object) -> tuple[list[dict[str, Any]], dict[str, tuple[object, 
                 or not isinstance(call_id, str)
                 or not call_id
                 or call_id in seen
+                or len(seen) >= MAX_CALLS
             ):
                 return None
             seen.add(call_id)
@@ -204,6 +227,8 @@ def _steps(atif: object) -> tuple[list[dict[str, Any]], dict[str, tuple[object, 
                 "arguments": arguments,
                 "category": classify_call(name, arguments, subject="hashmarks"),
             })
+    if set(linked) - seen:
+        return None  # An uninvoked tool cannot supply a valid returned observation.
     return calls, linked
 
 
@@ -259,6 +284,11 @@ def project_relationship_scope_timing(trajectory: Path) -> dict[str, Any]:
             "arrival_timing": "NO_SEMANTIC_RETURN",
             "detail_followthrough": "NO_SEMANTIC_RETURN",
         }
+    # The pair report describes one scoped subject. Never choose the first
+    # convenient claim when later observed packets disagree about that subject,
+    # its count scopes, or the underlying owner/producer evidence.
+    if any(record != observed[0][1] for _, record in observed[1:]):
+        return unavailable_relationship_scope("conflicting-scoped-semantic-returns")
     observed.sort(key=lambda row: row[0])
     first_step, first = observed[0]
     native_steps = [
@@ -288,6 +318,7 @@ def project_relationship_scope_timing(trajectory: Path) -> dict[str, Any]:
     return {
         **unavailable_relationship_scope(""),
         **first,
+        "scoped_return_count": len(observed),
         "qualified": True,
         "reason": None,
         "state": "SCOPED_SEMANTIC_RETURN",

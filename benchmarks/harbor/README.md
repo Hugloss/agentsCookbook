@@ -711,7 +711,17 @@ mechanism evaluator now adds `relationship_scope_evidence` to each treated
 bare/Hashmarks pair without changing reward, oracle, task, prompts, or execution.
 
 The projection requires a linked structured `task_evidence` tool result with
-a resolved owner and self-consistent count scopes. It preserves the difference
+a resolved owner and self-consistent count scopes. It now rejects any orphan
+observation, malformed ATIF observation, or incomplete call/result linkage
+before declaring the semantic timeline qualified. When multiple scoped returns
+occur in the same trace, their admitted ownership and full captured semantic
+records must agree. Disagreement (including equal counts with different
+producer evidence, or different owner subjects) is excluded as
+`conflicting-scoped-semantic-returns` instead of cherry-picking a convenient
+first result. Matching returns record `scoped_return_count` and a
+`captured_semantic_record_sha256` diagnostic. This digest identifies the
+**captured tool-return record**, not the producer's source authority, a model
+input, or evidence of use. It preserves the difference
 between the direct SCIP **outgoing definition count** and the wider
 **associated direct producer-claim count**, which may include incoming SCIP or
 request-local LSP observations. A zero outgoing count is not evidence of
