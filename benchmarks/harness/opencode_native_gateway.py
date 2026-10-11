@@ -37,6 +37,7 @@ from .trusted_http_provider import (
 )
 from .trusted_treatments import assigned_cell, select_treatment, verify_manifest
 from .native_chat_transport_parity import require_chat_tool_content
+from .native_chat_request_integrity import require_assistant_tool_ancestry
 
 SCHEMA = "agentscookbook.opencode-v1-gateway-launch.v1"
 MAX_REQUEST_BYTES = 8_388_608
@@ -298,6 +299,7 @@ class NativeOpenCodeGateway:
             if not isinstance(call_id, str) or not call_id:
                 raise ValueError("gateway-missing-observed-tool-call-id")
             if self.enforce_chat_tool_wire_contract:
+                require_assistant_tool_ancestry(request, call_id=call_id)
                 require_chat_tool_content(
                     self.selected,
                     actual_tool_content=tool_messages[0].get("content"),
