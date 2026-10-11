@@ -221,6 +221,22 @@ class UnixSocketNativeGatewayTests(unittest.TestCase):
         self.assertFalse(self.gateway.result()["socket_peer_executable_verified"])
         self.assertFalse(self.gateway.result()["native_process_origin_proven"])
 
+    def test_host_namespace_peer_cannot_impersonate_isolated_worker(self):
+        self.gateway.close()
+        self.gateway.start_unix(self.sock, require_isolated_peer=True)
+        with patch(
+            "benchmarks.harness.opencode_native_gateway.dispatch_verified_chat_response",
+            return_value=RESPONSE,
+        ) as upstream:
+            with self.assertRaises(ValueError):
+                _relay(str(self.sock), "Bearer " + self.gateway.token, request(
+                    selected=self.gateway.selected["selected_content"], tool=True,
+                ))
+            upstream.assert_not_called()
+        self.assertTrue(self.gateway.result()["kernel_netns_peer_check_required"])
+        self.assertEqual(self.gateway.result()["distinct_netns_peer_connections"], 0)
+        self.assertFalse(self.gateway.result()["native_process_origin_proven"])
+
     def test_bad_token_or_foreign_packet_refuses_host_submission(self):
         with patch(
             "benchmarks.harness.opencode_native_gateway.dispatch_verified_chat_response",
