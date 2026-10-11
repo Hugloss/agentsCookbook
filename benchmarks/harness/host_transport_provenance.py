@@ -101,9 +101,14 @@ def audit_transport_provenance(
                 if (meta.get("delivery_request_sequence") != expected_sequence
                         or not _hex64(prior_request)
                         or not _hex64(prior_transport)
-                        or ((prior_request == "0" * 64
-                             or prior_transport == "0" * 64)
-                            != (cell["arm"] == "control"))):
+                        or (cell["arm"] == "control" and (
+                            prior_request != "0" * 64
+                            or prior_transport != "0" * 64
+                        ))
+                        or (cell["arm"] == "variant" and (
+                            prior_request == "0" * 64
+                            or prior_transport == "0" * 64
+                        ))):
                     raise ValueError("timing-prior-submission-or-sequence-unqualified")
             key_cell = (cell["harness"], cell["task"], cell["replicate"], cell["arm"])
             provenance[key_cell] = {
