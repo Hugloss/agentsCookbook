@@ -121,7 +121,10 @@ def launch_native_trial(
     try:
         port = secrets.randbelow(16_000) + 40_000 if use_netns_isolation else None
         if use_netns_isolation:
-            gateway.start_unix(run_root / "gateway" / "upstream.sock")
+            gateway.start_unix(
+                run_root / "gateway" / "upstream.sock",
+                require_isolated_peer=True,
+            )
         else:
             port = gateway.start()
         started = True
@@ -182,7 +185,14 @@ def launch_native_trial(
             if sha256_file(hashmarks_executable) != expected_hashmarks_sha256:
                 raise ValueError("native-hashmarks-executable-changed-during-trial")
         observation = gateway.result()
-        routed = exit_code == 0 and observation["post_evidence_submissions"] == 1
+        routed = (
+            exit_code == 0
+            and observation["post_evidence_submissions"] == 1
+            and (
+                substrate is None
+                or observation["distinct_netns_peer_connections"] >= 1
+            )
+        )
         session_result: dict[str, Any] | None = None
         session_error: str | None = None
         if routed:
@@ -245,6 +255,10 @@ def launch_native_trial(
                 expected_hashmarks_sha256 if substrate else None
             ),
             "network_egress_exclusivity_independently_attested": False,
+            "kernel_distinct_netns_relay_observed": (
+                substrate is not None
+                and observation["distinct_netns_peer_connections"] >= 1
+            ),
             "native_model_input_delivered_proven": False,
             "causal_improvement_proven": False,
         }
