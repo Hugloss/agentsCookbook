@@ -53,6 +53,86 @@ class TrustedModelRequestCapture:
         self._recorded: list[dict[str, Any]] = []
         self._transport_required = False
         self._transport_attempted = False
+        self._prior_request: dict[str, Any] | None = None
+        self._prior_transport_attempted = False
+
+    def observe_pre_exposure_request(
+        self, *, serialized_model_request: bytes, request_sequence: int,
+    ) -> dict[str, str]:
+        """Trusted host captures the actual *tool-free* first provider request.
+
+        Only the deferred timing arm is allowed. No agent or ATIF self-report
+        may replace the exact serialized bytes observed at this boundary.
+        """
+        if (
+            self._manifest["design"]["study"] != "timing"
+            or self._arm != "variant"
+            or self._prior_request is not None
+            or self._recorded
+            or type(request_sequence) is not int
+            or request_sequence != 1
+            or not isinstance(serialized_model_request, bytes)
+            or not 0 < len(serialized_model_request) <= MAX_REQUEST_BYTES
+        ):
+            raise ValueError("unassigned-or-duplicate-timing-pre-exposure")
+        try:
+            request = json.loads(serialized_model_request)
+        except (ValueError, UnicodeError) as exc:
+            raise ValueError("invalid-timing-pre-exposure-request") from exc
+        if (
+            not isinstance(request, dict)
+            or request.get("model") != self._manifest["design"]["model"]
+            or not isinstance(request.get("messages"), list)
+            or not request["messages"]
+            or any(
+                not isinstance(message, dict)
+                or message.get("role") not in ("system", "developer", "user")
+                for message in request["messages"]
+            )
+        ):
+            raise ValueError("prior-request-must-be-model-bound-and-tool-free")
+        prompt_sha256 = hashlib.sha256(canonical({
+            "request_settings": {
+                key: value for key, value in request.items() if key != "messages"
+            },
+            "non_tool_messages": request["messages"],
+        })).hexdigest()
+        self._prior_request = {
+            "prompt_sha256": prompt_sha256,
+            "request_sha256": hashlib.sha256(canonical(request)).hexdigest(),
+            "input_sha256": hashlib.sha256(serialized_model_request).hexdigest(),
+            "transport_sha256": None,
+        }
+        return {
+            "prior_request_sha256": self._prior_request["request_sha256"],
+            "provider_submission_proven": "false",
+        }
+
+    def record_pre_exposure_submission(
+        self, *, serialized_model_request: bytes,
+        endpoint_sha256: str, status: int,
+        response_sha256: str, response_bytes: int,
+    ) -> None:
+        """Host transports the earlier tool-free request, one attempt only."""
+        prior = self._prior_request
+        if prior is None or self._prior_transport_attempted:
+            raise ValueError("timing-prior-transport-not-admitted-or-retried")
+        self._prior_transport_attempted = True
+        if (
+            not isinstance(serialized_model_request, bytes)
+            or hashlib.sha256(serialized_model_request).hexdigest() != prior["input_sha256"]
+            or not _hex64(endpoint_sha256)
+            or type(status) is not int or not 200 <= status < 300
+            or not _hex64(response_sha256)
+            or type(response_bytes) is not int or not 0 < response_bytes <= 2_097_152
+        ):
+            raise ValueError("timing-prior-provider-submission-invalid")
+        prior["transport_sha256"] = hashlib.sha256(canonical({
+            "endpoint_sha256": endpoint_sha256,
+            "http_status": status,
+            "response_sha256": response_sha256,
+            "response_bytes": response_bytes,
+        })).hexdigest()
 
     def observe_outbound_request(
         self, *, serialized_model_request: bytes,
@@ -84,6 +164,18 @@ class TrustedModelRequestCapture:
             replicate=self._assigned("replicate"), arm=self._arm,
             current=current, replaced=replaced,
         )
+        if selected["study"] == "timing":
+            if self._recorded or request_sequence != selected["required_request_sequence"]:
+                raise ValueError("timing-delivery-request-sequence-mismatch")
+            if self._arm == "variant":
+                if (
+                    self._prior_request is None
+                    or not self._prior_transport_attempted
+                    or not _hex64(self._prior_request.get("transport_sha256"))
+                ):
+                    raise ValueError("deferred-delivery-without-prior-provider-submission")
+            elif self._prior_request is not None:
+                raise ValueError("control-must-deliver-without-prior-request")
         # The selected current content must be the actual Hashmarks return,
         # not an unrelated packet used to launder a model message identity.
         if canonical(returned_packet) != canonical(current.get("content")):
@@ -108,6 +200,9 @@ class TrustedModelRequestCapture:
         })).hexdigest()
         if prompt_sha256 != expected_prompt_digest:
             raise ValueError("outbound-prompt-digest-not-observed")
+        if selected["study"] == "timing" and self._arm == "variant":
+            if self._prior_request["prompt_sha256"] != expected_prompt_digest:
+                raise ValueError("timing-cross-request-prompt-settings-drift")
         # An extra or malformed tool message is a confound for a controlled
         # presentation/freshness intervention, even if the selected result
         # also occurs exactly once.
@@ -144,6 +239,18 @@ class TrustedModelRequestCapture:
             "workspace_sha256": workspace_sha256,
             "surface_sha256": selected["surface_sha256"],
         }
+        if selected["study"] == "timing":
+            intervention.update({
+                "delivery_request_sequence": request_sequence,
+                "prior_request_sha256": (
+                    self._prior_request["request_sha256"]
+                    if self._prior_request is not None else "0" * 64
+                ),
+                "prior_transport_sha256": (
+                    self._prior_request["transport_sha256"]
+                    if self._prior_request is not None else "0" * 64
+                ),
+            })
         self._recorded.append({
             "host_identity": self._host_identity,
             "host_build_sha256": self._manifest["host_build_sha256"],
@@ -215,6 +322,18 @@ class TrustedModelRequestCapture:
         Create-only output; rejects altered ATIF, missing/extra host input,
         calls with no matching returned packet and implicit second attempts.
         """
+        if self._manifest["design"]["study"] == "timing":
+            if (
+                len(self._recorded) != 1
+                or not self._transport_attempted
+                or not self._transport_required
+                or "transport" not in self._recorded[0]
+                or (self._arm == "variant" and (
+                    self._prior_request is None
+                    or not _hex64(self._prior_request.get("transport_sha256"))
+                ))
+            ):
+                raise ValueError("timing-study-provider-submission-incomplete")
         if self._transport_required and any("transport" not in row for row in self._recorded):
             raise ValueError("provider-transport-not-proven-successful")
         lifecycle = project_evidence_lifecycle(trajectory)
