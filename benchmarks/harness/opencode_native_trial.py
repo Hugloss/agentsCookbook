@@ -32,6 +32,7 @@ from .trusted_treatments import (
 )
 from .native_chat_transport_parity import inspect_selected_content
 from .native_chat_pair_admission import admit_native_chat_pair
+from .native_mcp_bridge_contract import freeze_bridge_contract, write_bridge_contract
 from .opencode_native_export import acquire_native_export, native_export_preflight
 from .native_netns_probe import probe_netns_kernel
 from .native_mount_probe import probe_native_mounts, verify_worker_source_unchanged
@@ -71,6 +72,7 @@ def launch_native_trial(
     hashmarks_executable: Path | None = None,
     expected_hashmarks_sha256: str | None = None,
     allow_unpaired_native_diagnostic: bool = False,
+    verified_native_mcp_bridge: bool = False,
 ) -> dict[str, Any]:
     frozen = verify_manifest(dict(manifest))
     cells = [x for x in frozen["assignments"] if x["trial_id"] == trial_id]
@@ -86,6 +88,8 @@ def launch_native_trial(
     # benchmark runner. OS confinement and exclusive egress are not proven.
     # Require deliberate opt-in rather than silently executing an agent with
     # access to the user's host filesystem/network.
+    if verified_native_mcp_bridge and not use_netns_isolation:
+        raise ValueError("verified-native-mcp-bridge-requires-netns-isolation")
     if allow_unconfined_execution and use_netns_isolation:
         raise ValueError("conflicting-native-execution-backends")
     if not allow_unconfined_execution and not use_netns_isolation:
@@ -129,6 +133,7 @@ def launch_native_trial(
     # effective Linux kernel probe and before any model work.
     chat_contract = None
     paired_contract = None
+    bridge_contract = None
     if use_netns_isolation:
         cell = cells[0]
         selected = select_treatment(
@@ -166,6 +171,11 @@ def launch_native_trial(
             frozen, trial_id=trial_id, current=current, replaced=replaced,
             allow_unpaired_diagnostic=allow_unpaired_native_diagnostic,
         )
+        if verified_native_mcp_bridge:
+            bridge_contract = freeze_bridge_contract(
+                selected, original_packet=current["content"],
+                hashmarks_sha256=expected_hashmarks_sha256,
+            )
     # Only after complete frozen pair admission may the host probe the kernel.
     kernel_probe = probe_netns_kernel(substrate) if substrate is not None else None
     gateway = NativeOpenCodeGateway(
@@ -181,6 +191,21 @@ def launch_native_trial(
     for name in ("home", "config", "cache", "data", "state", "gateway"):
         _make_private_dir(run_root / name)
     started = False
+    bridge_contract_sha256 = None
+    bridge_module_sha256 = None
+    if verified_native_mcp_bridge:
+        bridge_contract_sha256 = write_bridge_contract(
+            run_root / "native-mcp-contract.json", bridge_contract,
+        )
+        bridge_files = [
+            Path(__file__).with_name("native_mcp_stdio_bridge.py"),
+            Path(__file__).with_name("native_mcp_bridge_contract.py"),
+        ]
+        if any(p.is_symlink() or not p.is_file() for p in bridge_files):
+            raise ValueError("native-mcp-bridge-source-not-admitted")
+        bridge_module_sha256 = [
+            sha256_file(p) for p in bridge_files
+        ]
     try:
         port = secrets.randbelow(16_000) + 40_000 if use_netns_isolation else None
         if use_netns_isolation:
@@ -195,6 +220,10 @@ def launch_native_trial(
             port=port, model_id=frozen["design"]["model"],
             hashmarks_executable=hashmarks_executable if use_netns_isolation else None,
             workspace=workspace if use_netns_isolation else None,
+            bridge_python=substrate["python"] if verified_native_mcp_bridge else None,
+            bridge_hashmarks_sha256=(
+                expected_hashmarks_sha256 if verified_native_mcp_bridge else None
+            ),
         )
         config = run_root / "opencode.json"
         config_sha256 = write_gateway_config(config, cfg)
@@ -222,6 +251,7 @@ def launch_native_trial(
                 run_root=run_root, host_key_file=host_key_file,
                 environment=child_env, port=port,
                 config_sha256=config_sha256,
+                use_native_mcp_bridge=verified_native_mcp_bridge,
             ) if substrate is not None else None
         )
         # Distinguish this new session from concurrent or earlier sessions.
@@ -241,6 +271,7 @@ def launch_native_trial(
                 environment=child_env, command=native_command,
                 worker_port=port,
                 hashmarks_executable=hashmarks_executable,
+                use_native_mcp_bridge=verified_native_mcp_bridge,
             ) if substrate is not None else native_command
         )
         if mount_probe is not None:
@@ -255,6 +286,15 @@ def launch_native_trial(
             exit_code = result.returncode
         except (OSError, subprocess.SubprocessError):
             exit_code = None
+        if verified_native_mcp_bridge:
+            files = [
+                Path(__file__).with_name("native_mcp_stdio_bridge.py"),
+                Path(__file__).with_name("native_mcp_bridge_contract.py"),
+            ]
+            if ([sha256_file(p) for p in files] != bridge_module_sha256
+                    or sha256_file(run_root / "native-mcp-contract.json")
+                    != bridge_contract_sha256):
+                raise ValueError("native-mcp-bridge-source-changed-during-trial")
         if sha256_file(opencode_executable) != expected_binary_sha256:
             raise ValueError("native-opencode-binary-changed-during-trial")
         if mount_probe is not None:
@@ -287,6 +327,7 @@ def launch_native_trial(
                         environment=child_env, command=command,
                         worker_port=None,
                         hashmarks_executable=hashmarks_executable,
+                        use_native_mcp_bridge=verified_native_mcp_bridge,
                     )) if substrate is not None else None
                 )
                 session_id, exported = acquire_native_export(
@@ -316,6 +357,9 @@ def launch_native_trial(
             "binary_sha256": pin["executable_sha256"],
             "opencode_version": pin["version"],
             "config_sha256": config_sha256,
+            "verified_native_mcp_bridge_configured": verified_native_mcp_bridge,
+            "frozen_native_mcp_bridge_sha256": bridge_contract_sha256,
+            "native_mcp_original_hashmarks_response_independently_attested": False,
             "native_exit_code": exit_code,
             "gateway": observation,
             "observed_provider_response_relays": observation["post_evidence_submissions"],
@@ -408,6 +452,7 @@ def main() -> int:
     parser.add_argument("--require-netns-isolation", action="store_true")
     parser.add_argument("--hashmarks-binary", type=Path)
     parser.add_argument("--hashmarks-sha256")
+    parser.add_argument("--verified-native-mcp-bridge", action="store_true")
     parser.add_argument("--allow-unpaired-native-diagnostic", action="store_true")
     args = parser.parse_args()
     try:
@@ -436,6 +481,7 @@ def main() -> int:
             use_netns_isolation=args.require_netns_isolation,
             hashmarks_executable=args.hashmarks_binary,
             expected_hashmarks_sha256=args.hashmarks_sha256,
+            verified_native_mcp_bridge=args.verified_native_mcp_bridge,
             allow_unpaired_native_diagnostic=args.allow_unpaired_native_diagnostic,
         )
     except (ValueError, OSError, TypeError, UnicodeError) as exc:

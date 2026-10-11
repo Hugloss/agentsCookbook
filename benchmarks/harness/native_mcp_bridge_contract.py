@@ -1,0 +1,230 @@
+"""E273/E274: fail-closed ownership of one Hashmarks MCP stdio packet.
+
+The proxy must observe an actual native Hashmarks tools/call reply. It
+compares the original structured packet against a previously frozen
+semantic source *before* presenting the selected text to OpenCode. The
+proxy neither manufactures a successful MCP reply nor upgrades a local
+process observation into provider attention or causal evidence.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from pathlib import Path
+from typing import Any, Mapping
+
+def canonical(value: object) -> bytes:
+    # Exact shared canonical JSON transport contract; intentionally self-
+    # contained so the bwrap guest needs no host evaluator imports.
+    return json.dumps(value, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False, allow_nan=False).encode("utf-8")
+
+SCHEMA = "agentscookbook.native-hashmarks-mcp-bridge-contract.v1"
+MAX_FRAME = 1_048_576
+SUPPORTED_TOOLS = frozenset(("task_evidence", "find", "hashmarks_task_evidence", "hashmarks_find"))
+
+
+def _sha(raw: bytes) -> str:
+    return hashlib.sha256(raw).hexdigest()
+
+
+def freeze_bridge_contract(
+    selected: Mapping[str, Any], *, original_packet: object,
+    hashmarks_sha256: str,
+) -> dict[str, Any]:
+    if not isinstance(selected, Mapping):
+        raise ValueError("native-mcp-selected-treatment-invalid")
+    text = selected.get("selected_content")
+    if (type(text) is not str
+            or not 0 < len(text.encode("utf-8")) <= MAX_FRAME
+            or selected.get("presentation") not in (
+                "text", "compact-json-text", "indented-json-text"
+            )
+            or type(hashmarks_sha256) is not str
+            or len(hashmarks_sha256) != 64
+            or any(c not in "0123456789abcdef" for c in hashmarks_sha256)):
+        raise ValueError("native-mcp-bridge-requires-pinned-text-authority")
+    try:
+        parsed = json.loads(text)
+    except (ValueError, UnicodeError) as exc:
+        raise ValueError("native-mcp-treatment-not-json") from exc
+    if canonical(parsed) != canonical(original_packet):
+        raise ValueError("native-mcp-selected-content-not-source-equivalent")
+    original_digest = _sha(canonical(original_packet))
+    if original_digest != selected.get("semantic_sha256"):
+        raise ValueError("native-mcp-original-semantic-source-stale")
+    required = ("trial_id", "manifest_sha256", "generation_sha256",
+                "semantic_sha256", "surface_sha256", "presentation", "arm")
+    if not all(isinstance(selected.get(name), str)
+               and selected[name] for name in required):
+        raise ValueError("native-mcp-missing-selected-source-identity")
+    if _sha(canonical(text)) != selected["surface_sha256"]:
+        raise ValueError("native-mcp-selected-text-surface-stale")
+    body = {
+        "schema": SCHEMA,
+        "trial_id": selected["trial_id"],
+        "manifest_sha256": selected["manifest_sha256"],
+        "generation_sha256": selected["generation_sha256"],
+        "semantic_sha256": selected["semantic_sha256"],
+        "surface_sha256": selected["surface_sha256"],
+        "presentation": selected["presentation"],
+        "arm": selected["arm"],
+        "hashmarks_sha256": hashmarks_sha256,
+        "original_packet": original_packet,
+        "selected_text": text,
+    }
+    return {**body, "contract_sha256": _sha(canonical(body))}
+
+
+def validate_bridge_contract(document: object, *, hashmarks_sha256: str) -> dict[str, Any]:
+    if (not isinstance(document, dict)
+            or set(document) != {
+                "schema", "trial_id", "manifest_sha256", "generation_sha256",
+                "semantic_sha256", "surface_sha256", "presentation", "arm",
+                "hashmarks_sha256", "original_packet", "selected_text",
+                "contract_sha256",
+            } or document.get("schema") != SCHEMA
+            or document.get("hashmarks_sha256") != hashmarks_sha256):
+        raise ValueError("native-mcp-bridge-untrusted-config")
+    source = {
+        "trial_id": document["trial_id"],
+        "manifest_sha256": document["manifest_sha256"],
+        "generation_sha256": document["generation_sha256"],
+        "semantic_sha256": document["semantic_sha256"],
+        "surface_sha256": document["surface_sha256"],
+        "presentation": document["presentation"], "arm": document["arm"],
+        "selected_content": document["selected_text"],
+    }
+    try:
+        expected = freeze_bridge_contract(
+            source, original_packet=document["original_packet"],
+            hashmarks_sha256=hashmarks_sha256,
+        )
+    except (TypeError, ValueError, KeyError, RecursionError) as exc:
+        raise ValueError("native-mcp-bridge-invalid-contract") from exc
+    if canonical(document) != canonical(expected):
+        raise ValueError("native-mcp-bridge-contract-mismatch")
+    return expected
+
+
+def write_bridge_contract(path: Path, document: Mapping[str, Any]) -> str:
+    if path.is_symlink() or path.exists() or not path.parent.is_dir():
+        raise ValueError("native-mcp-bridge-create-only-target")
+    data = canonical(document) + b"\n"
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    return _sha(data)
+
+
+def _id(message: Mapping[str, Any]) -> object:
+    value = message.get("id")
+    if type(value) is str and 0 < len(value) <= 256:
+        return value
+    if type(value) is int and 0 <= value < 2**53:
+        return value
+    raise ValueError("native-mcp-unqualified-request-id")
+
+
+class BridgeState:
+    def __init__(self, contract: Mapping[str, Any]):
+        self.contract = validate_bridge_contract(
+            dict(contract), hashmarks_sha256=contract["hashmarks_sha256"],
+        )
+        self.pending: object | None = None
+        self.subject_calls = 0
+        self.subject_responses = 0
+        self.subject_tool: str | None = None
+        self.completed_subject_id: object | None = None
+
+    def receive_request(self, frame: bytes) -> bytes:
+        if not isinstance(frame, bytes) or not 0 < len(frame) <= MAX_FRAME:
+            raise ValueError("native-mcp-unbounded-request")
+        try:
+            message = json.loads(frame)
+        except (UnicodeError, ValueError) as exc:
+            raise ValueError("native-mcp-invalid-request-json") from exc
+        if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
+            raise ValueError("native-mcp-non-jsonrpc-request")
+        if message.get("method") == "tools/call":
+            if self.subject_calls != 0 or self.pending is not None:
+                raise ValueError("native-mcp-extra-subject-call-denied")
+            params = message.get("params")
+            if (not isinstance(params, dict)
+                    or params.get("name") not in SUPPORTED_TOOLS
+                    or not isinstance(params.get("arguments"), dict)
+                    or len(canonical(params["arguments"])) > 16_384):
+                raise ValueError("native-mcp-foreign-or-unbounded-tool-call")
+            self.pending = _id(message)
+            self.subject_calls = 1
+            self.subject_tool = params["name"]
+        return frame
+
+    def receive_response(self, frame: bytes) -> bytes:
+        if not isinstance(frame, bytes) or not 0 < len(frame) <= MAX_FRAME:
+            raise ValueError("native-mcp-unbounded-response")
+        try:
+            response = json.loads(frame)
+        except (UnicodeError, ValueError) as exc:
+            raise ValueError("native-mcp-invalid-response-json") from exc
+        if not isinstance(response, dict) or response.get("jsonrpc") != "2.0":
+            raise ValueError("native-mcp-non-jsonrpc-response")
+        received_id = response.get("id")
+        if (self.completed_subject_id is not None
+                and received_id == self.completed_subject_id):
+            raise ValueError("native-mcp-replayed-subject-response")
+        if self.pending is None:
+            return frame
+        if (type(received_id) is not type(self.pending)
+                or received_id != self.pending):
+            # An attempt to pair a boolean response ID to integer 1/0
+            # is not a valid JSON-RPC correlation.
+            if received_id == self.pending:
+                raise ValueError("native-mcp-subject-id-type-confusion")
+            return frame
+        if "error" in response or not isinstance(response.get("result"), dict):
+            raise ValueError("native-mcp-original-hashmarks-call-failed")
+        result = response["result"]
+        if set(result) - {"content", "structuredContent", "isError"}:
+            raise ValueError("native-mcp-unrecognized-result-fields")
+        if result.get("isError") is True:
+            raise ValueError("native-mcp-hashmarks-tool-error")
+        content = result.get("content")
+        if (not isinstance(content, list) or len(content) != 1
+                or not isinstance(content[0], dict)
+                or set(content[0]) != {"type", "text"}
+                or content[0]["type"] != "text"
+                or not isinstance(content[0]["text"], str)):
+            raise ValueError("native-mcp-ambiguous-hashmarks-output")
+        try:
+            original = json.loads(content[0]["text"])
+        except (ValueError, UnicodeError) as exc:
+            raise ValueError("native-mcp-original-result-not-json") from exc
+        expected = self.contract["original_packet"]
+        if canonical(original) != canonical(expected):
+            raise ValueError("native-mcp-hashmarks-original-packet-drift")
+        if "structuredContent" in result and canonical(
+            result["structuredContent"]
+        ) != canonical(expected):
+            raise ValueError("native-mcp-hashmarks-structured-content-drift")
+        # The only permitted change is presentation of the *same* packet
+        # using a frozen text format. No synthetic Hashmarks success.
+        updated = dict(response)
+        updated["result"] = {
+            "content": [{"type": "text", "text": self.contract["selected_text"]}],
+        }
+        self.completed_subject_id = self.pending
+        self.pending = None
+        self.subject_responses += 1
+        return canonical(updated)
