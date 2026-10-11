@@ -185,6 +185,9 @@ def _dispatch_verified_chat_request(
         catalog_sha256=catalog_sha256, prompt_sha256=prompt_sha256,
         oracle_sha256=oracle_sha256, workspace_sha256=workspace_sha256,
     )
+    capture.validate_delivery_provider_origin(
+        endpoint_sha256=hashlib.sha256(url.encode("utf-8")).hexdigest(),
+    )
     capture.begin_provider_transport()
     status, body = _send_verified_https_chat(
         url=url, serialized_model_request=serialized_model_request,
