@@ -61,7 +61,9 @@ def inspect_native_export(raw: bytes, *, session_id: str,
                           expected_provider: str, expected_model: str,
                           expected_packet: object,
                           expected_call_id_sha256: str,
-                          expected_packet_sha256: str) -> dict[str, Any]:
+                          expected_packet_sha256: str,
+                          provider_issued: Mapping[str, str] | None = None,
+                          require_provider_issued: bool = False) -> dict[str, Any]:
     """Exact source binding, before committing ATIF or a host signature."""
     if (not isinstance(raw, bytes) or not 0 < len(raw) <= MAX_EXPORT_BYTES
             or not isinstance(session_id, str) or not session_id
@@ -89,6 +91,7 @@ def inspect_native_export(raw: bytes, *, session_id: str,
     # diagnostics and can create false first-choice or cost-reduction claims.
     all_calls: list[dict[str, Any]] = []
     subject_calls: list[dict[str, Any]] = []
+    native_subject_arguments_sha256: str | None = None
     seen_ids: set[str] = set()
     final_seen = False
     observed_tool = False
@@ -157,6 +160,9 @@ def inspect_native_export(raw: bytes, *, session_id: str,
                 "subject": subject,
             }
             if subject:
+                if len(canonical(native_args)) > 262_144:
+                    raise ValueError("native-subject-arguments-oversized")
+                native_subject_arguments_sha256 = _digest(canonical(native_args))
                 packet = _decode_tool_output(state["output"])
                 entry["packet"] = packet
                 subject_calls.append(entry)
@@ -169,6 +175,20 @@ def inspect_native_export(raw: bytes, *, session_id: str,
             or canonical(item["packet"]) != canonical(expected_packet)
             or _digest(canonical(item["packet"])) != expected_packet_sha256):
         raise ValueError("native-tool-result-not-bound-to-observed-provider-input")
+    if require_provider_issued or provider_issued is not None:
+        # This is the actual provider response previously captured by the
+        # host gateway, not a reconstructed assistant call in native text.
+        from .native_provider_tool_provenance import SCHEMA as ISSUED_SCHEMA
+        if (not isinstance(provider_issued, Mapping)
+                or provider_issued.get("schema") != ISSUED_SCHEMA
+                or provider_issued.get("call_id") != item["call_id"]
+                or provider_issued.get("function_name") != item["tool_name"]
+                or provider_issued.get("arguments_semantic_sha256")
+                != native_subject_arguments_sha256
+                or not isinstance(provider_issued.get("provider_response_sha256"), str)
+                or len(provider_issued["provider_response_sha256"]) != 64
+                or set(provider_issued["provider_response_sha256"]) - HEX):
+            raise ValueError("native-subject-call-not-equivalent-to-provider-issued-call")
     # One ATIF step per *observed* native tool part keeps exact relative
     # ordering. Non-subject outputs are intentionally not recopied into
     # derived evidence: call identity, locator and order are sufficient
@@ -210,6 +230,13 @@ def inspect_native_export(raw: bytes, *, session_id: str,
         "native_tool_parts_observed": len(all_calls),
         "native_subject_tool_parts_observed": len(subject_calls),
         "native_tool_order_projected": True,
+        "provider_issued_native_arguments_bound": (
+            require_provider_issued or provider_issued is not None
+        ),
+        "provider_issued_response_sha256": (
+            provider_issued["provider_response_sha256"]
+            if provider_issued is not None else None
+        ),
         "native_export_capture_exhaustiveness_proven": False,
         "native_text_after_last_tool_observed": True,
         "native_terminal_stop_proven": False,
@@ -243,6 +270,8 @@ def finalize_native_export(
     session_id: str, title: str, workspace: Path, run_root: Path,
     expected_provider: str, expected_model: str,
     original_packet: object,
+    provider_issued: Mapping[str, str] | None = None,
+    require_provider_issued: bool = False,
 ) -> dict[str, Any]:
     """Match native export to host transport, then publish create-only receipts.
 
@@ -261,6 +290,8 @@ def finalize_native_export(
         expected_packet=original_packet,
         expected_call_id_sha256=record["call_id_sha256"],
         expected_packet_sha256=record["packet_sha256"],
+        provider_issued=provider_issued,
+        require_provider_issued=require_provider_issued,
     )
     native = run_root / "native-session.json"
     trajectory = run_root / "trajectory.json"
@@ -291,6 +322,8 @@ def finalize_native_export(
         "attestation_sha256": _digest(attestation.read_bytes()),
         "native_session_export_verified": True,
         "native_session_to_gateway_packet_bound": True,
+        "provider_issued_native_arguments_bound": inspected["provider_issued_native_arguments_bound"],
+        "provider_issued_response_sha256": inspected["provider_issued_response_sha256"],
         "signed_host_input_and_transport_verified": True,
         "host_receipt_finalized": report["host_input_receipt_written"],
         "native_process_origin_proven": False,
