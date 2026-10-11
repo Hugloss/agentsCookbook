@@ -146,6 +146,7 @@ class BridgeState:
         self.subject_calls = 0
         self.subject_responses = 0
         self.subject_tool: str | None = None
+        self.completed_subject_id: object | None = None
 
     def receive_request(self, frame: bytes) -> bytes:
         if not isinstance(frame, bytes) or not 0 < len(frame) <= MAX_FRAME:
@@ -179,7 +180,19 @@ class BridgeState:
             raise ValueError("native-mcp-invalid-response-json") from exc
         if not isinstance(response, dict) or response.get("jsonrpc") != "2.0":
             raise ValueError("native-mcp-non-jsonrpc-response")
-        if self.pending is None or response.get("id") != self.pending:
+        received_id = response.get("id")
+        if (self.completed_subject_id is not None
+                and type(received_id) is type(self.completed_subject_id)
+                and received_id == self.completed_subject_id):
+            raise ValueError("native-mcp-replayed-subject-response")
+        if self.pending is None:
+            return frame
+        if (type(received_id) is not type(self.pending)
+                or received_id != self.pending):
+            # An attempt to pair a boolean response ID to integer 1/0
+            # is not a valid JSON-RPC correlation.
+            if received_id == self.pending:
+                raise ValueError("native-mcp-subject-id-type-confusion")
             return frame
         if "error" in response or not isinstance(response.get("result"), dict):
             raise ValueError("native-mcp-original-hashmarks-call-failed")
@@ -212,6 +225,7 @@ class BridgeState:
         updated["result"] = {
             "content": [{"type": "text", "text": self.contract["selected_text"]}],
         }
+        self.completed_subject_id = self.pending
         self.pending = None
         self.subject_responses += 1
         return canonical(updated)
