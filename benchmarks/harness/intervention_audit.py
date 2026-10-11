@@ -92,6 +92,8 @@ def _facet_compare(a: Mapping[str, Any], b: Mapping[str, Any], study: str) -> st
             or b["delivery_request_sequence"] != 2
             or a["prior_request_sha256"] != "0" * 64
             or b["prior_request_sha256"] == "0" * 64
+            or a["prior_transport_sha256"] != "0" * 64
+            or b["prior_transport_sha256"] == "0" * 64
         ):
             return "timing-intervention-not-isolated-or-unproven"
         return None
@@ -157,7 +159,10 @@ def audit_intervention_observations(
             "oracle_sha256", "workspace_sha256", "surface_sha256",
         }
         if plan["study"] == "timing":
-            required_facets |= {"delivery_request_sequence", "prior_request_sha256"}
+            required_facets |= {
+                "delivery_request_sequence", "prior_request_sha256",
+                "prior_transport_sha256",
+            }
         if (not isinstance(meta, Mapping) or set(meta) != required_facets
                 or meta.get("study") != plan["study"]
                 or meta.get("arm") != key[3]
@@ -200,7 +205,10 @@ def audit_intervention_observations(
                     "oracle_sha256", "workspace_sha256", "surface_sha256",
                 }
                 if plan["study"] == "timing":
-                    required |= {"delivery_request_sequence", "prior_request_sha256"}
+                    required |= {
+                        "delivery_request_sequence", "prior_request_sha256",
+                        "prior_transport_sha256",
+                    }
                 if (set(left) != required or set(right) != required
                         or left.get("study") != plan["study"] or right.get("study") != plan["study"]
                         or left.get("arm") != "control" or right.get("arm") != "variant"
@@ -299,6 +307,8 @@ def audit_intervention_bundles(
             )
             if verified["delivery_state"] != "PROVEN":
                 raise ValueError("unverified-host-model-input")
+            if plan["study"] == "timing" and verified["provider_submission_state"] != "SUBMITTED":
+                raise ValueError("timing-model-request-not-submitted")
             envelope = _load_receipt(path)
             if not isinstance(envelope, dict) or envelope.get("schema") != HOST_SCHEMA:
                 raise ValueError("invalid-host-attestation")
