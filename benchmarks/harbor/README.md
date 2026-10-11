@@ -1572,9 +1572,11 @@ native session ID, exact title, repository directory, provider and model
 IDs. The exported assistant parts must contain **exactly one** completed,
 recognized Hashmarks tool result with a call ID and JSON packet identical
 to the one observed by the trusted gateway; a final assistant text part
-must occur **after** that tool completion. Missing/foreign calls, changed
-packets, unknown tools, tool failures and missing terminal answer fail
-before any host receipt is written.
+must occur **after** that tool completion. Missing or duplicate subject calls, changed packets, unknown Hashmarks
+operations, malformed or unfinished native tool parts, and missing nonempty post-last-tool assistant text fail before any host
+receipt is written. Text after a tool is not independent proof of a
+native terminal stop. Other completed native tools
+are allowed and remain part of the observed call order.
 
 Only after that exact native tool observation does the host preserve the
 raw `native-session.json`, derive `trajectory.json` **from the native
@@ -1650,4 +1652,56 @@ Model-free regressions:
 uv run --no-project python -m unittest benchmarks.tests.test_opencode_native_session -v
 uv run --no-project python -m unittest benchmarks.tests.test_native_session_cohort_audit -v
 uv run --no-project python -m unittest discover -s benchmarks/tests
+```
+
+## E257–E260: truthful native tool-order evaluation
+
+The E253–E256 binding intentionally projected only the one Hashmarks
+tool result into ATIF. That bound an exact packet to the gateway, but if
+the native agent also ran `grep`, `read`, `bash` or other navigation,
+the generated ATIF omitted those calls. Treating that reduced ATIF as
+complete would falsely turn a *late rescue* into *first-choice* usage,
+hide native read follow-through, and undercount tool calls.
+
+The versioned native projection now reads **every completed assistant tool
+part** in its observed export order. All native call IDs must be unique
+and bounded, with completed state, valid name and map input. Unknown
+Hashmarks tool spellings, duplicate call IDs, unfinished native tools,
+fake user-authored tool parts, foreign MCP calls, and apparently final
+text followed by another tool call fail before ATIF publication. The
+single selected Hashmarks packet remains exactly linked to its host
+provider submission; non-subject calls carry only operation identity
+and bounded navigation locators. Their source contents, raw commands,
+and full results remain in the separately sealed native export rather
+than being copied into model-visible attribution output.
+
+The resulting ATIF records `projection_origin=opencode-native-export`,
+`projection_scope=all-native-completed-tool-parts`, and
+`source_capture_exhaustiveness=UNKNOWN`. This is **completeness of the
+projected tool parts within the supplied export**, not proof that a
+runtime-independent observer captured every possible tool interaction.
+Generic ATIF `tool_order_complete` continues to mean successful parsing
+of the **captured** ordered calls, not OS-level trace attestation.
+
+The native cohort audit independently reparses saved exports, reprojects
+ATIF byte-semantics and validates tool-call count, subject-call count,
+tool order and original host-signed input/transport. Its
+`native_tool_order_evidence` now records native read/search counts and
+first-choice versus late-rescue routing by experimental arm. It retains
+`host_wide_capture_exhaustiveness_proven=false` and does not elevate
+observed search deltas into causal efficiency gains.
+
+The projection and read-back schema are advanced to version 2. Existing
+version-1 native artifacts are historical; they are not silently
+reinterpreted as newly complete capture. For a directly comparable run
+under the v2 projection, use a new frozen campaign and new native session
+receipts. This PR does not execute models or remedy the unconfined native
+process / exclusive egress prerequisite.
+
+Model-free regression ring:
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_opencode_native_tool_order -v
+uv run --no-project python -m unittest benchmarks.tests.test_opencode_native_session benchmarks.tests.test_native_session_cohort_audit -v
+uv run --no-project python -m unittest discover -s benchmarks/tests -v
 ```

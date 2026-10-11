@@ -19,8 +19,18 @@ from .host_input_attestation import canonical, verify_host_attestations
 from .trusted_host_capture import TrustedModelRequestCapture
 from .trusted_treatments import verify_manifest
 
-SCHEMA = "agentscookbook.opencode-native-session-binding.v1"
+SCHEMA = "agentscookbook.opencode-native-session-binding.v2"
 MAX_EXPORT_BYTES = 16_777_216
+MAX_NATIVE_TOOL_PARTS = 10_000
+MAX_TOOL_NAME_CHARS = 256
+MAX_INPUT_LOCATOR_CHARS = 1024
+# Preserve only explicitly understood navigation input, not raw shell commands
+# or unbounded argument trees. The full native source is stored separately.
+NATIVE_INPUT_KEYS = frozenset((
+    "path", "file", "file_path", "filePath", "relative_path",
+    "pattern", "query", "glob",
+))
+
 HEX = set("0123456789abcdef")
 # Only these directly observed native Hashmarks operation spellings are known.
 SUBJECT_TOOLS = frozenset((
@@ -74,68 +84,135 @@ def inspect_native_export(raw: bytes, *, session_id: str,
     messages = document.get("messages")
     if not isinstance(messages, list) or not messages or len(messages) > 10_000:
         raise ValueError("native-session-messages-unavailable")
-    calls: list[dict[str, Any]] = []
+    # Never project only the single Hashmarks result: doing so silently
+    # makes native search/read calls disappear from downstream tool-order
+    # diagnostics and can create false first-choice or cost-reduction claims.
+    all_calls: list[dict[str, Any]] = []
+    subject_calls: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
     final_seen = False
     observed_tool = False
     for message in messages:
         if not isinstance(message, dict) or not isinstance(message.get("info"), dict):
             raise ValueError("malformed-native-message")
         identity = message["info"]
+        parts = message.get("parts", [])
+        if not isinstance(parts, list):
+            raise ValueError("invalid-native-message-parts")
         if identity.get("role") != "assistant":
+            # A user-authored fake tool part must not become an observation
+            # or be silently discarded from completeness qualification.
+            if any(isinstance(p, dict) and p.get("type") == "tool" for p in parts):
+                raise ValueError("native-tool-part-outside-assistant")
             continue
         if (identity.get("providerID") != expected_provider
                 or identity.get("modelID") != expected_model):
             raise ValueError("native-provider-or-model-drift")
-        parts = message.get("parts", [])
-        if not isinstance(parts, list):
-            raise ValueError("invalid-native-message-parts")
         for part in parts:
             if not isinstance(part, dict):
                 raise ValueError("invalid-native-session-part")
-            if (part.get("type") == "text" and observed_tool
-                    and isinstance(part.get("text"), str) and part["text"].strip()):
-                final_seen = True
+            if part.get("type") == "text":
+                if observed_tool and isinstance(part.get("text"), str) and part["text"].strip():
+                    final_seen = True
+                continue
             if part.get("type") != "tool":
                 continue
-            name = part.get("tool")
-            call_id = part.get("callID")
-            state = part.get("state")
-            if (name not in SUBJECT_TOOLS or not isinstance(call_id, str)
-                    or not 0 < len(call_id) <= 512 or not isinstance(state, dict)
+            # A later tool call invalidates an earlier apparently final
+            # answer: only post-last-tool terminal text qualifies.
+            final_seen = False
+            name, call_id, state = part.get("tool"), part.get("callID"), part.get("state")
+            if (not isinstance(name, str) or not 0 < len(name) <= MAX_TOOL_NAME_CHARS
+                    or not isinstance(call_id, str)
+                    or not 0 < len(call_id) <= 512
+                    or call_id in seen_ids or len(seen_ids) >= MAX_NATIVE_TOOL_PARTS
+                    or not isinstance(state, dict)
                     or state.get("status") != "completed"
                     or "output" not in state):
-                raise ValueError("native-tool-or-call-not-authoritative")
-            packet = _decode_tool_output(state["output"])
-            calls.append({"tool_name": name, "call_id": call_id, "packet": packet})
+                raise ValueError("native-tool-part-missing-or-ambiguous")
+            seen_ids.add(call_id)
+            native_args = state.get("input", {})
+            if not isinstance(native_args, dict):
+                raise ValueError("native-tool-input-unobservable")
+            for key in native_args:
+                if not isinstance(key, str):
+                    raise ValueError("native-tool-input-unobservable")
+            limited_args = {
+                key: value
+                for key, value in native_args.items()
+                if (key in NATIVE_INPUT_KEYS
+                    and isinstance(value, str)
+                    and 0 < len(value) <= MAX_INPUT_LOCATOR_CHARS)
+            }
+            subject = name in SUBJECT_TOOLS
+            # Unknown Hashmarks names may not silently pass for native
+            # calls, especially when a separate recognized call exists.
+            if (not subject and name.startswith((
+                    "hashmarks_", "hashmarks.", "mcp__",
+                    "tools.hashmarks.", "tools.enola.", "enola_", "enola."))):
+                raise ValueError("unknown-or-foreign-native-mcp-operation")
+            entry = {
+                "tool_name": name,
+                "call_id": call_id,
+                "arguments": limited_args,
+                "subject": subject,
+            }
+            if subject:
+                packet = _decode_tool_output(state["output"])
+                entry["packet"] = packet
+                subject_calls.append(entry)
+            all_calls.append(entry)
             observed_tool = True
-    if not final_seen or len(calls) != 1:
+    if not final_seen or len(subject_calls) != 1:
         raise ValueError("missing-final-or-multiple-subject-native-calls")
-    item = calls[0]
+    item = subject_calls[0]
     if (_digest(item["call_id"].encode("utf-8")) != expected_call_id_sha256
             or canonical(item["packet"]) != canonical(expected_packet)
             or _digest(canonical(item["packet"])) != expected_packet_sha256):
         raise ValueError("native-tool-result-not-bound-to-observed-provider-input")
-    atif = {
-        "schema_version": "ATIF-v1.8",
-        "steps": [{
+    # One ATIF step per *observed* native tool part keeps exact relative
+    # ordering. Non-subject outputs are intentionally not recopied into
+    # derived evidence: call identity, locator and order are sufficient
+    # for routing; original opaque bytes remain in the saved export.
+    atif_steps: list[dict[str, Any]] = []
+    for entry in all_calls:
+        tool_name = entry["tool_name"]
+        projected_name = (
+            "mcp__hashmarks__" + (
+                "find" if tool_name.endswith("find") else "task_evidence"
+            )
+            if entry["subject"] else tool_name
+        )
+        step = {
             "source": "agent",
             "tool_calls": [{
-                "tool_call_id": item["call_id"],
-                "function_name": "mcp__hashmarks__" + (
-                    "find" if item["tool_name"].endswith("find") else "task_evidence"
-                ),
-                "arguments": {},
+                "tool_call_id": entry["call_id"],
+                "function_name": projected_name,
+                "arguments": entry["arguments"],
             }],
-            "observation": {"results": [{
-                "source_call_id": item["call_id"],
-                "content": item["packet"],
-            }]},
-        }],
+        }
+        if entry["subject"]:
+            step["observation"] = {"results": [{
+                "source_call_id": entry["call_id"],
+                "content": entry["packet"],
+            }]}
+        atif_steps.append(step)
+    atif = {
+        "schema_version": "ATIF-v1.8",
+        "projection_origin": "opencode-native-export",
+        "projection_scope": "all-native-completed-tool-parts",
+        "source_capture_exhaustiveness": "UNKNOWN",
+        "steps": atif_steps,
     }
     return {
         "schema": SCHEMA, "session_id": session_id, "title": title,
         "export_sha256": _digest(raw), "packet_sha256": expected_packet_sha256,
         "call_id_sha256": expected_call_id_sha256,
+        "native_tool_parts_observed": len(all_calls),
+        "native_subject_tool_parts_observed": len(subject_calls),
+        "native_tool_order_projected": True,
+        "native_export_capture_exhaustiveness_proven": False,
+        "native_text_after_last_tool_observed": True,
+        "native_terminal_stop_proven": False,
         "atif": atif,
         "native_session_observed": True,
         "native_process_origin_proven": False,
