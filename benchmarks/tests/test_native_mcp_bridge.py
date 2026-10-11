@@ -215,6 +215,9 @@ import sys
 for line in sys.stdin.buffer:
     request = json.loads(line)
     mid = request.get('id')
+    # notifications/initialized has no response in JSON-RPC 2.0.
+    if mid is None:
+        continue
     if request.get('method') == 'tools/call':
         response = {'jsonrpc':'2.0', 'id':mid, 'result':{
             'content':[{'type':'text','text':%r}]}}
