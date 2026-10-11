@@ -57,6 +57,8 @@ def launch_native_trial(
     timeout_seconds: int = 600,
     allow_unconfined_execution: bool = False,
     use_netns_isolation: bool = False,
+    hashmarks_executable: Path | None = None,
+    expected_hashmarks_sha256: str | None = None,
 ) -> dict[str, Any]:
     frozen = verify_manifest(dict(manifest))
     cells = [x for x in frozen["assignments"] if x["trial_id"] == trial_id]
@@ -77,6 +79,15 @@ def launch_native_trial(
     if not allow_unconfined_execution and not use_netns_isolation:
         raise ValueError("native-execution-backend-must-be-explicit")
     substrate = admit_netns_substrate() if use_netns_isolation else None
+    if use_netns_isolation:
+        if (hashmarks_executable is None or expected_hashmarks_sha256 is None
+                or not hashmarks_executable.is_absolute()
+                or hashmarks_executable.is_symlink()
+                or not hashmarks_executable.is_file()
+                or len(expected_hashmarks_sha256) != 64
+                or any(c not in "0123456789abcdef" for c in expected_hashmarks_sha256)
+                or sha256_file(hashmarks_executable) != expected_hashmarks_sha256):
+            raise ValueError("missing-or-stale-frozen-hashmarks-mcp-executable")
     workspace_root = workspace.resolve()
     if (run_root.resolve().is_relative_to(workspace_root)
             or host_key_file.resolve().is_relative_to(workspace_root)):
@@ -114,7 +125,11 @@ def launch_native_trial(
         else:
             port = gateway.start()
         started = True
-        cfg = gateway_config(port=port, model_id=frozen["design"]["model"])
+        cfg = gateway_config(
+            port=port, model_id=frozen["design"]["model"],
+            hashmarks_executable=hashmarks_executable if use_netns_isolation else None,
+            workspace=workspace if use_netns_isolation else None,
+        )
         config = run_root / "opencode.json"
         config_sha256 = write_gateway_config(config, cfg)
         model = cfg["model"]
@@ -147,6 +162,7 @@ def launch_native_trial(
                 run_root=run_root, gateway_dir=run_root / "gateway",
                 environment=child_env, command=native_command,
                 worker_port=port,
+                hashmarks_executable=hashmarks_executable,
             ) if substrate is not None else native_command
         )
         try:
@@ -163,6 +179,8 @@ def launch_native_trial(
             raise ValueError("native-opencode-binary-changed-during-trial")
         if substrate is not None:
             verify_substrate_unchanged(substrate)
+            if sha256_file(hashmarks_executable) != expected_hashmarks_sha256:
+                raise ValueError("native-hashmarks-executable-changed-during-trial")
         observation = gateway.result()
         routed = exit_code == 0 and observation["post_evidence_submissions"] == 1
         session_result: dict[str, Any] | None = None
@@ -179,6 +197,7 @@ def launch_native_trial(
                         gateway_dir=run_root / "gateway",
                         environment=child_env, command=command,
                         worker_port=None,
+                        hashmarks_executable=hashmarks_executable,
                     )) if substrate is not None else None
                 )
                 session_id, exported = acquire_native_export(
@@ -222,6 +241,9 @@ def launch_native_trial(
             "native_sandbox_binary_sha256": (
                 substrate["bwrap_sha256"] if substrate else None
             ),
+            "frozen_hashmarks_executable_sha256": (
+                expected_hashmarks_sha256 if substrate else None
+            ),
             "network_egress_exclusivity_independently_attested": False,
             "native_model_input_delivered_proven": False,
             "causal_improvement_proven": False,
@@ -259,6 +281,8 @@ def main() -> int:
     parser.add_argument("--timeout-seconds", type=int, default=600)
     parser.add_argument("--allow-unconfined-native-test", action="store_true")
     parser.add_argument("--require-netns-isolation", action="store_true")
+    parser.add_argument("--hashmarks-binary", type=Path)
+    parser.add_argument("--hashmarks-sha256")
     args = parser.parse_args()
     try:
         api_key = os.environ.get("BENCHMARK_UPSTREAM_API_KEY")
@@ -284,6 +308,8 @@ def main() -> int:
             timeout_seconds=args.timeout_seconds,
             allow_unconfined_execution=args.allow_unconfined_native_test,
             use_netns_isolation=args.require_netns_isolation,
+            hashmarks_executable=args.hashmarks_binary,
+            expected_hashmarks_sha256=args.hashmarks_sha256,
         )
     except (ValueError, OSError, TypeError, UnicodeError) as exc:
         print(json.dumps({
