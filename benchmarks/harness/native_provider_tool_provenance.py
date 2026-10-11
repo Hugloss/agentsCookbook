@@ -64,8 +64,11 @@ def _from_json(body: bytes) -> dict[str, str] | None:
         raise ValueError("provider-pre-evidence-assistant-message-missing")
     calls = message.get("tool_calls")
     if not calls:
-        if choice.get("finish_reason") == "tool_calls":
-            raise ValueError("provider-finished-tool-call-but-none-returned")
+        # A syntactically complete JSON body is not necessarily a
+        # completed provider turn; unknown/absent finish reasons must
+        # not authorize another pre-evidence request.
+        if choice.get("finish_reason") != "stop":
+            raise ValueError("provider-pre-evidence-finish-not-qualified")
         return None
     if choice.get("finish_reason") != "tool_calls" or not isinstance(calls, list) or len(calls) != 1:
         raise ValueError("provider-issued-tools-incomplete-or-parallel")
@@ -142,8 +145,8 @@ def _from_sse(body: bytes) -> dict[str, str] | None:
                     if len(tool["function"][key].encode("utf-8")) > MAX_ARGUMENTS:
                         raise ValueError("provider-sse-oversized-tool-fragments")
     if not saw_tool:
-        if finish == "tool_calls":
-            raise ValueError("provider-sse-finished-absent-tool")
+        if finish != "stop":
+            raise ValueError("provider-sse-no-tool-finish-not-qualified")
         return None
     if finish != "tool_calls":
         raise ValueError("provider-sse-tool-finish-incomplete")
