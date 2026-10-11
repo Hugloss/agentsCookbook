@@ -77,7 +77,7 @@ def launch_native_trial(
     if allow_unconfined_execution and use_netns_isolation:
         raise ValueError("conflicting-native-execution-backends")
     if not allow_unconfined_execution and not use_netns_isolation:
-        raise ValueError("native-execution-backend-must-be-explicit")
+        raise ValueError("unconfined-native-launch-not-explicitly-authorized-or-netns-backend-missing")
     substrate = admit_netns_substrate() if use_netns_isolation else None
     if use_netns_isolation:
         if (hashmarks_executable is None or expected_hashmarks_sha256 is None
