@@ -31,6 +31,7 @@ from .trusted_treatments import (
     load_manifest, verify_manifest, select_treatment,
 )
 from .native_chat_transport_parity import inspect_selected_content
+from .native_chat_pair_admission import admit_native_chat_pair
 from .opencode_native_export import acquire_native_export, native_export_preflight
 from .native_netns_probe import probe_netns_kernel
 from .native_mount_probe import probe_native_mounts, verify_worker_source_unchanged
@@ -44,7 +45,7 @@ from .native_netns_host_attestation import (
     sign_isolation_report, write_isolation_attestation,
 )
 
-SCHEMA = "agentscookbook.pinned-opencode-gateway-trial.v2"
+SCHEMA = "agentscookbook.pinned-opencode-gateway-trial.v3"
 
 
 def _make_private_dir(path: Path) -> None:
@@ -69,6 +70,7 @@ def launch_native_trial(
     use_netns_isolation: bool = False,
     hashmarks_executable: Path | None = None,
     expected_hashmarks_sha256: str | None = None,
+    allow_unpaired_native_diagnostic: bool = False,
 ) -> dict[str, Any]:
     frozen = verify_manifest(dict(manifest))
     cells = [x for x in frozen["assignments"] if x["trial_id"] == trial_id]
@@ -123,11 +125,10 @@ def launch_native_trial(
     # succeed. Reject missing Linux capture authority before creating the
     # workspace/run root or starting the native model.
     native_export_preflight()
-    # Pure frozen source/representation decision precedes the live kernel
-    # probe and any run-root creation. For a new text-only presentation
-    # pair, both surfaces must be admissible and distinguishable before
-    # either arm can start native model work.
+    # Check the frozen source and both treatment arms before the
+    # effective Linux kernel probe and before any model work.
     chat_contract = None
+    paired_contract = None
     if use_netns_isolation:
         cell = cells[0]
         selected = select_treatment(
@@ -161,7 +162,11 @@ def launch_native_trial(
                     or selected["generation_sha256"] != partner["generation_sha256"]
                     or selected["surface_sha256"] == partner["surface_sha256"]):
                 raise ValueError("unqualified-native-text-presentation-pair")
-    # Only after pure source admission may the host exercise its kernel probe.
+        paired_contract = admit_native_chat_pair(
+            frozen, trial_id=trial_id, current=current, replaced=replaced,
+            allow_unpaired_diagnostic=allow_unpaired_native_diagnostic,
+        )
+    # Only after complete frozen pair admission may the host probe the kernel.
     kernel_probe = probe_netns_kernel(substrate) if substrate is not None else None
     gateway = NativeOpenCodeGateway(
         frozen, trial_id=trial_id, host_key_file=host_key_file,
@@ -170,6 +175,7 @@ def launch_native_trial(
         upstream=upstream, approved_origin=approved_origin,
         upstream_api_key=upstream_api_key, catalog_sha256=catalog_sha256,
         oracle_sha256=oracle_sha256, workspace_sha256=workspace_sha256,
+        enforce_chat_tool_wire_contract=use_netns_isolation,
     )
     _make_private_dir(run_root)
     for name in ("home", "config", "cache", "data", "state", "gateway"):
@@ -318,6 +324,7 @@ def launch_native_trial(
             "native_session_binding_error": session_error,
             "native_trial_evidence_qualified": qualified,
             "native_chat_transport_preflight": chat_contract,
+            "native_chat_pair_preflight": paired_contract,
             "host_receipt_finalized": qualified,
             "native_process_origin_proven": False,
             "linux_network_namespace_requested": substrate is not None,
@@ -401,6 +408,7 @@ def main() -> int:
     parser.add_argument("--require-netns-isolation", action="store_true")
     parser.add_argument("--hashmarks-binary", type=Path)
     parser.add_argument("--hashmarks-sha256")
+    parser.add_argument("--allow-unpaired-native-diagnostic", action="store_true")
     args = parser.parse_args()
     try:
         api_key = os.environ.get("BENCHMARK_UPSTREAM_API_KEY")
@@ -428,6 +436,7 @@ def main() -> int:
             use_netns_isolation=args.require_netns_isolation,
             hashmarks_executable=args.hashmarks_binary,
             expected_hashmarks_sha256=args.hashmarks_sha256,
+            allow_unpaired_native_diagnostic=args.allow_unpaired_native_diagnostic,
         )
     except (ValueError, OSError, TypeError, UnicodeError) as exc:
         print(json.dumps({

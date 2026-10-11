@@ -190,6 +190,9 @@ class NativeKernelProbeAttacks(unittest.TestCase):
                 "oracle_sha256": H("oracle"),
                 "workspace_sha256": H("workspace"),
                 "use_netns_isolation": True,
+                # Test kernel denial with explicit diagnostic admission:
+                # the historical structured control cannot form a native pair.
+                "allow_unpaired_native_diagnostic": True,
                 "hashmarks_executable": hashmarks,
                 "expected_hashmarks_sha256": hashlib.sha256(
                     hashmarks.read_bytes()).hexdigest(),
