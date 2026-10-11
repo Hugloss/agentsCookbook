@@ -31,6 +31,7 @@ from .trusted_treatments import (
     load_manifest, verify_manifest, select_treatment,
 )
 from .native_chat_transport_parity import inspect_selected_content
+from .native_chat_pair_admission import admit_native_chat_pair
 from .opencode_native_export import acquire_native_export, native_export_preflight
 from .native_netns_probe import probe_netns_kernel
 from .native_mount_probe import probe_native_mounts, verify_worker_source_unchanged
@@ -69,6 +70,7 @@ def launch_native_trial(
     use_netns_isolation: bool = False,
     hashmarks_executable: Path | None = None,
     expected_hashmarks_sha256: str | None = None,
+    allow_unpaired_native_diagnostic: bool = False,
 ) -> dict[str, Any]:
     frozen = verify_manifest(dict(manifest))
     cells = [x for x in frozen["assignments"] if x["trial_id"] == trial_id]
@@ -127,6 +129,7 @@ def launch_native_trial(
     # socket, child workspace mutation, or model dispatch exists.
     kernel_probe = probe_netns_kernel(substrate) if substrate is not None else None
     chat_contract = None
+    paired_contract = None
     if use_netns_isolation:
         cell = cells[0]
         selected = select_treatment(
@@ -139,6 +142,10 @@ def launch_native_trial(
             raise ValueError(
                 "native-chat-tool-content-shape-not-supported-before-model-work"
             )
+        paired_contract = admit_native_chat_pair(
+            frozen, trial_id=trial_id, current=current, replaced=replaced,
+            allow_unpaired_diagnostic=allow_unpaired_native_diagnostic,
+        )
     gateway = NativeOpenCodeGateway(
         frozen, trial_id=trial_id, host_key_file=host_key_file,
         host_identity=host_identity, current=current, replaced=replaced,
@@ -146,6 +153,7 @@ def launch_native_trial(
         upstream=upstream, approved_origin=approved_origin,
         upstream_api_key=upstream_api_key, catalog_sha256=catalog_sha256,
         oracle_sha256=oracle_sha256, workspace_sha256=workspace_sha256,
+        enforce_chat_tool_wire_contract=use_netns_isolation,
     )
     _make_private_dir(run_root)
     for name in ("home", "config", "cache", "data", "state", "gateway"):
@@ -294,6 +302,7 @@ def launch_native_trial(
             "native_session_binding_error": session_error,
             "native_trial_evidence_qualified": qualified,
             "native_chat_transport_preflight": chat_contract,
+            "native_chat_pair_preflight": paired_contract,
             "host_receipt_finalized": qualified,
             "native_process_origin_proven": False,
             "linux_network_namespace_requested": substrate is not None,
@@ -377,6 +386,7 @@ def main() -> int:
     parser.add_argument("--require-netns-isolation", action="store_true")
     parser.add_argument("--hashmarks-binary", type=Path)
     parser.add_argument("--hashmarks-sha256")
+    parser.add_argument("--allow-unpaired-native-diagnostic", action="store_true")
     args = parser.parse_args()
     try:
         api_key = os.environ.get("BENCHMARK_UPSTREAM_API_KEY")
@@ -404,6 +414,7 @@ def main() -> int:
             use_netns_isolation=args.require_netns_isolation,
             hashmarks_executable=args.hashmarks_binary,
             expected_hashmarks_sha256=args.hashmarks_sha256,
+            allow_unpaired_native_diagnostic=args.allow_unpaired_native_diagnostic,
         )
     except (ValueError, OSError, TypeError, UnicodeError) as exc:
         print(json.dumps({
