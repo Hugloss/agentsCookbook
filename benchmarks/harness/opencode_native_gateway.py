@@ -400,6 +400,7 @@ class NativeOpenCodeGateway:
                             data.extend(part)
                         return bytes(data)
 
+                    peer = None
                     if hasattr(socket, "SO_PEERCRED"):
                         raw_peer = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
                         peer = struct.unpack("3i", raw_peer)
@@ -411,10 +412,6 @@ class NativeOpenCodeGateway:
                                 raise ValueError("netns-peer-proof-unavailable") from exc
                             if peer_netns == host_netns:
                                 raise ValueError("unisolated-host-network-peer-denied")
-                        with parent._lock:
-                            parent.peer_credentials_observed.append(peer)
-                            if parent._require_isolated_peer:
-                                parent.network_namespace_verified_peers += 1
                     elif parent._require_isolated_peer:
                         raise ValueError("peer-credential-kernel-support-required")
                     token_length = struct.unpack("!I", read_exact(4))[0]
@@ -428,6 +425,15 @@ class NativeOpenCodeGateway:
                     result = parent._handle_request(body, authorization=authorization)
                     if not 0 < len(result) <= MAX_RESPONSE_BYTES:
                         raise ValueError("unix-gateway-response-size")
+                    # Only completed, authenticated, verified requests can
+                    # contribute kernel peer observations. Never let a peer
+                    # with a bad token, packet or failed upstream inflate
+                    # the number of admitted network-isolated connections.
+                    if peer is not None:
+                        with parent._lock:
+                            parent.peer_credentials_observed.append(peer)
+                            if parent._require_isolated_peer:
+                                parent.network_namespace_verified_peers += 1
                     conn.sendall(struct.pack("!I", len(result)) + result)
                 except (OSError, ValueError, UnicodeError, struct.error):
                     try:

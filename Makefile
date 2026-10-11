@@ -426,3 +426,9 @@ benchmark-netns-pilot-readiness:
 		--approved-endpoint-sha256 "$(APPROVED_ENDPOINT_SHA256)" \
 		--bwrap-sha256 "$(BWRAP_SHA256)" \
 		--hashmarks-sha256 "$(HASHMARKS_SHA256)" --require-ready
+
+# E261–E264: exercise the actual Linux network namespace before any agent
+# or provider is contacted. Kernel proof is a point-in-time diagnostic only.
+.PHONY: benchmark-native-kernel-probe
+benchmark-native-kernel-probe:
+	@uv run --no-project python -m benchmarks.harness.native_netns_probe

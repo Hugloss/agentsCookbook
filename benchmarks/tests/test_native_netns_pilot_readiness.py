@@ -7,6 +7,7 @@ its real native export and host HMAC checks have a separate regression ring.
 from __future__ import annotations
 
 import copy
+import errno
 import json
 import tempfile
 import unittest
@@ -15,6 +16,7 @@ from unittest.mock import patch
 
 from benchmarks.harness.native_netns_pilot_readiness import evaluate_native_netns_pilot
 from benchmarks.harness.opencode_native_trial import SCHEMA as TRIAL_SCHEMA
+from benchmarks.harness.native_netns_probe import validate_kernel_probe
 from benchmarks.harness.native_netns_host_attestation import (
     sign_isolation_report, write_isolation_attestation,
 )
@@ -54,6 +56,13 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
                 "native_trial_evidence_qualified": True,
                 "host_receipt_finalized": True,
                 "native_gateway_route_completed": True,
+                "native_kernel_preflight": validate_kernel_probe({
+                    "guest_netns_inode": 9124,
+                    "interfaces": ["lo"],
+                    "loopback_bind_ok": True,
+                    "outbound_errno": errno.ENETUNREACH,
+                }, host_netns_inode=1112, bwrap_sha256=H("approved-bwrap"),
+                   python_sha256=H("approved-python")),
                 "linux_network_namespace_requested": True,
                 "host_network_egress_intentionally_disabled": True,
                 "kernel_distinct_netns_relay_observed": True,
@@ -103,6 +112,8 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
     def test_complete_observations_are_not_model_effect_or_review_proof(self):
         result = self.assess()
         self.assertTrue(result["paired_pilot_observations_ready_for_independent_grading"])
+        self.assertTrue(result["native_kernel_preflight_receipts_host_mac_verified"])
+        self.assertFalse(result["point_in_time_kernel_probe_is_exhaustive_egress_proof"])
         self.assertEqual(result["verified_local_isolation_receipts"], 2)
         for flag in (
             "exclusive_network_egress_independently_audited",
@@ -134,6 +145,49 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
                 self.assertIn("inconsistent-or-self-upgraded-native-isolation-receipt",
                               report["blockers"])
         path.write_text(json.dumps(base))
+
+    def test_missing_or_unsupported_kernel_probe_never_qualifies(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        path = self.results / trial / "trial-execution.json"
+        original = path.read_bytes()
+        report = json.loads(original)
+        for patch_value in (
+            None,
+            {**report["native_kernel_preflight"], "guest_netns_inode": 1112},
+            {**report["native_kernel_preflight"], "representative_external_tcp_denied": False},
+            {**report["native_kernel_preflight"], "exclusive_egress_independently_attested": True},
+            {**report["native_kernel_preflight"], "bwrap_sha256": H("wrong")},
+        ):
+            with self.subTest(patch=patch_value):
+                updated = copy.deepcopy(report)
+                updated["native_kernel_preflight"] = patch_value
+                path.write_bytes(canonical(updated) + b"\n")
+                result = self.assess()
+                self.assertFalse(result["paired_pilot_observations_ready_for_independent_grading"])
+                self.assertIn("inconsistent-or-self-upgraded-native-isolation-receipt", result["blockers"])
+        path.write_bytes(original)
+
+    def test_host_custodian_refuses_to_sign_missing_kernel_admission(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        path = self.results / trial / "trial-execution.json"
+        report = json.loads(path.read_bytes())
+        report["native_kernel_preflight"] = None
+        with self.assertRaisesRegex(ValueError, "unqualified-netns-host-observation"):
+            sign_isolation_report(
+                report, execution_bytes=canonical(report) + b"\n",
+                provider_attestation_bytes=b'{"synthetic-provider-packet-receipt":true}',
+                host_identity="privileged-host", host_key=KEY,
+            )
+
+    def test_unsigned_kernel_probe_mutation_is_refused_even_if_shape_valid(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        path = self.results / trial / "trial-execution.json"
+        report = json.loads(path.read_bytes())
+        report["native_kernel_preflight"]["guest_netns_inode"] += 1
+        path.write_bytes(canonical(report) + b"\n")
+        denied = self.assess()
+        self.assertFalse(denied["paired_pilot_observations_ready_for_independent_grading"])
+        self.assertIn("host-isolation-attestation-unverified", denied["blockers"])
 
     def test_unsigned_self_upgrade_cannot_fake_kernel_peer_evidence(self):
         trial = self.frozen["assignments"][0]["trial_id"]

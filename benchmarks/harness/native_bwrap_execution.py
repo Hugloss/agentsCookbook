@@ -41,12 +41,35 @@ def admit_netns_substrate() -> dict[str, str]:
             raise ValueError("unsafe-native-netns-substrate-" + name)
         found[name] = str(binary)
         found[name + "_sha256"] = _sha_file(binary)
-    interpreter = Path(sys.executable).resolve()
-    if not interpreter.is_relative_to(Path("/usr")) or not interpreter.is_file():
+    # The host evaluator may itself run with uv's interpreter under
+    # ~/.cache/uv or a project venv. Such paths are NOT mounted into the
+    # sandbox. The relay needs only stdlib, so pin a real system Python
+    # under the existing /usr read-only runtime authority instead.
+    candidates = (Path("/usr/bin/python3"), Path(sys.executable))
+    interpreter = next((
+        path.resolve() for path in candidates
+        if path.is_file() and path.resolve().is_relative_to(Path("/usr"))
+    ), None)
+    if interpreter is None:
         raise ValueError("unsupported-native-netns-python-runtime")
     found["python"] = str(interpreter)
     found["python_sha256"] = _sha_file(interpreter)
     return found
+
+
+def runtime_mount_argv() -> list[str]:
+    """One owned runtime-root whitelist for native launch and kernel probe."""
+    out: list[str] = []
+    for dirname in ("/usr", "/lib", "/lib64", "/bin", "/sbin"):
+        entry = Path(dirname)
+        if entry.is_symlink():
+            target = os.readlink(dirname)
+            if target.startswith("/"):
+                target = os.path.relpath(target, "/")
+            out += ["--symlink", target, dirname]
+        elif entry.is_dir():
+            out += ["--ro-bind", dirname, dirname]
+    return out
 
 
 def _guest_dirs(path: Path) -> list[str]:
@@ -95,18 +118,7 @@ def build_isolated_argv(
         "--unshare-user", "--unshare-pid", "--unshare-net",
         "--clearenv",
     ]
-    for dirname in ("/usr", "/lib", "/lib64", "/bin", "/sbin"):
-        entry = Path(dirname)
-        if entry.is_symlink():
-            # On merged-/usr distributions /bin and /lib are symlinks.
-            # Re-create the same symlink inside the empty guest root rather
-            # than attempting to bind-mount onto an unresolved symlink.
-            target = os.readlink(dirname)
-            if target.startswith("/"):
-                target = os.path.relpath(target, "/")
-            argv += ["--symlink", target, dirname]
-        elif entry.is_dir():
-            argv += ["--ro-bind", dirname, dirname]
+    argv += runtime_mount_argv()
     # Sandbox temporary files are not the host's /tmp. The actual
     # workspace/XDG destinations are mounted after creating these roots.
     argv += ["--tmpfs", "/tmp", "--tmpfs", "/run",

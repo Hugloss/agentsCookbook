@@ -154,6 +154,25 @@ class IsolationContractTests(unittest.TestCase):
                 launch_native_trial(**kwargs)
         self.assertFalse(kwargs["run_root"].exists())
 
+    @unittest.skipUnless(Path("/usr/bin/python3").is_file(), "system Python unavailable")
+    def test_uv_host_python_cannot_escape_native_runtime_mounts(self):
+        # The test host often uses uv under ~/.cache/uv: that executable
+        # is intentionally absent from the sandbox root.
+        with patch(
+            "benchmarks.harness.native_bwrap_execution.sys.executable",
+            "/home/runner/.cache/uv/python/bin/python",
+        ), patch(
+            "benchmarks.harness.native_bwrap_execution.shutil.which",
+            return_value="/usr/bin/bash",
+        ):
+            substrate = admit_netns_substrate()
+        self.assertTrue(Path(substrate["python"]).is_relative_to("/usr"))
+        self.assertNotIn(".cache", substrate["python"])
+        self.assertEqual(
+            hashlib.sha256(Path(substrate["python"]).read_bytes()).hexdigest(),
+            substrate["python_sha256"],
+        )
+
     def test_pinned_hashmarks_config_is_the_only_local_mcp_source(self):
         config = gateway_config(
             port=42424, model_id="gpt-fixture",
@@ -252,6 +271,8 @@ class UnixSocketNativeGatewayTests(unittest.TestCase):
                 ))
             upstream.assert_not_called()
         self.assertEqual(self.gateway.result()["post_evidence_submissions"], 0)
+        self.assertEqual(self.gateway.result()["unix_peer_credentials_observed"], 0)
+        self.assertEqual(self.gateway.result()["distinct_netns_peer_connections"], 0)
 
     def test_guest_loopback_relay_forwards_only_to_unix_socket(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as port_probe:
