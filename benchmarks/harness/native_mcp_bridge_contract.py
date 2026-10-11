@@ -128,6 +128,59 @@ def write_bridge_contract(path: Path, document: Mapping[str, Any]) -> str:
     return _sha(data)
 
 
+def _valid_tool_schema(tool: object) -> bool:
+    """Admit observable MCP input shape, never claim full JSON-Schema proof."""
+    if not isinstance(tool, dict) or not isinstance(tool.get("name"), str):
+        return False
+    schema = tool.get("inputSchema")
+    if not isinstance(schema, dict) or schema.get("type") != "object":
+        return False
+    props, required = schema.get("properties"), schema.get("required", [])
+    if (not isinstance(props, dict) or not isinstance(required, list)
+            or len(props) > 128 or len(required) > 128
+            or any(not isinstance(k, str) or not isinstance(v, dict)
+                   for k, v in props.items())
+            or any(type(k) is not str or k not in props for k in required)
+            or len(set(required)) != len(required)):
+        return False
+    return True
+
+
+def _validate_call_input(tool: Mapping[str, Any], args: Mapping[str, Any]) -> None:
+    schema = tool["inputSchema"]
+    properties = schema["properties"]
+    for key in schema.get("required", []):
+        if key not in args:
+            raise ValueError("native-mcp-catalog-required-input-missing")
+    if schema.get("additionalProperties") is False and any(
+        key not in properties for key in args
+    ):
+        raise ValueError("native-mcp-catalog-foreign-input")
+    types = {
+        "string": lambda x: type(x) is str,
+        "integer": lambda x: type(x) is int,
+        "number": lambda x: type(x) in (int, float),
+        "boolean": lambda x: type(x) is bool,
+        "array": lambda x: type(x) is list,
+        "object": lambda x: type(x) is dict,
+        "null": lambda x: x is None,
+    }
+    for key, value in args.items():
+        if key not in properties:
+            continue
+        definition = properties[key]
+        expected = definition.get("type")
+        if isinstance(expected, str) and expected in types:
+            if not types[expected](value):
+                raise ValueError("native-mcp-catalog-input-type-drift")
+        elif isinstance(expected, list):
+            if not any(isinstance(kind, str) and kind in types
+                       and types[kind](value) for kind in expected):
+                raise ValueError("native-mcp-catalog-input-type-drift")
+        # The full schema may have refinements (e.g. bounds, oneOf) that
+        # only Hashmarks itself validates. Do not certify full conformance.
+
+
 def _id(message: Mapping[str, Any]) -> object:
     value = message.get("id")
     if type(value) is str and 0 < len(value) <= 256:
@@ -147,6 +200,11 @@ class BridgeState:
         self.subject_responses = 0
         self.subject_tool: str | None = None
         self.completed_subject_id: object | None = None
+        self.initialize_request_id: object | None = None
+        self.catalog_request_id: object | None = None
+        self.initialized_server_version: str | None = None
+        self.catalog_tools: dict[str, dict[str, Any]] | None = None
+        self.subject_arguments: dict[str, Any] | None = None
 
     def receive_request(self, frame: bytes) -> bytes:
         if not isinstance(frame, bytes) or not 0 < len(frame) <= MAX_FRAME:
@@ -157,7 +215,18 @@ class BridgeState:
             raise ValueError("native-mcp-invalid-request-json") from exc
         if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
             raise ValueError("native-mcp-non-jsonrpc-request")
-        if message.get("method") == "tools/call":
+        method = message.get("method")
+        if method == "initialize":
+            if self.initialize_request_id is not None:
+                raise ValueError("native-mcp-repeated-initialization")
+            self.initialize_request_id = _id(message)
+        elif method == "tools/list":
+            if self.initialize_request_id is None or self.catalog_request_id is not None:
+                raise ValueError("native-mcp-catalog-request-outside-initialization")
+            self.catalog_request_id = _id(message)
+        if method == "tools/call":
+            if self.initialize_request_id is None or self.catalog_request_id is None:
+                raise ValueError("native-mcp-subject-before-catalog-request")
             if self.subject_calls != 0 or self.pending is not None:
                 raise ValueError("native-mcp-extra-subject-call-denied")
             params = message.get("params")
@@ -169,6 +238,7 @@ class BridgeState:
             self.pending = _id(message)
             self.subject_calls = 1
             self.subject_tool = params["name"]
+            self.subject_arguments = dict(params["arguments"])
         return frame
 
     def receive_response(self, frame: bytes) -> bytes:
@@ -181,6 +251,38 @@ class BridgeState:
         if not isinstance(response, dict) or response.get("jsonrpc") != "2.0":
             raise ValueError("native-mcp-non-jsonrpc-response")
         received_id = response.get("id")
+        if (
+            self.initialize_request_id is not None
+            and self.initialized_server_version is None
+            and type(received_id) is type(self.initialize_request_id)
+            and received_id == self.initialize_request_id
+        ):
+            result = response.get("result")
+            info = result.get("serverInfo") if isinstance(result, dict) else None
+            if (not isinstance(info, dict) or info.get("name") != "Hashmarks"
+                    or not isinstance(info.get("version"), str)
+                    or not 0 < len(info["version"]) <= 128):
+                raise ValueError("native-mcp-server-identity-unverified")
+            self.initialized_server_version = info["version"]
+            return frame
+        if (
+            self.catalog_request_id is not None
+            and self.catalog_tools is None
+            and type(received_id) is type(self.catalog_request_id)
+            and received_id == self.catalog_request_id
+        ):
+            result = response.get("result")
+            catalog = result.get("tools") if isinstance(result, dict) else None
+            if (self.initialized_server_version is None
+                    or not isinstance(catalog, list) or not catalog
+                    or len(catalog) > 128
+                    or any(not _valid_tool_schema(row) for row in catalog)):
+                raise ValueError("native-mcp-catalog-unqualified")
+            names = [row["name"] for row in catalog]
+            if len(set(names)) != len(names):
+                raise ValueError("native-mcp-catalog-duplicate-tool")
+            self.catalog_tools = {row["name"]: row for row in catalog}
+            return frame
         if (self.completed_subject_id is not None
                 and received_id == self.completed_subject_id):
             raise ValueError("native-mcp-replayed-subject-response")
@@ -193,6 +295,14 @@ class BridgeState:
             if received_id == self.pending:
                 raise ValueError("native-mcp-subject-id-type-confusion")
             return frame
+        if (self.catalog_tools is None
+                or self.subject_tool not in self.catalog_tools
+                or self.initialized_server_version is None
+                or self.subject_arguments is None):
+            raise ValueError("native-mcp-original-subject-not-listed")
+        _validate_call_input(
+            self.catalog_tools[self.subject_tool], self.subject_arguments,
+        )
         if "error" in response or not isinstance(response.get("result"), dict):
             raise ValueError("native-mcp-original-hashmarks-call-failed")
         result = response["result"]
