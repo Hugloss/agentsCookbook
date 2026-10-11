@@ -21,6 +21,7 @@ from benchmarks.harness.native_mcp_bridge_contract import (
     write_bridge_contract,
 )
 from benchmarks.harness.native_mcp_stdio_bridge import run_stdio, sha_file
+from benchmarks.harness.native_mcp_live_smoke import smoke_real_native_mcp
 from benchmarks.harness.native_bwrap_execution import build_isolated_argv
 from benchmarks.harness.opencode_native_gateway import gateway_config
 from benchmarks.harness.trusted_treatments import select_treatment
@@ -218,12 +219,45 @@ for line in sys.stdin.buffer:
         response = {'jsonrpc':'2.0', 'id':mid, 'result':{
             'content':[{'type':'text','text':%r}]}}
     else:
-        response = {'jsonrpc':'2.0','id':mid,'result':{'tools':[]}}
+        response = {'jsonrpc':'2.0','id':mid,'result':{'tools':[{'name':'task_evidence'}]}}
     sys.stdout.write(json.dumps(response, separators=(',',':'))+'\\n')
     sys.stdout.flush()
 """ % payload
         path.write_text(code)
         path.chmod(0o700)
+
+    def test_real_local_hashmarks_protocol_smoke_uses_pinned_binary(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            work = root / "workspace"
+            work.mkdir()
+            (work / ".git").mkdir()
+            executable = root / "hashmarks"
+            self._fixture(executable)
+            plan = manifest()
+            cell = next(c for c in plan["assignments"] if c["arm"] == "variant")
+            output = smoke_real_native_mcp(
+                plan, trial_id=cell["trial_id"],
+                workspace=work, binary=executable,
+                sha256=sha_file(executable),
+                source=source(), replaced=None,
+                tool_name="task_evidence",
+                tool_args={"path": "src/owner.py"},
+            )
+            self.assertTrue(output["mcp_stdio_source_and_treatment_qualified"])
+            self.assertTrue(output["actual_external_hashmarks_subprocess_called"])
+            self.assertFalse(output["provider_evidence_delivery_proven"])
+            self.assertEqual(output["model_requests_performed"], 0)
+            self._fixture(executable, wrong=True)
+            with self.assertRaises(ValueError):
+                smoke_real_native_mcp(
+                    plan, trial_id=cell["trial_id"],
+                    workspace=work, binary=executable,
+                    sha256=sha_file(executable),
+                    source=source(), replaced=None,
+                    tool_name="task_evidence",
+                    tool_args={"path": "src/owner.py"},
+                )
 
     def test_real_subprocess_native_stdio_roundtrip_and_fail_closed_drift(self):
         with tempfile.TemporaryDirectory() as td:
