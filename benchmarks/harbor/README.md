@@ -2006,3 +2006,100 @@ uv run --no-project python -m unittest benchmarks.tests.test_native_mount_prefli
 uv run --no-project python -m unittest benchmarks.tests.test_native_netns_pilot_readiness -v
 uv run --no-project python -m unittest discover -s benchmarks/tests
 ```
+
+
+## E265–E268: Native OpenAI tool-message parity and intervention admissibility
+
+The earlier E257–E264 work introduces a host-owned provider gateway, exact
+native OpenCode session export, Linux netns isolation, and a host HMAC on
+observed tool submission. These prove bounded **observations**, but they
+do not by themselves prove that the purported intervention could be carried
+by the real provider request's *wire representation*.
+
+### E265 — typed, actual provider envelope rather than equivalent meaning
+
+The existing presentation treatment declares a **structured JSON object**
+for its control and a **canonical JSON string** for its variant.
+OpenAI Chat Completions `role: tool` message content is text (or
+an explicitly typed collection of content parts), not an arbitrary JSON
+object as the `content` value. A JSON object may be a legitimate Hashmarks
+source, but using it directly as native tool message content is not a
+supported OpenAI tool-message request. Converting it to a JSON string,
+or to a single text part, would *change the declared structured surface*.
+It is not valid to claim the original structured arm was delivered
+because both formats decode to the same semantic JSON object.
+
+The versioned `native_chat_transport_parity.py` contract therefore
+accepts **only exact plain text** for the declared `text` presentation
+on this Chat Completions transport. It refuses JSON objects, arrays,
+stringified/coerced structured objects, differently formatted but
+semantically equal JSON, and extra content parts. It does not change
+the original source corpus or intervention definitions to make a trial
+pass. No new adapter syntax or artificial 'structured' transport is
+silently invented.
+
+### E266 — fail before native model work
+
+For `--require-netns-isolation`, the pinned launcher now validates its
+selected frozen intervention **before creating the run root, opening
+the gateway, starting OpenCode, or issuing a model request**. If the
+selected structured treatment does not fit the Chat Completions tool
+wire contract, admission raises
+`native-chat-tool-content-shape-not-supported-before-model-work`.
+The existing unconfined controlled-host fixture path retains its
+distinct legacy contract rather than mislabeling it native OpenCode.
+
+### E267 — observe exact outbound bytes
+
+The isolated gateway separately checks the **real request's** linked
+tool message. Only the original frozen UTF-8 text surface can pass;
+`json.loads()`, whitespace reformatting, a nested object, arrays, or
+an alternate but semantically equivalent representation are not
+acceptable substitutes. The gateway's HTTPS owner still forwards
+exactly the submitted request and captures the bounded response once.
+No fake session or new model-input receipt is minted from preflight.
+
+### E268 — study-wide feasibility before running a pilot
+
+Both tools read a frozen manifest and one independently provisioned
+`SOURCES_ROOT/<trial-id>.json` per cell, with exactly `current` and
+`replaced` keys:
+
+```sh
+make benchmark-native-chat-parity \
+  MANIFEST=/frozen/manifest.json SOURCES_ROOT=/frozen/sources
+
+make benchmark-native-chat-parity-qualify \
+  MANIFEST=/frozen/manifest.json SOURCES_ROOT=/frozen/sources
+```
+
+The descriptive command emits per-arm compatibility and counts without
+claiming execution. The strict command exits nonzero unless **both arms
+of every frozen pair** have supported, unchanged native transport shapes.
+For the existing structured-object versus canonical-text
+presentation treatment, the control is currently **unsupported**.
+A freshness trial with `presentation=structured` is likewise not
+automatically upgraded by stringifying its JSON source. Thus the
+current native Chat Completions path is **not qualified for the planned
+paired empirical comparison**, despite passing its netns and receipt
+tests. This is a compatibility finding, not a result about Hashmarks.
+
+Before a live paired campaign, the study author must explicitly freeze
+a revised presentation design grounded in supported real native formats,
+or implement and verify a distinct provider format that genuinely
+preserves the structured type. Such a change requires its own
+source/design manifest identity and adversarial native end-to-end proof;
+never patch one arm mid-campaign.
+
+The attack ring includes semantic-equal/byte-different JSON, nested
+values, content-part arrays, false structured parity, omitted/extra
+source authorities, actual gateway request mutation, and fail-before-work
+without run-root or model attempts:
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_native_chat_transport_parity -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
+
+No real OpenCode/provider campaign, independent oracle review, process
+exclusivity proof, model attention, or causal uplift is asserted.
