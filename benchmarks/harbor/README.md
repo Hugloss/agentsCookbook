@@ -2178,3 +2178,51 @@ pre-registration time, provider cognition, or causal uplift. A genuine
 single-variable timing study would require a host capable of enforcing
 delivery delay without adding a provider invocation, with separately
 attested model-input ordering and equivalent model state.
+
+
+### Executable trusted-provider transport for the deferred first request
+
+The trusted-host timing pilot has a **real transport adapter** for both provider
+requests (still host-integrated, not a modification to native Codex/OpenCode
+or Claude Code). The new
+`dispatch_verified_pre_exposure_chat_request` and
+`dispatch_verified_pre_exposure_chat_response` from
+`benchmarks.harness.trusted_http_provider` accept the exact serialized
+OpenAI-compatible **tool-free** provider request bytes. Only the assigned
+deferred arm can invoke them. The host must own the independent credential,
+host key, request construction, and the final model invocation / ATIF capture.
+
+Before network I/O, the first-stage adapter checks the frozen arm, model,
+request number, permitted non-tool message roles, approved HTTPS origin,
+exact provider path, credential shape and request size. It then starts the
+**single allowed provider transport attempt**, uses the same proxy-disabled,
+redirect-denying TLS helper as the evidence-bearing request, and records the
+prior submission only after a bounded, nonempty, valid 2xx chat-completions
+response. A 429, redirect, truncated body, invalid JSON, empty choices,
+transport exception, oversized response, or retry never produces a signed
+delivery receipt. Provider errors and response contents are not logged.
+
+For request 2 use the existing `dispatch_verified_chat_request` (or its
+privileged response-relay variant), with the original returned packet,
+`request_sequence=2` and the same prompt/settings. It now checks that
+the previously observed provider origin matches the current one **before**
+performing network work. The existing `TrustedModelRequestCapture.finalize`
+requires both the prior submission and the evidence-bearing 2xx response
+before MAC-signing the create-only receipt against immutable ATIF.
+
+The adapter returns submission metadata to regular callers. The
+`..._chat_response` variant returns bounded upstream bytes to an
+independently trusted host for provider relay; those bytes must never enter
+the benchmark results or a model-visible evidence packet. The signed
+`prior_transport_sha256` is a host-key-holder assertion tied to the
+submitted request/response identity, **not provider processing or model
+attention proof**. No live credential or model is supplied here.
+
+Model-free regression:
+
+```sh
+uv run --no-project python -m unittest \
+  benchmarks.tests.test_trusted_prior_request_transport \
+  benchmarks.tests.test_trusted_http_provider \
+  benchmarks.tests.test_trusted_host_campaign -v
+```
