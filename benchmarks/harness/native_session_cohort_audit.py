@@ -22,7 +22,7 @@ from .mechanism_attribution import project_atif
 from .opencode_native_session import inspect_native_export, MAX_EXPORT_BYTES
 from .trusted_treatments import load_manifest, select_treatment, verify_manifest
 
-SCHEMA = "agentscookbook.native-session-cohort-audit.v1"
+SCHEMA = "agentscookbook.native-session-cohort-audit.v2"
 
 
 def _json_file(path: Path, limit: int) -> object:
