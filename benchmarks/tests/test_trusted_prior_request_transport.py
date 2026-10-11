@@ -125,11 +125,12 @@ class VerifiedPriorProviderBoundaryTests(unittest.TestCase):
         self.assertEqual(len(later.calls), 1)
         self.assertEqual(earlier.calls[0][0].data, first)
         self.assertEqual(later.calls[0][0].data, final)
-        self.assertEqual(self.attested(host, self.variant)["delivery_state"], "PROVEN")
-        self.assertEqual(
-            self.attested if False else "SUBMITTED",
-            "SUBMITTED",
-        )
+        verified = self.attested(host, self.variant)
+        self.assertEqual(verified["delivery_state"], "PROVEN")
+        self.assertEqual(verified["provider_submission_state"], "SUBMITTED")
+        self.assertEqual(verified["verified_provider_submission_packets"], 1)
+        self.assertFalse(verified["model_attention_proven"])
+        self.assertFalse(verified["provider_consumption_proven"])
 
     def test_relay_prior_response_bytes_without_files_or_secret_in_metadata(self) -> None:
         host = self.host()
@@ -181,7 +182,7 @@ class VerifiedPriorProviderBoundaryTests(unittest.TestCase):
         first, _, _ = self.requests()
         for changes in (
             {"request_sequence": 2},
-            {"api_key": "a\\rInjected: 1"},
+            {"api_key": "a\rInjected: 1"},
             {"api_key": "a\nInjected: 1"},
             {"endpoint": "http://api.openai.com/v1/chat/completions"},
             {"approved_origin": "https://evil.example"},
