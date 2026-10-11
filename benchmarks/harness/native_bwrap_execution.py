@@ -41,8 +41,16 @@ def admit_netns_substrate() -> dict[str, str]:
             raise ValueError("unsafe-native-netns-substrate-" + name)
         found[name] = str(binary)
         found[name + "_sha256"] = _sha_file(binary)
-    interpreter = Path(sys.executable).resolve()
-    if not interpreter.is_relative_to(Path("/usr")) or not interpreter.is_file():
+    # The host evaluator may itself run with uv's interpreter under
+    # ~/.cache/uv or a project venv. Such paths are NOT mounted into the
+    # sandbox. The relay needs only stdlib, so pin a real system Python
+    # under the existing /usr read-only runtime authority instead.
+    candidates = (Path("/usr/bin/python3"), Path(sys.executable))
+    interpreter = next((
+        path.resolve() for path in candidates
+        if path.is_file() and path.resolve().is_relative_to(Path("/usr"))
+    ), None)
+    if interpreter is None:
         raise ValueError("unsupported-native-netns-python-runtime")
     found["python"] = str(interpreter)
     found["python_sha256"] = _sha_file(interpreter)
