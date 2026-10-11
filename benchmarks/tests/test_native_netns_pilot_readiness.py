@@ -161,7 +161,7 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
             with self.subTest(patch=patch_value):
                 updated = copy.deepcopy(report)
                 updated["native_kernel_preflight"] = patch_value
-                path.write_bytes(canonical(updated) + b"\\n")
+                path.write_bytes(canonical(updated) + b"\n")
                 result = self.assess()
                 self.assertFalse(result["paired_pilot_observations_ready_for_independent_grading"])
                 self.assertIn("inconsistent-or-self-upgraded-native-isolation-receipt", result["blockers"])
@@ -172,7 +172,7 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
         path = self.results / trial / "trial-execution.json"
         report = json.loads(path.read_bytes())
         report["native_kernel_preflight"]["guest_netns_inode"] += 1
-        path.write_bytes(canonical(report) + b"\\n")
+        path.write_bytes(canonical(report) + b"\n")
         denied = self.assess()
         self.assertFalse(denied["paired_pilot_observations_ready_for_independent_grading"])
         self.assertIn("host-isolation-attestation-unverified", denied["blockers"])
