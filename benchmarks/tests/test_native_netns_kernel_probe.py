@@ -26,6 +26,16 @@ from benchmarks.tests.test_opencode_native_gateway import (
 )
 
 
+_HOST_STAT = os.stat
+
+
+def _stat_for_probe(path, *args, **kwargs):
+    # Mock only the /proc witness: pathlib itself needs real stat results.
+    if str(path) == "/proc/self/ns/net":
+        return SimpleNamespace(st_ino=1001)
+    return _HOST_STAT(path, *args, **kwargs)
+
+
 def observed(*, guest: int = 1002, outbound_errno: int = errno.ENETUNREACH) -> dict:
     return {
         "guest_netns_inode": guest, "interfaces": ["lo"],
@@ -101,7 +111,7 @@ class NativeKernelProbeAttacks(unittest.TestCase):
             "benchmarks.harness.native_netns_probe.verify_substrate_unchanged",
         ) as rehash, patch(
             "benchmarks.harness.native_netns_probe.os.stat",
-            return_value=SimpleNamespace(st_ino=1001),
+            side_effect=_stat_for_probe,
         ), patch(
             "benchmarks.harness.native_netns_probe.subprocess.run",
             return_value=fake_child,
@@ -134,7 +144,7 @@ class NativeKernelProbeAttacks(unittest.TestCase):
                 "benchmarks.harness.native_netns_probe.verify_substrate_unchanged",
             ), patch(
                 "benchmarks.harness.native_netns_probe.os.stat",
-                return_value=SimpleNamespace(st_ino=1001),
+                side_effect=_stat_for_probe,
             ), patch(
                 "benchmarks.harness.native_netns_probe.subprocess.run",
                 return_value=payload,
