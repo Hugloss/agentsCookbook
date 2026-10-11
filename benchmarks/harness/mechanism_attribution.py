@@ -627,6 +627,11 @@ def _native_search_comparison(
               treated.get("native_search_observability"))
     if not tool_order_qualified:
         reason = "tool-order-incomplete"
+    elif (
+        bare.get("tool_order_complete") is not True
+        or treated.get("tool_order_complete") is not True
+    ):
+        reason = "tool-order-unestablished"
     elif bare.get("available") is not True or treated.get("available") is not True:
         reason = "trace-unavailable"
     elif "PARTIAL_OPAQUE_TOOL" in states:
