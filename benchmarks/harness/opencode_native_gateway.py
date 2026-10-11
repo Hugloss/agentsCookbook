@@ -83,7 +83,9 @@ def admit_opencode_binary(executable: Path, *, expected_sha256: str,
     }
 
 
-def gateway_config(*, port: int, model_id: str) -> dict[str, Any]:
+def gateway_config(*, port: int, model_id: str,
+                   hashmarks_executable: Path | None = None,
+                   workspace: Path | None = None) -> dict[str, Any]:
     """Only one visible provider; no inherited provider fallback in overlay.
 
     The caller must also isolate the home and XDG config/data directories:
@@ -94,7 +96,17 @@ def gateway_config(*, port: int, model_id: str) -> dict[str, Any]:
         raise ValueError("invalid-local-gateway-port")
     if not isinstance(model_id, str) or not MODEL_NAME.fullmatch(model_id):
         raise ValueError("invalid-gateway-model-id")
-    return {
+    if (hashmarks_executable is None) != (workspace is None):
+        raise ValueError("incomplete-pinned-hashmarks-mcp-authority")
+    if hashmarks_executable is not None and (
+        not hashmarks_executable.is_absolute()
+        or not workspace.is_absolute()
+        or hashmarks_executable.is_symlink()
+        or not hashmarks_executable.is_file()
+        or not workspace.is_dir()
+    ):
+        raise ValueError("untrusted-pinned-hashmarks-mcp-authority")
+    payload = {
         "$schema": "https://opencode.ai/config.json",
         "enabled_providers": [PROVIDER_ID],
         "model": PROVIDER_ID + "/" + model_id,
@@ -112,6 +124,18 @@ def gateway_config(*, port: int, model_id: str) -> dict[str, Any]:
             },
         },
     }
+    if hashmarks_executable is not None:
+        payload["mcp"] = {
+            "hashmarks": {
+                "type": "local",
+                "command": [
+                    str(hashmarks_executable), "--workspace",
+                    str(workspace), "mcp",
+                ],
+                "enabled": True,
+            },
+        }
+    return payload
 
 
 def write_gateway_config(path: Path, config: Mapping[str, Any]) -> str:
