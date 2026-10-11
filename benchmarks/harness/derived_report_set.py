@@ -142,6 +142,45 @@ def publish_report_set(
     return verify_report_set(run_root=run_root, expected_run_id=run_id)
 
 
+def inspect_report_set(
+    *,
+    run_root: Path,
+    expected_run_id: str | None = None,
+) -> dict[str, Any]:
+    """Project report-set health without treating legacy unbound files as verified."""
+    directory = _reports_dir(run_root)
+    manifest_path = directory / REPORT_SET_MANIFEST
+    if not manifest_path.exists():
+        present = [
+            name
+            for name in REPORT_SET_ARTIFACTS
+            if (directory / name).is_file()
+        ]
+        return {
+            "status": "UNBOUND" if present else "NOT_PUBLISHED",
+            "verified": False,
+            "artifacts_present": present,
+        }
+    try:
+        manifest = verify_report_set(
+            run_root=run_root,
+            expected_run_id=expected_run_id,
+        )
+    except DerivedReportSetError as exc:
+        return {
+            "status": "INVALID",
+            "verified": False,
+            "reason": str(exc),
+        }
+    return {
+        "status": "VERIFIED",
+        "verified": True,
+        "generation_id": manifest["generation_id"],
+        "run_id": manifest["run_id"],
+        "artifacts": sorted(manifest["artifacts"]),
+    }
+
+
 def verify_report_set(
     *,
     run_root: Path,
