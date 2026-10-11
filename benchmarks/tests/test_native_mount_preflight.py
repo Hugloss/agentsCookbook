@@ -19,6 +19,7 @@ from benchmarks.harness.native_bwrap_execution import (
 )
 from benchmarks.harness.native_mount_probe import (
     GUEST_PROBE, inspect_mount_probe, probe_native_mounts,
+    verify_worker_source_unchanged,
 )
 from benchmarks.tests.test_opencode_native_gateway import H
 
@@ -188,22 +189,28 @@ class RuntimeMountProbeTests(unittest.TestCase):
                     expected_config_sha256=H("config"),
                 ))
 
-    def test_worker_source_mutation_rejected_after_guest_runs(self):
+    def test_worker_source_rechecked_with_exact_pinned_digest(self):
+        proof, _ = self.run_probe()
+        verify_worker_source_unchanged(proof)
+        changed = {**proof, "worker_sha256": H("older-worker")}
+        with self.assertRaisesRegex(ValueError, "worker-source-drift"):
+            verify_worker_source_unchanged(changed)
         with patch(
+            "benchmarks.harness.native_mount_probe._sha",
+            side_effect=[H("first"), H("replaced")],
+        ), patch(
             "benchmarks.harness.native_mount_probe.verify_substrate_unchanged",
         ), patch(
             "benchmarks.harness.native_mount_probe.subprocess.run",
-            side_effect=lambda *args, **kwargs: SimpleNamespace(returncode=0),
+            return_value=SimpleNamespace(returncode=0),
         ):
-            # The worker read is owned by the probe module. A test of
-            # mutation uses separate source SHA verification in the module.
-            proof = probe_native_mounts(
-                self.substrate, executable=self.opencode,
-                hashmarks=self.hashmarks, workspace=self.workspace,
-                run_root=self.run_root, host_key_file=self.key,
-                environment=self.env, port=42000, config_sha256=H("config"),
-            )
-            self.assertEqual(len(proof["worker_sha256"]), 64)
+            with self.assertRaisesRegex(ValueError, "worker-source-changed"):
+                probe_native_mounts(
+                    self.substrate, executable=self.opencode,
+                    hashmarks=self.hashmarks, workspace=self.workspace,
+                    run_root=self.run_root, host_key_file=self.key,
+                    environment=self.env, port=42000, config_sha256=H("config"),
+                )
 
 
 if __name__ == "__main__":
