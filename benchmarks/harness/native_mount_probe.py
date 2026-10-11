@@ -164,7 +164,7 @@ def probe_native_mounts(
                str(workspace), str(run_root / "opencode.json"),
                str(hashmarks), str(executable), str(host_key_file),
                "verified-bridge" if use_native_mcp_bridge else "direct",
-               _sha(hashmarks.read_bytes())]
+               hashlib.sha256(hashmarks.read_bytes()).hexdigest()]
     argv = build_isolated_argv(
         substrate, executable=executable, workspace=workspace,
         run_root=run_root, gateway_dir=run_root / "gateway",
