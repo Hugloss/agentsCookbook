@@ -1662,7 +1662,7 @@ authorized diagnostic. `main` contained E253–E256 before this work.
 ### E257 — fail-before-work namespace and executable admission
 
 `benchmark-opencode-native-netns` requires Linux, an available `bwrap`
-and `ip` executable, a supported Python runtime path, the exact
+executable, a supported Python runtime path, the exact
 SHA-256/version-pinned OpenCode executable, an exact SHA-256-pinned
 standalone Hashmarks MCP executable, the frozen E238 trial manifest, a
 private host run root, and the same pinned source/oracle/workspace evidence
@@ -1682,15 +1682,16 @@ local MCP V1 configuration.
 
 This is an intentionally narrow Linux implementation. Missing kernel
 user/network namespace support, inaccessible interpreter/runtime
-libraries, unsupported OpenCode config, or inability to bring up
+libraries, unsupported OpenCode config, or inability of bubblewrap to establish
 isolated loopback must fail rather than silently escaping containment.
 A passing argv unit test is not evidence of a functioning sandbox on
 a particular deployment host.
 
 ### E258 — inside-namespace loopback to outside-namespace provider
 
-The child network namespace has no host-network interfaces. A small
-stdlib worker brings up its own `lo` interface, serves the configured
+The child network namespace has no host-network interfaces. Bubblewrap
+brings up its isolated `lo` interface as part of `--unshare-net`
+(or fails before execution); a small stdlib worker serves the configured
 OpenAI-compatible loopback HTTP endpoint, and forwards bounded request
 frames through `AF_UNIX` to the independently held gateway on the
 host. The host owns the external TLS client, URL pin, and API credential.
