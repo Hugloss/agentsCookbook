@@ -12,8 +12,8 @@ import sys
 from pathlib import Path
 
 from benchmarks.harness.host_input_attestation import load_host_key, verify_host_attestations
-from benchmarks.native_host_trial_projection import project
-from benchmarks.paired_host_capture_audit import audit
+from native_host_trial_projection import project
+from paired_host_capture_audit import audit
 
 
 def _path(root: Path, relative: object, label: str) -> Path:
