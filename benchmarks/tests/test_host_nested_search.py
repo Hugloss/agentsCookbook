@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 import tempfile
@@ -127,6 +126,7 @@ class NestedHostBoundaryTests(unittest.TestCase):
                 [capture("router", child("shell", "nested-shell"))],
                 [capture("router", child("rg", "duplicate"), child("rg", "duplicate"))],
                 [capture("router", child("rg", "router"))],
+                [capture("router", child("rg", "direct-search"))],
                 [{**capture("router", child("rg", "c")), "complete": False}],
             ):
                 with self.subTest(observations=observations):
@@ -303,19 +303,16 @@ class NestedHostBoundaryTests(unittest.TestCase):
                     evidence_paths["none-attestation"], key=KEY,
                     host_identity=IDENTITY, host_build_sha256=BUILD,
                 )
-            content = evidence_paths["hashmarks-attestation"].read_bytes()
-            evidence_paths["hashmarks-attestation"].write_bytes(
-                content.replace(b"search-c", b"search-z")
-            )
-            # Not a valid authenticated change, whether or not the serialized
-            # JSON exposed that human-readable call label.
-            unchanged = audit_attested_nested_pair(
-                evidence_paths["none"], evidence_paths["hashmarks"],
-                evidence_paths["none-attestation"],
-                evidence_paths["hashmarks-attestation"], key=KEY,
-                host_identity=IDENTITY, host_build_sha256=BUILD,
-            )
-            self.assertEqual(unchanged["augmented_observed_native_search_delta"], -2)
+            forged = json.loads(evidence_paths["hashmarks-attestation"].read_bytes())
+            forged["captures"][0]["nested_calls"][0]["tool"] = "read_file"
+            evidence_paths["hashmarks-attestation"].write_bytes(canonical(forged))
+            with self.assertRaisesRegex(ValueError, "authentication"):
+                audit_attested_nested_pair(
+                    evidence_paths["none"], evidence_paths["hashmarks"],
+                    evidence_paths["none-attestation"],
+                    evidence_paths["hashmarks-attestation"], key=KEY,
+                    host_identity=IDENTITY, host_build_sha256=BUILD,
+                )
 
 
 if __name__ == "__main__":
