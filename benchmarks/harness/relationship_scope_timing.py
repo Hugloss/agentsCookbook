@@ -15,6 +15,8 @@ from benchmarks.harness.information_timing import _decode, _opaque_mcp_text
 from benchmarks.tool_routing import (
     DISCOVERY_CLASSES,
     NATIVE_SEARCH,
+    SHELL,
+    TOOL_ROUTER,
     classify_call,
     matches_subject_operation,
 )
@@ -46,6 +48,8 @@ def unavailable_relationship_scope(reason: str) -> dict[str, Any]:
         "first_exact_detail_request_step": None,
         "native_search_before_return": None,
         "native_search_after_return": None,
+        "native_search_same_step": None,
+        "native_search_observability": "UNKNOWN",
         "observed_use_proven": False,
         "agent_attention_proven": False,
         "causal_influence_claimed": False,
@@ -229,6 +233,12 @@ def _steps(atif: object) -> tuple[list[dict[str, Any]], dict[str, tuple[object, 
             })
     if set(linked) - seen:
         return None  # An uninvoked tool cannot supply a valid returned observation.
+    if any(
+        linked[call["call_id"]][1] < call["step"]
+        for call in calls
+        if call["call_id"] in linked
+    ):
+        return None  # Even unrelated tool results may not precede invocation.
     return calls, linked
 
 
@@ -295,11 +305,28 @@ def project_relationship_scope_timing(trajectory: Path) -> dict[str, Any]:
         call["step"] for call in calls if call["category"] in DISCOVERY_CLASSES
     ]
     first_native = min(native_steps) if native_steps else None
+    opaque_router_steps = [
+        call["step"] for call in calls if call["category"] == TOOL_ROUTER
+    ]
+    opaque_tool_steps = [
+        call["step"] for call in calls
+        if call["category"] in (TOOL_ROUTER, SHELL)
+    ]
+    # A generic router can conceal native exploration or a detail request.
+    # Positive earlier discovery remains observable, but a first-choice/no-
+    # discovery conclusion cannot be inferred across a hidden nested call.
     arrival = (
-        "NO_NATIVE_DISCOVERY" if first_native is None
-        else "SAME_STEP_UNORDERED" if first_native == first_step
-        else "BEFORE_NATIVE_DISCOVERY" if first_step < first_native
-        else "AFTER_NATIVE_DISCOVERY"
+        "AFTER_NATIVE_DISCOVERY"
+        if first_native is not None and first_native < first_step
+        else "SAME_STEP_UNORDERED"
+        if first_native == first_step
+        else "UNKNOWN_OPAQUE_ROUTER"
+        if any(step <= first_step for step in opaque_router_steps)
+        else "BEFORE_NATIVE_DISCOVERY"
+        if first_native is not None
+        else "UNKNOWN_OPAQUE_ROUTER"
+        if opaque_router_steps
+        else "NO_NATIVE_DISCOVERY"
     )
     exact_requests = [
         call["step"] for call in calls
@@ -313,6 +340,8 @@ def project_relationship_scope_timing(trajectory: Path) -> dict[str, Any]:
     followthrough = (
         "EXACT_DETAIL_REQUEST_AFTER_RETURN" if after
         else "SAME_STEP_UNORDERED" if first_step in exact_requests
+        else "UNKNOWN_OPAQUE_DETAIL_REQUEST"
+        if any(step >= first_step for step in opaque_tool_steps)
         else "NO_EXACT_DETAIL_REQUEST_OBSERVED"
     )
     return {
@@ -334,5 +363,14 @@ def project_relationship_scope_timing(trajectory: Path) -> dict[str, Any]:
         "native_search_after_return": sum(
             call["category"] == NATIVE_SEARCH and call["step"] > first_step
             for call in calls
+        ),
+        "native_search_same_step": sum(
+            call["category"] == NATIVE_SEARCH and call["step"] == first_step
+            for call in calls
+        ),
+        "native_search_observability": (
+            "PARTIAL_OPAQUE_TOOL"
+            if opaque_tool_steps
+            else "EXPLICIT_TOOL_CALLS_ONLY"
         ),
     }
