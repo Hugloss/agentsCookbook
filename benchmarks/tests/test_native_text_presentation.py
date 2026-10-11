@@ -30,6 +30,7 @@ from benchmarks.tests.test_opencode_native_gateway import (
     H, KEY, UPSTREAM, REPLY, manifest as legacy_manifest,
     request, source,
 )
+from benchmarks.tests.test_native_chat_transport_parity import bound_request
 
 SCHEMA = "agentscookbook.host-attested-intervention-design.v1"
 
@@ -187,12 +188,31 @@ class NativeTextStudyTests(unittest.TestCase):
         for arm in ("control", "variant"):
             gateway = self.gateway(arm)
             expected = self.selections[arm]["selected_content"]
-            packet = request(selected=expected, tool=True)
+            packet = bound_request(selected=expected)
             try:
                 with patch(
                     "benchmarks.harness.opencode_native_gateway.dispatch_verified_chat_response",
                     side_effect=lambda **kw: (originals.append((arm, kw)), REPLY)[1],
                 ) as sent:
+                    # The formerly valid fixture omitted the assistant
+                    # tool_calls ancestor. It must fail before submission.
+                    with self.assertRaisesRegex(
+                        ValueError, "native-chat-assistant-tool-call-absent"
+                    ):
+                        gateway._handle_request(
+                            request(selected=expected, tool=True),
+                            authorization="Bearer " + gateway.token,
+                        )
+                    sent.assert_not_called()
+                    other = self.selections[
+                        "variant" if arm == "control" else "control"
+                    ]["selected_content"]
+                    with self.assertRaisesRegex(ValueError, "not-byte-identical"):
+                        gateway._handle_request(
+                            bound_request(selected=other),
+                            authorization="Bearer " + gateway.token,
+                        )
+                    sent.assert_not_called()
                     self.assertEqual(
                         gateway._handle_request(packet,
                             authorization="Bearer " + gateway.token),
@@ -202,12 +222,9 @@ class NativeTextStudyTests(unittest.TestCase):
                     self.assertEqual(
                         sent.call_args.kwargs["serialized_model_request"], packet,
                     )
-                    other = self.selections[
-                        "variant" if arm == "control" else "control"
-                    ]["selected_content"]
                     with self.assertRaises(ValueError):
                         gateway._handle_request(
-                            request(selected=other, tool=True),
+                            bound_request(selected=expected),
                             authorization="Bearer " + gateway.token,
                         )
                 self.assertEqual(gateway.result()["post_evidence_submissions"], 1)
