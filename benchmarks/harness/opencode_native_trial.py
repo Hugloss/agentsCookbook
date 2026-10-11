@@ -30,7 +30,7 @@ from .opencode_native_gateway import (
 from .trusted_treatments import load_manifest, verify_manifest
 from .opencode_native_export import acquire_native_export, native_export_preflight
 from .native_netns_probe import probe_netns_kernel
-from .native_mount_probe import probe_native_mounts
+from .native_mount_probe import probe_native_mounts, verify_worker_source_unchanged
 from .native_bwrap_execution import (
     admit_netns_substrate, build_isolated_argv, verify_substrate_unchanged,
     admit_host_only_paths,
@@ -197,6 +197,8 @@ def launch_native_trial(
                 hashmarks_executable=hashmarks_executable,
             ) if substrate is not None else native_command
         )
+        if mount_probe is not None:
+            verify_worker_source_unchanged(mount_probe)
         try:
             result = subprocess.run(
                 native_argv,
@@ -209,6 +211,8 @@ def launch_native_trial(
             exit_code = None
         if sha256_file(opencode_executable) != expected_binary_sha256:
             raise ValueError("native-opencode-binary-changed-during-trial")
+        if mount_probe is not None:
+            verify_worker_source_unchanged(mount_probe)
         if substrate is not None:
             verify_substrate_unchanged(substrate)
             if sha256_file(hashmarks_executable) != expected_hashmarks_sha256:
