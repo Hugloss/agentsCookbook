@@ -67,6 +67,7 @@ from benchmarks.harness.decision_evidence import build_decision_evidence
 from benchmarks.harness.derived_report_set import (
     DerivedReportSetError,
     REPORT_SET_MANIFEST,
+    inspect_report_set,
     publish_report_set,
 )
 from benchmarks.harness.oracle_reviews import (
@@ -709,6 +710,10 @@ def _refresh_canonical_status(
             status["run_id"] = paths.run_id
             status["selection"] = _selection_metadata(suite, rows)
             status["paths"]["reports"] = str(_reports_dir(paths.root))
+            status["derived_report_set"] = inspect_report_set(
+                run_root=paths.root,
+                expected_run_id=paths.run_id,
+            )
             gap = _canonical_campaign_persistence_gap(
                 suite=suite,
                 results_root=paths.results,
@@ -1543,6 +1548,10 @@ def main(argv: list[str] | None = None) -> int:
                 status["conflicting_trials"]
                 or status["corrupt_bundles"]
                 or status["foreign_bundles"]
+                or (
+                    isinstance(status.get("derived_report_set"), dict)
+                    and status["derived_report_set"].get("status") == "INVALID"
+                )
                 or (args.require_qualified and not status["qualified"])
             )
             else 0
@@ -1837,14 +1846,21 @@ def _persist_completed_run_reports(
         if not staged_score.is_file() or staged_score.stat().st_size == 0:
             raise ReportError("benchmark score generation produced no output")
 
-        status_path = _write_derived_json(paths.root, "status.json", status_payload)
-        publish_report_set(
+        report_set = publish_report_set(
             run_root=paths.root,
             run_id=str(paths.run_id),
             report=report_data,
             trace_diagnostics=trace_data,
             decision_evidence=decision_data,
         )
+        status_payload["derived_report_set"] = {
+            "status": "VERIFIED",
+            "verified": True,
+            "generation_id": report_set["generation_id"],
+            "run_id": report_set["run_id"],
+            "artifacts": sorted(report_set["artifacts"]),
+        }
+        status_path = _write_derived_json(paths.root, "status.json", status_payload)
         report_path = reports_dir / "report.json"
         trace_path = reports_dir / "trace-diagnostics.json"
         decision_path = reports_dir / "decision-evidence.json"
