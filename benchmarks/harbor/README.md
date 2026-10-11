@@ -2178,3 +2178,125 @@ pre-registration time, provider cognition, or causal uplift. A genuine
 single-variable timing study would require a host capable of enforcing
 delivery delay without adding a provider invocation, with separately
 attested model-input ordering and equivalent model state.
+
+
+## E269–E272: Fresh frozen compact-vs-indented Chat tool text study
+
+**E269 — a genuinely new design, not a rewritten older result.**
+The original `presentation` study remains `structured` versus `text`
+and is still **not** admissible on the native Chat Completions wire.
+This bundle adds a separate `text_presentation` study to the same
+strict manifest author, with exactly these new arms:
+
+```json
+{
+  "schema": "agentscookbook.host-attested-intervention-design.v1",
+  "study": "text_presentation",
+  "campaign_id": "new-independent-campaign-identity",
+  "model": "pinned-provider-model",
+  "harnesses": ["opencode-native"],
+  "tasks": ["source-owner"],
+  "replicates": 1,
+  "arms": {
+    "control": "compact-json-text",
+    "variant": "indented-json-text"
+  }
+}
+```
+
+Only the independent study author supplies the campaign ID, assignment
+seed, model, source-contract identity and input sources **before** any run.
+The original study's frozen authority is never retagged, migrated or
+overwritten. The manifest SHA-256 and design SHA-256 change by construction.
+
+Both new treatments carry *actual UTF-8 JSON text*, not a JSON object in
+the provider tool message. The control uses exact canonical compact
+JSON; the variant uses `sort_keys=True, ensure_ascii=False, indent=2`
+JSON. The source is still an independently pinned exact Hashmarks
+packet with one semantic digest and one repository generation.
+The selector rejects replaced sources, source drift, missing/invalid
+content, and any variant whose pretty and compact strings are equal
+(e.g. empty JSON object). Exact content bytes, presentation labels,
+source identities and surface SHA-256 remain explicit.
+
+**E270 — same safety property at the actual host boundary.**
+The isolated native gateway admits these two new text presentations,
+but no nested-object coercion, alternate JSON indentation or content
+arrays. The trusted request recorder stores the **observed original**
+tool-message digest for exactly one real linked call, and signs the
+study/arm/presentation/generation/semantic/surface identities.
+The independent HMAC verifier now explicitly enforces the legal
+arm label for **each** study: the old `presentation` controls retain
+`structured`, `text_presentation` uses compact versus indented,
+and timing/freshness keep their original constraints.
+
+**E271 — independent native request parity readback.**
+`native_text_presentation_readback.py` first rechecks the entire
+E260–E264 native kernel/isolation/session/transport population and the
+new frozen per-trial source list. For every cell it extracts the
+Hashmarks call ID from the saved native OpenCode session, rebuilds
+the exact expected `{"role":"tool","tool_call_id":...,"content":<text>}`
+field and checks its canonical SHA-256 against the independently
+host-HMAC-verified `model_message_sha256` in the actual transport
+receipt. A forged call ID, altered string, switched arm, missing
+partner or modified host receipt fails the whole readback. It does
+not fabricate a replacement request or infer attention from a hash.
+
+**E272 — pure pair qualification before any kernel/model work.**
+The confined launcher validates **both** text surfaces and their
+semantic/generation match before the kernel probe, gateway startup,
+run-root creation or model dispatch. The separate full-cohort
+feasibility preflight also requires externally provisioned,
+per-trial frozen source files and verifies complete pair coverage.
+
+```sh
+# Freeze a NEW design and seed. Use real SHA-256 inputs, no fallback secrets.
+uv run --no-project python -m benchmarks.harness.trusted_treatments \
+  --design /frozen/new-text-presentation-design.json \
+  --output /frozen/new-text-presentation-manifest.json \
+  --source-contract-identity sha256:pinned-hashmarks-contract \
+  --host-build-sha256 <64-hex> \
+  --assignment-seed-sha256 <64-hex>
+
+# Read-only syntax/semantic pair feasibility: this runs NO agent.
+make benchmark-native-chat-parity-qualify \
+  MANIFEST=/frozen/new-text-presentation-manifest.json \
+  SOURCES_ROOT=/frozen/new-per-trial-sources
+
+# Only after actual native runs and host-signed receipts exist:
+make benchmark-native-text-readback \
+  MANIFEST=/frozen/new-text-presentation-manifest.json \
+  NATIVE_RESULTS_ROOT=/private/native-results \
+  SOURCES_ROOT=/frozen/new-per-trial-sources \
+  WORKSPACE=/disposable/identical-workspace \
+  HOST_KEY_FILE=/privileged/host.key \
+  HOST_IDENTITY=<registered-provider-host> \
+  APPROVED_ENDPOINT_SHA256=<64-hex> \
+  BWRAP_SHA256=<64-hex> HASHMARKS_SHA256=<64-hex>
+```
+
+**Current readiness boundary:** Both new arm *wire types* can be
+represented correctly by Chat Completions, unlike the original study,
+and model-free transport fixtures validate byte-for-byte host capture.
+This does **not** establish that unmodified OpenCode/Hashmarks emits
+the selected compact or indented result on demand. No automatic MCP
+response interception, covert provider-request rewriting, or agent-output
+patching has been introduced. A live native run still fails closed if
+the chosen presentation is not exactly observed from the real adapter.
+The new readback remains unqualified without actual native + provider
+execution, external host custody and separate grading. In particular,
+the new experiment measures **JSON text formatting**, not
+structured-object-versus-text representation, and any eventual
+performance contrast must be described accordingly.
+
+Model-free test ring:
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_native_text_presentation -v
+uv run --no-project python -m unittest benchmarks.tests.test_native_text_presentation_readback -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
+
+No empirical run, real OpenCode SDK parity, independently audited
+egress exclusivity, provider cognition, randomized causal benefit,
+or independent oracle judgement is asserted by these tests.
