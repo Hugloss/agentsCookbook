@@ -33,7 +33,7 @@ import stat
 import sys
 import uuid
 
-workspace, config, hashmarks, opencode, host_key, bridge_mode = sys.argv[1:]
+workspace, config, hashmarks, opencode, host_key, bridge_mode, hashmarks_sha = sys.argv[1:]
 if bridge_mode not in ('direct', 'verified-bridge'):
     sys.exit(40)
 if not os.path.isdir(workspace) or not os.path.lexists(os.path.join(workspace, '.git')):
@@ -54,7 +54,7 @@ if bridge_mode == 'verified-bridge':
     expected = [
         sys.executable, '/run/native-mcp-bridge.py',
         '--hashmarks', hashmarks, '--sha256',
-        cfg.get('benchmark_bridge_sha256', ''),
+        hashmarks_sha,
         '--workspace', workspace,
         '--contract', '/run/native-mcp-contract.json',
     ]
@@ -163,7 +163,8 @@ def probe_native_mounts(
     command = [substrate["python"], "-c", GUEST_PROBE,
                str(workspace), str(run_root / "opencode.json"),
                str(hashmarks), str(executable), str(host_key_file),
-               "verified-bridge" if use_native_mcp_bridge else "direct"]
+               "verified-bridge" if use_native_mcp_bridge else "direct",
+               _sha(hashmarks.read_bytes())]
     argv = build_isolated_argv(
         substrate, executable=executable, workspace=workspace,
         run_root=run_root, gateway_dir=run_root / "gateway",
