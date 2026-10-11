@@ -29,6 +29,9 @@ from .opencode_native_gateway import (
 )
 from .trusted_treatments import load_manifest, verify_manifest
 from .opencode_native_export import acquire_native_export, native_export_preflight
+from .native_bwrap_execution import (
+    admit_netns_substrate, build_isolated_argv, verify_substrate_unchanged,
+)
 from .opencode_native_session import finalize_native_export
 
 SCHEMA = "agentscookbook.pinned-opencode-gateway-trial.v1"
@@ -53,6 +56,7 @@ def launch_native_trial(
     oracle_sha256: str, workspace_sha256: str,
     timeout_seconds: int = 600,
     allow_unconfined_execution: bool = False,
+    use_netns_isolation: bool = False,
 ) -> dict[str, Any]:
     frozen = verify_manifest(dict(manifest))
     cells = [x for x in frozen["assignments"] if x["trial_id"] == trial_id]
@@ -68,8 +72,11 @@ def launch_native_trial(
     # benchmark runner. OS confinement and exclusive egress are not proven.
     # Require deliberate opt-in rather than silently executing an agent with
     # access to the user's host filesystem/network.
-    if allow_unconfined_execution is not True:
-        raise ValueError("unconfined-native-launch-not-explicitly-authorized")
+    if allow_unconfined_execution and use_netns_isolation:
+        raise ValueError("conflicting-native-execution-backends")
+    if not allow_unconfined_execution and not use_netns_isolation:
+        raise ValueError("native-execution-backend-must-be-explicit")
+    substrate = admit_netns_substrate() if use_netns_isolation else None
     workspace_root = workspace.resolve()
     if (run_root.resolve().is_relative_to(workspace_root)
             or host_key_file.resolve().is_relative_to(workspace_root)):
@@ -97,11 +104,15 @@ def launch_native_trial(
         oracle_sha256=oracle_sha256, workspace_sha256=workspace_sha256,
     )
     _make_private_dir(run_root)
-    for name in ("home", "config", "cache", "data", "state"):
+    for name in ("home", "config", "cache", "data", "state", "gateway"):
         _make_private_dir(run_root / name)
     started = False
     try:
-        port = gateway.start()
+        port = secrets.randbelow(16_000) + 40_000 if use_netns_isolation else None
+        if use_netns_isolation:
+            gateway.start_unix(run_root / "gateway" / "upstream.sock")
+        else:
+            port = gateway.start()
         started = True
         cfg = gateway_config(port=port, model_id=frozen["design"]["model"])
         config = run_root / "opencode.json"
@@ -126,10 +137,21 @@ def launch_native_trial(
         started_at_ms = time.time_ns() // 1_000_000
         # Do not pass upstream API keys or ambient LLM credentials to the
         # agent; its only configured provider is the loopback gateway.
+        native_command = [
+            str(opencode_executable), "run", "--model", model,
+            "--title", native_title, "--format", "json", prompt,
+        ]
+        native_argv = (
+            build_isolated_argv(
+                substrate, executable=opencode_executable, workspace=workspace,
+                run_root=run_root, gateway_dir=run_root / "gateway",
+                environment=child_env, command=native_command,
+                worker_port=port,
+            ) if substrate is not None else native_command
+        )
         try:
             result = subprocess.run(
-                [str(opencode_executable), "run", "--model", model,
-                 "--title", native_title, "--format", "json", prompt],
+                native_argv,
                 cwd=workspace, env=child_env,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 timeout=timeout_seconds, check=False,
@@ -139,16 +161,31 @@ def launch_native_trial(
             exit_code = None
         if sha256_file(opencode_executable) != expected_binary_sha256:
             raise ValueError("native-opencode-binary-changed-during-trial")
+        if substrate is not None:
+            verify_substrate_unchanged(substrate)
         observation = gateway.result()
         routed = exit_code == 0 and observation["post_evidence_submissions"] == 1
         session_result: dict[str, Any] | None = None
         session_error: str | None = None
         if routed:
             try:
+                # Export commands run in fresh deny-egress namespaces too:
+                # no unconfined inspection subprocess can silently reenable
+                # native external provider access after the trial.
+                isolated_export = (
+                    (lambda command: build_isolated_argv(
+                        substrate, executable=opencode_executable,
+                        workspace=workspace, run_root=run_root,
+                        gateway_dir=run_root / "gateway",
+                        environment=child_env, command=command,
+                        worker_port=None,
+                    )) if substrate is not None else None
+                )
                 session_id, exported = acquire_native_export(
                     opencode_executable, workspace=workspace,
                     environment=child_env, exact_title=native_title,
                     started_at_ms=started_at_ms,
+                    isolate_command=isolated_export,
                 )
                 if sha256_file(opencode_executable) != expected_binary_sha256:
                     raise ValueError("native-opencode-executable-drift-after-export")
@@ -180,6 +217,12 @@ def launch_native_trial(
             "native_trial_evidence_qualified": qualified,
             "host_receipt_finalized": qualified,
             "native_process_origin_proven": False,
+            "linux_network_namespace_requested": substrate is not None,
+            "host_network_egress_intentionally_disabled": substrate is not None,
+            "native_sandbox_binary_sha256": (
+                substrate["bwrap_sha256"] if substrate else None
+            ),
+            "network_egress_exclusivity_independently_attested": False,
             "native_model_input_delivered_proven": False,
             "causal_improvement_proven": False,
         }
@@ -215,6 +258,7 @@ def main() -> int:
     parser.add_argument("--workspace-sha256", required=True)
     parser.add_argument("--timeout-seconds", type=int, default=600)
     parser.add_argument("--allow-unconfined-native-test", action="store_true")
+    parser.add_argument("--require-netns-isolation", action="store_true")
     args = parser.parse_args()
     try:
         api_key = os.environ.get("BENCHMARK_UPSTREAM_API_KEY")
@@ -239,6 +283,7 @@ def main() -> int:
             workspace_sha256=args.workspace_sha256,
             timeout_seconds=args.timeout_seconds,
             allow_unconfined_execution=args.allow_unconfined_native_test,
+            use_netns_isolation=args.require_netns_isolation,
         )
     except (ValueError, OSError, TypeError, UnicodeError) as exc:
         print(json.dumps({
