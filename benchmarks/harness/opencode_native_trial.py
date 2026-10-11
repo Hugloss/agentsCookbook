@@ -42,6 +42,7 @@ from .native_bwrap_execution import (
 )
 from .opencode_native_session import finalize_native_export
 from .host_input_attestation import load_host_key
+from .native_host_execve import admit_execve_tracer, run_host_execve_observed
 from .native_netns_host_attestation import (
     sign_isolation_report, write_isolation_attestation,
 )
@@ -73,6 +74,9 @@ def launch_native_trial(
     expected_hashmarks_sha256: str | None = None,
     allow_unpaired_native_diagnostic: bool = False,
     verified_native_mcp_bridge: bool = False,
+    require_native_execve_observation: bool = False,
+    execve_tracer_executable: Path | None = None,
+    expected_execve_tracer_sha256: str | None = None,
 ) -> dict[str, Any]:
     frozen = verify_manifest(dict(manifest))
     cells = [x for x in frozen["assignments"] if x["trial_id"] == trial_id]
@@ -94,6 +98,18 @@ def launch_native_trial(
         raise ValueError("conflicting-native-execution-backends")
     if not allow_unconfined_execution and not use_netns_isolation:
         raise ValueError("unconfined-native-launch-not-explicitly-authorized-or-netns-backend-missing")
+    if require_native_execve_observation:
+        if (
+            not use_netns_isolation
+            or execve_tracer_executable is None
+            or expected_execve_tracer_sha256 is None
+        ):
+            raise ValueError("native-execve-observation-requires-isolated-pinned-tracer")
+        admit_execve_tracer(
+            execve_tracer_executable, sha256=expected_execve_tracer_sha256
+        )
+    elif execve_tracer_executable is not None or expected_execve_tracer_sha256 is not None:
+        raise ValueError("unassigned-native-execve-tracer-configuration")
     substrate = admit_netns_substrate() if use_netns_isolation else None
     if use_netns_isolation:
         if (hashmarks_executable is None or expected_hashmarks_sha256 is None
@@ -276,16 +292,30 @@ def launch_native_trial(
         )
         if mount_probe is not None:
             verify_worker_source_unchanged(mount_probe)
-        try:
-            result = subprocess.run(
+        native_execve_evidence = None
+        if require_native_execve_observation:
+            exit_code, native_execve_evidence = run_host_execve_observed(
                 native_argv,
-                cwd=workspace, env=child_env,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                timeout=timeout_seconds, check=False,
+                tracer=execve_tracer_executable,
+                tracer_sha256=expected_execve_tracer_sha256,
+                workspace=workspace, run_root=run_root,
+                environment=child_env, timeout_seconds=timeout_seconds,
+                campaign_id=frozen["design"]["campaign_id"],
+                trial_id=trial_id, host_identity=host_identity,
+                host_build_sha256=frozen["host_build_sha256"],
+                key=load_host_key(host_key_file),
             )
-            exit_code = result.returncode
-        except (OSError, subprocess.SubprocessError):
-            exit_code = None
+        else:
+            try:
+                result = subprocess.run(
+                    native_argv,
+                    cwd=workspace, env=child_env,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=timeout_seconds, check=False,
+                )
+                exit_code = result.returncode
+            except (OSError, subprocess.SubprocessError):
+                exit_code = None
         if verified_native_mcp_bridge:
             files = [
                 Path(__file__).with_name("native_mcp_stdio_bridge.py"),
@@ -349,7 +379,14 @@ def launch_native_trial(
                 )
             except (OSError, ValueError, TypeError, UnicodeError):
                 session_error = "native-session-not-bound-to-observed-provider-submission"
-        qualified = routed and session_result is not None
+        qualified = (
+            routed and session_result is not None
+            and (
+                not require_native_execve_observation
+                or native_execve_evidence is not None
+                and native_execve_evidence["state"] == "HOST_EXECVE_OBSERVED"
+            )
+        )
         report = {
             "schema": SCHEMA,
             "trial_id": trial_id,
@@ -361,6 +398,9 @@ def launch_native_trial(
             "frozen_native_mcp_bridge_sha256": bridge_contract_sha256,
             "native_mcp_original_hashmarks_response_independently_attested": False,
             "native_exit_code": exit_code,
+            "native_host_execve_observation_required": require_native_execve_observation,
+            "native_host_execve_evidence": native_execve_evidence,
+            "native_nested_tool_coverage_proven": False,
             "gateway": observation,
             "observed_provider_response_relays": observation["post_evidence_submissions"],
             "native_gateway_route_completed": routed,
@@ -454,6 +494,9 @@ def main() -> int:
     parser.add_argument("--hashmarks-sha256")
     parser.add_argument("--verified-native-mcp-bridge", action="store_true")
     parser.add_argument("--allow-unpaired-native-diagnostic", action="store_true")
+    parser.add_argument("--require-native-execve-observation", action="store_true")
+    parser.add_argument("--native-execve-tracer-bin", type=Path)
+    parser.add_argument("--native-execve-tracer-sha256")
     args = parser.parse_args()
     try:
         api_key = os.environ.get("BENCHMARK_UPSTREAM_API_KEY")
@@ -483,6 +526,9 @@ def main() -> int:
             expected_hashmarks_sha256=args.hashmarks_sha256,
             verified_native_mcp_bridge=args.verified_native_mcp_bridge,
             allow_unpaired_native_diagnostic=args.allow_unpaired_native_diagnostic,
+            require_native_execve_observation=args.require_native_execve_observation,
+            execve_tracer_executable=args.native_execve_tracer_bin,
+            expected_execve_tracer_sha256=args.native_execve_tracer_sha256,
         )
     except (ValueError, OSError, TypeError, UnicodeError) as exc:
         print(json.dumps({
