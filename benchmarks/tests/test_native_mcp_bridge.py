@@ -41,7 +41,7 @@ def selection():
 def call_frame(*, identity=3, name="task_evidence"):
     return canonical({
         "jsonrpc": "2.0", "id": identity, "method": "tools/call",
-        "params": {"name": name, "arguments": {"path": "src/owner.py"}},
+        "params": {"name": name, "arguments": {"task": "Find owner of src/owner.py"}},
     })
 
 
@@ -51,6 +51,38 @@ def result_frame(identity=3, *, packet=None, alternate=None):
     if alternate is not None:
         result["structuredContent"] = alternate
     return canonical({"jsonrpc": "2.0", "id": identity, "result": result})
+
+
+CATALOG_TOOL = {
+    "name": "task_evidence",
+    "inputSchema": {
+        "type": "object",
+        "properties": {"task": {"type": "string"}},
+        "required": ["task"],
+        "additionalProperties": False,
+    },
+}
+
+
+def admitted_state(contract):
+    state = BridgeState(contract)
+    state.receive_request(canonical({
+        "jsonrpc": "2.0", "id": "init",
+        "method": "initialize", "params": {"protocolVersion": "2024-11-05"},
+    }))
+    state.receive_request(canonical({
+        "jsonrpc": "2.0", "id": "list",
+        "method": "tools/list", "params": {},
+    }))
+    state.receive_response(canonical({
+        "jsonrpc": "2.0", "id": "init",
+        "result": {"serverInfo": {"name": "Hashmarks", "version": "fixture"}},
+    }))
+    state.receive_response(canonical({
+        "jsonrpc": "2.0", "id": "list",
+        "result": {"tools": [CATALOG_TOOL]},
+    }))
+    return state
 
 
 class NativeMcpBridgeContractAttacks(unittest.TestCase):
@@ -87,7 +119,7 @@ class NativeMcpBridgeContractAttacks(unittest.TestCase):
             )
 
     def test_actual_original_required_before_presenting_selected_text(self):
-        state = BridgeState(self.contract)
+        state = admitted_state(self.contract)
         first = call_frame()
         self.assertEqual(state.receive_request(first), first)
         actual = result_frame()
@@ -104,7 +136,7 @@ class NativeMcpBridgeContractAttacks(unittest.TestCase):
             state.receive_request(call_frame(identity=4))
 
     def test_subject_response_replay_and_boolean_id_alias_are_rejected(self):
-        state = BridgeState(self.contract)
+        state = admitted_state(self.contract)
         state.receive_request(call_frame(identity=1))
         with self.assertRaisesRegex(ValueError, "id-type-confusion"):
             state.receive_response(canonical({
@@ -135,7 +167,7 @@ class NativeMcpBridgeContractAttacks(unittest.TestCase):
         ]
         for raw, message in bads:
             with self.subTest(message=message):
-                state = BridgeState(self.contract)
+                state = admitted_state(self.contract)
                 state.receive_request(call_frame())
                 with self.assertRaisesRegex(ValueError, message):
                     state.receive_response(raw)
@@ -215,14 +247,27 @@ import sys
 for line in sys.stdin.buffer:
     request = json.loads(line)
     mid = request.get('id')
-    if request.get('method') == 'tools/call':
+    method = request.get('method')
+    if method == 'notifications/initialized':
+        continue
+    if method == 'initialize':
         response = {'jsonrpc':'2.0', 'id':mid, 'result':{
-            'content':[{'type':'text','text':%r}]}}
+            'serverInfo': {'name':'Hashmarks', 'version':'fixture'}}}
+    elif method == 'tools/list':
+        response = {'jsonrpc':'2.0', 'id':mid, 'result':{
+            'tools':[{'name':'task_evidence',
+              'inputSchema':{'type':'object','properties':{
+                'task':{'type':'string'}},'required':['task'],
+                'additionalProperties':False}}]}}
+    elif method == 'tools/call':
+        response = {'jsonrpc':'2.0', 'id':mid, 'result':{
+            'content':[{'type':'text','text':%r}],
+            'structuredContent': json.loads(%r)}}
     else:
-        response = {'jsonrpc':'2.0','id':mid,'result':{'tools':[{'name':'task_evidence'}]}}
+        response = {'jsonrpc':'2.0','id':mid,'error':{'code':-32601}}
     sys.stdout.write(json.dumps(response, separators=(',',':'))+'\\n')
     sys.stdout.flush()
-""" % payload
+""" % (payload, payload)
         path.write_text(code)
         path.chmod(0o700)
 
@@ -242,7 +287,7 @@ for line in sys.stdin.buffer:
                 sha256=sha_file(executable),
                 source=source(), replaced=None,
                 tool_name="task_evidence",
-                tool_args={"path": "src/owner.py"},
+                tool_args={"task": "Find owner of src/owner.py"},
             )
             self.assertTrue(output["mcp_stdio_source_and_treatment_qualified"])
             self.assertTrue(output["actual_external_hashmarks_subprocess_called"])
@@ -256,7 +301,7 @@ for line in sys.stdin.buffer:
                     sha256=sha_file(executable),
                     source=source(), replaced=None,
                     tool_name="task_evidence",
-                    tool_args={"path": "src/owner.py"},
+                    tool_args={"task": "Find owner of src/owner.py"},
                 )
 
     def test_real_subprocess_native_stdio_roundtrip_and_fail_closed_drift(self):
@@ -274,7 +319,11 @@ for line in sys.stdin.buffer:
             )
             write_bridge_contract(contract, frozen)
             input_bytes = (
-                canonical({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}})
+                canonical({"jsonrpc":"2.0","id":"init","method":"initialize",
+                           "params":{"protocolVersion":"2024-11-05"}})
+                + b"\n"
+                + canonical({"jsonrpc":"2.0","id":1,
+                             "method":"tools/list","params":{}})
                 + b"\n" + call_frame() + b"\n"
             )
             output = io.BytesIO()
@@ -285,11 +334,12 @@ for line in sys.stdin.buffer:
             )
             self.assertEqual(status, 0)
             lines = [json.loads(line) for line in output.getvalue().splitlines()]
-            self.assertEqual(len(lines), 2)
-            self.assertEqual(lines[0]["id"], 1)
-            self.assertEqual(lines[1]["result"]["content"][0]["text"],
+            self.assertEqual(len(lines), 3)
+            self.assertEqual(lines[0]["id"], "init")
+            self.assertEqual(lines[1]["id"], 1)
+            self.assertEqual(lines[2]["result"]["content"][0]["text"],
                              chosen["selected_content"])
-            self.assertNotIn("structuredContent", lines[1]["result"])
+            self.assertNotIn("structuredContent", lines[2]["result"])
 
             self._fixture(executable, wrong=True)
             wrong_digest = sha_file(executable)
