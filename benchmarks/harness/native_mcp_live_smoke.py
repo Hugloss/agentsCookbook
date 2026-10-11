@@ -117,10 +117,30 @@ def smoke_real_native_mcp(
         rows = [json.loads(line) for line in run.stdout.splitlines()]
     except (ValueError, UnicodeError) as exc:
         raise ValueError("native-mcp-live-stdio-output-invalid") from exc
-    indexed = {
-        row.get("id"): row for row in rows
-        if isinstance(row, dict) and isinstance(row.get("id"), str)
-    }
+    # A dictionary comprehension would silently discard duplicate IDs,
+    # unexpected successes and malformed rows, overstating local MCP proof.
+    # Only three exact, owned replies may qualify this smoke observation.
+    expected_ids = {"native-init", "native-list", "native-subject"}
+    indexed: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict) or row.get("jsonrpc") != "2.0":
+            raise ValueError("native-mcp-live-malformed-response-row")
+        if "id" not in row:
+            method = row.get("method")
+            if (type(method) is not str
+                    or not method.startswith("notifications/")
+                    or "result" in row or "error" in row):
+                raise ValueError("native-mcp-live-unrequested-server-message")
+            continue
+        ident = row["id"]
+        if (type(ident) is not str or ident not in expected_ids
+                or ident in indexed
+                or ("result" in row) == ("error" in row)
+                or "method" in row):
+            raise ValueError("native-mcp-live-duplicate-or-foreign-response")
+        indexed[ident] = row
+    if set(indexed) != expected_ids:
+        raise ValueError("native-mcp-live-incomplete-correlation")
     if (not isinstance(indexed.get("native-init", {}).get("result"), dict)
             or not isinstance(indexed.get("native-list", {}).get("result"), dict)
             or not isinstance(indexed["native-list"]["result"].get("tools"), list)
