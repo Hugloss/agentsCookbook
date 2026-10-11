@@ -168,9 +168,17 @@ def verify_host_attestations(
                 timing = intervention.get("study") == "timing"
                 expected_facets = INTERVENTION_FIELDS | (TIMING_FIELDS if timing else frozenset())
                 if (set(intervention) != expected_facets
-                        or intervention["study"] not in ("presentation", "freshness", "timing")
+                        or intervention["study"] not in ("presentation", "freshness", "timing", "text_presentation")
                         or intervention["arm"] not in ("control", "variant")
-                        or intervention["presentation"] not in ("structured", "text")
+                        or intervention["presentation"] not in (
+                            "structured", "text", "compact-json-text",
+                            "indented-json-text",
+                        )
+                        or (intervention["study"] == "text_presentation"
+                            and intervention["presentation"] != (
+                                "compact-json-text" if intervention["arm"] == "control"
+                                else "indented-json-text"
+                            ))
                         or not all(_hex64(intervention[name]) for name in
                                    expected_facets - {
                                        "study", "arm", "presentation",
