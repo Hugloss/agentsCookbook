@@ -107,22 +107,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", required=True, type=int)
     parser.add_argument("--unix", required=True)
-    parser.add_argument("--ip-binary", required=True)
     parser.add_argument("argv", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535 or not args.argv:
         return 2
     command = args.argv[1:] if args.argv[0] == "--" else args.argv
-    # Network namespace has no routable interface. Set up its own lo only.
-    # Failure is terminal: no fallback to sharing the host network.
+    # Bubblewrap itself brings up lo as part of --unshare-net and fails
+    # sandbox setup if that cannot be done. Asking ip(8) again after
+    # capabilities drop is both redundant and potentially unprivileged.
+    # A failed loopback bind in serve_child is terminal: no host-net fallback.
     try:
-        lo = subprocess.run(
-            [args.ip_binary, "link", "set", "lo", "up"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            timeout=5, check=False,
-        )
-        if lo.returncode != 0:
-            return 2
         return serve_child(args.port, args.unix, command)
     except (OSError, subprocess.SubprocessError, ValueError):
         return 2
