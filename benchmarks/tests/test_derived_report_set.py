@@ -11,6 +11,7 @@ from benchmarks.harness.derived_report_set import (
     DerivedReportSetError,
     REPORT_SET_ARTIFACTS,
     REPORT_SET_MANIFEST,
+    inspect_report_set,
     publish_report_set,
     verify_report_set,
 )
@@ -66,6 +67,13 @@ class DerivedReportSetTests(unittest.TestCase):
                     run_root=root,
                     expected_run_id="000001",
                 )
+            health = inspect_report_set(
+                run_root=root,
+                expected_run_id="000001",
+            )
+            self.assertEqual(health["status"], "INVALID")
+            self.assertFalse(health["verified"])
+            self.assertIn("decision-evidence.json", health["reason"])
 
     def test_interrupted_republication_cannot_look_like_complete_generation(
         self,
@@ -108,6 +116,21 @@ class DerivedReportSetTests(unittest.TestCase):
                     run_root=root,
                     expected_run_id="000001",
                 )
+
+    def test_legacy_unbound_reports_are_never_claimed_verified(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            reports = root / "reports"
+            reports.mkdir()
+            (reports / "report.json").write_text("{}\n", encoding="utf-8")
+
+            health = inspect_report_set(
+                run_root=root,
+                expected_run_id="legacy",
+            )
+            self.assertEqual(health["status"], "UNBOUND")
+            self.assertFalse(health["verified"])
+            self.assertEqual(health["artifacts_present"], ["report.json"])
 
     def test_manifest_is_bound_to_saved_run_identity(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
