@@ -45,7 +45,7 @@ def state() -> BridgeState:
 class NativeMcpRequestLedgerTests(unittest.TestCase):
     def test_out_of_order_unrelated_responses_are_forwarded_once(self):
         bridge = state()
-        init = request("init", "initialize")
+        init = request("init", "ping")
         listing = request(5)
         self.assertEqual(bridge.receive_request(init), init)
         self.assertEqual(bridge.receive_request(listing), listing)
@@ -123,9 +123,9 @@ class NativeMcpRequestLedgerTests(unittest.TestCase):
 
     def test_subject_can_complete_only_after_exact_issued_jsonrpc_request(self):
         bridge = admitted_state(state().contract)
-        bridge.receive_request(request("list"))
+        bridge.receive_request(request("unrelated"))
         bridge.receive_request(call_frame())
-        self.assertEqual(bridge.receive_response(response("list")), response("list"))
+        self.assertEqual(bridge.receive_response(response("unrelated")), response("unrelated"))
         processed = json.loads(bridge.receive_response(result_frame()))
         self.assertEqual(
             processed["result"]["content"][0]["text"],
