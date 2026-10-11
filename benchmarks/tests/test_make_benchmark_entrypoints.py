@@ -30,96 +30,68 @@ BENCHMARK_LAUNCHER = ROOT / "benchmark"
 
 
 class BenchmarkMakeEntrypointTests(unittest.TestCase):
-    def test_decision_projection_is_published_with_its_trace_generation(self) -> None:
-        paths = mock.Mock()
-        paths.run_id = "000001"
-        paths.root = Path("/campaign/runs/000001")
-        paths.results = paths.root / "results"
-        paths.as_dict.return_value = {
-            "root": str(paths.root),
-            "results": str(paths.results),
-            "run_id": paths.run_id,
-        }
-        trace = {
-            "summary": {
-                "repository_intelligence_quality": {
-                    "state": "observed",
-                    "subjects": [],
-                }
-            }
-        }
-        report_payload = {"decision_summary": {}}
-        decision_payload = {"authority": {"derived_only": True}}
-
-        with (
-            mock.patch("benchmarks.__main__.exclusive_store", return_value=nullcontext()),
-            mock.patch("benchmarks.__main__._same_saved_run_under_lock"),
-            mock.patch(
-                "benchmarks.__main__._canonical_campaign_persistence_gap",
-                return_value=None,
-            ),
-            mock.patch(
-                "benchmarks.__main__._selection_metadata",
-                return_value={},
-            ),
-            mock.patch(
-                "benchmarks.__main__.build_report",
-                return_value=report_payload,
-            ),
-            mock.patch(
-                "benchmarks.__main__.build_trace_diagnostics",
-                return_value=trace,
-            ),
-            mock.patch(
-                "benchmarks.__main__.build_decision_evidence",
-                return_value=decision_payload,
-            ) as decision,
-            mock.patch(
-                "benchmarks.__main__.publish_report_set",
-                return_value={
-                    "generation_id": "g" * 64,
-                    "run_id": "000001",
-                    "artifacts": {
-                        "report.json": {},
-                        "trace-diagnostics.json": {},
-                        "decision-evidence.json": {},
-                    },
-                },
-            ) as publish,
-            mock.patch(
-                "benchmarks.__main__.campaign_status",
-                return_value={"qualified": True},
-            ),
-            mock.patch(
-                "benchmarks.__main__._write_derived_json",
-            ) as write,
-        ):
-            report, error = _refresh_canonical_report(
-                store_root=Path("/campaign"),
-                paths=paths,
-                suite=mock.Mock(),
-                rows=[{"definition_id": "definition"}],
+    def test_canonical_report_refresh_uses_full_generation_persistence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "runs/000001"
+            results = root / "results"
+            results.mkdir(parents=True)
+            report_path = root / "reports/report.json"
+            report_path.parent.mkdir(parents=True)
+            report_payload = {"run_id": "000001", "expected_trials": 1}
+            report_path.write_text(
+                json.dumps(report_payload) + "\n",
+                encoding="utf-8",
             )
+            paths = mock.Mock()
+            paths.run_id = "000001"
+            paths.root = root
+            paths.results = results
+            args = mock.Mock()
+            config = mock.Mock()
+            suite = mock.Mock()
+            rows = [{"definition_id": "definition"}]
+            final_status = {"complete": True, "qualified": True}
 
-        self.assertIsNone(error)
-        self.assertIsNotNone(report)
-        decision.assert_called_once_with(
-            report,
-            trace_diagnostics=trace,
-        )
-        publish.assert_called_once_with(
-            run_root=paths.root,
-            run_id="000001",
-            report=report,
-            trace_diagnostics=trace,
-            decision_evidence=decision_payload,
-        )
-        write.assert_called_once()
-        self.assertEqual(write.call_args.args[1], "status.json")
-        self.assertEqual(
-            write.call_args.args[2]["derived_report_set"]["generation_id"],
-            "g" * 64,
-        )
+            with (
+                mock.patch(
+                    "benchmarks.__main__.exclusive_store",
+                    return_value=nullcontext(),
+                ),
+                mock.patch("benchmarks.__main__._same_saved_run_under_lock"),
+                mock.patch(
+                    "benchmarks.__main__._canonical_campaign_persistence_gap",
+                    return_value=None,
+                ),
+                mock.patch(
+                    "benchmarks.__main__.campaign_status",
+                    return_value=final_status,
+                ),
+                mock.patch(
+                    "benchmarks.__main__._persist_completed_run_reports",
+                    return_value={"report": report_path},
+                ) as persist,
+            ):
+                report, error = _refresh_canonical_report(
+                    store_root=Path(temporary),
+                    paths=paths,
+                    suite=suite,
+                    rows=rows,
+                    args=args,
+                    config=config,
+                    runtime_source={"TOKEN": "value"},
+                )
+
+            self.assertIsNone(error)
+            self.assertEqual(report, report_payload)
+            persist.assert_called_once_with(
+                args=args,
+                config=config,
+                suite=suite,
+                rows=rows,
+                paths=paths,
+                runtime_source={"TOKEN": "value"},
+                final_status=final_status,
+            )
 
     def test_local_campaign_example_is_durable_and_ignored(self) -> None:
         env_example = ENV_EXAMPLE.read_text(encoding="utf-8")
