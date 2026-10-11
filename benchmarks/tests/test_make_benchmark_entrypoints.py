@@ -339,6 +339,122 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             ]
             self.assertEqual(observed, ["a" * 64, "b" * 64])
 
+    def test_canonical_score_refresh_uses_full_generation_persistence(self) -> None:
+        suite_path = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
+        suite = load_suite(suite_path)
+        definition = str(suite.trial_definitions()[0]["definition_id"])
+        score_script = suite_path / "score.py"
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Path(temporary)
+            run_root = store / "runs/000001"
+            (run_root / "results").mkdir(parents=True)
+            saved = SavedRun("000001", run_root)
+            score_path = run_root / "reports/score.json"
+            manifest = {
+                "selected_definitions": [definition],
+                "agents": {"opencode-native": {}},
+            }
+            config = mock.Mock()
+            config.runtime_environment.return_value = {}
+
+            def resolve(args):
+                args.score_script = score_script
+                args.output = Path("score.json")
+                return config
+
+            with (
+                mock.patch("benchmarks.__main__._resolve_config", side_effect=resolve),
+                mock.patch("benchmarks.__main__._validate_score_cli"),
+                mock.patch("benchmarks.__main__.select_saved_run", return_value=saved),
+                mock.patch(
+                    "benchmarks.__main__._assert_saved_run_agents",
+                    return_value=manifest,
+                ),
+                mock.patch("benchmarks.__main__.verify_campaign_suite_authority"),
+                mock.patch(
+                    "benchmarks.__main__.select_scoring_definitions",
+                    return_value=[suite.trial_definitions()[0]],
+                ),
+                mock.patch(
+                    "benchmarks.__main__.campaign_status",
+                    return_value={"complete": True, "qualified": True},
+                ),
+                mock.patch(
+                    "benchmarks.__main__._persist_completed_run_reports",
+                    return_value={"score": score_path},
+                ) as persist,
+            ):
+                self.assertEqual(
+                    main(
+                        [
+                            "score",
+                            "--env-file",
+                            str(store / "unused.env"),
+                            "--suite",
+                            str(suite_path),
+                            "--root",
+                            str(store),
+                            "--agent",
+                            "opencode-native",
+                        ]
+                    ),
+                    0,
+                )
+
+            persist.assert_called_once()
+            self.assertEqual(
+                persist.call_args.kwargs["score_contract"],
+                (score_script.resolve(), Path("score.json")),
+            )
+
+    def test_tool_probe_smoke_gate_requires_generation_bound_score(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            store = Path(temporary)
+            run_root = store / "runs/000001"
+            reports = run_root / "reports"
+            reports.mkdir(parents=True)
+            score_path = reports / "score.json"
+            score = {
+                "schema": "agents-cookbook-tool-probe-score.v3",
+                "subject": "hashmarks",
+                "required_tool": "hashmarks_task_evidence",
+                "expected_trials": 0,
+                "observed_trials": 0,
+                "required_tool_results": [],
+            }
+            score_path.write_text(json.dumps(score) + "\n", encoding="utf-8")
+            saved = SavedRun("000001", run_root)
+
+            with (
+                mock.patch(
+                    "benchmarks.__main__.select_saved_run",
+                    return_value=saved,
+                ),
+                mock.patch(
+                    "benchmarks.__main__.verified_score_path",
+                    return_value=score_path,
+                ) as verified,
+                mock.patch("benchmarks.__main__.smoke_gate") as gate,
+            ):
+                self.assertEqual(
+                    main(
+                        [
+                            "tool-probe-smoke-gate",
+                            "--root",
+                            str(store),
+                            "--subject",
+                            "hashmarks",
+                        ]
+                    ),
+                    0,
+                )
+
+            verified.assert_called_once_with(
+                run_root=run_root,
+                expected_run_id="000001",
+            )
+            gate.assert_called_once_with(score, subject="hashmarks")
+
     def test_manual_score_cannot_race_active_campaign_owner(self) -> None:
         suite = ROOT / "benchmarks/suites/repository-intelligence/heldout-v1"
         score_script = suite / "score.py"
