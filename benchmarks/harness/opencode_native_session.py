@@ -19,7 +19,7 @@ from .host_input_attestation import canonical, verify_host_attestations
 from .trusted_host_capture import TrustedModelRequestCapture
 from .trusted_treatments import verify_manifest
 
-SCHEMA = "agentscookbook.opencode-native-session-binding.v1"
+SCHEMA = "agentscookbook.opencode-native-session-binding.v2"
 MAX_EXPORT_BYTES = 16_777_216
 MAX_NATIVE_TOOL_PARTS = 10_000
 MAX_TOOL_NAME_CHARS = 256
