@@ -18,6 +18,7 @@ from benchmarks.harness.native_chat_request_integrity import (
     require_assistant_tool_ancestry,
 )
 from benchmarks.harness.opencode_native_gateway import NativeOpenCodeGateway
+from benchmarks.harness.opencode_native_trial import launch_native_trial
 from benchmarks.tests.test_opencode_native_gateway import (
     H, KEY, UPSTREAM, manifest, source,
 )
@@ -87,6 +88,65 @@ class FrozenNativePairTests(unittest.TestCase):
                     tampered, trial_id=self.variant["trial_id"],
                     manifest_sha256=self.plan["manifest_sha256"],
                 ))
+
+    def test_isolated_variant_without_paired_transport_never_starts_model(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            workspace = root / "workspace"
+            (workspace / ".git").mkdir(parents=True)
+            binary = root / "opencode"
+            binary.write_text("#!/bin/sh\necho pinned-version\n")
+            binary.chmod(0o700)
+            hashmarks = root / "hashmarks"
+            hashmarks.write_text("#!/bin/sh\nexit 0\n")
+            hashmarks.chmod(0o700)
+            key = root / "host.key"
+            key.write_bytes(KEY)
+            key.chmod(0o600)
+            run_root = root / "run"
+            with patch(
+                "benchmarks.harness.opencode_native_trial.admit_netns_substrate",
+                return_value={"bwrap": "/usr/bin/bwrap", "python": "/usr/bin/python3"},
+            ), patch(
+                "benchmarks.harness.opencode_native_trial.native_export_preflight",
+            ), patch(
+                "benchmarks.harness.opencode_native_trial.probe_netns_kernel",
+                return_value={"kernel_probe_qualified": True},
+            ), patch(
+                "benchmarks.harness.opencode_native_trial.NativeOpenCodeGateway",
+            ) as gateway, patch(
+                "benchmarks.harness.opencode_native_trial.subprocess.run",
+                return_value=SimpleNamespace(
+                    returncode=0, stdout=b"pinned-version\n", stderr=b"",
+                ),
+            ) as subprocess_run:
+                with self.assertRaisesRegex(ValueError, "paired-transport-not-admitted"):
+                    launch_native_trial(
+                        self.plan, trial_id=self.variant["trial_id"],
+                        opencode_executable=binary,
+                        expected_binary_sha256=hashlib.sha256(
+                            binary.read_bytes(),
+                        ).hexdigest(),
+                        expected_version="pinned-version",
+                        run_root=run_root, workspace=workspace,
+                        prompt="Find source owner", host_key_file=key,
+                        host_identity="host", current=source(), replaced=None,
+                        upstream=UPSTREAM,
+                        approved_origin="https://api.example.invalid",
+                        upstream_api_key="host-secret",
+                        catalog_sha256=H("catalog"), oracle_sha256=H("oracle"),
+                        workspace_sha256=H("workspace"),
+                        use_netns_isolation=True,
+                        hashmarks_executable=hashmarks,
+                        expected_hashmarks_sha256=hashlib.sha256(
+                            hashmarks.read_bytes(),
+                        ).hexdigest(),
+                    )
+                gateway.assert_not_called()
+                self.assertFalse(run_root.exists())
+                self.assertEqual(subprocess_run.call_count, 1)
+                self.assertEqual(subprocess_run.call_args.args[0][1], "--version")
 
     def test_frozen_pair_must_have_exact_identity_and_completeness(self):
         bad = copy.deepcopy(self.plan)
