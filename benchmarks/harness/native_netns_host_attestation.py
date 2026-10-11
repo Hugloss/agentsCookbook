@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .host_input_attestation import canonical
+from .native_netns_probe import kernel_probe_receipt_valid
 
 SCHEMA = "agentscookbook.native-netns-host-isolation-attestation.v1"
 DOMAIN = b"agentscookbook.netns-host-execution-hmac.v1\0"
@@ -41,6 +42,10 @@ def sign_isolation_report(
             or report.get("host_receipt_finalized") is not True
             or report.get("kernel_distinct_netns_relay_observed") is not True
             or report.get("linux_network_namespace_requested") is not True
+            or not kernel_probe_receipt_valid(
+                report.get("native_kernel_preflight"),
+                expected_bwrap_sha256=report.get("native_sandbox_binary_sha256"),
+            )
             or not isinstance(report.get("gateway"), Mapping)
             or report["gateway"].get("kernel_netns_peer_check_required") is not True
             or type(report["gateway"].get("distinct_netns_peer_connections")) is not int
