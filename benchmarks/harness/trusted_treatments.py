@@ -145,7 +145,7 @@ def select_treatment(manifest: Mapping[str, Any], *, trial_id: str,
             primary["content"] if presentation == "structured"
             else primary_bytes.decode("utf-8")
         )
-    else:
+    elif design["study"] == "freshness":
         if replaced is None:
             raise ValueError("freshness-requires-explicit-replaced-generation")
         alternate, alternate_bytes = parse_source(replaced)
@@ -158,6 +158,12 @@ def select_treatment(manifest: Mapping[str, Any], *, trial_id: str,
         )
         presentation = "structured"
         visible = chosen["content"]
+    else:
+        if replaced is not None:
+            raise ValueError("timing-requires-single-unchanged-semantic-source")
+        chosen, chosen_bytes = primary, primary_bytes
+        presentation = "structured"
+        visible = primary["content"]
     return {
         "trial_id": trial_id,
         "arm": arm,
@@ -170,6 +176,11 @@ def select_treatment(manifest: Mapping[str, Any], *, trial_id: str,
         "presentation": presentation,
         "surface_sha256": sha(visible),
         "selected_content": visible,
+        **({
+            "required_request_sequence": 1 if arm == "control" else 2,
+            "requires_prior_tool_free_request": arm == "variant",
+            "timing_extra_model_request_confound": True,
+        } if design["study"] == "timing" else {}),
         "selection_is_host_delivery_proof": False,
     }
 

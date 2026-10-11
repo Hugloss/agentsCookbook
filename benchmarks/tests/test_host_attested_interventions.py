@@ -54,6 +54,9 @@ def _design(study: str = "presentation", tasks: list[str] | None = None) -> dict
             if study == "presentation" else {
                 "control": "current-generation",
                 "variant": "replaced-generation",
+            } if study == "freshness" else {
+                "control": "direct-first-request",
+                "variant": "deferred-second-request",
             }
         ),
     }
@@ -72,11 +75,21 @@ def _facets(study: str, arm: str, design: dict) -> dict:
             "presentation": "structured" if arm == "control" else "text",
             "generation_sha256": D("current"), "semantic_sha256": D("same"),
         })
-    else:
+    elif study == "freshness":
         common.update({
             "presentation": "structured",
             "generation_sha256": D("current" if arm == "control" else "stale"),
             "semantic_sha256": D("current-answer" if arm == "control" else "old-answer"),
+        })
+    else:
+        common.update({
+            "presentation": "structured",
+            "generation_sha256": D("current"),
+            "semantic_sha256": D("same-timing-claims"),
+            "surface_sha256": D("identical-timing-payload"),
+            "delivery_request_sequence": 1 if arm == "control" else 2,
+            "prior_request_sha256": "0" * 64 if arm == "control" else D("tool-free-prior"),
+            "prior_transport_sha256": "0" * 64 if arm == "control" else D("prior-http-2xx"),
         })
     return common
 
@@ -254,6 +267,36 @@ class PresentationAndFreshnessInterventionAttacks(unittest.TestCase):
             with self.subTest(facet=facet):
                 self.assertEqual(audit_intervention_observations(
                     design, rows)["coverage_state"], "INCOMPLETE")
+
+    def test_timing_study_reports_real_extra_request_confound_not_pure_delay(self) -> None:
+        design = _design("timing")
+        report = audit_intervention_observations(design, _observations(design))
+        self.assertEqual(report["coverage_state"], "COMPLETE")
+        self.assertEqual(report["qualified_matched_pairs"], 1)
+        self.assertTrue(report["timing_delivery_extra_request_confound"])
+        self.assertFalse(report["causal_effect_qualified"])
+        self.assertFalse(report["randomization_or_pre_registration_attested"])
+        self.assertFalse(report["model_attention_proven"])
+        for facet, value in (
+            ("delivery_request_sequence", 1),
+            ("prior_request_sha256", "0" * 64),
+            ("prior_transport_sha256", "0" * 64),
+            ("semantic_sha256", D("another-semantic-content")),
+            ("surface_sha256", D("another-visible-payload")),
+            ("prompt_sha256", D("another-prompt")),
+        ):
+            altered = copy.deepcopy(_observations(design))
+            altered[1]["intervention"][facet] = value
+            report = audit_intervention_observations(design, altered)
+            with self.subTest(field=facet):
+                self.assertEqual(report["coverage_state"], "INCOMPLETE")
+                self.assertFalse(report["causal_effect_qualified"])
+        with self.assertRaisesRegex(ValueError, "timing-arms"):
+            validate_design({
+                **design, "arms": {
+                    "control": "deferred-second-request", "variant": "direct-first-request",
+                },
+            })
 
     def test_source_identity_must_remain_constant_across_matched_arms(self) -> None:
         design = _design()

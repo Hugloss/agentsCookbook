@@ -50,7 +50,7 @@ def validate_design(design: object) -> dict[str, Any]:
         "tasks", "replicates", "arms",
     }:
         raise ValueError("invalid-intervention-design")
-    if design["schema"] != SCHEMA or design["study"] not in ("presentation", "freshness"):
+    if design["schema"] != SCHEMA or design["study"] not in ("presentation", "freshness", "timing"):
         raise ValueError("unsupported-intervention-study")
     if any(not isinstance(design[v], str) or not 0 < len(design[v]) <= 256
            for v in ("campaign_id", "model")):
@@ -65,8 +65,11 @@ def validate_design(design: object) -> dict[str, Any]:
     if design["study"] == "presentation":
         if arms != {"control": "structured", "variant": "text"}:
             raise ValueError("presentation-arms-must-be-structured-vs-text")
-    elif arms != {"control": "current-generation", "variant": "replaced-generation"}:
-        raise ValueError("freshness-arms-must-be-current-vs-replaced")
+    elif design["study"] == "freshness":
+        if arms != {"control": "current-generation", "variant": "replaced-generation"}:
+            raise ValueError("freshness-arms-must-be-current-vs-replaced")
+    elif arms != {"control": "direct-first-request", "variant": "deferred-second-request"}:
+        raise ValueError("timing-arms-must-be-direct-vs-deferred")
     return dict(design)
 
 
@@ -75,6 +78,25 @@ def _facet_compare(a: Mapping[str, Any], b: Mapping[str, Any], study: str) -> st
         return "cross-arm-prompt-catalog-oracle-or-workspace-drift"
     if a["current_generation_sha256"] != b["current_generation_sha256"]:
         return "cross-arm-target-generation-drift"
+    if study == "timing":
+        # Withheld-first-call is a real extra model request. The identical
+        # payload must not be misrepresented as a randomized pure timing effect.
+        if (
+            a["presentation"] != "structured"
+            or b["presentation"] != "structured"
+            or a["surface_sha256"] != b["surface_sha256"]
+            or a["semantic_sha256"] != b["semantic_sha256"]
+            or a["generation_sha256"] != b["generation_sha256"]
+            or a["generation_sha256"] != a["current_generation_sha256"]
+            or a["delivery_request_sequence"] != 1
+            or b["delivery_request_sequence"] != 2
+            or a["prior_request_sha256"] != "0" * 64
+            or b["prior_request_sha256"] == "0" * 64
+            or a["prior_transport_sha256"] != "0" * 64
+            or b["prior_transport_sha256"] == "0" * 64
+        ):
+            return "timing-intervention-not-isolated-or-unproven"
+        return None
     if a["surface_sha256"] == b["surface_sha256"]:
         return "identical-model-input-surface"
     if study == "presentation":
@@ -136,13 +158,21 @@ def audit_intervention_observations(
             "semantic_sha256", "catalog_sha256", "prompt_sha256",
             "oracle_sha256", "workspace_sha256", "surface_sha256",
         }
+        if plan["study"] == "timing":
+            required_facets |= {
+                "delivery_request_sequence", "prior_request_sha256",
+                "prior_transport_sha256",
+            }
         if (not isinstance(meta, Mapping) or set(meta) != required_facets
                 or meta.get("study") != plan["study"]
                 or meta.get("arm") != key[3]
                 or meta.get("presentation") not in ("structured", "text")
                 or meta.get("design_sha256") != hashlib.sha256(canonical(plan)).hexdigest()
                 or any(not _hex64(meta.get(name)) for name in required_facets -
-                       {"study", "arm", "presentation"})):
+                       {"study", "arm", "presentation", "delivery_request_sequence"})
+                or (plan["study"] == "timing"
+                    and (type(meta.get("delivery_request_sequence")) is not int
+                         or meta["delivery_request_sequence"] not in (1, 2)))):
             issues["host-intervention-design-unbound"] += 1
     missing = expected - set(registered)
     if missing:
@@ -174,13 +204,21 @@ def audit_intervention_observations(
                     "semantic_sha256", "catalog_sha256", "prompt_sha256",
                     "oracle_sha256", "workspace_sha256", "surface_sha256",
                 }
+                if plan["study"] == "timing":
+                    required |= {
+                        "delivery_request_sequence", "prior_request_sha256",
+                        "prior_transport_sha256",
+                    }
                 if (set(left) != required or set(right) != required
                         or left.get("study") != plan["study"] or right.get("study") != plan["study"]
                         or left.get("arm") != "control" or right.get("arm") != "variant"
                         or any(x.get("design_sha256") != hashlib.sha256(canonical(plan)).hexdigest()
                                for x in (left, right))
                         or any(not _hex64(x.get(name)) for x in (left, right)
-                               for name in required - {"study", "arm", "presentation"})):
+                               for name in required - {"study", "arm", "presentation", "delivery_request_sequence"})
+                        or (plan["study"] == "timing"
+                            and (type(left.get("delivery_request_sequence")) is not int
+                                 or type(right.get("delivery_request_sequence")) is not int))):
                     continue
                 reason = _facet_compare(left, right, plan["study"])
                 if reason:
@@ -217,7 +255,12 @@ def audit_intervention_observations(
         "randomization_or_pre_registration_attested": False,
         "causal_effect_qualified": False,
         "model_attention_proven": False,
+        "timing_delivery_extra_request_confound": plan["study"] == "timing",
         "interpretation": (
+            "The timing variant requires a host-attested tool-free first provider "
+            "request, then a second request carrying the same tool evidence. "
+            "The extra model invocation and resulting state are confounded "
+            "with delay: this is not a pure timing causal experiment. "
             "Only externally keyed host-model-request delivery plus immutable Harbor "
             "grade and exact within-pair facet isolation can enter descriptive "
             "contrasts. A signed design is not a trusted timestamp, a host MAC "
@@ -264,6 +307,8 @@ def audit_intervention_bundles(
             )
             if verified["delivery_state"] != "PROVEN":
                 raise ValueError("unverified-host-model-input")
+            if plan["study"] == "timing" and verified["provider_submission_state"] != "SUBMITTED":
+                raise ValueError("timing-model-request-not-submitted")
             envelope = _load_receipt(path)
             if not isinstance(envelope, dict) or envelope.get("schema") != HOST_SCHEMA:
                 raise ValueError("invalid-host-attestation")
