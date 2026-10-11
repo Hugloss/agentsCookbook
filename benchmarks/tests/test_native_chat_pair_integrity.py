@@ -31,7 +31,7 @@ def exact_request(content: str):
             {"role": "assistant", "tool_calls": [{
                 "id": "call-1", "type": "function",
                 "function": {"name": "hashmarks_task_evidence",
-                             "arguments": "{\\"scope\\":\\"repo\\"}"},
+                             "arguments": "{}"},
             }]},
             {"role": "tool", "tool_call_id": "call-1", "content": content},
         ],
