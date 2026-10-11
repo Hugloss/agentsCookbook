@@ -147,9 +147,9 @@ def inspect_native_export(raw: bytes, *, session_id: str,
             # Unknown Hashmarks names may not silently pass for native
             # calls, especially when a separate recognized call exists.
             if (not subject and name.startswith((
-                    "hashmarks_", "hashmarks.", "mcp__hashmarks__",
-                    "tools.hashmarks."))):
-                raise ValueError("unknown-native-subject-operation")
+                    "hashmarks_", "hashmarks.", "mcp__",
+                    "tools.hashmarks.", "tools.enola.", "enola_", "enola."))):
+                raise ValueError("unknown-or-foreign-native-mcp-operation")
             entry = {
                 "tool_name": name,
                 "call_id": call_id,
@@ -211,6 +211,8 @@ def inspect_native_export(raw: bytes, *, session_id: str,
         "native_subject_tool_parts_observed": len(subject_calls),
         "native_tool_order_projected": True,
         "native_export_capture_exhaustiveness_proven": False,
+        "native_text_after_last_tool_observed": True,
+        "native_terminal_stop_proven": False,
         "atif": atif,
         "native_session_observed": True,
         "native_process_origin_proven": False,
