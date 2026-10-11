@@ -248,6 +248,8 @@ class StrictCampaignAdmissionTests(unittest.TestCase):
             return_value={
                 "attestation_state": "VERIFIED", "delivery_state": "PROVEN",
                 "provider_submission_state": "SUBMITTED",
+                "verified_provider_submission_packets": 1,
+                "returned_packets": 1,
             },
         ) as verify:
             report = qualify_campaign(
