@@ -250,6 +250,8 @@ class NativeOpenCodeGateway:
         self._unix_thread: threading.Thread | None = None
         self._unix_path: Path | None = None
         self.peer_credentials_observed: list[tuple[int, int, int]] = []
+        self.network_namespace_verified_peers = 0
+        self._require_isolated_peer = False
         self._lock = threading.Lock()
         self._state = "PRE_EVIDENCE"
         self.unauthenticated_attempts = 0
@@ -368,7 +370,8 @@ class NativeOpenCodeGateway:
         self._thread.start()
         return int(self._server.server_address[1])
 
-    def start_unix(self, socket_path: Path) -> None:
+    def start_unix(self, socket_path: Path, *,
+                   require_isolated_peer: bool = False) -> None:
         """Private host Unix gateway for Linux network-isolated OpenCode.
 
         The sandbox receives a bind mount of the socket directory, *not*
@@ -380,6 +383,7 @@ class NativeOpenCodeGateway:
                 or not socket_path.parent.is_dir()
                 or socket_path.parent.stat().st_mode & 0o077):
             raise ValueError("unsafe-or-duplicate-native-unix-gateway")
+        self._require_isolated_peer = require_isolated_peer
         parent = self
 
         class Handler(socketserver.BaseRequestHandler):
@@ -399,8 +403,20 @@ class NativeOpenCodeGateway:
                     if hasattr(socket, "SO_PEERCRED"):
                         raw_peer = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
                         peer = struct.unpack("3i", raw_peer)
+                        if parent._require_isolated_peer:
+                            try:
+                                peer_netns = os.stat(f"/proc/{peer[0]}/ns/net").st_ino
+                                host_netns = os.stat("/proc/self/ns/net").st_ino
+                            except OSError as exc:
+                                raise ValueError("netns-peer-proof-unavailable") from exc
+                            if peer_netns == host_netns:
+                                raise ValueError("unisolated-host-network-peer-denied")
                         with parent._lock:
                             parent.peer_credentials_observed.append(peer)
+                            if parent._require_isolated_peer:
+                                parent.network_namespace_verified_peers += 1
+                    elif parent._require_isolated_peer:
+                        raise ValueError("peer-credential-kernel-support-required")
                     token_length = struct.unpack("!I", read_exact(4))[0]
                     if not 0 < token_length <= 512:
                         raise ValueError("unix-gateway-auth-size")
@@ -464,6 +480,8 @@ class NativeOpenCodeGateway:
             "host_submission_recorded": self.post_evidence_submissions == 1,
             "native_process_origin_proven": False,
             "unix_peer_credentials_observed": len(self.peer_credentials_observed),
+            "distinct_netns_peer_connections": self.network_namespace_verified_peers,
+            "kernel_netns_peer_check_required": self._require_isolated_peer,
             "socket_peer_executable_verified": False,
             "provider_response_relay_qualified": self.post_evidence_submissions == 1,
             "causal_improvement_proven": False,
