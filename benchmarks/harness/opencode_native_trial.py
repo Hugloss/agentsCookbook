@@ -45,7 +45,7 @@ from .native_netns_host_attestation import (
     sign_isolation_report, write_isolation_attestation,
 )
 
-SCHEMA = "agentscookbook.pinned-opencode-gateway-trial.v2"
+SCHEMA = "agentscookbook.pinned-opencode-gateway-trial.v3"
 
 
 def _make_private_dir(path: Path) -> None:
