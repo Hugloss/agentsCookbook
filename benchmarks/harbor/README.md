@@ -1573,8 +1573,9 @@ IDs. The exported assistant parts must contain **exactly one** completed,
 recognized Hashmarks tool result with a call ID and JSON packet identical
 to the one observed by the trusted gateway; a final assistant text part
 must occur **after** that tool completion. Missing or duplicate subject calls, changed packets, unknown Hashmarks
-operations, malformed or unfinished native tool parts, and missing terminal
-answer fail before any host receipt is written. Other completed native tools
+operations, malformed or unfinished native tool parts, and missing nonempty post-last-tool assistant text fail before any host
+receipt is written. Text after a tool is not independent proof of a
+native terminal stop. Other completed native tools
 are allowed and remain part of the observed call order.
 
 Only after that exact native tool observation does the host preserve the
@@ -1666,8 +1667,8 @@ The versioned native projection now reads **every completed assistant tool
 part** in its observed export order. All native call IDs must be unique
 and bounded, with completed state, valid name and map input. Unknown
 Hashmarks tool spellings, duplicate call IDs, unfinished native tools,
-fake user-authored tool parts, and apparently final text followed by
-another unfinished conversation turn fail before ATIF publication. The
+fake user-authored tool parts, foreign MCP calls, and apparently final
+text followed by another tool call fail before ATIF publication. The
 single selected Hashmarks packet remains exactly linked to its host
 provider submission; non-subject calls carry only operation identity
 and bounded navigation locators. Their source contents, raw commands,
