@@ -18,6 +18,42 @@ from pathlib import Path
 from typing import Mapping
 
 SCHEMA = "agentscookbook.native-netns-isolation.v1"
+RUNTIME_MOUNT_ROOTS = ("/usr", "/lib", "/lib64", "/bin", "/sbin")
+
+
+def admit_host_only_paths(
+    *, workspace: Path, run_root: Path, host_key_file: Path,
+    executable: Path, hashmarks_executable: Path,
+) -> None:
+    """Reject secrets, executable authority or workspaces exposed by mount roots.
+
+    Validate resolved ancestors, not just final symlinks: a symlinked
+    intermediate directory can otherwise bypass a lexical path check.
+    The same routine runs before creating the private trial directory.
+    """
+    for candidate in (workspace, run_root, host_key_file,
+                      executable, hashmarks_executable):
+        if not candidate.is_absolute():
+            raise ValueError("native-host-path-not-absolute")
+    work, output, key = (x.resolve(strict=False) for x in
+                         (workspace, run_root, host_key_file))
+    opencode, hashmarks = (x.resolve(strict=False) for x in
+                           (executable, hashmarks_executable))
+    roots = tuple(Path(root).resolve() for root in RUNTIME_MOUNT_ROOTS)
+    if (
+        work == output or output.is_relative_to(work)
+        or work.is_relative_to(output)
+        or any(work.is_relative_to(root) or output.is_relative_to(root)
+               or key.is_relative_to(root) for root in roots)
+        or key.is_relative_to(work) or key.is_relative_to(output)
+        or opencode.is_relative_to(work) or opencode.is_relative_to(output)
+        or hashmarks.is_relative_to(work) or hashmarks.is_relative_to(output)
+        or host_key_file.is_symlink() or workspace.is_symlink()
+        or executable.is_symlink() or hashmarks_executable.is_symlink()
+    ):
+        raise ValueError("native-host-authority-exposed-to-evaluated-sandbox")
+
+
 
 
 def _sha_file(path: Path) -> str:
@@ -60,7 +96,7 @@ def admit_netns_substrate() -> dict[str, str]:
 def runtime_mount_argv() -> list[str]:
     """One owned runtime-root whitelist for native launch and kernel probe."""
     out: list[str] = []
-    for dirname in ("/usr", "/lib", "/lib64", "/bin", "/sbin"):
+    for dirname in RUNTIME_MOUNT_ROOTS:
         entry = Path(dirname)
         if entry.is_symlink():
             target = os.readlink(dirname)
