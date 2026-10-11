@@ -233,6 +233,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
                         "report": root / "reports/report.json",
                         "decision_evidence": root / "reports/decision-evidence.json",
                         "trace_diagnostics": root / "reports/trace-diagnostics.json",
+                        "report_set": root / "reports/report-set.json",
                         "score": root / "reports/score.json",
                     },
                 ) as persist_reports,
@@ -369,6 +370,7 @@ class SavedRunRecoveryTests(unittest.TestCase):
                         "report": root / "reports/report.json",
                         "decision_evidence": root / "reports/decision-evidence.json",
                         "trace_diagnostics": root / "reports/trace-diagnostics.json",
+                        "report_set": root / "reports/report-set.json",
                         "score": root / "reports/score.json",
                     },
                 ),
@@ -533,10 +535,18 @@ class SavedRunRecoveryTests(unittest.TestCase):
             self.assertTrue(written["status"].is_file())
             self.assertTrue(written["report"].is_file())
             self.assertTrue(written["decision_evidence"].is_file())
+            self.assertTrue(written["report_set"].is_file())
             self.assertTrue(written["score"].is_file())
             stored_status = json.loads(written["status"].read_text(encoding="utf-8"))
             self.assertFalse(stored_status["qualified"])
             self.assertEqual(stored_status["unresolved_outcome_trials"], 1)
+            self.assertEqual(
+                stored_status["derived_report_set"]["status"],
+                "VERIFIED",
+            )
+            self.assertTrue(
+                stored_status["derived_report_set"]["generation_id"]
+            )
             stored_report = json.loads(written["report"].read_text(encoding="utf-8"))
             self.assertEqual(
                 stored_report["campaign_qualification"]["status"],

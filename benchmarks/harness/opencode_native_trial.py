@@ -129,9 +129,8 @@ def launch_native_trial(
     # succeed. Reject missing Linux capture authority before creating the
     # workspace/run root or starting the native model.
     native_export_preflight()
-    # This exercises the actual kernel boundary while no native run root,
-    # socket, child workspace mutation, or model dispatch exists.
-    kernel_probe = probe_netns_kernel(substrate) if substrate is not None else None
+    # Check the frozen source and both treatment arms before the
+    # effective Linux kernel probe and before any model work.
     chat_contract = None
     paired_contract = None
     bridge_contract = None
@@ -147,6 +146,27 @@ def launch_native_trial(
             raise ValueError(
                 "native-chat-tool-content-shape-not-supported-before-model-work"
             )
+        if frozen["design"]["study"] == "text_presentation":
+            opposite = [
+                row for row in frozen["assignments"]
+                if row["pair_id"] == cell["pair_id"] and row["arm"] != cell["arm"]
+            ]
+            if len(opposite) != 1:
+                raise ValueError("incomplete-native-text-presentation-pair")
+            partner = select_treatment(
+                frozen, trial_id=opposite[0]["trial_id"],
+                harness=opposite[0]["harness"],
+                task=opposite[0]["task"],
+                replicate=opposite[0]["replicate"],
+                arm=opposite[0]["arm"],
+                current=current, replaced=replaced,
+            )
+            partner_contract = inspect_selected_content(partner)
+            if (not partner_contract["chat_tool_content_wire_compatible"]
+                    or selected["semantic_sha256"] != partner["semantic_sha256"]
+                    or selected["generation_sha256"] != partner["generation_sha256"]
+                    or selected["surface_sha256"] == partner["surface_sha256"]):
+                raise ValueError("unqualified-native-text-presentation-pair")
         paired_contract = admit_native_chat_pair(
             frozen, trial_id=trial_id, current=current, replaced=replaced,
             allow_unpaired_diagnostic=allow_unpaired_native_diagnostic,
@@ -156,6 +176,8 @@ def launch_native_trial(
                 selected, original_packet=current["content"],
                 hashmarks_sha256=expected_hashmarks_sha256,
             )
+    # Only after complete frozen pair admission may the host probe the kernel.
+    kernel_probe = probe_netns_kernel(substrate) if substrate is not None else None
     gateway = NativeOpenCodeGateway(
         frozen, trial_id=trial_id, host_key_file=host_key_file,
         host_identity=host_identity, current=current, replaced=replaced,

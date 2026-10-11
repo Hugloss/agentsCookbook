@@ -50,7 +50,7 @@ def validate_design(design: object) -> dict[str, Any]:
         "tasks", "replicates", "arms",
     }:
         raise ValueError("invalid-intervention-design")
-    if design["schema"] != SCHEMA or design["study"] not in ("presentation", "freshness", "timing"):
+    if design["schema"] != SCHEMA or design["study"] not in ("presentation", "freshness", "timing", "text_presentation"):
         raise ValueError("unsupported-intervention-study")
     if any(not isinstance(design[v], str) or not 0 < len(design[v]) <= 256
            for v in ("campaign_id", "model")):
@@ -65,6 +65,12 @@ def validate_design(design: object) -> dict[str, Any]:
     if design["study"] == "presentation":
         if arms != {"control": "structured", "variant": "text"}:
             raise ValueError("presentation-arms-must-be-structured-vs-text")
+    elif design["study"] == "text_presentation":
+        if arms != {
+            "control": "compact-json-text",
+            "variant": "indented-json-text",
+        }:
+            raise ValueError("text-presentation-arms-must-be-compact-vs-indented")
     elif design["study"] == "freshness":
         if arms != {"control": "current-generation", "variant": "replaced-generation"}:
             raise ValueError("freshness-arms-must-be-current-vs-replaced")
@@ -99,7 +105,16 @@ def _facet_compare(a: Mapping[str, Any], b: Mapping[str, Any], study: str) -> st
         return None
     if a["surface_sha256"] == b["surface_sha256"]:
         return "identical-model-input-surface"
-    if study == "presentation":
+    if study == "text_presentation":
+        if (
+            a["presentation"] != "compact-json-text"
+            or b["presentation"] != "indented-json-text"
+            or a["semantic_sha256"] != b["semantic_sha256"]
+            or a["generation_sha256"] != b["generation_sha256"]
+            or a["generation_sha256"] != a["current_generation_sha256"]
+        ):
+            return "text-presentation-intervention-not-isolated"
+    elif study == "presentation":
         if (a["presentation"] != "structured" or b["presentation"] != "text"
                 or a["semantic_sha256"] != b["semantic_sha256"]
                 or a["generation_sha256"] != b["generation_sha256"]
@@ -166,7 +181,9 @@ def audit_intervention_observations(
         if (not isinstance(meta, Mapping) or set(meta) != required_facets
                 or meta.get("study") != plan["study"]
                 or meta.get("arm") != key[3]
-                or meta.get("presentation") not in ("structured", "text")
+                or meta.get("presentation") not in (
+                     "structured", "text", "compact-json-text", "indented-json-text"
+                 )
                 or meta.get("design_sha256") != hashlib.sha256(canonical(plan)).hexdigest()
                 or any(not _hex64(meta.get(name)) for name in required_facets -
                        {"study", "arm", "presentation", "delivery_request_sequence"})
