@@ -36,6 +36,7 @@ from .trusted_http_provider import (
     validate_sse_response,
 )
 from .trusted_treatments import assigned_cell, select_treatment, verify_manifest
+from .native_chat_transport_parity import require_chat_tool_content
 
 SCHEMA = "agentscookbook.opencode-v1-gateway-launch.v1"
 MAX_REQUEST_BYTES = 8_388_608
@@ -203,6 +204,7 @@ class NativeOpenCodeGateway:
         upstream_api_key: str, catalog_sha256: str,
         oracle_sha256: str, workspace_sha256: str,
         timeout_seconds: int = 60,
+        enforce_chat_tool_wire_contract: bool = False,
     ) -> None:
         self.manifest = verify_manifest(dict(manifest))
         cells = [row for row in self.manifest["assignments"]
@@ -225,6 +227,7 @@ class NativeOpenCodeGateway:
         self.upstream_api_key = upstream_api_key
         self.token = gateway_token
         self.timeout_seconds = timeout_seconds
+        self.enforce_chat_tool_wire_contract = enforce_chat_tool_wire_contract
         self.current = current
         self.replaced = replaced
         self.selected = select_treatment(
@@ -294,7 +297,15 @@ class NativeOpenCodeGateway:
             call_id = tool_messages[0].get("tool_call_id")
             if not isinstance(call_id, str) or not call_id:
                 raise ValueError("gateway-missing-observed-tool-call-id")
-            if tool_messages[0].get("content") != self.selected["selected_content"]:
+            if self.enforce_chat_tool_wire_contract:
+                require_chat_tool_content(
+                    self.selected,
+                    actual_tool_content=tool_messages[0].get("content"),
+                )
+            elif tool_messages[0].get("content") != self.selected["selected_content"]:
+                # Legacy controlled host transport still accepts the
+                # existing structured JSON fixture. Isolated native
+                # Chat Completions must obey the stricter wire contract.
                 raise ValueError("gateway-selected-packet-not-in-native-request")
             self._state = "TREATMENT_ATTEMPTED"
             prompt = {
@@ -483,6 +494,9 @@ class NativeOpenCodeGateway:
             "pre_evidence_requests": self.pre_evidence_requests,
             "post_evidence_submissions": self.post_evidence_submissions,
             "model_request_attested": False,
+            "native_chat_tool_wire_contract_enforced": (
+                self.enforce_chat_tool_wire_contract
+            ),
             "host_submission_recorded": self.post_evidence_submissions == 1,
             "native_process_origin_proven": False,
             "unix_peer_credentials_observed": len(self.peer_credentials_observed),
