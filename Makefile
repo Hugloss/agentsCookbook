@@ -468,7 +468,9 @@ benchmark-native-text-readback:
 # No upstream model/real Hashmarks release is used by the test.
 .PHONY: benchmark-native-mcp-bridge-tests
 benchmark-native-mcp-bridge-tests:
-	@uv run --no-project python -m unittest benchmarks.tests.test_native_mcp_bridge -v
+	@uv run --no-project python -m unittest \
+		benchmarks.tests.test_native_mcp_bridge \
+		benchmarks.tests.test_native_mcp_request_ledger -v
 
 # E276: optional real installed Hashmarks stdio contract smoke.
 # It never contacts the model provider; an operator supplies pinned args.
