@@ -27,7 +27,10 @@ from .opencode_native_gateway import (
     NativeOpenCodeGateway, admit_opencode_binary, gateway_config,
     sha256_file, write_gateway_config,
 )
-from .trusted_treatments import load_manifest, verify_manifest
+from .trusted_treatments import (
+    load_manifest, verify_manifest, select_treatment,
+)
+from .native_chat_transport_parity import inspect_selected_content
 from .opencode_native_export import acquire_native_export, native_export_preflight
 from .native_netns_probe import probe_netns_kernel
 from .native_bwrap_execution import (
@@ -114,6 +117,19 @@ def launch_native_trial(
     # This exercises the actual kernel boundary while no native run root,
     # socket, child workspace mutation, or model dispatch exists.
     kernel_probe = probe_netns_kernel(substrate) if substrate is not None else None
+    chat_contract = None
+    if use_netns_isolation:
+        cell = cells[0]
+        selected = select_treatment(
+            frozen, trial_id=trial_id, harness=cell["harness"],
+            task=cell["task"], replicate=cell["replicate"],
+            arm=cell["arm"], current=current, replaced=replaced,
+        )
+        chat_contract = inspect_selected_content(selected)
+        if not chat_contract["chat_tool_content_wire_compatible"]:
+            raise ValueError(
+                "native-chat-tool-content-shape-not-supported-before-model-work"
+            )
     gateway = NativeOpenCodeGateway(
         frozen, trial_id=trial_id, host_key_file=host_key_file,
         host_identity=host_identity, current=current, replaced=replaced,
@@ -252,6 +268,7 @@ def launch_native_trial(
             "native_session_binding": session_result,
             "native_session_binding_error": session_error,
             "native_trial_evidence_qualified": qualified,
+            "native_chat_transport_preflight": chat_contract,
             "host_receipt_finalized": qualified,
             "native_process_origin_proven": False,
             "linux_network_namespace_requested": substrate is not None,
