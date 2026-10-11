@@ -69,6 +69,7 @@ from benchmarks.harness.derived_report_set import (
     REPORT_SET_MANIFEST,
     inspect_report_set,
     publish_report_set,
+    verified_score_path,
 )
 from benchmarks.harness.oracle_reviews import (
     OracleReviewError,
@@ -747,8 +748,11 @@ def _refresh_canonical_report(
     paths,
     suite,
     rows,
+    args,
+    config: BenchmarkConfig,
+    runtime_source,
 ) -> tuple[dict[str, object] | None, str | None]:
-    """Recompute and persist the report projection under the campaign store lock."""
+    """Refresh the entire canonical derived generation under the store lock."""
     try:
         with exclusive_store(store_root):
             _same_saved_run_under_lock(
@@ -763,50 +767,37 @@ def _refresh_canonical_report(
             )
             if gap is not None:
                 return None, gap
-            report_data = build_report(
-                suite=suite,
-                results_root=paths.results,
-                require_complete=True,
-                selected_definitions={
-                    str(row["definition_id"]) for row in rows
-                },
-                selection=_selection_metadata(suite, rows),
-            )
-            report_data["run_id"] = paths.run_id
-            report_data["reports_dir"] = str(_reports_dir(paths.root))
-            trace_diagnostics, decision = _derive_trace_and_decision(
-                report_data=report_data,
-                results_root=paths.results,
-            )
-            decision["run_id"] = paths.run_id
-            report_set = publish_report_set(
-                run_root=paths.root,
-                run_id=str(paths.run_id),
-                report=report_data,
-                trace_diagnostics=trace_diagnostics,
-                decision_evidence=decision,
-            )
-            status = campaign_status(
+            final_status = campaign_status(
                 suite=suite,
                 results_root=paths.results,
                 selected_definitions={
                     str(row["definition_id"]) for row in rows
                 },
             )
-            status["paths"] = paths.as_dict()
-            status["run_id"] = paths.run_id
-            status["selection"] = _selection_metadata(suite, rows)
-            status["paths"]["reports"] = str(_reports_dir(paths.root))
-            status["derived_report_set"] = {
-                "status": "VERIFIED",
-                "verified": True,
-                "generation_id": report_set["generation_id"],
-                "run_id": report_set["run_id"],
-                "artifacts": sorted(report_set["artifacts"]),
-            }
-            _write_derived_json(paths.root, "status.json", status)
+            if not final_status["complete"]:
+                return None, "canonical report refresh requires a complete campaign"
+            written = _persist_completed_run_reports(
+                args=args,
+                config=config,
+                suite=suite,
+                rows=rows,
+                paths=paths,
+                runtime_source=runtime_source,
+                final_status=final_status,
+            )
+            report_data = json.loads(
+                written["report"].read_text(encoding="utf-8")
+            )
+            if not isinstance(report_data, dict):
+                raise ReportError("canonical report must be one JSON object")
             return report_data, None
-    except (RunStoreError, ReportError, DerivedReportSetError) as exc:
+    except (
+        RunStoreError,
+        ReportError,
+        DerivedReportSetError,
+        OSError,
+        ValueError,
+    ) as exc:
         return None, f"run store is active or changed: {exc}"
 
 
@@ -1606,6 +1597,9 @@ def main(argv: list[str] | None = None) -> int:
                     paths=paths,
                     suite=suite,
                     rows=rows,
+                    args=args,
+                    config=config,
+                    runtime_source=runtime_source,
                 )
                 if refreshed is not None:
                     report_data = refreshed
