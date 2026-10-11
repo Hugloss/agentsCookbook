@@ -779,13 +779,32 @@ def _refresh_canonical_report(
                 results_root=paths.results,
             )
             decision["run_id"] = paths.run_id
-            publish_report_set(
+            report_set = publish_report_set(
                 run_root=paths.root,
                 run_id=str(paths.run_id),
                 report=report_data,
                 trace_diagnostics=trace_diagnostics,
                 decision_evidence=decision,
             )
+            status = campaign_status(
+                suite=suite,
+                results_root=paths.results,
+                selected_definitions={
+                    str(row["definition_id"]) for row in rows
+                },
+            )
+            status["paths"] = paths.as_dict()
+            status["run_id"] = paths.run_id
+            status["selection"] = _selection_metadata(suite, rows)
+            status["paths"]["reports"] = str(_reports_dir(paths.root))
+            status["derived_report_set"] = {
+                "status": "VERIFIED",
+                "verified": True,
+                "generation_id": report_set["generation_id"],
+                "run_id": report_set["run_id"],
+                "artifacts": sorted(report_set["artifacts"]),
+            }
+            _write_derived_json(paths.root, "status.json", status)
             return report_data, None
     except (RunStoreError, ReportError, DerivedReportSetError) as exc:
         return None, f"run store is active or changed: {exc}"
