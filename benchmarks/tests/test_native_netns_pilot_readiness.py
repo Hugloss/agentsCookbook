@@ -167,6 +167,18 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
                 self.assertIn("inconsistent-or-self-upgraded-native-isolation-receipt", result["blockers"])
         path.write_bytes(original)
 
+    def test_host_custodian_refuses_to_sign_missing_kernel_admission(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        path = self.results / trial / "trial-execution.json"
+        report = json.loads(path.read_bytes())
+        report["native_kernel_preflight"] = None
+        with self.assertRaisesRegex(ValueError, "unqualified-netns-host-observation"):
+            sign_isolation_report(
+                report, execution_bytes=canonical(report) + b"\\n",
+                provider_attestation_bytes=b'{"synthetic-provider-packet-receipt":true}',
+                host_identity="privileged-host", host_key=KEY,
+            )
+
     def test_unsigned_kernel_probe_mutation_is_refused_even_if_shape_valid(self):
         trial = self.frozen["assignments"][0]["trial_id"]
         path = self.results / trial / "trial-execution.json"
