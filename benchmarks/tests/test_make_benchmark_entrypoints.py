@@ -693,6 +693,80 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 str(run_root / "reports"),
             )
 
+            def persist_generation(**_kwargs):
+                reports = run_root / "reports"
+                reports.mkdir(parents=True, exist_ok=True)
+                report_payload = {
+                    "schema": {"version": 7},
+                    "expected_trials": 108,
+                    "run_id": "000001",
+                    "reports_dir": str(reports),
+                }
+                trace_payload = {
+                    "schema": "agents-cookbook-trace-diagnostics.v6",
+                    "trials": [],
+                    "summary": {
+                        "repository_intelligence_quality": {
+                            "state": "observed",
+                            "claim_scope": "descriptive-diagnostic-only",
+                            "subjects": [
+                                {
+                                    "subject_id": "hashmarks",
+                                    "operation": "task_evidence",
+                                    "calls": 1,
+                                }
+                            ],
+                        },
+                        "repository_intelligence_search_efficiency": {
+                            "state": "observed",
+                            "claim_scope": "descriptive-behavioral-only",
+                            "correctness_joined": False,
+                            "subjects": [],
+                        },
+                        "repository_intelligence_evidence_to_action": {
+                            "state": "observed",
+                            "claim_scope": "descriptive-behavioral-only",
+                            "oracle_relative": False,
+                            "correctness_joined": False,
+                            "subjects": [],
+                        },
+                    },
+                }
+                decision_payload = {
+                    "schema": "agents-cookbook-benchmark-decision-evidence.v8",
+                    "run_id": "000001",
+                    "authority": {"derived_only": True},
+                    "repository_intelligence_quality": trace_payload["summary"][
+                        "repository_intelligence_quality"
+                    ],
+                    "repository_intelligence_search_efficiency": trace_payload[
+                        "summary"
+                    ]["repository_intelligence_search_efficiency"],
+                    "repository_intelligence_evidence_to_action": trace_payload[
+                        "summary"
+                    ]["repository_intelligence_evidence_to_action"],
+                }
+                report_path = reports / "report.json"
+                trace_path = reports / "trace-diagnostics.json"
+                decision_path = reports / "decision-evidence.json"
+                report_path.write_text(
+                    json.dumps(report_payload) + "\n",
+                    encoding="utf-8",
+                )
+                trace_path.write_text(
+                    json.dumps(trace_payload) + "\n",
+                    encoding="utf-8",
+                )
+                decision_path.write_text(
+                    json.dumps(decision_payload) + "\n",
+                    encoding="utf-8",
+                )
+                return {
+                    "report": report_path,
+                    "trace_diagnostics": trace_path,
+                    "decision_evidence": decision_path,
+                }
+
             with (
                 mock.patch("benchmarks.__main__.select_saved_run", return_value=saved),
                 mock.patch(
@@ -746,6 +820,14 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 mock.patch(
                     "benchmarks.__main__._canonical_campaign_persistence_gap",
                     return_value=None,
+                ),
+                mock.patch(
+                    "benchmarks.__main__.campaign_status",
+                    return_value={**status_payload, "complete": True},
+                ),
+                mock.patch(
+                    "benchmarks.__main__._persist_completed_run_reports",
+                    side_effect=persist_generation,
                 ),
                 redirect_stdout(io.StringIO()),
             ):
