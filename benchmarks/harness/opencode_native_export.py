@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Callable
 
 from .opencode_native_session import MAX_EXPORT_BYTES
 
@@ -99,10 +99,16 @@ def select_native_session(index: bytes, *, exact_title: str,
 def acquire_native_export(
     executable: Path, *, workspace: Path,
     environment: Mapping[str, str], exact_title: str, started_at_ms: int,
+    isolate_command: Callable[[list[str]], list[str]] | None = None,
 ) -> tuple[str, bytes]:
+    listing_command = [
+        str(executable), "session", "list", "--format", "json",
+        "--max-count", "20",
+    ]
+    if isolate_command is not None:
+        listing_command = isolate_command(listing_command)
     source = _run_bounded_native(
-        [str(executable), "session", "list", "--format", "json",
-         "--max-count", "20"],
+        listing_command,
         workspace=workspace, environment=environment,
         max_bytes=MAX_INDEX_BYTES,
     )
@@ -110,8 +116,11 @@ def acquire_native_export(
         source, exact_title=exact_title, workspace=workspace,
         started_at_ms=started_at_ms,
     )
+    export_command = [str(executable), "export", session_id]
+    if isolate_command is not None:
+        export_command = isolate_command(export_command)
     exported = _run_bounded_native(
-        [str(executable), "export", session_id],
+        export_command,
         workspace=workspace, environment=environment,
         max_bytes=MAX_EXPORT_BYTES,
     )
