@@ -102,6 +102,23 @@ class NativeMcpBridgeContractAttacks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "extra-subject"):
             state.receive_request(call_frame(identity=4))
 
+    def test_subject_response_replay_and_boolean_id_alias_are_rejected(self):
+        state = BridgeState(self.contract)
+        state.receive_request(call_frame(identity=1))
+        with self.assertRaisesRegex(ValueError, "id-type-confusion"):
+            state.receive_response(canonical({
+                "jsonrpc": "2.0", "id": True,
+                "result": {"content": [{
+                    "type": "text", "text": json.dumps(source()["content"]),
+                }]},
+            }))
+        self.assertEqual(state.subject_responses, 0)
+        original = result_frame(identity=1)
+        state.receive_response(original)
+        with self.assertRaisesRegex(ValueError, "replayed-subject-response"):
+            state.receive_response(original)
+        self.assertEqual(state.subject_responses, 1)
+
     def test_native_tool_errors_wrong_packet_parallel_or_forged_sources_block(self):
         bads = [
             (result_frame(packet={"owner": "wrong"}), "packet-drift"),
