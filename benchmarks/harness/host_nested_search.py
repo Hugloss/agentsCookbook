@@ -51,7 +51,7 @@ def _digest(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
-def _calls(path: Path) -> tuple[str, list[str], int]:
+def _calls(path: Path) -> tuple[str, list[str], int, set[str]]:
     """Return immutable ATIF byte identity, opaque parents and visible searches."""
     if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_TRACE_BYTES:
         raise ValueError("unsafe-or-oversized-trajectory")
@@ -86,7 +86,9 @@ def _calls(path: Path) -> tuple[str, list[str], int]:
     count = projected.get("native_search_calls")
     if type(count) is not int or count < 0:
         raise ValueError("native-search-count-unavailable")
-    return _digest(raw), opaque, count
+    return _digest(raw), opaque, count, {
+        _digest(call_id.encode("utf-8")) for call_id in seen
+    }
 
 
 def _nested_calls(
@@ -150,14 +152,14 @@ def _verify_body(
         or body["host_build_sha256"] != host_build_sha256
     ):
         raise ValueError("foreign-or-stale-nested-attestation")
-    identity, opaque, explicit = _calls(trajectory)
+    identity, opaque, explicit, all_ids = _calls(trajectory)
     if body["trajectory_sha256"] != identity:
         raise ValueError("nested-attestation-trajectory-drift")
     captures = body["captures"]
     if not isinstance(captures, list) or len(captures) != len(opaque):
         raise ValueError("incomplete-opaque-parent-coverage")
     expected = set(opaque)
-    seen: set[str] = set(opaque)
+    seen: set[str] = set(all_ids)
     captured: set[str] = set()
     hidden_search = 0
     nodes = 0
@@ -200,7 +202,7 @@ def host_capture_nested_observations(
         raise ValueError("invalid-host-identity")
     if not _hex64(host_build_sha256):
         raise ValueError("invalid-host-build-sha256")
-    identity, _, _ = _calls(trajectory)
+    identity, _, _, _ = _calls(trajectory)
     body = {
         "schema": SCHEMA,
         "campaign_id": campaign_id,
