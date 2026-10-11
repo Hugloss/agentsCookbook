@@ -27,11 +27,16 @@ from .opencode_native_gateway import (
     NativeOpenCodeGateway, admit_opencode_binary, gateway_config,
     sha256_file, write_gateway_config,
 )
-from .trusted_treatments import load_manifest, verify_manifest
+from .trusted_treatments import (
+    load_manifest, verify_manifest, select_treatment,
+)
+from .native_chat_transport_parity import inspect_selected_content
 from .opencode_native_export import acquire_native_export, native_export_preflight
 from .native_netns_probe import probe_netns_kernel
+from .native_mount_probe import probe_native_mounts, verify_worker_source_unchanged
 from .native_bwrap_execution import (
     admit_netns_substrate, build_isolated_argv, verify_substrate_unchanged,
+    admit_host_only_paths,
 )
 from .opencode_native_session import finalize_native_export
 from .host_input_attestation import load_host_key
@@ -39,7 +44,7 @@ from .native_netns_host_attestation import (
     sign_isolation_report, write_isolation_attestation,
 )
 
-SCHEMA = "agentscookbook.pinned-opencode-gateway-trial.v1"
+SCHEMA = "agentscookbook.pinned-opencode-gateway-trial.v2"
 
 
 def _make_private_dir(path: Path) -> None:
@@ -93,6 +98,13 @@ def launch_native_trial(
                 or any(c not in "0123456789abcdef" for c in expected_hashmarks_sha256)
                 or sha256_file(hashmarks_executable) != expected_hashmarks_sha256):
             raise ValueError("missing-or-stale-frozen-hashmarks-mcp-executable")
+    if use_netns_isolation:
+        admit_host_only_paths(
+            workspace=workspace, run_root=run_root,
+            host_key_file=host_key_file,
+            executable=opencode_executable,
+            hashmarks_executable=hashmarks_executable,
+        )
     workspace_root = workspace.resolve()
     if (run_root.resolve().is_relative_to(workspace_root)
             or host_key_file.resolve().is_relative_to(workspace_root)):
@@ -114,6 +126,19 @@ def launch_native_trial(
     # This exercises the actual kernel boundary while no native run root,
     # socket, child workspace mutation, or model dispatch exists.
     kernel_probe = probe_netns_kernel(substrate) if substrate is not None else None
+    chat_contract = None
+    if use_netns_isolation:
+        cell = cells[0]
+        selected = select_treatment(
+            frozen, trial_id=trial_id, harness=cell["harness"],
+            task=cell["task"], replicate=cell["replicate"],
+            arm=cell["arm"], current=current, replaced=replaced,
+        )
+        chat_contract = inspect_selected_content(selected)
+        if not chat_contract["chat_tool_content_wire_compatible"]:
+            raise ValueError(
+                "native-chat-tool-content-shape-not-supported-before-model-work"
+            )
     gateway = NativeOpenCodeGateway(
         frozen, trial_id=trial_id, host_key_file=host_key_file,
         host_identity=host_identity, current=current, replaced=replaced,
@@ -157,6 +182,18 @@ def launch_native_trial(
             "BENCHMARK_NATIVE_GATEWAY_TOKEN": gateway.token,
             "PATH": os.defpath,
         }
+        # E265: probe the REAL full bwrap worker + mount layout, including
+        # readonly config and host-key absence, before the first model call.
+        # The wrapper under test is also the one used for actual native work.
+        mount_probe = (
+            probe_native_mounts(
+                substrate, executable=opencode_executable,
+                hashmarks=hashmarks_executable, workspace=workspace,
+                run_root=run_root, host_key_file=host_key_file,
+                environment=child_env, port=port,
+                config_sha256=config_sha256,
+            ) if substrate is not None else None
+        )
         # Distinguish this new session from concurrent or earlier sessions.
         # The launcher never resolves "latest session" as evidence.
         native_title = "agentscookbook:" + trial_id + ":" + secrets.token_hex(12)
@@ -176,6 +213,8 @@ def launch_native_trial(
                 hashmarks_executable=hashmarks_executable,
             ) if substrate is not None else native_command
         )
+        if mount_probe is not None:
+            verify_worker_source_unchanged(mount_probe)
         try:
             result = subprocess.run(
                 native_argv,
@@ -188,6 +227,8 @@ def launch_native_trial(
             exit_code = None
         if sha256_file(opencode_executable) != expected_binary_sha256:
             raise ValueError("native-opencode-binary-changed-during-trial")
+        if mount_probe is not None:
+            verify_worker_source_unchanged(mount_probe)
         if substrate is not None:
             verify_substrate_unchanged(substrate)
             if sha256_file(hashmarks_executable) != expected_hashmarks_sha256:
@@ -252,6 +293,7 @@ def launch_native_trial(
             "native_session_binding": session_result,
             "native_session_binding_error": session_error,
             "native_trial_evidence_qualified": qualified,
+            "native_chat_transport_preflight": chat_contract,
             "host_receipt_finalized": qualified,
             "native_process_origin_proven": False,
             "linux_network_namespace_requested": substrate is not None,
@@ -268,6 +310,7 @@ def launch_native_trial(
                 and observation["distinct_netns_peer_connections"] >= 1
             ),
             "native_kernel_preflight": kernel_probe,
+            "native_mount_preflight": mount_probe,
             "native_model_input_delivered_proven": False,
             "causal_improvement_proven": False,
         }

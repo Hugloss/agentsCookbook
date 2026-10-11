@@ -20,9 +20,10 @@ from .native_session_cohort_audit import audit_native_session_cohort
 from .opencode_native_trial import SCHEMA as TRIAL_SCHEMA
 from .native_netns_host_attestation import verify_isolation_attestation
 from .native_netns_probe import kernel_probe_receipt_valid
+from .native_mount_probe import inspect_mount_probe
 from .trusted_treatments import load_manifest, verify_manifest
 
-SCHEMA = "agentscookbook.netns-paired-pilot-readiness.v1"
+SCHEMA = "agentscookbook.netns-paired-pilot-readiness.v2"
 HEX = set("0123456789abcdef")
 
 
@@ -85,6 +86,11 @@ def evaluate_native_netns_pilot(
                 evidence.get("native_kernel_preflight"),
                 expected_bwrap_sha256=expected_bwrap_sha256,
             ),
+            not inspect_mount_probe(
+                evidence.get("native_mount_preflight"),
+                expected_bwrap_sha256=expected_bwrap_sha256,
+                expected_config_sha256=evidence.get("config_sha256"),
+            ),
         )):
             issues["inconsistent-or-self-upgraded-native-isolation-receipt"] += 1
             continue
@@ -130,6 +136,10 @@ def evaluate_native_netns_pilot(
         "native_kernel_preflight_receipts_host_mac_verified": (
             checked == len(frozen["assignments"]) and not issues
         ),
+        "native_mount_preflight_receipts_host_mac_verified": (
+            checked == len(frozen["assignments"]) and not issues
+        ),
+        "point_in_time_mount_probe_is_independent_process_proof": False,
         "point_in_time_kernel_probe_is_exhaustive_egress_proof": False,
         "exclusive_network_egress_independently_audited": False,
         "native_executable_origin_independently_proven": False,

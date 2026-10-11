@@ -1953,6 +1953,157 @@ uv run --no-project python -m unittest benchmarks.tests.test_native_netns_pilot_
 uv run --no-project python -m unittest discover -s benchmarks/tests
 ```
 
+## E265–E268: native mount isolation / real worker pre-model admission
+
+An operating kernel `--unshare-net` boundary alone is not proof that
+the **full** OpenCode execution container has the intended file mounts.
+After E261's point-in-time kernel check, the privileged launcher now
+executes a second, fixed, bounded stdlib preflight using precisely the
+same `build_isolated_argv` worker wrapper (including the native Python
+relay, guest loopback server and provider Unix-socket mount) that is
+used for the actual OpenCode trial. A sandbox probe failure is terminal
+**before the first model/provider invocation**. It leaves host-side
+diagnostics possible without any model or native-agent work.
+
+The guest checks that the bound Git workspace, pinned executables, and
+selected Hashmarks MCP command are visible; provider configuration has
+the exact captured-provider allowlist and **cannot be opened for writing**;
+the five isolated HOME/XDG roots support create/delete; and the Unix
+provider socket appears as a real socket at `/run/gateway/upstream.sock`.
+The host secret path must **not** exist inside the guest and the child's
+environment must not expose provider API-key names. The probe itself does
+not connect to an upstream provider, execute Hashmarks, or issue a
+model request. No alternative unconfined launch is attempted.
+
+Before creating run-root or gateway, host admission also rejects
+workspaces/run roots or the privately held host key under any readonly
+runtime root (`/usr`, merged system roots), under the evaluated workspace,
+or under publicly mounted per-trial outputs. It rejects symlinked aliases,
+and refuses OpenCode/Hashmarks binaries inside agent-writable workspaces
+or XDG/output roots. This stops a trusted signing key from being
+accidentally included in the broad system runtime bind even when it is
+not explicitly mounted as a secret.
+
+The privileged runner writes `native_mount_preflight` into the
+create-only execution report **only after** the probe actually exits
+successfully. The existing independent host MAC covers those exact
+bytes together with the signed model-input/provider-submission receipt.
+The pilot read-back must validate this new fixed probe program digest,
+worker source SHA-256, bwrap identity, gateway config digest, and every
+true/false claim **for every frozen arm**; old reports without it cannot
+qualify. Both trial and isolation receipt schemas advance to v2.
+
+These are **local host observations**, not independent live
+process-origin attestations, full network-egress proof, MCP semantic
+parity, model attention, preregistration, independent oracle review,
+or causal uplift. Real target-host bwrap/OpenCode/Hashmarks and
+model-backed paired pilots still need independent field validation.
+
+Model-free tests:
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_native_mount_preflight -v
+uv run --no-project python -m unittest benchmarks.tests.test_native_netns_pilot_readiness -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
+
+
+## E265–E268: Native OpenAI tool-message parity and intervention admissibility
+
+The earlier E257–E264 work introduces a host-owned provider gateway, exact
+native OpenCode session export, Linux netns isolation, and a host HMAC on
+observed tool submission. These prove bounded **observations**, but they
+do not by themselves prove that the purported intervention could be carried
+by the real provider request's *wire representation*.
+
+### E265 — typed, actual provider envelope rather than equivalent meaning
+
+The existing presentation treatment declares a **structured JSON object**
+for its control and a **canonical JSON string** for its variant.
+OpenAI Chat Completions `role: tool` message content is text (or
+an explicitly typed collection of content parts), not an arbitrary JSON
+object as the `content` value. A JSON object may be a legitimate Hashmarks
+source, but using it directly as native tool message content is not a
+supported OpenAI tool-message request. Converting it to a JSON string,
+or to a single text part, would *change the declared structured surface*.
+It is not valid to claim the original structured arm was delivered
+because both formats decode to the same semantic JSON object.
+
+The versioned `native_chat_transport_parity.py` contract therefore
+accepts **only exact plain text** for the declared `text` presentation
+on this Chat Completions transport. It refuses JSON objects, arrays,
+stringified/coerced structured objects, differently formatted but
+semantically equal JSON, and extra content parts. It does not change
+the original source corpus or intervention definitions to make a trial
+pass. No new adapter syntax or artificial 'structured' transport is
+silently invented.
+
+### E266 — fail before native model work
+
+For `--require-netns-isolation`, the pinned launcher now validates its
+selected frozen intervention **before creating the run root, opening
+the gateway, starting OpenCode, or issuing a model request**. If the
+selected structured treatment does not fit the Chat Completions tool
+wire contract, admission raises
+`native-chat-tool-content-shape-not-supported-before-model-work`.
+The existing unconfined controlled-host fixture path retains its
+distinct legacy contract rather than mislabeling it native OpenCode.
+
+### E267 — observe exact outbound bytes
+
+The isolated gateway separately checks the **real request's** linked
+tool message. Only the original frozen UTF-8 text surface can pass;
+`json.loads()`, whitespace reformatting, a nested object, arrays, or
+an alternate but semantically equivalent representation are not
+acceptable substitutes. The gateway's HTTPS owner still forwards
+exactly the submitted request and captures the bounded response once.
+No fake session or new model-input receipt is minted from preflight.
+
+### E268 — study-wide feasibility before running a pilot
+
+Both tools read a frozen manifest and one independently provisioned
+`SOURCES_ROOT/<trial-id>.json` per cell, with exactly `current` and
+`replaced` keys:
+
+```sh
+make benchmark-native-chat-parity \
+  MANIFEST=/frozen/manifest.json SOURCES_ROOT=/frozen/sources
+
+make benchmark-native-chat-parity-qualify \
+  MANIFEST=/frozen/manifest.json SOURCES_ROOT=/frozen/sources
+```
+
+The descriptive command emits per-arm compatibility and counts without
+claiming execution. The strict command exits nonzero unless **both arms
+of every frozen pair** have supported, unchanged native transport shapes.
+For the existing structured-object versus canonical-text
+presentation treatment, the control is currently **unsupported**.
+A freshness trial with `presentation=structured` is likewise not
+automatically upgraded by stringifying its JSON source. Thus the
+current native Chat Completions path is **not qualified for the planned
+paired empirical comparison**, despite passing its netns and receipt
+tests. This is a compatibility finding, not a result about Hashmarks.
+
+Before a live paired campaign, the study author must explicitly freeze
+a revised presentation design grounded in supported real native formats,
+or implement and verify a distinct provider format that genuinely
+preserves the structured type. Such a change requires its own
+source/design manifest identity and adversarial native end-to-end proof;
+never patch one arm mid-campaign.
+
+The attack ring includes semantic-equal/byte-different JSON, nested
+values, content-part arrays, false structured parity, omitted/extra
+source authorities, actual gateway request mutation, and fail-before-work
+without run-root or model attempts:
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_native_chat_transport_parity -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
+
+No real OpenCode/provider campaign, independent oracle review, process
+exclusivity proof, model attention, or causal uplift is asserted.
+
 
 ### Host-attested direct-vs-deferred information delivery pilot
 
