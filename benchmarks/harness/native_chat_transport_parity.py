@@ -37,18 +37,28 @@ def inspect_selected_content(selected: Mapping[str, Any]) -> dict[str, Any]:
     paired presentation study is admissible on this transport.
     """
     if not isinstance(selected, Mapping) or selected.get("study") not in (
-        "presentation", "freshness",
-    ) or selected.get("presentation") not in ("structured", "text"):
+        "presentation", "freshness", "text_presentation",
+    ) or selected.get("presentation") not in (
+        "structured", "text", "compact-json-text", "indented-json-text",
+    ):
         raise ValueError("invalid-frozen-intervention-for-chat-transport")
     if (selected["study"] == "freshness"
             and selected["presentation"] != "structured"):
         raise ValueError("invalid-freshness-presentation-authority")
+    if (selected["study"] == "text_presentation"
+            and selected["presentation"] != (
+                "compact-json-text" if selected.get("arm") == "control"
+                else "indented-json-text"
+            )):
+        raise ValueError("invalid-native-text-presentation-assignment")
     surface = selected.get("selected_content")
     if isinstance(surface, str):
         encoded = surface.encode("utf-8")
         if not 0 < len(encoded) <= MAX_CONTENT_BYTES:
             raise ValueError("invalid-native-chat-tool-text-size")
-        if selected["presentation"] != "text":
+        if selected["presentation"] not in (
+            "text", "compact-json-text", "indented-json-text",
+        ):
             raise ValueError("declared-structured-presentation-has-text-surface")
         mode = SUPPORTED_MODE
         eligible = True
