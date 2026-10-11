@@ -182,7 +182,6 @@ class BridgeState:
             raise ValueError("native-mcp-non-jsonrpc-response")
         received_id = response.get("id")
         if (self.completed_subject_id is not None
-                and type(received_id) is type(self.completed_subject_id)
                 and received_id == self.completed_subject_id):
             raise ValueError("native-mcp-replayed-subject-response")
         if self.pending is None:
