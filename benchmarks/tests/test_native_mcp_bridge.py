@@ -124,7 +124,7 @@ class NativeMcpBridgeContractAttacks(unittest.TestCase):
                 self.assertEqual(state.subject_responses, 0)
         for malicious in (
             call_frame(name="other-tool"),
-            canonical({"jsonrpc":"2.0","id":true,"method":"tools/call",
+            canonical({"jsonrpc":"2.0","id":True,"method":"tools/call",
                        "params":{"name":"find","arguments":{}}}),
         ):
             with self.assertRaises(ValueError):
