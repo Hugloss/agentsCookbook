@@ -77,7 +77,14 @@ def run_stdio(*, hashmarks_executable: Path, hashmarks_sha256: str,
         cwd=workspace,
         # Runtime is already in the bwrap process/network namespace and
         # has only the closed XDG environment. Never inherit API secrets.
-        env=dict(os.environ), bufsize=0,
+        env={
+            key: os.environ[key]
+            for key in (
+                "HOME", "PATH", "XDG_CONFIG_HOME", "XDG_CACHE_HOME",
+                "XDG_DATA_HOME", "XDG_STATE_HOME",
+            )
+            if key in os.environ
+        }, bufsize=0,
     )
     assert process.stdin is not None and process.stdout is not None
     guard = threading.Lock()
