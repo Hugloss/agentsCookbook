@@ -15,7 +15,11 @@ import os
 from pathlib import Path
 from typing import Any, Mapping
 
-from .host_input_attestation import canonical
+def canonical(value: object) -> bytes:
+    # Exact shared canonical JSON transport contract; intentionally self-
+    # contained so the bwrap guest needs no host evaluator imports.
+    return json.dumps(value, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False, allow_nan=False).encode("utf-8")
 
 SCHEMA = "agentscookbook.native-hashmarks-mcp-bridge-contract.v1"
 MAX_FRAME = 1_048_576
