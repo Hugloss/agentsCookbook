@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import secrets
+import time
 import stat
 import subprocess
 from pathlib import Path
@@ -27,6 +28,8 @@ from .opencode_native_gateway import (
     sha256_file, write_gateway_config,
 )
 from .trusted_treatments import load_manifest, verify_manifest
+from .opencode_native_export import acquire_native_export, native_export_preflight
+from .opencode_native_session import finalize_native_export
 
 SCHEMA = "agentscookbook.pinned-opencode-gateway-trial.v1"
 
@@ -81,6 +84,10 @@ def launch_native_trial(
         expected_sha256=expected_binary_sha256,
         expected_version=expected_version,
     )
+    # A bounded native-session export is mandatory whenever model work can
+    # succeed. Reject missing Linux capture authority before creating the
+    # workspace/run root or starting the native model.
+    native_export_preflight()
     gateway = NativeOpenCodeGateway(
         frozen, trial_id=trial_id, host_key_file=host_key_file,
         host_identity=host_identity, current=current, replaced=replaced,
@@ -113,11 +120,16 @@ def launch_native_trial(
             "BENCHMARK_NATIVE_GATEWAY_TOKEN": gateway.token,
             "PATH": os.defpath,
         }
+        # Distinguish this new session from concurrent or earlier sessions.
+        # The launcher never resolves "latest session" as evidence.
+        native_title = "agentscookbook:" + trial_id + ":" + secrets.token_hex(12)
+        started_at_ms = time.time_ns() // 1_000_000
         # Do not pass upstream API keys or ambient LLM credentials to the
         # agent; its only configured provider is the loopback gateway.
         try:
             result = subprocess.run(
-                [str(opencode_executable), "run", "--model", model, prompt],
+                [str(opencode_executable), "run", "--model", model,
+                 "--title", native_title, "--format", "json", prompt],
                 cwd=workspace, env=child_env,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 timeout=timeout_seconds, check=False,
@@ -129,6 +141,29 @@ def launch_native_trial(
             raise ValueError("native-opencode-binary-changed-during-trial")
         observation = gateway.result()
         routed = exit_code == 0 and observation["post_evidence_submissions"] == 1
+        session_result: dict[str, Any] | None = None
+        session_error: str | None = None
+        if routed:
+            try:
+                session_id, exported = acquire_native_export(
+                    opencode_executable, workspace=workspace,
+                    environment=child_env, exact_title=native_title,
+                    started_at_ms=started_at_ms,
+                )
+                if sha256_file(opencode_executable) != expected_binary_sha256:
+                    raise ValueError("native-opencode-executable-drift-after-export")
+                # Exact observed provider/model IDs must match the local
+                # configured OpenCode provider, not the upstream API model.
+                session_result = finalize_native_export(
+                    exported, capture=gateway.capture, session_id=session_id,
+                    title=native_title, workspace=workspace, run_root=run_root,
+                    expected_provider="agentscookbook-captured",
+                    expected_model=frozen["design"]["model"],
+                    original_packet=current["content"],
+                )
+            except (OSError, ValueError, TypeError, UnicodeError):
+                session_error = "native-session-not-bound-to-observed-provider-submission"
+        qualified = routed and session_result is not None
         return {
             "schema": SCHEMA,
             "trial_id": trial_id,
@@ -140,7 +175,10 @@ def launch_native_trial(
             "gateway": observation,
             "observed_provider_response_relays": observation["post_evidence_submissions"],
             "native_gateway_route_completed": routed,
-            "host_receipt_finalized": False,
+            "native_session_binding": session_result,
+            "native_session_binding_error": session_error,
+            "native_trial_evidence_qualified": qualified,
+            "host_receipt_finalized": qualified,
             "native_process_origin_proven": False,
             "native_model_input_delivered_proven": False,
             "causal_improvement_proven": False,
@@ -211,7 +249,7 @@ def main() -> int:
         }, indent=2, sort_keys=True))
         return 2
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 0 if result["native_gateway_route_completed"] else 2
+    return 0 if result["native_trial_evidence_qualified"] else 2
 
 
 if __name__ == "__main__":
