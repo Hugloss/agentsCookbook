@@ -1,0 +1,224 @@
+"""E260: no fabricated pilot outcomes from incomplete netns execution receipts.
+
+Only synthetic model-free fixtures. Cohort projection is mocked here because
+its real native export and host HMAC checks have a separate regression ring.
+"""
+
+from __future__ import annotations
+
+import copy
+import errno
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from benchmarks.harness.native_netns_pilot_readiness import evaluate_native_netns_pilot
+from benchmarks.harness.opencode_native_trial import SCHEMA as TRIAL_SCHEMA
+from benchmarks.harness.native_netns_probe import validate_kernel_probe
+from benchmarks.harness.native_netns_host_attestation import (
+    sign_isolation_report, write_isolation_attestation,
+)
+from benchmarks.harness.host_input_attestation import canonical
+from benchmarks.tests.test_opencode_native_gateway import KEY, H, manifest
+
+
+class NativeNetnsPilotAdmissionTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.results = self.root / "results"
+        self.results.mkdir()
+        self.sources = self.root / "sources"
+        self.sources.mkdir()
+        self.workspace = self.root / "workspace"
+        self.workspace.mkdir()
+        self.frozen = manifest()
+        self._make_execution_receipts()
+        self.cohort = {
+            "native_session_cohort_observationally_consistent": True,
+            "verified_native_trial_exports": 2,
+        }
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _make_execution_receipts(self):
+        for cell in self.frozen["assignments"]:
+            folder = self.results / cell["trial_id"]
+            folder.mkdir()
+            report = {
+                "schema": TRIAL_SCHEMA,
+                "trial_id": cell["trial_id"],
+                "manifest_sha256": self.frozen["manifest_sha256"],
+                "native_exit_code": 0,
+                "native_trial_evidence_qualified": True,
+                "host_receipt_finalized": True,
+                "native_gateway_route_completed": True,
+                "native_kernel_preflight": validate_kernel_probe({
+                    "guest_netns_inode": 9124,
+                    "interfaces": ["lo"],
+                    "loopback_bind_ok": True,
+                    "outbound_errno": errno.ENETUNREACH,
+                }, host_netns_inode=1112, bwrap_sha256=H("approved-bwrap"),
+                   python_sha256=H("approved-python")),
+                "linux_network_namespace_requested": True,
+                "host_network_egress_intentionally_disabled": True,
+                "kernel_distinct_netns_relay_observed": True,
+                "native_sandbox_binary_sha256": H("approved-bwrap"),
+                "frozen_hashmarks_executable_sha256": H("approved-hashmarks"),
+                "observed_provider_response_relays": 1,
+                "native_process_origin_proven": False,
+                "causal_improvement_proven": False,
+                "gateway": {
+                    "kernel_netns_peer_check_required": True,
+                    "distinct_netns_peer_connections": 1,
+                },
+                "native_session_binding": {
+                    "native_session_to_gateway_packet_bound": True,
+                    "signed_host_input_and_transport_verified": True,
+                },
+            }
+            execution_bytes = canonical(report) + b"\n"
+            provider_bytes = b'{"synthetic-provider-packet-receipt":true}'
+            (folder / "trial-execution.json").write_bytes(execution_bytes)
+            (folder / "host-attestation.json").write_bytes(provider_bytes)
+            signed = sign_isolation_report(
+                report, execution_bytes=execution_bytes,
+                provider_attestation_bytes=provider_bytes,
+                host_identity="privileged-host", host_key=KEY,
+            )
+            write_isolation_attestation(
+                folder / "trial-execution.attestation.json", signed,
+            )
+
+    def assess(self):
+        with patch(
+            "benchmarks.harness.native_netns_pilot_readiness.audit_native_session_cohort",
+            return_value=self.cohort,
+        ) as cohort:
+            result = evaluate_native_netns_pilot(
+                self.frozen, results_root=self.results,
+                sources_root=self.sources, workspace=self.workspace,
+                host_key=KEY, host_identity="privileged-host",
+                approved_endpoint_sha256=H("endpoint"),
+                expected_bwrap_sha256=H("approved-bwrap"),
+                expected_hashmarks_sha256=H("approved-hashmarks"),
+            )
+        self.assertEqual(cohort.call_count, 1)
+        return result
+
+    def test_complete_observations_are_not_model_effect_or_review_proof(self):
+        result = self.assess()
+        self.assertTrue(result["paired_pilot_observations_ready_for_independent_grading"])
+        self.assertTrue(result["native_kernel_preflight_receipts_host_mac_verified"])
+        self.assertFalse(result["point_in_time_kernel_probe_is_exhaustive_egress_proof"])
+        self.assertEqual(result["verified_local_isolation_receipts"], 2)
+        for flag in (
+            "exclusive_network_egress_independently_audited",
+            "native_executable_origin_independently_proven",
+            "independent_oracle_grading_completed",
+            "pre_work_timestamp_independently_proven",
+            "randomized_causal_hashmarks_uplift_proven",
+        ):
+            self.assertFalse(result[flag])
+
+    def test_wrong_binary_pin_or_untrusted_isolation_claim_rejects(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        path = self.results / trial / "trial-execution.json"
+        base = json.loads(path.read_text())
+        for key, changed in (
+            ("native_sandbox_binary_sha256", H("wrong")),
+            ("frozen_hashmarks_executable_sha256", H("wrong")),
+            ("kernel_distinct_netns_relay_observed", False),
+            ("native_gateway_route_completed", False),
+            ("native_process_origin_proven", True),
+            ("observed_provider_response_relays", 2),
+        ):
+            with self.subTest(key=key):
+                tampered = copy.deepcopy(base)
+                tampered[key] = changed
+                path.write_text(json.dumps(tampered))
+                report = self.assess()
+                self.assertFalse(report["paired_pilot_observations_ready_for_independent_grading"])
+                self.assertIn("inconsistent-or-self-upgraded-native-isolation-receipt",
+                              report["blockers"])
+        path.write_text(json.dumps(base))
+
+    def test_missing_or_unsupported_kernel_probe_never_qualifies(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        path = self.results / trial / "trial-execution.json"
+        original = path.read_bytes()
+        report = json.loads(original)
+        for patch_value in (
+            None,
+            {**report["native_kernel_preflight"], "guest_netns_inode": 1112},
+            {**report["native_kernel_preflight"], "representative_external_tcp_denied": False},
+            {**report["native_kernel_preflight"], "exclusive_egress_independently_attested": True},
+            {**report["native_kernel_preflight"], "bwrap_sha256": H("wrong")},
+        ):
+            with self.subTest(patch=patch_value):
+                updated = copy.deepcopy(report)
+                updated["native_kernel_preflight"] = patch_value
+                path.write_bytes(canonical(updated) + b"\n")
+                result = self.assess()
+                self.assertFalse(result["paired_pilot_observations_ready_for_independent_grading"])
+                self.assertIn("inconsistent-or-self-upgraded-native-isolation-receipt", result["blockers"])
+        path.write_bytes(original)
+
+    def test_host_custodian_refuses_to_sign_missing_kernel_admission(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        path = self.results / trial / "trial-execution.json"
+        report = json.loads(path.read_bytes())
+        report["native_kernel_preflight"] = None
+        with self.assertRaisesRegex(ValueError, "unqualified-netns-host-observation"):
+            sign_isolation_report(
+                report, execution_bytes=canonical(report) + b"\n",
+                provider_attestation_bytes=b'{"synthetic-provider-packet-receipt":true}',
+                host_identity="privileged-host", host_key=KEY,
+            )
+
+    def test_unsigned_kernel_probe_mutation_is_refused_even_if_shape_valid(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        path = self.results / trial / "trial-execution.json"
+        report = json.loads(path.read_bytes())
+        report["native_kernel_preflight"]["guest_netns_inode"] += 1
+        path.write_bytes(canonical(report) + b"\n")
+        denied = self.assess()
+        self.assertFalse(denied["paired_pilot_observations_ready_for_independent_grading"])
+        self.assertIn("host-isolation-attestation-unverified", denied["blockers"])
+
+    def test_unsigned_self_upgrade_cannot_fake_kernel_peer_evidence(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        folder = self.results / trial
+        original = folder / "trial-execution.json"
+        receipt = json.loads(original.read_bytes())
+        # All other local flags remain admissible, so only the external
+        # host HMAC detects this unsigned peer-count modification.
+        receipt["gateway"]["distinct_netns_peer_connections"] = 2
+        original.write_bytes(canonical(receipt) + b"\n")
+        audited = self.assess()
+        self.assertFalse(audited["paired_pilot_observations_ready_for_independent_grading"])
+        self.assertIn("host-isolation-attestation-unverified", audited["blockers"])
+
+    def test_provider_receipt_replacement_cannot_reuse_isolation_signature(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        attested_provider = self.results / trial / "host-attestation.json"
+        attested_provider.write_bytes(b'{"foreign-provider-submission":true}')
+        audited = self.assess()
+        self.assertFalse(audited["paired_pilot_observations_ready_for_independent_grading"])
+        self.assertIn("host-isolation-attestation-unverified", audited["blockers"])
+
+    def test_missing_pair_or_unverified_native_cohort_rejects(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        (self.results / trial / "trial-execution.json").unlink()
+        result = self.assess()
+        self.assertFalse(result["paired_pilot_observations_ready_for_independent_grading"])
+        self.assertEqual(result["verified_local_isolation_receipts"], 1)
+        self.cohort["native_session_cohort_observationally_consistent"] = False
+        self.assertIn("unqualified-native-session-cohort", self.assess()["blockers"])
+
+
+if __name__ == "__main__":
+    unittest.main()

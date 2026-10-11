@@ -1,4 +1,4 @@
-BENCHMARK_TARGETS := benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood benchmark-context-invariance benchmark-context-invariance-check benchmark-context-invariance-check-all benchmark-context-invariance-qualify-check benchmark-context-invariance-qualify benchmark-context-invariance-qualify-resume benchmark-context-invariance-qualify-status benchmark-context-invariance-new benchmark-context-invariance-resume benchmark-context-invariance-runs benchmark-context-invariance-status benchmark-context-invariance-reports benchmark-harness-explain benchmark-harness-ablation benchmark-harness-find-ablation benchmark-harness-change-impact-ablation benchmark-harness-post-change-ablation benchmark-harness-correlate-evidence-ablation benchmark-harness-repository-declarations-ablation benchmark-harness-dependency-codemap-ablation benchmark-harness-verification-explanation-ablation benchmark-host-delivery-audit benchmark-intervention-audit benchmark-treatment-freeze benchmark-independent-campaign-qualify benchmark-provider-campaign-qualify benchmark-native-host-readiness benchmark-host-transport-provenance benchmark-empirical-campaign-decision benchmark-opencode-native-gateway benchmark-native-session-cohort-audit
+BENCHMARK_TARGETS := benchmark-check benchmark-check-all benchmark-doctor benchmark-campaign-audit benchmark-status benchmark benchmark-new benchmark-resume benchmark-runs benchmark-smoke benchmark-qualify-localization benchmark-oracle-review benchmark-oracle-review-check benchmark-report benchmark-score benchmark-reports benchmark-evidence-validate benchmark-tool-probe-prepare benchmark-tool-probe-check benchmark-tool-probe-smoke benchmark-tool-probe-smoke-gate benchmark-tool-probe benchmark-tool-probe-resume benchmark-tool-probe-status benchmark-tool-probe-score benchmark-openai-routing benchmark-openai-routing-new benchmark-openai-routing-check benchmark-openai-routing-runs benchmark-openai-routing-status benchmark-openai-routing-dogfood benchmark-context-invariance benchmark-context-invariance-check benchmark-context-invariance-check-all benchmark-context-invariance-qualify-check benchmark-context-invariance-qualify benchmark-context-invariance-qualify-resume benchmark-context-invariance-qualify-status benchmark-context-invariance-new benchmark-context-invariance-resume benchmark-context-invariance-runs benchmark-context-invariance-status benchmark-context-invariance-reports benchmark-harness-explain benchmark-harness-ablation benchmark-harness-find-ablation benchmark-harness-change-impact-ablation benchmark-harness-post-change-ablation benchmark-harness-correlate-evidence-ablation benchmark-harness-repository-declarations-ablation benchmark-harness-dependency-codemap-ablation benchmark-harness-verification-explanation-ablation benchmark-host-delivery-audit benchmark-intervention-audit benchmark-treatment-freeze benchmark-independent-campaign-qualify benchmark-provider-campaign-qualify benchmark-native-host-readiness benchmark-host-transport-provenance benchmark-empirical-campaign-decision benchmark-opencode-native-gateway benchmark-native-session-cohort-audit benchmark-opencode-native-netns benchmark-netns-pilot-readiness
 .PHONY: $(BENCHMARK_TARGETS)
 
 BENCHMARK_REQUESTED_GOALS := $(filter benchmark benchmark-%,$(MAKECMDGOALS))
@@ -394,3 +394,41 @@ benchmark-native-session-cohort-audit:
 		--sources-root "$(SOURCES_ROOT)" --workspace "$(WORKSPACE)" \
 		--host-key-file "$(HOST_KEY_FILE)" --host-identity "$(HOST_IDENTITY)" \
 		--approved-endpoint-sha256 "$(APPROVED_ENDPOINT_SHA256)" --require-qualified
+
+# E257-E260: explicit deny-egress bubblewrap native pilot. The network
+# relay uses a host-private Unix socket; upstream credentials never enter
+# the evaluated native process. No unconfined fallback is permitted.
+.PHONY: benchmark-opencode-native-netns benchmark-netns-pilot-readiness
+benchmark-opencode-native-netns:
+	@if [ -z "$(MANIFEST)" ] || [ -z "$(TRIAL_ID)" ] || [ -z "$(OPENCODE_BIN)" ] || [ -z "$(OPENCODE_SHA256)" ] || [ -z "$(OPENCODE_VERSION)" ] || [ -z "$(HASHMARKS_BIN)" ] || [ -z "$(HASHMARKS_SHA256)" ] || [ -z "$(RUN_ROOT)" ] || [ -z "$(WORKSPACE)" ] || [ -z "$(PROMPT_FILE)" ] || [ -z "$(CURRENT_SOURCE)" ] || [ -z "$(HOST_KEY_FILE)" ] || [ -z "$(HOST_IDENTITY)" ] || [ -z "$(UPSTREAM)" ] || [ -z "$(APPROVED_ORIGIN)" ] || [ -z "$(CATALOG_SHA256)" ] || [ -z "$(ORACLE_SHA256)" ] || [ -z "$(WORKSPACE_SHA256)" ]; then \
+		echo 'Set MANIFEST TRIAL_ID OPENCODE_BIN OPENCODE_SHA256 OPENCODE_VERSION HASHMARKS_BIN HASHMARKS_SHA256 RUN_ROOT WORKSPACE PROMPT_FILE CURRENT_SOURCE HOST_KEY_FILE HOST_IDENTITY UPSTREAM APPROVED_ORIGIN CATALOG_SHA256 ORACLE_SHA256 WORKSPACE_SHA256; export BENCHMARK_UPSTREAM_API_KEY' >&2; exit 2; fi
+	@uv run --no-project python -m benchmarks.harness.opencode_native_trial \
+		--manifest "$(MANIFEST)" --trial-id "$(TRIAL_ID)" \
+		--binary "$(OPENCODE_BIN)" --binary-sha256 "$(OPENCODE_SHA256)" \
+		--version "$(OPENCODE_VERSION)" --run-root "$(RUN_ROOT)" \
+		--workspace "$(WORKSPACE)" --prompt-file "$(PROMPT_FILE)" \
+		--current "$(CURRENT_SOURCE)" \
+		$(if $(REPLACED_SOURCE),--replaced "$(REPLACED_SOURCE)",) \
+		--host-key-file "$(HOST_KEY_FILE)" --host-identity "$(HOST_IDENTITY)" \
+		--upstream "$(UPSTREAM)" --approved-origin "$(APPROVED_ORIGIN)" \
+		--catalog-sha256 "$(CATALOG_SHA256)" --oracle-sha256 "$(ORACLE_SHA256)" \
+		--workspace-sha256 "$(WORKSPACE_SHA256)" \
+		--hashmarks-binary "$(HASHMARKS_BIN)" \
+		--hashmarks-sha256 "$(HASHMARKS_SHA256)" --require-netns-isolation
+
+benchmark-netns-pilot-readiness:
+	@if [ -z "$(MANIFEST)" ] || [ -z "$(NATIVE_RESULTS_ROOT)" ] || [ -z "$(SOURCES_ROOT)" ] || [ -z "$(WORKSPACE)" ] || [ -z "$(HOST_KEY_FILE)" ] || [ -z "$(HOST_IDENTITY)" ] || [ -z "$(APPROVED_ENDPOINT_SHA256)" ] || [ -z "$(BWRAP_SHA256)" ] || [ -z "$(HASHMARKS_SHA256)" ]; then \
+		echo 'Set MANIFEST NATIVE_RESULTS_ROOT SOURCES_ROOT WORKSPACE HOST_KEY_FILE HOST_IDENTITY APPROVED_ENDPOINT_SHA256 BWRAP_SHA256 HASHMARKS_SHA256' >&2; exit 2; fi
+	@uv run --no-project python -m benchmarks.harness.native_netns_pilot_readiness \
+		--manifest "$(MANIFEST)" --results-root "$(NATIVE_RESULTS_ROOT)" \
+		--sources-root "$(SOURCES_ROOT)" --workspace "$(WORKSPACE)" \
+		--host-key-file "$(HOST_KEY_FILE)" --host-identity "$(HOST_IDENTITY)" \
+		--approved-endpoint-sha256 "$(APPROVED_ENDPOINT_SHA256)" \
+		--bwrap-sha256 "$(BWRAP_SHA256)" \
+		--hashmarks-sha256 "$(HASHMARKS_SHA256)" --require-ready
+
+# E261–E264: exercise the actual Linux network namespace before any agent
+# or provider is contacted. Kernel proof is a point-in-time diagnostic only.
+.PHONY: benchmark-native-kernel-probe
+benchmark-native-kernel-probe:
+	@uv run --no-project python -m benchmarks.harness.native_netns_probe

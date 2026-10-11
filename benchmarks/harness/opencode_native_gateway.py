@@ -18,6 +18,9 @@ import hmac
 import json
 import os
 import re
+import socket
+import socketserver
+import struct
 import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -80,7 +83,9 @@ def admit_opencode_binary(executable: Path, *, expected_sha256: str,
     }
 
 
-def gateway_config(*, port: int, model_id: str) -> dict[str, Any]:
+def gateway_config(*, port: int, model_id: str,
+                   hashmarks_executable: Path | None = None,
+                   workspace: Path | None = None) -> dict[str, Any]:
     """Only one visible provider; no inherited provider fallback in overlay.
 
     The caller must also isolate the home and XDG config/data directories:
@@ -91,7 +96,17 @@ def gateway_config(*, port: int, model_id: str) -> dict[str, Any]:
         raise ValueError("invalid-local-gateway-port")
     if not isinstance(model_id, str) or not MODEL_NAME.fullmatch(model_id):
         raise ValueError("invalid-gateway-model-id")
-    return {
+    if (hashmarks_executable is None) != (workspace is None):
+        raise ValueError("incomplete-pinned-hashmarks-mcp-authority")
+    if hashmarks_executable is not None and (
+        not hashmarks_executable.is_absolute()
+        or not workspace.is_absolute()
+        or hashmarks_executable.is_symlink()
+        or not hashmarks_executable.is_file()
+        or not workspace.is_dir()
+    ):
+        raise ValueError("untrusted-pinned-hashmarks-mcp-authority")
+    payload = {
         "$schema": "https://opencode.ai/config.json",
         "enabled_providers": [PROVIDER_ID],
         "model": PROVIDER_ID + "/" + model_id,
@@ -109,6 +124,18 @@ def gateway_config(*, port: int, model_id: str) -> dict[str, Any]:
             },
         },
     }
+    if hashmarks_executable is not None:
+        payload["mcp"] = {
+            "hashmarks": {
+                "type": "local",
+                "command": [
+                    str(hashmarks_executable), "--workspace",
+                    str(workspace), "mcp",
+                ],
+                "enabled": True,
+            },
+        }
+    return payload
 
 
 def write_gateway_config(path: Path, config: Mapping[str, Any]) -> str:
@@ -219,6 +246,12 @@ class NativeOpenCodeGateway:
                 raise ValueError("unpinned-native-run-context")
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+        self._unix_server: socketserver.ThreadingUnixStreamServer | None = None
+        self._unix_thread: threading.Thread | None = None
+        self._unix_path: Path | None = None
+        self.peer_credentials_observed: list[tuple[int, int, int]] = []
+        self.network_namespace_verified_peers = 0
+        self._require_isolated_peer = False
         self._lock = threading.Lock()
         self._state = "PRE_EVIDENCE"
         self.unauthenticated_attempts = 0
@@ -337,7 +370,102 @@ class NativeOpenCodeGateway:
         self._thread.start()
         return int(self._server.server_address[1])
 
+    def start_unix(self, socket_path: Path, *,
+                   require_isolated_peer: bool = False) -> None:
+        """Private host Unix gateway for Linux network-isolated OpenCode.
+
+        The sandbox receives a bind mount of the socket directory, *not*
+        the upstream provider secret or the host network namespace. UDS
+        SO_PEERCRED identifies an OS peer but cannot attest its executable.
+        """
+        if (self._unix_server is not None or self._server is not None
+                or socket_path.exists() or socket_path.is_symlink()
+                or not socket_path.parent.is_dir()
+                or socket_path.parent.stat().st_mode & 0o077):
+            raise ValueError("unsafe-or-duplicate-native-unix-gateway")
+        self._require_isolated_peer = require_isolated_peer
+        parent = self
+
+        class Handler(socketserver.BaseRequestHandler):
+            def handle(self):
+                conn = self.request
+                conn.settimeout(75)
+                try:
+                    def read_exact(size: int) -> bytes:
+                        data = bytearray()
+                        while len(data) < size:
+                            part = conn.recv(size - len(data))
+                            if not part:
+                                raise ValueError("unix-gateway-incomplete-frame")
+                            data.extend(part)
+                        return bytes(data)
+
+                    peer = None
+                    if hasattr(socket, "SO_PEERCRED"):
+                        raw_peer = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
+                        peer = struct.unpack("3i", raw_peer)
+                        if parent._require_isolated_peer:
+                            try:
+                                peer_netns = os.stat(f"/proc/{peer[0]}/ns/net").st_ino
+                                host_netns = os.stat("/proc/self/ns/net").st_ino
+                            except OSError as exc:
+                                raise ValueError("netns-peer-proof-unavailable") from exc
+                            if peer_netns == host_netns:
+                                raise ValueError("unisolated-host-network-peer-denied")
+                    elif parent._require_isolated_peer:
+                        raise ValueError("peer-credential-kernel-support-required")
+                    token_length = struct.unpack("!I", read_exact(4))[0]
+                    if not 0 < token_length <= 512:
+                        raise ValueError("unix-gateway-auth-size")
+                    authorization = read_exact(token_length).decode("utf-8")
+                    body_length = struct.unpack("!I", read_exact(4))[0]
+                    if not 0 < body_length <= MAX_REQUEST_BYTES:
+                        raise ValueError("unix-gateway-body-size")
+                    body = read_exact(body_length)
+                    result = parent._handle_request(body, authorization=authorization)
+                    if not 0 < len(result) <= MAX_RESPONSE_BYTES:
+                        raise ValueError("unix-gateway-response-size")
+                    # Only completed, authenticated, verified requests can
+                    # contribute kernel peer observations. Never let a peer
+                    # with a bad token, packet or failed upstream inflate
+                    # the number of admitted network-isolated connections.
+                    if peer is not None:
+                        with parent._lock:
+                            parent.peer_credentials_observed.append(peer)
+                            if parent._require_isolated_peer:
+                                parent.network_namespace_verified_peers += 1
+                    conn.sendall(struct.pack("!I", len(result)) + result)
+                except (OSError, ValueError, UnicodeError, struct.error):
+                    try:
+                        conn.sendall(struct.pack("!I", 0))
+                    except OSError:
+                        pass
+
+        class UnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+            daemon_threads = True
+
+        # Parent directory is expected to have mode 0700; the socket itself
+        # gets 0600 and is mounted only into the trial's isolated namespace.
+        self._unix_server = UnixServer(str(socket_path), Handler)
+        self._unix_path = socket_path
+        socket_path.chmod(0o600)
+        self._unix_thread = threading.Thread(
+            target=self._unix_server.serve_forever, daemon=True,
+            name="agentscookbook-privileged-unix-provider",
+        )
+        self._unix_thread.start()
+
     def close(self) -> None:
+        if self._unix_server is not None:
+            self._unix_server.shutdown()
+            self._unix_server.server_close()
+            if self._unix_thread is not None:
+                self._unix_thread.join(timeout=5)
+            if self._unix_path is not None:
+                self._unix_path.unlink(missing_ok=True)
+            self._unix_server = None
+            self._unix_thread = None
+            self._unix_path = None
         if self._server is not None:
             self._server.shutdown()
             self._server.server_close()
@@ -357,6 +485,10 @@ class NativeOpenCodeGateway:
             "model_request_attested": False,
             "host_submission_recorded": self.post_evidence_submissions == 1,
             "native_process_origin_proven": False,
+            "unix_peer_credentials_observed": len(self.peer_credentials_observed),
+            "distinct_netns_peer_connections": self.network_namespace_verified_peers,
+            "kernel_netns_peer_check_required": self._require_isolated_peer,
+            "socket_peer_executable_verified": False,
             "provider_response_relay_qualified": self.post_evidence_submissions == 1,
             "causal_improvement_proven": False,
         }

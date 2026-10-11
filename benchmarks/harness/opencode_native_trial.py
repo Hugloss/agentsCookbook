@@ -29,7 +29,15 @@ from .opencode_native_gateway import (
 )
 from .trusted_treatments import load_manifest, verify_manifest
 from .opencode_native_export import acquire_native_export, native_export_preflight
+from .native_netns_probe import probe_netns_kernel
+from .native_bwrap_execution import (
+    admit_netns_substrate, build_isolated_argv, verify_substrate_unchanged,
+)
 from .opencode_native_session import finalize_native_export
+from .host_input_attestation import load_host_key
+from .native_netns_host_attestation import (
+    sign_isolation_report, write_isolation_attestation,
+)
 
 SCHEMA = "agentscookbook.pinned-opencode-gateway-trial.v1"
 
@@ -53,6 +61,9 @@ def launch_native_trial(
     oracle_sha256: str, workspace_sha256: str,
     timeout_seconds: int = 600,
     allow_unconfined_execution: bool = False,
+    use_netns_isolation: bool = False,
+    hashmarks_executable: Path | None = None,
+    expected_hashmarks_sha256: str | None = None,
 ) -> dict[str, Any]:
     frozen = verify_manifest(dict(manifest))
     cells = [x for x in frozen["assignments"] if x["trial_id"] == trial_id]
@@ -68,8 +79,20 @@ def launch_native_trial(
     # benchmark runner. OS confinement and exclusive egress are not proven.
     # Require deliberate opt-in rather than silently executing an agent with
     # access to the user's host filesystem/network.
-    if allow_unconfined_execution is not True:
-        raise ValueError("unconfined-native-launch-not-explicitly-authorized")
+    if allow_unconfined_execution and use_netns_isolation:
+        raise ValueError("conflicting-native-execution-backends")
+    if not allow_unconfined_execution and not use_netns_isolation:
+        raise ValueError("unconfined-native-launch-not-explicitly-authorized-or-netns-backend-missing")
+    substrate = admit_netns_substrate() if use_netns_isolation else None
+    if use_netns_isolation:
+        if (hashmarks_executable is None or expected_hashmarks_sha256 is None
+                or not hashmarks_executable.is_absolute()
+                or hashmarks_executable.is_symlink()
+                or not hashmarks_executable.is_file()
+                or len(expected_hashmarks_sha256) != 64
+                or any(c not in "0123456789abcdef" for c in expected_hashmarks_sha256)
+                or sha256_file(hashmarks_executable) != expected_hashmarks_sha256):
+            raise ValueError("missing-or-stale-frozen-hashmarks-mcp-executable")
     workspace_root = workspace.resolve()
     if (run_root.resolve().is_relative_to(workspace_root)
             or host_key_file.resolve().is_relative_to(workspace_root)):
@@ -88,6 +111,9 @@ def launch_native_trial(
     # succeed. Reject missing Linux capture authority before creating the
     # workspace/run root or starting the native model.
     native_export_preflight()
+    # This exercises the actual kernel boundary while no native run root,
+    # socket, child workspace mutation, or model dispatch exists.
+    kernel_probe = probe_netns_kernel(substrate) if substrate is not None else None
     gateway = NativeOpenCodeGateway(
         frozen, trial_id=trial_id, host_key_file=host_key_file,
         host_identity=host_identity, current=current, replaced=replaced,
@@ -97,13 +123,24 @@ def launch_native_trial(
         oracle_sha256=oracle_sha256, workspace_sha256=workspace_sha256,
     )
     _make_private_dir(run_root)
-    for name in ("home", "config", "cache", "data", "state"):
+    for name in ("home", "config", "cache", "data", "state", "gateway"):
         _make_private_dir(run_root / name)
     started = False
     try:
-        port = gateway.start()
+        port = secrets.randbelow(16_000) + 40_000 if use_netns_isolation else None
+        if use_netns_isolation:
+            gateway.start_unix(
+                run_root / "gateway" / "upstream.sock",
+                require_isolated_peer=True,
+            )
+        else:
+            port = gateway.start()
         started = True
-        cfg = gateway_config(port=port, model_id=frozen["design"]["model"])
+        cfg = gateway_config(
+            port=port, model_id=frozen["design"]["model"],
+            hashmarks_executable=hashmarks_executable if use_netns_isolation else None,
+            workspace=workspace if use_netns_isolation else None,
+        )
         config = run_root / "opencode.json"
         config_sha256 = write_gateway_config(config, cfg)
         model = cfg["model"]
@@ -126,10 +163,22 @@ def launch_native_trial(
         started_at_ms = time.time_ns() // 1_000_000
         # Do not pass upstream API keys or ambient LLM credentials to the
         # agent; its only configured provider is the loopback gateway.
+        native_command = [
+            str(opencode_executable), "run", "--model", model,
+            "--title", native_title, "--format", "json", prompt,
+        ]
+        native_argv = (
+            build_isolated_argv(
+                substrate, executable=opencode_executable, workspace=workspace,
+                run_root=run_root, gateway_dir=run_root / "gateway",
+                environment=child_env, command=native_command,
+                worker_port=port,
+                hashmarks_executable=hashmarks_executable,
+            ) if substrate is not None else native_command
+        )
         try:
             result = subprocess.run(
-                [str(opencode_executable), "run", "--model", model,
-                 "--title", native_title, "--format", "json", prompt],
+                native_argv,
                 cwd=workspace, env=child_env,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 timeout=timeout_seconds, check=False,
@@ -139,16 +188,41 @@ def launch_native_trial(
             exit_code = None
         if sha256_file(opencode_executable) != expected_binary_sha256:
             raise ValueError("native-opencode-binary-changed-during-trial")
+        if substrate is not None:
+            verify_substrate_unchanged(substrate)
+            if sha256_file(hashmarks_executable) != expected_hashmarks_sha256:
+                raise ValueError("native-hashmarks-executable-changed-during-trial")
         observation = gateway.result()
-        routed = exit_code == 0 and observation["post_evidence_submissions"] == 1
+        routed = (
+            exit_code == 0
+            and observation["post_evidence_submissions"] == 1
+            and (
+                substrate is None
+                or observation["distinct_netns_peer_connections"] >= 1
+            )
+        )
         session_result: dict[str, Any] | None = None
         session_error: str | None = None
         if routed:
             try:
+                # Export commands run in fresh deny-egress namespaces too:
+                # no unconfined inspection subprocess can silently reenable
+                # native external provider access after the trial.
+                isolated_export = (
+                    (lambda command: build_isolated_argv(
+                        substrate, executable=opencode_executable,
+                        workspace=workspace, run_root=run_root,
+                        gateway_dir=run_root / "gateway",
+                        environment=child_env, command=command,
+                        worker_port=None,
+                        hashmarks_executable=hashmarks_executable,
+                    )) if substrate is not None else None
+                )
                 session_id, exported = acquire_native_export(
                     opencode_executable, workspace=workspace,
                     environment=child_env, exact_title=native_title,
                     started_at_ms=started_at_ms,
+                    isolate_command=isolated_export,
                 )
                 if sha256_file(opencode_executable) != expected_binary_sha256:
                     raise ValueError("native-opencode-executable-drift-after-export")
@@ -164,7 +238,7 @@ def launch_native_trial(
             except (OSError, ValueError, TypeError, UnicodeError):
                 session_error = "native-session-not-bound-to-observed-provider-submission"
         qualified = routed and session_result is not None
-        return {
+        report = {
             "schema": SCHEMA,
             "trial_id": trial_id,
             "manifest_sha256": frozen["manifest_sha256"],
@@ -180,9 +254,51 @@ def launch_native_trial(
             "native_trial_evidence_qualified": qualified,
             "host_receipt_finalized": qualified,
             "native_process_origin_proven": False,
+            "linux_network_namespace_requested": substrate is not None,
+            "host_network_egress_intentionally_disabled": substrate is not None,
+            "native_sandbox_binary_sha256": (
+                substrate["bwrap_sha256"] if substrate else None
+            ),
+            "frozen_hashmarks_executable_sha256": (
+                expected_hashmarks_sha256 if substrate else None
+            ),
+            "network_egress_exclusivity_independently_attested": False,
+            "kernel_distinct_netns_relay_observed": (
+                substrate is not None
+                and observation["distinct_netns_peer_connections"] >= 1
+            ),
+            "native_kernel_preflight": kernel_probe,
             "native_model_input_delivered_proven": False,
             "causal_improvement_proven": False,
         }
+        if substrate is not None:
+            # Host-owned create-only report. The independent E260 audit
+            # rechecks this against raw session, signed transport and source;
+            # self-reported isolation alone cannot establish causal uplift.
+            data = json.dumps(report, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+            output = run_root / "trial-execution.json"
+            flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            fd = os.open(output, flags, 0o600)
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+            if qualified:
+                # The signed receipt binds this exact create-only execution
+                # report to the already signed host/provider packet receipt.
+                attested_provider = (run_root / "host-attestation.json").read_bytes()
+                signed = sign_isolation_report(
+                    report, execution_bytes=data,
+                    provider_attestation_bytes=attested_provider,
+                    host_identity=host_identity,
+                    host_key=load_host_key(host_key_file),
+                )
+                write_isolation_attestation(
+                    run_root / "trial-execution.attestation.json", signed,
+                )
+        return report
     finally:
         if started:
             gateway.close()
@@ -215,6 +331,9 @@ def main() -> int:
     parser.add_argument("--workspace-sha256", required=True)
     parser.add_argument("--timeout-seconds", type=int, default=600)
     parser.add_argument("--allow-unconfined-native-test", action="store_true")
+    parser.add_argument("--require-netns-isolation", action="store_true")
+    parser.add_argument("--hashmarks-binary", type=Path)
+    parser.add_argument("--hashmarks-sha256")
     args = parser.parse_args()
     try:
         api_key = os.environ.get("BENCHMARK_UPSTREAM_API_KEY")
@@ -239,6 +358,9 @@ def main() -> int:
             workspace_sha256=args.workspace_sha256,
             timeout_seconds=args.timeout_seconds,
             allow_unconfined_execution=args.allow_unconfined_native_test,
+            use_netns_isolation=args.require_netns_isolation,
+            hashmarks_executable=args.hashmarks_binary,
+            expected_hashmarks_sha256=args.hashmarks_sha256,
         )
     except (ValueError, OSError, TypeError, UnicodeError) as exc:
         print(json.dumps({
