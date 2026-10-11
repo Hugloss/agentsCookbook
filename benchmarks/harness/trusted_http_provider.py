@@ -88,6 +88,59 @@ def validate_sse_response(body: bytes) -> bool:
     return saw_choice
 
 
+def _send_verified_https_chat(
+    *,
+    url: str,
+    serialized_model_request: bytes,
+    api_key: str,
+    timeout_seconds: int,
+    accept_sse: bool,
+) -> tuple[int, bytes]:
+    """Shared single-attempt provider boundary; no retries or leaked bodies."""
+    # The caller MUST mark its transport attempt before calling this helper.
+    # All request and response bytes stay in the privileged host process.
+    try:
+        opener = build_opener(
+            ProxyHandler({}), _RejectRedirect(),
+            HTTPSHandler(context=ssl.create_default_context()),
+        )
+        req = Request(
+            url, data=serialized_model_request, method="POST",
+            headers={
+                "Authorization": "Bearer " + api_key,
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream" if accept_sse else "application/json",
+            },
+        )
+        with opener.open(req, timeout=timeout_seconds) as response:
+            status = response.status
+            body = response.read(MAX_RESPONSE_BYTES + 1)
+            headers = getattr(response, "headers", None)
+            content_type = (
+                headers.get("Content-Type", "") if headers is not None else ""
+            )
+        if (type(status) is not int or not 200 <= status < 300
+                or not isinstance(body, bytes)
+                or not 0 < len(body) <= MAX_RESPONSE_BYTES):
+            raise ValueError("provider-response-incomplete")
+        if accept_sse:
+            if (not isinstance(content_type, str)
+                    or not content_type.lower().startswith("text/event-stream")
+                    or not validate_sse_response(body)):
+                raise ValueError("incomplete-or-invalid-streaming-provider-response")
+        else:
+            parsed = json.loads(body)
+            if (not isinstance(parsed, dict)
+                    or not isinstance(parsed.get("choices"), list)
+                    or not parsed["choices"]):
+                raise ValueError("invalid-openai-compatible-provider-response")
+        return status, body
+    except Exception:
+        # URLs, provider exceptions, credentials and response bodies may contain
+        # secrets. Never expose them or convert partial responses into evidence.
+        raise ValueError("provider-submission-unverified") from None
+
+
 def _dispatch_verified_chat_request(
     capture: TrustedModelRequestCapture,
     *,
@@ -133,46 +186,10 @@ def _dispatch_verified_chat_request(
         oracle_sha256=oracle_sha256, workspace_sha256=workspace_sha256,
     )
     capture.begin_provider_transport()
-    # Explicitly suppress proxy environment influence and redirect following.
-    opener = build_opener(
-        ProxyHandler({}), _RejectRedirect(),
-        HTTPSHandler(context=ssl.create_default_context()),
+    status, body = _send_verified_https_chat(
+        url=url, serialized_model_request=serialized_model_request,
+        api_key=api_key, timeout_seconds=timeout_seconds, accept_sse=accept_sse,
     )
-    req = Request(
-        url, data=serialized_model_request, method="POST",
-        headers={
-            "Authorization": "Bearer " + api_key,
-            "Content-Type": "application/json",
-            "Accept": "text/event-stream" if accept_sse else "application/json",
-        },
-    )
-    try:
-        with opener.open(req, timeout=timeout_seconds) as response:
-            status = response.status
-            body = response.read(MAX_RESPONSE_BYTES + 1)
-            headers = getattr(response, "headers", None)
-            content_type = (
-                headers.get("Content-Type", "") if headers is not None else ""
-            )
-        if (type(status) is not int or not 200 <= status < 300
-                or not isinstance(body, bytes)
-                or not 0 < len(body) <= MAX_RESPONSE_BYTES):
-            raise ValueError("provider-response-incomplete")
-        if accept_sse:
-            if (not isinstance(content_type, str)
-                    or not content_type.lower().startswith("text/event-stream")
-                    or not validate_sse_response(body)):
-                raise ValueError("incomplete-or-invalid-streaming-provider-response")
-        else:
-            parsed = json.loads(body)
-            if (not isinstance(parsed, dict)
-                    or not isinstance(parsed.get("choices"), list)
-                    or not parsed["choices"]):
-                raise ValueError("invalid-openai-compatible-provider-response")
-    except Exception:
-        # Do not leak provider URL, request/response content, credentials, or
-        # exception descriptions (network errors can embed secrets).
-        raise ValueError("provider-submission-unverified") from None
     capture.record_provider_submission(
         tool_call_id=tool_call_id,
         serialized_model_request=serialized_model_request,
@@ -213,4 +230,71 @@ def dispatch_verified_chat_response(**kwargs: Any) -> bytes:
 def dispatch_verified_chat_stream_response(**kwargs: Any) -> bytes:
     """Return exactly one validated and terminally complete SSE response."""
     _, body = _dispatch_verified_chat_request(**kwargs, accept_sse=True)
+    return body
+
+
+def _dispatch_verified_pre_exposure_chat_request(
+    capture: TrustedModelRequestCapture,
+    *,
+    serialized_model_request: bytes,
+    endpoint: str, approved_origin: str, api_key: str,
+    request_sequence: int = 1,
+    timeout_seconds: int = 60,
+) -> tuple[dict[str, Any], bytes]:
+    """Send the deferred arm's real tool-free provider request exactly once.
+
+    Unlike a synthetic transport receipt, this calls the same HTTPS boundary
+    as evidence delivery, then records a prior submission only after a fully
+    validated 2xx response. It cannot run for any other assigned arm.
+    """
+    if not isinstance(capture, TrustedModelRequestCapture):
+        raise ValueError("trusted-host-capture-required")
+    url = _endpoint(endpoint, approved_origin=approved_origin)
+    if (
+        not isinstance(api_key, str) or not 1 <= len(api_key) <= 4096
+        or any(ch in api_key for ch in ("\\r", "\\n"))
+        or type(timeout_seconds) is not int or not 1 <= timeout_seconds <= 300
+        or not isinstance(serialized_model_request, bytes)
+        or not 0 < len(serialized_model_request) <= MAX_BODY_BYTES
+    ):
+        raise ValueError("invalid-host-provider-transport-parameters")
+    # Validate the live serialized bytes and frozen assignment before I/O.
+    prior = capture.observe_pre_exposure_request(
+        serialized_model_request=serialized_model_request,
+        request_sequence=request_sequence,
+    )
+    capture.begin_pre_exposure_transport()
+    status, body = _send_verified_https_chat(
+        url=url, serialized_model_request=serialized_model_request,
+        api_key=api_key, timeout_seconds=timeout_seconds, accept_sse=False,
+    )
+    capture.record_pre_exposure_submission(
+        serialized_model_request=serialized_model_request,
+        endpoint_sha256=hashlib.sha256(url.encode("utf-8")).hexdigest(),
+        status=status,
+        response_sha256=hashlib.sha256(body).hexdigest(),
+        response_bytes=len(body),
+    )
+    return ({
+        "schema": "agentscookbook.provider-prior-submission.v1",
+        "provider_submission_state": "SUBMITTED",
+        "prior_request_sha256": prior["prior_request_sha256"],
+        "response_sha256": hashlib.sha256(body).hexdigest(),
+        "response_bytes": len(body),
+        "http_status": status,
+        "provider_consumption_proven": False,
+        "model_attention_proven": False,
+        "causal_influence_proven": False,
+    }, body)
+
+
+def dispatch_verified_pre_exposure_chat_request(**kwargs: Any) -> dict[str, Any]:
+    """Host-only metadata for the deferred arm's prior submitted request."""
+    metadata, _ = _dispatch_verified_pre_exposure_chat_request(**kwargs)
+    return metadata
+
+
+def dispatch_verified_pre_exposure_chat_response(**kwargs: Any) -> bytes:
+    """Host-only response bytes; never written to local trial artifacts."""
+    _, body = _dispatch_verified_pre_exposure_chat_request(**kwargs)
     return body
