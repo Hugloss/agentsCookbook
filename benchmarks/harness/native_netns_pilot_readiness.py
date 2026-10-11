@@ -19,6 +19,7 @@ from .host_input_attestation import load_host_key
 from .native_session_cohort_audit import audit_native_session_cohort
 from .opencode_native_trial import SCHEMA as TRIAL_SCHEMA
 from .native_netns_host_attestation import verify_isolation_attestation
+from .native_netns_probe import kernel_probe_receipt_valid
 from .trusted_treatments import load_manifest, verify_manifest
 
 SCHEMA = "agentscookbook.netns-paired-pilot-readiness.v1"
@@ -80,6 +81,10 @@ def evaluate_native_netns_pilot(
             evidence["gateway"].get("distinct_netns_peer_connections", 0) < 1,
             evidence.get("native_process_origin_proven") is not False,
             evidence.get("causal_improvement_proven") is not False,
+            not kernel_probe_receipt_valid(
+                evidence.get("native_kernel_preflight"),
+                expected_bwrap_sha256=expected_bwrap_sha256,
+            ),
         )):
             issues["inconsistent-or-self-upgraded-native-isolation-receipt"] += 1
             continue
@@ -122,6 +127,10 @@ def evaluate_native_netns_pilot(
         "network_namespace_peer_observations_host_mac_verified": (
             checked == len(frozen["assignments"])
         ),
+        "native_kernel_preflight_receipts_host_mac_verified": (
+            checked == len(frozen["assignments"]) and not issues
+        ),
+        "point_in_time_kernel_probe_is_exhaustive_egress_proof": False,
         "exclusive_network_egress_independently_audited": False,
         "native_executable_origin_independently_proven": False,
         "independent_oracle_grading_completed": False,
