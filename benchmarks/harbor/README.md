@@ -2470,3 +2470,111 @@ uv run --no-project python -m unittest benchmarks.tests.test_native_provider_too
 uv run --no-project python -m unittest benchmarks.tests.test_native_chat_pair_integrity benchmarks.tests.test_native_chat_transport_parity benchmarks.tests.test_native_netns_pilot_readiness -v
 uv run --no-project python -m unittest discover -s benchmarks/tests
 ```
+
+## E273–E276: real native Hashmarks stdio interception, fail-closed
+
+The previous native Chat and provider-side tests prove that a *specific*
+tool-message presentation can be observed and signed. They do **not**
+show that a real Hashmarks MCP binary returned the frozen original packet
+before an intervention. The verified native MCP stdio bridge adds that
+missing local call/response boundary as an **explicit, opt-in** mode.
+
+**E273 — freeze the source, not just the presented text.** The host
+derives a create-only `native-mcp-contract.json` from the already
+selected frozen trial, original Hashmarks packet, real exact hashmarks
+binary SHA-256 and the intended model-visible text surface. The contract
+pins trial, manifest, generation, semantic and surface identities.
+The original packet and selected UTF-8 text must decode to the same
+canonical JSON; no foreign or stale source can enter the bridge.
+
+**E274 — observe the actual local JSON-RPC response.** When configured,
+OpenCode starts the stdio bridge rather than invoking `hashmarks mcp`
+directly. The bridge itself launches the exact frozen Hashmarks binary
+with `--workspace <repo> mcp`. JSON-RPC initialization and non-subject
+requests are forwarded. For exactly one `tools/call` of a supported
+Hashmarks operation, the original Hashmarks output must contain exactly
+one structured JSON text block equal to the frozen source. Optional
+`structuredContent` must match the same source. Only then may the
+bridge replace the MCP text block with the selected frozen presentation.
+Original errors, unexpected tool names, extra subject calls, ambiguous
+multi-block outputs and changed/unknown source packets terminate with
+an error. No successful Hashmarks tool response is generated without a
+real matching subprocess response.
+
+**E275 — exact runtime and mount authority.** The bridge and its small
+source verifier are mounted read-only into the Linux network namespace
+alongside the pinned contract. The strict mount probe checks those
+files exist and that OpenCode's *single* Hashmarks MCP command points
+to the Python bridge with exactly the source path, binary identity and
+workspace chosen by the host. Host source hash checks detect replacement
+during the trial. Host-side provider credentials are never passed to
+the subprocess. The old direct MCP path remains unchanged; activate
+the new path deliberately:
+
+```sh
+make benchmark-opencode-native-netns VERIFIED_NATIVE_MCP_BRIDGE=1 \
+  MANIFEST=/frozen/manifest.json TRIAL_ID=<assigned-trial-id> \
+  OPENCODE_BIN=/trusted/opencode OPENCODE_SHA256=<64-hex> \
+  OPENCODE_VERSION=<pinned-version> \
+  HASHMARKS_BIN=/trusted/hashmarks HASHMARKS_SHA256=<64-hex> \
+  RUN_ROOT=/private/results/<trial-id> WORKSPACE=/disposable/workspace \
+  PROMPT_FILE=/frozen/prompt.txt CURRENT_SOURCE=/frozen/source.json \
+  HOST_KEY_FILE=/privileged/host.key HOST_IDENTITY=<host-id> \
+  UPSTREAM=https://api.openai.com/v1/chat/completions \
+  APPROVED_ORIGIN=https://api.openai.com \
+  CATALOG_SHA256=<64-hex> ORACLE_SHA256=<64-hex> \
+  WORKSPACE_SHA256=<64-hex>
+```
+
+The existing study-wide pair admission still applies, including the
+explicit diagnostic-only handling for legacy incompatible presentations.
+
+**E276 — executable, model-free stdio proof.** The attack ring launches
+the actual bridge process owner against a deterministic executable
+MCP fixture, using real stdin/stdout pipes. It verifies a benign
+`tools/list` pass-through, one exact packet replacement, byte drift,
+original tool errors, mismatched `structuredContent`, unknown calls,
+retries, stale frozen source/binary and unsafe config/mount behavior:
+
+```sh
+make benchmark-native-mcp-bridge-tests
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
+
+**Qualification limits:** CI does **not** launch a real Hashmarks
+release, OpenCode executable or model provider, and cannot establish
+which MCP output shape a particular installed Hashmarks version uses.
+An unsupported Hashmarks response fails closed and needs an explicitly
+versioned adapter and a focused regression, never automatic normalization.
+**Real local Hashmarks protocol smoke (no model/provider):** After
+pinning a particular installed standalone Hashmarks executable and
+capturing a matching *original* source packet, the host can run the
+same bridge executable directly against that binary. This sends actual
+MCP `initialize`, `tools/list`, and one explicit `tools/call`, then
+rejects missing tools, incompatible output shapes, missing responses,
+original packet drift and duplicate-source observation:
+
+```sh
+make benchmark-native-mcp-live-smoke \
+  MANIFEST=/frozen/manifest.json TRIAL_ID=<assigned-trial-id> \
+  HASHMARKS_BIN=/trusted/hashmarks HASHMARKS_SHA256=<64-hex> \
+  WORKSPACE=/disposable/repository \
+  CURRENT_SOURCE=/frozen/source.json \
+  TOOL_NAME=task_evidence TOOL_ARGS_FILE=/frozen/tool-arguments.json
+```
+
+The operator selects the exact installed Hashmarks operation and its
+bounded JSON arguments. This invokes the real installed executable in
+a scrubbed local HOME/XDG environment, but is not a network namespace
+or OpenCode/provider execution and has no independently held source
+signature. MCP version/tool schema differences are **explicit failures**,
+not grounds to invent compatible tool results. CI exercises this entry
+with a deterministic executable stand-in and cannot certify a user
+installation.
+
+The bridge's in-namespace process observation is not an independent
+host attestation of the original Hashmarks response. Provider gateway
+and native-session evidence still independently check whether the
+selected text reached an outbound model request. No model attention,
+exclusive process origin, completed paired empirical pilot or causal
+effect is claimed.
