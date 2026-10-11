@@ -18,6 +18,7 @@ from typing import Any, Mapping
 from .host_input_attestation import load_host_key
 from .native_session_cohort_audit import audit_native_session_cohort
 from .opencode_native_trial import SCHEMA as TRIAL_SCHEMA
+from .native_netns_host_attestation import verify_isolation_attestation
 from .trusted_treatments import load_manifest, verify_manifest
 
 SCHEMA = "agentscookbook.netns-paired-pilot-readiness.v1"
@@ -88,6 +89,24 @@ def evaluate_native_netns_pilot(
                 or binding.get("signed_host_input_and_transport_verified") is not True):
             issues["incomplete-native-session-transport-binding"] += 1
             continue
+        # Execution JSON is agent-adjacent local data, not independent
+        # kernel authority. Require a separate host-key signature bound
+        # to its exact bytes and the original provider input attestation.
+        try:
+            raw_execution = receipt.read_bytes()
+            original_provider = (
+                results_root / cell["trial_id"] / "host-attestation.json"
+            ).read_bytes()
+            signed = results_root / cell["trial_id"] / "trial-execution.attestation.json"
+            if not verify_isolation_attestation(
+                signed, report=evidence, execution_bytes=raw_execution,
+                provider_attestation_bytes=original_provider,
+                host_identity=host_identity, host_key=host_key,
+            ):
+                raise ValueError("host-isolation-mac-or-source-mismatch")
+        except (OSError, ValueError, TypeError):
+            issues["host-isolation-attestation-unverified"] += 1
+            continue
         checked += 1
     if checked != len(frozen["assignments"]):
         issues["incomplete-planned-native-isolation-population"] += 1
@@ -100,7 +119,9 @@ def evaluate_native_netns_pilot(
         "native_session_cohort": cohort,
         "paired_pilot_observations_ready_for_independent_grading": not issues,
         "blockers": dict(sorted(issues.items())),
-        "network_namespace_peer_observations_verified": checked == len(frozen["assignments"]),
+        "network_namespace_peer_observations_host_mac_verified": (
+            checked == len(frozen["assignments"])
+        ),
         "exclusive_network_egress_independently_audited": False,
         "native_executable_origin_independently_proven": False,
         "independent_oracle_grading_completed": False,
