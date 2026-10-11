@@ -2370,6 +2370,32 @@ release, OpenCode executable or model provider, and cannot establish
 which MCP output shape a particular installed Hashmarks version uses.
 An unsupported Hashmarks response fails closed and needs an explicitly
 versioned adapter and a focused regression, never automatic normalization.
+**Real local Hashmarks protocol smoke (no model/provider):** After
+pinning a particular installed standalone Hashmarks executable and
+capturing a matching *original* source packet, the host can run the
+same bridge executable directly against that binary. This sends actual
+MCP `initialize`, `tools/list`, and one explicit `tools/call`, then
+rejects missing tools, incompatible output shapes, missing responses,
+original packet drift and duplicate-source observation:
+
+```sh
+make benchmark-native-mcp-live-smoke \
+  MANIFEST=/frozen/manifest.json TRIAL_ID=<assigned-trial-id> \
+  HASHMARKS_BIN=/trusted/hashmarks HASHMARKS_SHA256=<64-hex> \
+  WORKSPACE=/disposable/repository \
+  CURRENT_SOURCE=/frozen/source.json \
+  TOOL_NAME=task_evidence TOOL_ARGS_FILE=/frozen/tool-arguments.json
+```
+
+The operator selects the exact installed Hashmarks operation and its
+bounded JSON arguments. This invokes the real installed executable in
+a scrubbed local HOME/XDG environment, but is not a network namespace
+or OpenCode/provider execution and has no independently held source
+signature. MCP version/tool schema differences are **explicit failures**,
+not grounds to invent compatible tool results. CI exercises this entry
+with a deterministic executable stand-in and cannot certify a user
+installation.
+
 The bridge's in-namespace process observation is not an independent
 host attestation of the original Hashmarks response. Provider gateway
 and native-session evidence still independently check whether the
