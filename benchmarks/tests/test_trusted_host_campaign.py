@@ -47,6 +47,8 @@ def design(study: str = "presentation") -> dict:
             {"control": "structured", "variant": "text"}
             if study == "presentation"
             else {"control": "current-generation", "variant": "replaced-generation"}
+            if study == "freshness"
+            else {"control": "direct-first-request", "variant": "deferred-second-request"}
         ),
     }
 
@@ -324,6 +326,161 @@ class TrustedHostInputIntegrationTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             host.finalize(trajectory=trajectory, output=self.root / "receipt.json")
 
+
+
+class TrustedTimingTreatmentTest(TrustedHostInputIntegrationTest):
+    def _timing_run(
+        self, *, arm: str, altered: str | None = None,
+    ) -> tuple[Path, Path]:
+        manifest = plan("timing")
+        cell = next(x for x in manifest["assignments"] if x["arm"] == arm)
+        host = TrustedModelRequestCapture(
+            manifest, trial_id=cell["trial_id"], harness="codex", task="owner",
+            replicate=1, arm=arm, host_identity="trusted-timing-provider-host",
+            host_key_file=self.key_path,
+        )
+        chosen = select_treatment(
+            manifest, trial_id=cell["trial_id"], harness="codex",
+            task="owner", replicate=1, arm=arm, current=source(),
+        )
+        self.assertEqual(chosen["required_request_sequence"], 1 if arm == "control" else 2)
+        if arm == "variant":
+            pre_request, _ = _request(chosen["selected_content"])
+            doc = json.loads(pre_request)
+            doc["messages"] = doc["messages"][:1]
+            if altered == "prior-with-tool":
+                doc["messages"].append({"role": "tool", "tool_call_id": "t1", "content": source()["content"]})
+            if altered == "prior-different-prompt":
+                doc["messages"][0]["content"] = "Unrelated question"
+            prior = canonical(doc)
+            if altered != "missing-prior":
+                if altered == "prior-with-tool":
+                    with self.assertRaisesRegex(ValueError, "tool-free"):
+                        host.observe_pre_exposure_request(
+                            serialized_model_request=prior, request_sequence=1,
+                        )
+                    return self.root / "missing", self.root / "missing"
+                host.observe_pre_exposure_request(
+                    serialized_model_request=prior, request_sequence=1,
+                )
+                if altered != "unsubmitted-prior":
+                    host.record_pre_exposure_submission(
+                        serialized_model_request=prior, endpoint_sha256=H("endpoint"),
+                        status=200, response_sha256=H("response-prior"),
+                        response_bytes=101,
+                    )
+                    if altered == "retry-prior":
+                        with self.assertRaisesRegex(ValueError, "retried"):
+                            host.record_pre_exposure_submission(
+                                serialized_model_request=prior,
+                                endpoint_sha256=H("endpoint"),
+                                status=200, response_sha256=H("response-prior"),
+                                response_bytes=101,
+                            )
+                        return self.root / "missing", self.root / "missing"
+        req, prompt = _request(chosen["selected_content"])
+        if altered == "wrong-delivery-sequence":
+            sequence = 1 if arm == "variant" else 2
+        else:
+            sequence = chosen["required_request_sequence"]
+        kwargs = {
+            "serialized_model_request": req, "tool_call_id": "t1",
+            "returned_packet": source()["content"], "request_sequence": sequence,
+            "current": source(), "catalog_sha256": H("catalog"),
+            "prompt_sha256": prompt, "oracle_sha256": H("oracle"),
+            "workspace_sha256": H("workspace"),
+        }
+        if altered in {
+            "missing-prior", "unsubmitted-prior", "wrong-delivery-sequence",
+            "prior-different-prompt",
+        }:
+            with self.assertRaises(ValueError):
+                host.observe_outbound_request(**kwargs)
+            return self.root / "missing", self.root / "missing"
+        host.observe_outbound_request(**kwargs)
+        trajectory = self.root / (cell["trial_id"] + "-timing-atif.json")
+        trajectory.write_text(json.dumps(_atif(source()["content"])))
+        output = self.root / (cell["trial_id"] + "-timing.json")
+        if altered == "no-final-submission":
+            with self.assertRaisesRegex(ValueError, "timing-study-provider-submission-incomplete"):
+                host.finalize(trajectory=trajectory, output=output)
+            return trajectory, output
+        host.begin_provider_transport()
+        host.record_provider_submission(
+            tool_call_id="t1", serialized_model_request=req,
+            endpoint_sha256=H("endpoint"), status=200,
+            response_sha256=H("response-final"), response_bytes=100,
+        )
+        finished = host.finalize(trajectory=trajectory, output=output)
+        self.assertTrue(finished["provider_submission_attested"])
+        return trajectory, output
+
+    def test_direct_and_deferred_are_frozen_same_semantic_source(self) -> None:
+        manifest = plan("timing")
+        self.assertEqual(manifest, verify_manifest(manifest))
+        selections = {}
+        for cell in manifest["assignments"]:
+            selections[cell["arm"]] = select_treatment(
+                manifest, trial_id=cell["trial_id"], harness="codex",
+                task="owner", replicate=1, arm=cell["arm"], current=source(),
+            )
+        self.assertEqual(
+            selections["control"]["surface_sha256"],
+            selections["variant"]["surface_sha256"],
+        )
+        self.assertTrue(selections["variant"]["timing_extra_model_request_confound"])
+        for arm in ("control", "variant"):
+            trajectory, output = self._timing_run(arm=arm)
+            cell = next(x for x in manifest["assignments"] if x["arm"] == arm)
+            verified = verify_host_attestations(
+                trajectory, output, HOST_KEY,
+                campaign_id=manifest["design"]["campaign_id"],
+                trial_id=cell["trial_id"],
+            )
+            self.assertEqual(verified["delivery_state"], "PROVEN")
+            self.assertEqual(verified["provider_submission_state"], "SUBMITTED")
+            self.assertFalse(verified["causal_influence_proven"])
+            delivery = json.loads(output.read_text())["deliveries"][0]
+            self.assertEqual(
+                delivery["intervention"]["delivery_request_sequence"],
+                1 if arm == "control" else 2,
+            )
+            prior = delivery["intervention"]["prior_transport_sha256"]
+            self.assertEqual(prior == "0" * 64, arm == "control")
+
+    def test_deferred_requires_verified_tool_free_prior_and_matching_prompt(self) -> None:
+        for altered in (
+            "missing-prior", "unsubmitted-prior", "prior-with-tool",
+            "prior-different-prompt", "wrong-delivery-sequence", "retry-prior",
+        ):
+            with self.subTest(altered=altered):
+                self._timing_run(arm="variant", altered=altered)
+
+    def test_direct_denies_second_sequence_and_finalize_requires_submission(self) -> None:
+        self._timing_run(arm="control", altered="wrong-delivery-sequence")
+        self._timing_run(arm="control", altered="no-final-submission")
+
+    def test_signed_timing_receipt_rejects_modified_stage_and_prior_proof(self) -> None:
+        manifest = plan("timing")
+        cell = next(x for x in manifest["assignments"] if x["arm"] == "variant")
+        trajectory, output = self._timing_run(arm="variant")
+        original = json.loads(output.read_text())
+        for field, value in (
+            ("delivery_request_sequence", 1),
+            ("prior_request_sha256", "0" * 64),
+            ("prior_transport_sha256", H("forged-prior-transport")),
+        ):
+            with self.subTest(field=field):
+                receipt = copy.deepcopy(original)
+                receipt["deliveries"][0]["intervention"][field] = value
+                output.write_text(json.dumps(receipt))
+                result = verify_host_attestations(
+                    trajectory, output, HOST_KEY,
+                    campaign_id=manifest["design"]["campaign_id"],
+                    trial_id=cell["trial_id"],
+                )
+                self.assertEqual(result["attestation_state"], "REJECTED")
+        output.write_text(json.dumps(original))
 
 class IndependentCampaignQualificationTest(TrustedHostInputIntegrationTest):
     def test_all_bound_cells_and_separate_custodian_claim_enable_descriptive_only(self) -> None:
