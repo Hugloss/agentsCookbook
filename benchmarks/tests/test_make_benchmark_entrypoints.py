@@ -30,12 +30,16 @@ BENCHMARK_LAUNCHER = ROOT / "benchmark"
 
 
 class BenchmarkMakeEntrypointTests(unittest.TestCase):
-    def test_decision_projection_is_published_after_its_trace_source(self) -> None:
+    def test_decision_projection_is_published_with_its_trace_generation(self) -> None:
         paths = mock.Mock()
         paths.run_id = "000001"
         paths.root = Path("/campaign/runs/000001")
         paths.results = paths.root / "results"
-        order: list[str] = []
+        paths.as_dict.return_value = {
+            "root": str(paths.root),
+            "results": str(paths.results),
+            "run_id": paths.run_id,
+        }
         trace = {
             "summary": {
                 "repository_intelligence_quality": {
@@ -44,10 +48,8 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
                 }
             }
         }
-
-        def write(_root, filename, _payload):
-            order.append(filename)
-            return paths.root / "reports" / filename
+        report_payload = {"decision_summary": {}}
+        decision_payload = {"authority": {"derived_only": True}}
 
         with (
             mock.patch("benchmarks.__main__.exclusive_store", return_value=nullcontext()),
@@ -62,7 +64,7 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             ),
             mock.patch(
                 "benchmarks.__main__.build_report",
-                return_value={"decision_summary": {}},
+                return_value=report_payload,
             ),
             mock.patch(
                 "benchmarks.__main__.build_trace_diagnostics",
@@ -70,12 +72,27 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
             ),
             mock.patch(
                 "benchmarks.__main__.build_decision_evidence",
-                return_value={"authority": {"derived_only": True}},
+                return_value=decision_payload,
             ) as decision,
             mock.patch(
-                "benchmarks.__main__._write_derived_json",
-                side_effect=write,
+                "benchmarks.__main__.publish_report_set",
+                return_value={
+                    "generation_id": "g" * 64,
+                    "run_id": "000001",
+                    "artifacts": {
+                        "report.json": {},
+                        "trace-diagnostics.json": {},
+                        "decision-evidence.json": {},
+                    },
+                },
+            ) as publish,
+            mock.patch(
+                "benchmarks.__main__.campaign_status",
+                return_value={"qualified": True},
             ),
+            mock.patch(
+                "benchmarks.__main__._write_derived_json",
+            ) as write,
         ):
             report, error = _refresh_canonical_report(
                 store_root=Path("/campaign"),
@@ -86,17 +103,22 @@ class BenchmarkMakeEntrypointTests(unittest.TestCase):
 
         self.assertIsNone(error)
         self.assertIsNotNone(report)
-        self.assertEqual(
-            order,
-            [
-                "report.json",
-                "trace-diagnostics.json",
-                "decision-evidence.json",
-            ],
-        )
         decision.assert_called_once_with(
             report,
             trace_diagnostics=trace,
+        )
+        publish.assert_called_once_with(
+            run_root=paths.root,
+            run_id="000001",
+            report=report,
+            trace_diagnostics=trace,
+            decision_evidence=decision_payload,
+        )
+        write.assert_called_once()
+        self.assertEqual(write.call_args.args[1], "status.json")
+        self.assertEqual(
+            write.call_args.args[2]["derived_report_set"]["generation_id"],
+            "g" * 64,
         )
 
     def test_local_campaign_example_is_durable_and_ignored(self) -> None:
