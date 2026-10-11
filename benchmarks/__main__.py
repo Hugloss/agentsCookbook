@@ -1905,16 +1905,21 @@ def _persist_completed_run_reports(
         if not staged_score.is_file() or staged_score.stat().st_size == 0:
             raise ReportError("benchmark score generation produced no output")
 
+        score_bytes = staged_score.read_bytes()
         report_set = publish_report_set(
             run_root=paths.root,
             run_id=str(paths.run_id),
             report=report_data,
             trace_diagnostics=trace_data,
             decision_evidence=decision_data,
+            score_artifact=score_output.name,
+            score_bytes=score_bytes,
         )
         status_payload["derived_report_set"] = {
             "status": "VERIFIED",
             "verified": True,
+            "score_bound": True,
+            "score_artifact": report_set["score_artifact"],
             "generation_id": report_set["generation_id"],
             "run_id": report_set["run_id"],
             "artifacts": sorted(report_set["artifacts"]),
@@ -1924,12 +1929,6 @@ def _persist_completed_run_reports(
         trace_path = reports_dir / "trace-diagnostics.json"
         decision_path = reports_dir / "decision-evidence.json"
         report_set_path = reports_dir / REPORT_SET_MANIFEST
-        os.replace(staged_score, score_path)
-        directory_fd = os.open(reports_dir, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
     finally:
         staged_score.unlink(missing_ok=True)
 
