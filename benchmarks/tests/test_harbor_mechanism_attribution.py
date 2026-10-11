@@ -34,12 +34,15 @@ def _trace(
     tool_calls: int = 1,
     tokens: int = 100,
     followthrough: str = FOLLOWED,
+    search_observability: str = "EXPLICIT_TOOL_CALLS_ONLY",
 ) -> dict[str, object]:
     return {
         "available": available,
         "treatment": treatment,
         "subject_routing_timing": routing,
         "native_search_calls": native_search,
+        "native_search_observability": search_observability,
+        "tool_order_complete": True,
         "native_read_calls": native_read,
         "native_discovery_calls": native_discovery,
         "tool_calls": tool_calls,
@@ -334,6 +337,94 @@ class HarborMechanismAttributionTests(unittest.TestCase):
             self.assertIsNone(pair[key])
         self.assertEqual(pair["native_discovery_change"], "UNKNOWN")
         self.assertNotIn("FEWER_TOOL_CALLS", pair["mechanism_tags"])
+
+    def test_opaque_router_suppresses_search_reduction_and_efficiency_tags(self) -> None:
+        bare = _projection(
+            status="PASS", subject="none",
+            trace=_trace(
+                native_search=4, native_read=3, native_discovery=7,
+                tool_calls=8, treatment=TREATMENT_NEVER_INVOKED,
+            ),
+            observed={"path": "src/owner.py", "symbol": "resolve"}, match=True,
+        )
+        treated = _projection(
+            status="PASS", subject="hashmarks",
+            trace=_trace(
+                native_search=0, native_read=0, native_discovery=1,
+                tool_calls=2, search_observability="PARTIAL_OPAQUE_TOOL",
+            ),
+            observed={"path": "src/owner.py", "symbol": "resolve"}, match=True,
+        )
+        pair = pair_projection(bare, treated)
+        self.assertEqual(pair["native_search_delta"], -4)
+        self.assertFalse(pair["native_search_comparison"]["qualified"])
+        self.assertEqual(
+            pair["native_search_comparison"]["reason"], "opaque-tool-boundary"
+        )
+        self.assertEqual(pair["native_search_comparison"]["observed_delta"], -4)
+        self.assertIsNone(pair["native_search_comparison"]["qualified_delta"])
+        self.assertEqual(pair["native_discovery_change"], "UNKNOWN")
+        self.assertNotIn("NATIVE_DISCOVERY_REDUCED", pair["mechanism_tags"])
+        self.assertNotIn("NATIVE_DISCOVERY_AVOIDED", pair["mechanism_tags"])
+        self.assertNotIn("FIRST_CHOICE_LOCALIZATION", pair["mechanism_tags"])
+        self.assertNotIn("FEWER_TOOL_CALLS", pair["mechanism_tags"])
+        self.assertNotIn("SAME_ANSWER_FEWER_READS", pair["mechanism_tags"])
+        self.assertFalse(pair["positive_causal_proof_claimed"])
+
+        bare["trace"]["native_search_observability"] = "PARTIAL_OPAQUE_TOOL"
+        treated["trace"]["native_search_observability"] = "EXPLICIT_TOOL_CALLS_ONLY"
+        switched = pair_projection(bare, treated)
+        self.assertFalse(switched["native_search_comparison"]["qualified"])
+
+    def test_explicit_calls_comparable_but_never_causally_proven(self) -> None:
+        bare = _projection(
+            status="PASS", subject="none",
+            trace=_trace(native_search=3, native_discovery=3),
+            observed={"path": "src/owner.py", "symbol": "resolve"}, match=True,
+        )
+        treated = _projection(
+            status="PASS", subject="hashmarks",
+            trace=_trace(native_search=1, native_discovery=1),
+            observed={"path": "src/owner.py", "symbol": "resolve"}, match=True,
+        )
+        result = pair_projection(bare, treated)
+        self.assertTrue(result["native_search_comparison"]["qualified"])
+        self.assertEqual(result["native_search_comparison"]["qualified_delta"], -2)
+        self.assertFalse(result["native_search_comparison"]["causal_savings_proven"])
+
+        del treated["trace"]["native_search_observability"]
+        legacy = pair_projection(bare, treated)
+        self.assertEqual(
+            legacy["native_search_comparison"]["reason"], "observability-unestablished"
+        )
+        self.assertIsNone(legacy["native_search_comparison"]["qualified_delta"])
+
+    def test_project_atif_exposes_opaque_tool_search_observability(self) -> None:
+        def project(names: list[str]) -> dict:
+            trajectory = {
+                "schema_version": "ATIF-v1.8",
+                "steps": [
+                    {"source": "agent", "tool_calls": [
+                        {"function_name": name, "tool_call_id": f"c{i}", "arguments": {}}
+                    ]}
+                    for i, name in enumerate(names)
+                ],
+            }
+            with tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / "trajectory.json"
+                path.write_text(json.dumps(trajectory), encoding="utf-8")
+                return project_atif(path)
+        for name in ("functions.exec", "shell", "container.exec"):
+            with self.subTest(name=name):
+                projected = project(["rg", name])
+                self.assertEqual(
+                    projected["native_search_observability"], "PARTIAL_OPAQUE_TOOL"
+                )
+                self.assertEqual(projected["native_search_calls"], 1)
+        self.assertEqual(
+            project(["rg", "read_file"])["native_search_observability"],
+            "EXPLICIT_TOOL_CALLS_ONLY",
+        )
 
     def test_never_invoked_fail_to_pass_is_explicitly_not_attributable(self) -> None:
         bare = _projection(
