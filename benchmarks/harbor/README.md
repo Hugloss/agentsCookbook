@@ -2293,3 +2293,58 @@ uv run --no-project python -m unittest benchmarks.tests.test_native_chat_pair_in
 uv run --no-project python -m unittest benchmarks.tests.test_native_chat_transport_parity benchmarks.tests.test_native_netns_pilot_readiness -v
 uv run --no-project python -m unittest discover -s benchmarks/tests
 ```
+
+## E273–E276: provenance of a **provider-issued** Hashmarks tool call
+
+Previous strict native Chat request checks validated the assistant/tool
+message adjacency within the *client's continuation*. That was not
+proof the HTTPS provider had ever issued that call. A forged assistant
+tool-call entry could have been attached to a matching Hashmarks result
+by a hostile or malfunctioning client.
+
+The privileged native gateway now records the upstream **pre-evidence
+response** directly from its HTTPS transport (the response passed to
+the agent) and extracts exactly one completed native Hashmarks function
+call. Both ordinary Chat Completion response JSON and bounded, complete
+SSE `delta.tool_calls` streams are supported. Each observed call binds
+its exact ID, bounded allowlisted Hashmarks function name, byte-exact
+JSON arguments SHA-256 and source provider response digest. Unknown,
+malformed, parallel, incomplete or unclosed tool issues fail before
+a privileged treatment-bearing provider submission. If the response
+contains no issued call, the agent cannot introduce one afterward.
+
+When the later native request carries `role=tool`, the gateway requires
+that the immediately preceding client-repeated assistant tool-call has
+**the same ID, function name and original argument bytes** as the
+host-observed provider response. Only then does it apply the existing
+strict treatment-surface check and forward the identical serialized
+model request. The gateway does not synthesize or rewrite an assistant
+call or tool result. A second tool-free request after an issued tool
+call is rejected, and a failed/incomplete pre-evidence response makes
+the gateway terminal (no try-another-request fallback).
+
+The host's already signed, create-only `trial-execution.json` embeds
+`provider_issued_tool_observed`,
+`provider_issued_response_sha256`, and
+`provider_issued_tool_continuation_verified`. The privileged
+isolation signer and separate paired-pilot readback require all three,
+including a valid source response SHA-256, for every planned arm.
+Older isolation receipts without provider-issued provenance no longer
+qualify. Model-free regression attacks cover forged/unissued calls,
+changed arguments/function/ID, parallel tools, malformed chunks,
+truncated SSE, and unsigned replacement of the host-observed
+response identity.
+
+**Limits:** This closes one *host-observed transport* lineage gap.
+It does **not** establish that Hashmarks MCP executed, that an external
+auditor observed the client OS process, that the model reasoned with
+the evidence, or that the experiment has a measurable causal effect.
+It also does not solve the historic structured-object vs native
+plain-text incompatibility or permit diagnostic-only trials to be
+graded as paired interventions.
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_native_provider_tool_provenance -v
+uv run --no-project python -m unittest benchmarks.tests.test_native_chat_pair_integrity benchmarks.tests.test_native_chat_transport_parity benchmarks.tests.test_native_netns_pilot_readiness -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
