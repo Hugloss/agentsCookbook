@@ -29,7 +29,7 @@ def require_assistant_tool_ancestry(request: Mapping[str, object], *,
     # OpenAI Chat Completions tool results must follow a model-authored
     # assistant message that declared the same function/call ID. A user
     # message or orphan role=tool cannot manufacture this link.
-    if messages[-1].get("role") != "tool":
+    if not isinstance(messages[-1], dict) or messages[-1].get("role") != "tool":
         raise ValueError("native-chat-final-tool-result-not-last")
     tools = [(i, m) for i, m in enumerate(messages)
              if isinstance(m, dict) and m.get("role") == "tool"]
