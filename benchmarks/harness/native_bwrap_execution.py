@@ -49,6 +49,21 @@ def admit_netns_substrate() -> dict[str, str]:
     return found
 
 
+def runtime_mount_argv() -> list[str]:
+    """One owned runtime-root whitelist for native launch and kernel probe."""
+    out: list[str] = []
+    for dirname in ("/usr", "/lib", "/lib64", "/bin", "/sbin"):
+        entry = Path(dirname)
+        if entry.is_symlink():
+            target = os.readlink(dirname)
+            if target.startswith("/"):
+                target = os.path.relpath(target, "/")
+            out += ["--symlink", target, dirname]
+        elif entry.is_dir():
+            out += ["--ro-bind", dirname, dirname]
+    return out
+
+
 def _guest_dirs(path: Path) -> list[str]:
     """Parents for guest mount destinations, excluding OS root."""
     parents: list[str] = []
@@ -95,18 +110,7 @@ def build_isolated_argv(
         "--unshare-user", "--unshare-pid", "--unshare-net",
         "--clearenv",
     ]
-    for dirname in ("/usr", "/lib", "/lib64", "/bin", "/sbin"):
-        entry = Path(dirname)
-        if entry.is_symlink():
-            # On merged-/usr distributions /bin and /lib are symlinks.
-            # Re-create the same symlink inside the empty guest root rather
-            # than attempting to bind-mount onto an unresolved symlink.
-            target = os.readlink(dirname)
-            if target.startswith("/"):
-                target = os.path.relpath(target, "/")
-            argv += ["--symlink", target, dirname]
-        elif entry.is_dir():
-            argv += ["--ro-bind", dirname, dirname]
+    argv += runtime_mount_argv()
     # Sandbox temporary files are not the host's /tmp. The actual
     # workspace/XDG destinations are mounted after creating these roots.
     argv += ["--tmpfs", "/tmp", "--tmpfs", "/run",
