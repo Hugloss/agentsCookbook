@@ -32,7 +32,7 @@ def admit_netns_substrate() -> dict[str, str]:
     if sys.platform != "linux":
         raise ValueError("isolated-native-execution-requires-linux")
     found: dict[str, str] = {}
-    for name in ("bwrap", "ip"):
+    for name in ("bwrap",):
         entry = shutil.which(name, path=os.defpath)
         if not entry:
             raise ValueError("missing-native-netns-substrate-" + name)
@@ -74,7 +74,7 @@ def build_isolated_argv(
             or any(path.is_symlink() for path in (workspace, run_root, executable))):
         raise ValueError("unsafe-native-sandbox-authority")
     if not isinstance(substrate, Mapping) or not all(
-        isinstance(substrate.get(name), str) for name in ("bwrap", "ip", "python")
+        isinstance(substrate.get(name), str) for name in ("bwrap", "python")
     ):
         raise ValueError("native-substrate-not-admitted")
     if worker_port is not None and (
@@ -157,8 +157,7 @@ def build_isolated_argv(
             "--", substrate["python"], "/run/native-netns-worker.py",
             "--port", str(worker_port),
             "--unix", "/run/gateway/upstream.sock",
-            "--ip-binary", substrate["ip"], "--",
-            *command,
+            "--", *command,
         ]
     else:
         argv += ["--", *command]
@@ -166,7 +165,7 @@ def build_isolated_argv(
 
 
 def verify_substrate_unchanged(substrate: Mapping[str, str]) -> None:
-    for key in ("bwrap", "ip", "python"):
+    for key in ("bwrap", "python"):
         path = Path(substrate[key])
         if not path.is_file() or _sha_file(path) != substrate[key + "_sha256"]:
             raise ValueError("native-sandbox-executable-changed-during-trial")
