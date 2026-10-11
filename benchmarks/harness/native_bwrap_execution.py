@@ -124,6 +124,7 @@ def build_isolated_argv(
     environment: Mapping[str, str], command: list[str],
     worker_port: int | None,
     hashmarks_executable: Path | None = None,
+    use_native_mcp_bridge: bool = False,
 ) -> list[str]:
     if (not command or not executable.is_absolute()
             or not workspace.is_absolute() or not run_root.is_absolute()
@@ -173,6 +174,20 @@ def build_isolated_argv(
         mounts.append((executable, executable, "ro"))
     if hashmarks_executable is not None and not hashmarks_executable.is_relative_to(Path("/usr")):
         mounts.append((hashmarks_executable, hashmarks_executable, "ro"))
+    if use_native_mcp_bridge:
+        if hashmarks_executable is None:
+            raise ValueError("native-mcp-bridge-requires-hashmarks")
+        for source_name, guest_name in (
+            ("native_mcp_stdio_bridge.py", "/run/native-mcp-bridge.py"),
+            ("native_mcp_bridge_contract.py", "/run/native_mcp_bridge_contract.py"),
+        ):
+            mounts.append((
+                Path(__file__).with_name(source_name), Path(guest_name), "ro",
+            ))
+        mounts.append((
+            run_root / "native-mcp-contract.json",
+            Path("/run/native-mcp-contract.json"), "ro",
+        ))
     if worker_port is not None:
         worker_file = Path(__file__).with_name("native_netns_worker.py")
         mounts.append((worker_file, Path("/run/native-netns-worker.py"), "ro"))
