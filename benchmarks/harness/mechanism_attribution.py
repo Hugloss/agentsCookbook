@@ -35,6 +35,8 @@ from benchmarks.tool_routing import (
     DISCOVERY_CLASSES,
     NATIVE_READ,
     NATIVE_SEARCH,
+    SHELL,
+    TOOL_ROUTER,
     ROUTING_UNKNOWN,
     SUBJECT_REPOSITORY_INTELLIGENCE,
     classify_call,
@@ -280,6 +282,11 @@ def project_atif(path: Path, *, subject: str = "hashmarks") -> dict[str, Any]:
 
     order_complete = not order_issues
     normalized = normalize_calls(calls, subject=subject)
+    native_search_observability = (
+        "PARTIAL_OPAQUE_TOOL"
+        if any(row.get("tool_class") in (SHELL, TOOL_ROUTER) for row in normalized)
+        else "EXPLICIT_TOOL_CALLS_ONLY"
+    )
     sequence = tuple(
         str(call.get("tool"))
         for call in normalized
@@ -411,6 +418,7 @@ def project_atif(path: Path, *, subject: str = "hashmarks") -> dict[str, Any]:
         ),
         "tool_calls": len(normalized),
         "native_search_calls": native_search,
+        "native_search_observability": native_search_observability,
         "native_read_calls": native_read,
         "native_discovery_calls": sum(
             1 for call in normalized if call.get("tool_class") in DISCOVERY_CLASSES
@@ -445,6 +453,7 @@ def unavailable_trace(reason: str) -> dict[str, Any]:
         "reasoning_content_consumed": False,
         "message_content_consumed": False,
         "tool_order_complete": False,
+        "native_search_observability": "UNKNOWN",
     }
 
 
@@ -606,6 +615,47 @@ def _delta(
     return None
 
 
+def _native_search_comparison(
+    bare: Mapping[str, Any],
+    treated: Mapping[str, Any],
+    *,
+    tool_order_qualified: bool,
+) -> dict[str, Any]:
+    """Keep directly counted tools distinct from comparable search savings."""
+    observed_delta = _delta(bare, treated, "native_search_calls")
+    states = (bare.get("native_search_observability"),
+              treated.get("native_search_observability"))
+    if not tool_order_qualified:
+        reason = "tool-order-incomplete"
+    elif (
+        bare.get("tool_order_complete") is not True
+        or treated.get("tool_order_complete") is not True
+    ):
+        reason = "tool-order-unestablished"
+    elif bare.get("available") is not True or treated.get("available") is not True:
+        reason = "trace-unavailable"
+    elif "PARTIAL_OPAQUE_TOOL" in states:
+        reason = "opaque-tool-boundary"
+    elif states != ("EXPLICIT_TOOL_CALLS_ONLY", "EXPLICIT_TOOL_CALLS_ONLY"):
+        reason = "observability-unestablished"
+    elif observed_delta is None:
+        reason = "native-search-count-unavailable"
+    else:
+        reason = None
+    return {
+        "qualified": reason is None,
+        "reason": reason,
+        "state": "COMPARABLE_EXPLICIT_COUNTS" if reason is None else "UNQUALIFIED",
+        "observed_delta": observed_delta,
+        "qualified_delta": observed_delta if reason is None else None,
+        "scope": "explicit-ATIF-native-search-calls-only",
+        "bare_observability": states[0],
+        "treated_observability": states[1],
+        "negative_evidence_admissible": False,
+        "causal_savings_proven": False,
+    }
+
+
 def _discovery_change(delta: int | None, treated_count: object) -> str:
     if delta is None or not isinstance(treated_count, int):
         return "UNKNOWN"
@@ -712,6 +762,12 @@ def pair_projection(
         bare_trace.get("tool_order_complete") is not False
         and treated_trace.get("tool_order_complete") is not False
     )
+    native_search_comparison = _native_search_comparison(
+        bare_trace, treated_trace, tool_order_qualified=call_order_qualified
+    )
+    search_comparable = native_search_comparison["qualified"] is True
+    if not search_comparable:
+        discovery_change = "UNKNOWN"
     if not call_order_qualified:
         discovery_delta = None
         tool_delta = None
@@ -728,9 +784,12 @@ def pair_projection(
     tags = _mechanism_tags(
         outcome=outcome,
         answer_transition=answer_transition,
-        treated_trace=treated_trace,
+        treated_trace=(
+            treated_trace if search_comparable
+            else {**treated_trace, "subject_routing_timing": "UNKNOWN"}
+        ),
         discovery_change=discovery_change,
-        tool_delta=tool_delta,
+        tool_delta=tool_delta if search_comparable else None,
         token_delta=token_delta,
     )
     same_answer = _same_answer(
@@ -742,7 +801,10 @@ def pair_projection(
         if call_order_qualified
         else None
     )
-    if same_answer is True and native_read_delta is not None and native_read_delta < 0:
+    if (
+        search_comparable and same_answer is True
+        and native_read_delta is not None and native_read_delta < 0
+    ):
         tags.append("SAME_ANSWER_FEWER_READS")
     information = treated.get("information")
     if not isinstance(information, dict):
@@ -769,6 +831,7 @@ def pair_projection(
     return {
         "delivery_evidence": delivery,
         "relationship_scope_evidence": relationship_scope,
+        "native_search_comparison": native_search_comparison,
         "information_evidence": information,
         "semantic_information_evidence": semantic,
         "task": bare_receipt["task_id"],
@@ -924,7 +987,9 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
             str(pair["relationship_scope_evidence"]["arrival_timing"]),
             str(pair["relationship_scope_evidence"]["detail_followthrough"]),
             str(pair["relationship_scope_evidence"]["summary_count_scope"]),
-            str(pair["native_search_delta"]),
+            str(pair["native_search_comparison"]["qualified_delta"])
+            if pair["native_search_comparison"]["qualified"] is True
+            else "UNQUALIFIED",
         ))
         for pair in pairs
         if pair["relationship_scope_evidence"].get("state") == "SCOPED_SEMANTIC_RETURN"
@@ -951,6 +1016,13 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
             "paired_observations": len(pairs),
             "evaluation_assurance": build_assurance_summary(pairs),
             "relationship_scope_qualified_pairs": sum(scope_counts.values()),
+            "relationship_scope_search_comparable_pairs": sum(
+                pair["relationship_scope_evidence"].get("state") == "SCOPED_SEMANTIC_RETURN"
+                and pair["relationship_scope_evidence"].get("qualified") is True
+                and pair["native_search_comparison"]["qualified"] is True
+                and pair["outcome_transition"] != "INCOMPLETE"
+                for pair in pairs
+            ),
             "relationship_scope_outcome_cross_tab": dict(sorted(scope_counts.items())),
             "relationship_scope_exclusion_reasons": dict(sorted(scope_exclusions.items())),
             "semantic_qualified_pairs": sum(
@@ -1028,7 +1100,8 @@ def build_mechanism_report(results_root: Path) -> dict[str, Any]:
                 "scoped semantic evidence must be present in a linked ATIF tool return; "
                 "an exact follow-up structural_locality request is tool behavior, "
                 "not proof of agent attention or causal benefit; paired native "
-                "search deltas are descriptive only"
+                "search deltas are descriptive only; opaque tool boundaries "
+                "deny qualified search-savings interpretations"
             ),
             "positive_causal_claim_policy": (
                 "pair mechanisms are descriptive or supported associations; "

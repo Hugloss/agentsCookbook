@@ -115,6 +115,7 @@ def build_assurance_summary(pairs: list[dict[str, Any]]) -> dict[str, Any]:
     lifecycle: Counter[str] = Counter()
     parity: Counter[str] = Counter()
     native_deltas: list[int] = []
+    native_search_exclusions: Counter[str] = Counter()
     token_deltas: list[int] = []
     for pair in qualified:
         before, after = _outcome(pair["outcome_transition"]) or (0, 0)
@@ -126,10 +127,18 @@ def build_assurance_summary(pairs: list[dict[str, Any]]) -> dict[str, Any]:
         delivery = pair.get("delivery_evidence")
         if isinstance(delivery, Mapping):
             parity[str(delivery.get("presentation_parity", "UNKNOWN"))] += 1
-        for key, values in (("native_search_delta", native_deltas), ("token_delta", token_deltas)):
-            value = pair.get(key)
-            if type(value) is int:
-                values.append(value)
+        comparison = pair.get("native_search_comparison")
+        if not isinstance(comparison, Mapping):
+            native_search_exclusions["comparison-unavailable"] += 1
+        elif comparison.get("qualified") is not True:
+            native_search_exclusions[str(comparison.get("reason") or "unknown")] += 1
+        elif type(comparison.get("qualified_delta")) is int:
+            native_deltas.append(comparison["qualified_delta"])
+        else:
+            native_search_exclusions["qualified-count-unavailable"] += 1
+        value = pair.get("token_delta")
+        if type(value) is int:
+            token_deltas.append(value)
     comparisons: dict[str, dict[str, Any]] = {}
     for harness, rows in sorted(by_harness.items()):
         harness_groups: dict[tuple[str, str, str], list[float]] = defaultdict(list)
@@ -178,6 +187,12 @@ def build_assurance_summary(pairs: list[dict[str, Any]]) -> dict[str, Any]:
         },
         "economics": {
             "native_search_delta": _numeric_summary(native_deltas),
+            "native_search_comparable_pairs": len(native_deltas),
+            "native_search_comparison_exclusions": dict(
+                sorted(native_search_exclusions.items())
+            ),
+            "native_search_delta_scope": "explicit-ATIF-native-search-calls-only",
+            "native_search_savings_proven": False,
             "model_token_delta": _numeric_summary(token_deltas),
             "catalog_overhead_isolated": False,
             "monetary_cost_available": False,
@@ -196,7 +211,8 @@ def build_assurance_summary(pairs: list[dict[str, Any]]) -> dict[str, Any]:
         },
         "interpretation": (
             "No causal proof, model attention, cross-harness product winner, "
-            "or statistical significance is asserted. Unqualified and "
+            "or statistical significance is asserted. Native search economics "
+            "excludes opaque and unobserved tool boundaries. Unqualified and "
             "incomplete pairs are excluded from all numerical effects."
         ),
     }

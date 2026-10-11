@@ -755,7 +755,33 @@ These flags preserve exposure data without treating hidden work as avoided.
 
 The summary includes `relationship_scope_outcome_cross_tab` combining the
 qualified return timing, explicit detail-request state, semantic count scope,
-paired outcome, and existing paired `native_search_delta`. Incomplete
+paired outcome, and `native_search_comparison.qualified_delta`, or an explicit
+`UNQUALIFIED` label when the search comparison is not admitted.
+
+### Paired native-search comparison qualification
+
+A raw `native_search_delta` is **only a difference in explicitly visible ATIF
+native-search call counts**; it does not establish work avoided inside shell or
+tool-router calls. The pair now also emits `native_search_comparison` with
+`observed_delta` (retained for diagnosis), `qualified_delta` (otherwise null),
+and a machine-readable qualification reason. Both bare and treated traces must
+be available, tool-order complete, and independently classified as
+`EXPLICIT_TOOL_CALLS_ONLY`. A shell, `functions.exec`, another generic router,
+or a historical trace with missing observability produces a qualified
+exclusion, never an invented zero. These qualifications are **descriptive
+explicit-call comparability**, not independently host-attested complete nested
+execution or causal proof of savings.
+
+`summary.evaluation_assurance.economics.native_search_delta` now aggregates
+**only admitted comparisons**, separately reporting
+`native_search_comparable_pairs` and
+`native_search_comparison_exclusions`. Opaque comparisons do not create
+`NATIVE_DISCOVERY_AVOIDED`, `NATIVE_DISCOVERY_REDUCED`,
+`SAME_ANSWER_FEWER_READS`, or `FEWER_TOOL_CALLS` mechanism labels. Existing
+outcome, task, model, harness, oracle, and paired-report denominators remain
+unchanged. `native_search_savings_proven` remains false: an observed reduction
+is not a controlled causal effect, and missing nested-call evidence must not
+be presented as a verified efficiency gain. Incomplete
 outcomes, missing/duplicated ATIF links, malformed producer claims, and opaque
 results are excluded rather than treated as evidence absence. The paired bare
 arm remains the same harness/model/task/replicate. This is **descriptive
