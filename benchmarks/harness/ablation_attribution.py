@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from benchmarks.tool_routing import is_subject_tool, matches_subject_operation
+from benchmarks.harness.semantic_outcome_analysis import (
+    quartet_information_outcomes,
+    summarize_information_outcomes,
+)
 
 from .mechanism_attribution import (
     MechanismAttributionError,
@@ -523,7 +527,19 @@ def quartet_projection(
                 )
                 break
     receipt = normalized_arms["bare"]["receipt"]
+    semantic_component = {
+        "qualified": semantic_reason is None,
+        "reason": semantic_reason,
+        "full": dict(semantic_arms["full"]),
+        "only": dict(semantic_arms["only"]),
+        "positive_causal_proof_claimed": False,
+    }
+    outcomes = quartet_information_outcomes({
+        "semantic_component_evidence": semantic_component,
+        "statuses": statuses,
+    })
     return {
+        "semantic_information_outcomes": outcomes,
         "semantic_component_evidence": {
             "qualified": semantic_reason is None,
             "reason": semantic_reason,
@@ -752,6 +768,7 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
         for row in qualified
         if row["semantic_component_evidence"]["qualified"] is True
     ]
+    semantic_outcomes = summarize_information_outcomes(quartets)
     semantic_exclusions = Counter(
         str(row["semantic_component_evidence"].get("reason") or "unqualified")
         for row in quartets
@@ -848,6 +865,7 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
             "matched_quartets": len(quartets),
             "qualified_complete_quartets": len(qualified),
             "semantic_qualified_quartets": len(semantic_qualified),
+            "semantic_information_outcomes": semantic_outcomes,
             "semantic_exclusion_reasons": dict(sorted(semantic_exclusions.items())),
             "semantic_outcome_cross_tab": dict(sorted(semantic_cross_tab.items())),
             "treatment_unqualified_quartets": invalid_treatment,
@@ -890,8 +908,15 @@ def build_ablation_report(results_root: Path) -> dict[str, Any]:
                 "mixed into per-harness component contrasts"
             ),
             "reasoning_content_consumed": False,
-            "semantic_component_evidence_policy": (
-                "a post-run projection of observed results from the exact "
+            "semantic_outcome_conditioning_policy": (
+                "condition on first aligned/divergent claim observations, not "
+                "unrelated returns; compare full to remove and only to bare "
+                "within matched complete quartets. Observed evidence is a "
+                "post-treatment selected mediator, not a randomized exposure; "
+                "all conditional cells report counts and cluster denominators "
+                "but no causal uplift or significance claim"
+            ),
+            "semantic_component_evidence_policy": (                "a post-run projection of observed results from the exact "
                 "ablated tool or selector, checked against verifier-owned "
                 "frozen semantic atoms; it requires full and only invocation, "
                 "qualified complete outcomes and qualified ATIF observations; "
