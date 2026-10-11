@@ -33,7 +33,9 @@ import stat
 import sys
 import uuid
 
-workspace, config, hashmarks, opencode, host_key = sys.argv[1:]
+workspace, config, hashmarks, opencode, host_key, bridge_mode = sys.argv[1:]
+if bridge_mode not in ('direct', 'verified-bridge'):
+    sys.exit(40)
 if not os.path.isdir(workspace) or not os.path.lexists(os.path.join(workspace, '.git')):
     sys.exit(41)
 if not os.path.isfile(config) or not os.path.isfile(hashmarks) or not os.path.isfile(opencode):
@@ -48,8 +50,24 @@ with open(config, encoding='utf-8') as stream:
 if cfg.get('enabled_providers') != ['agentscookbook-captured']:
     sys.exit(45)
 mcp = cfg.get('mcp', {}).get('hashmarks', {}).get('command')
-if mcp != [hashmarks, '--workspace', workspace, 'mcp']:
-    sys.exit(46)
+if bridge_mode == 'verified-bridge':
+    expected = [
+        sys.executable, '/run/native-mcp-bridge.py',
+        '--hashmarks', hashmarks, '--sha256',
+        cfg.get('benchmark_bridge_sha256', ''),
+        '--workspace', workspace,
+        '--contract', '/run/native-mcp-contract.json',
+    ]
+    if not all(os.path.isfile(f) for f in (
+        '/run/native-mcp-bridge.py', '/run/native_mcp_bridge_contract.py',
+        '/run/native-mcp-contract.json',
+    )):
+        sys.exit(46)
+    if mcp != expected:
+        sys.exit(46)
+else:
+    if mcp != [hashmarks, '--workspace', workspace, 'mcp']:
+        sys.exit(46)
 try:
     fd = os.open(config, os.O_WRONLY | getattr(os, 'O_NOFOLLOW', 0))
 except OSError:
@@ -130,6 +148,7 @@ def probe_native_mounts(
     substrate: Mapping[str, str], *, executable: Path, hashmarks: Path,
     workspace: Path, run_root: Path, host_key_file: Path,
     environment: Mapping[str, str], port: int, config_sha256: str,
+    use_native_mcp_bridge: bool = False,
 ) -> dict[str, Any]:
     """No provider or native agent is launched; failure blocks its launch."""
     verify_substrate_unchanged(substrate)
@@ -143,12 +162,14 @@ def probe_native_mounts(
     original_worker_sha = _sha(worker.read_bytes())
     command = [substrate["python"], "-c", GUEST_PROBE,
                str(workspace), str(run_root / "opencode.json"),
-               str(hashmarks), str(executable), str(host_key_file)]
+               str(hashmarks), str(executable), str(host_key_file),
+               "verified-bridge" if use_native_mcp_bridge else "direct"]
     argv = build_isolated_argv(
         substrate, executable=executable, workspace=workspace,
         run_root=run_root, gateway_dir=run_root / "gateway",
         environment=environment, command=command, worker_port=port,
         hashmarks_executable=hashmarks,
+        use_native_mcp_bridge=use_native_mcp_bridge,
     )
     try:
         response = subprocess.run(
