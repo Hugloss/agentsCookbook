@@ -738,6 +738,21 @@ The returned report describes:
   attention or actual evidence use;
 - native search calls observed before and after the semantic return.
 
+**Opaque tool-boundary qualification:** A `functions.exec`-style router may hide
+nested repository calls. When such a call could have preceded the scoped
+result, `arrival_timing=UNKNOWN_OPAQUE_ROUTER` replaces an unsupported
+`BEFORE_NATIVE_DISCOVERY` or `NO_NATIVE_DISCOVERY` assertion. An opaque
+router or shell at/after the return without a visible exact detail request
+produces `detail_followthrough=UNKNOWN_OPAQUE_DETAIL_REQUEST`, not a
+confident negative. A separately visible exact follow-up is still positive.
+The report retains directly observed native-search counts while labeling
+`native_search_observability=PARTIAL_OPAQUE_TOOL` (otherwise
+`EXPLICIT_TOOL_CALLS_ONLY`); neither label certifies full host tool capture.
+Same-step searches are counted in `native_search_same_step` rather than
+incorrectly ordered before or after the result. All linked ATIF results,
+including unrelated tools, must occur no earlier than their invocation.
+These flags preserve exposure data without treating hidden work as avoided.
+
 The summary includes `relationship_scope_outcome_cross_tab` combining the
 qualified return timing, explicit detail-request state, semantic count scope,
 paired outcome, and existing paired `native_search_delta`. Incomplete
