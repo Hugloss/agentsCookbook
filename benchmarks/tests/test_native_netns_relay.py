@@ -260,13 +260,20 @@ class UnixSocketNativeGatewayTests(unittest.TestCase):
             "benchmarks.harness.opencode_native_gateway.dispatch_verified_chat_response",
             return_value=RESPONSE,
         ), patch(
+            "benchmarks.harness.native_netns_worker._relay",
+            side_effect=lambda path, token, body: _relay(str(self.sock), token, body),
+        ) as forwarded, patch(
             "benchmarks.harness.native_netns_worker.subprocess.run",
             side_effect=fake_native,
         ):
             status = serve_child(port, "/run/gateway/upstream.sock", ["/bin/echo"])
-        # Worker path is deliberately a mount-namespace constant; for this
-        # host-level model-free socket test, provide the real host path.
-        self.assertEqual(status, 0) if result else self.assertEqual(result, [])
+        # Model-free host test substitutes the bind mount destination while
+        # exercising real TCP and Unix socket I/O.
+        self.assertEqual(status, 0)
+        self.assertEqual(result, [RESPONSE])
+        self.assertEqual(forwarded.call_count, 1)
+        self.assertEqual(forwarded.call_args.args[0],
+                         "/run/gateway/upstream.sock")
 
 
 if __name__ == "__main__":
