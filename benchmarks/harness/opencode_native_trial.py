@@ -33,6 +33,10 @@ from .native_bwrap_execution import (
     admit_netns_substrate, build_isolated_argv, verify_substrate_unchanged,
 )
 from .opencode_native_session import finalize_native_export
+from .host_input_attestation import load_host_key
+from .native_netns_host_attestation import (
+    sign_isolation_report, write_isolation_attestation,
+)
 
 SCHEMA = "agentscookbook.pinned-opencode-gateway-trial.v1"
 
@@ -276,6 +280,19 @@ def launch_native_trial(
                 stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
+            if qualified:
+                # The signed receipt binds this exact create-only execution
+                # report to the already signed host/provider packet receipt.
+                attested_provider = (run_root / "host-attestation.json").read_bytes()
+                signed = sign_isolation_report(
+                    report, execution_bytes=data,
+                    provider_attestation_bytes=attested_provider,
+                    host_identity=host_identity,
+                    host_key=load_host_key(host_key_file),
+                )
+                write_isolation_attestation(
+                    run_root / "trial-execution.attestation.json", signed,
+                )
         return report
     finally:
         if started:
