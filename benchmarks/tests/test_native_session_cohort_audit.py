@@ -125,6 +125,34 @@ class NativeCohortTests(unittest.TestCase):
         self.assertFalse(report["exclusive_network_egress_proven"])
         self.assertFalse(report["randomized_causal_uplift_proven"])
 
+    def test_read_back_counts_native_calls_without_claiming_host_capture(self):
+        result = self.audit()
+        evidence = result["native_tool_order_evidence"]
+        self.assertEqual(evidence["observed_tool_calls"], 2)
+        self.assertEqual(evidence["observed_native_search_calls"], 0)
+        self.assertEqual(evidence["observed_native_read_calls"], 0)
+        self.assertEqual(evidence["routing_by_arm"], {
+            "control": {"FIRST_CHOICE": 1},
+            "variant": {"FIRST_CHOICE": 1},
+        })
+        self.assertTrue(evidence["export_tool_part_projection_qualified"])
+        self.assertFalse(evidence["host_wide_capture_exhaustiveness_proven"])
+
+    def test_unreported_native_search_in_raw_export_invalidates_existing_receipt(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        path = self.results / trial / "native-session.json"
+        doc = json.loads(path.read_bytes())
+        doc["messages"][0]["parts"].insert(0, {
+            "type": "tool", "tool": "grep", "callID": "native-before-hashmarks",
+            "state": {"status": "completed", "input": {"pattern": "owner"},
+                      "output": "source search result"},
+        })
+        path.write_bytes(canonical(doc))
+        result = self.audit()
+        self.assertFalse(result["native_session_cohort_observationally_consistent"])
+        self.assertEqual(result["verified_native_trial_exports"], 1)
+        self.assertIn("native-trial-session-or-provider-mismatch", result["issues"])
+
     def test_tampered_native_export_or_derived_atif_fails(self):
         trial = self.frozen["assignments"][0]["trial_id"]
         directory = self.results / trial
