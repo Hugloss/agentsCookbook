@@ -2692,3 +2692,43 @@ installed Hashmarks release, native model use, an independent original MCP
 response signature, an upstream provider call, or causal uplift. Host-side
 provider-issued tool-call provenance and externally attested final outcome
 qualification remain separate authorities.
+
+
+### Two-stage timing: cross-trial transport and empirical qualification
+
+The signed-host transport auditor now understands the same frozen request
+sequence as the trusted provider boundary: `control` must deliver evidence
+on model request **1**, while `variant` must deliver on request **2**
+after a previously submitted tool-free request. Both prior digests must
+be zero for the direct control, and both must be present and nonzero for
+the deferred arm. Each actual delivery must pass MAC-bound ATIF packet
+read-back, 2xx provider-submission verification with exact returned packet
+coverage, pinned host identity/build and approved endpoint. Cross-arm
+prompt, catalog, oracle, and workspace identities must remain equivalent.
+
+This replaces the former *single request-1-for-all-arms* assumption in
+`host_transport_provenance.audit_transport_provenance`, which prevented
+otherwise qualified deferred trials from passing the independent empirical
+read-back. The observation reports a precise protocol name
+(`DIRECT_REQUEST_1_VS_DEFERRED_REQUEST_2`) and explicitly retains
+`timing_extra_model_request_confound=true`. Prior transport records
+remain signed assertions from the host key-holder; they are not external
+proof of upstream processing or model attention.
+
+A model-free regression now exercises the complete path using the trusted
+two-request fake HTTPS host, its create-only signed receipt, real ATIF
+packet verification, complete Harbor campaign qualification and
+`assess_empirical_campaign`. Only the immutable graded bundle loader is
+stubbed; **no provider/model run is implied**. It establishes a qualified
+two-arm *descriptive transport*, while the one-task pilot still fails
+the independent eight-task-cluster statistical evidence gate rather than
+inventing significance or causal improvement. Resigned tampering of
+sequence, prior transport, host, endpoint and prompt, as well as missing
+and replayed trial receipts, must fail closed.
+
+```sh
+uv run --no-project python -m unittest \
+  benchmarks.tests.test_timing_transport_provenance_e2e \
+  benchmarks.tests.test_native_provenance_and_empirical_decision \
+  benchmarks.tests.test_timing_campaign_qualification -v
+```
