@@ -222,10 +222,26 @@ class NativeAssistantLineageAttacks(unittest.TestCase):
             no_assistant = exact_request(chosen)
             no_assistant["messages"].pop(1)
             accepted = exact_request(chosen)
+            issued = canonical({"choices": [{
+                "message": {"role": "assistant", "tool_calls": [{
+                    "id": "call-1", "type": "function",
+                    "function": {"name": "hashmarks_task_evidence",
+                                 "arguments": "{}"},
+                }]}, "finish_reason": "tool_calls",
+            }]})
             with patch(
+                "benchmarks.harness.opencode_native_gateway._forward_pre_evidence",
+                return_value=issued,
+            ), patch(
                 "benchmarks.harness.opencode_native_gateway.dispatch_verified_chat_response",
                 return_value=b'{"choices":[{"message":{"role":"assistant","content":"owner"}}]}',
             ) as upstream:
+                gw._handle_request(
+                    canonical({"model": "gpt-fixture", "messages": [
+                        {"role": "user", "content": "find source owner"},
+                    ]}),
+                    authorization="Bearer " + gw.token,
+                )
                 with self.assertRaisesRegex(ValueError, "assistant-tool-call-absent"):
                     gw._handle_request(canonical(no_assistant),
                                        authorization="Bearer " + gw.token)

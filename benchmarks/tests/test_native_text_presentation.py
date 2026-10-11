@@ -189,11 +189,32 @@ class NativeTextStudyTests(unittest.TestCase):
             gateway = self.gateway(arm)
             expected = self.selections[arm]["selected_content"]
             packet = bound_request(selected=expected)
+            assistant_call = json.loads(packet)["messages"][-2]["tool_calls"][0]
+            # Synthetic provider response is observed by the host gateway
+            # before any native client continuation may claim this call.
+            issued = canonical({"choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "tool_calls": [assistant_call]},
+                "finish_reason": "tool_calls",
+            }]})
+            first_request = canonical({
+                "model": "gpt-fixture",
+                "messages": [{"role": "user", "content": "find owner"}],
+            })
             try:
                 with patch(
+                    "benchmarks.harness.opencode_native_gateway._forward_pre_evidence",
+                    return_value=issued,
+                ) as forwarded, patch(
                     "benchmarks.harness.opencode_native_gateway.dispatch_verified_chat_response",
                     side_effect=lambda **kw: (originals.append((arm, kw)), REPLY)[1],
                 ) as sent:
+                    self.assertEqual(
+                        gateway._handle_request(
+                            first_request, authorization="Bearer " + gateway.token,
+                        ), issued,
+                    )
+                    forwarded.assert_called_once()
                     # The formerly valid fixture omitted the assistant
                     # tool_calls ancestor. It must fail before submission.
                     with self.assertRaisesRegex(

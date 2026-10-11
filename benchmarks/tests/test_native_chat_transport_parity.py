@@ -134,10 +134,24 @@ class NativeChatWireContractAttacks(unittest.TestCase):
                 selected=gateway.selected["selected_content"],
             )
             observed = []
+            issued = canonical({"choices": [{
+                "message": {"role": "assistant", "tool_calls": [{
+                    "id": "native-tool-1", "type": "function",
+                    "function": {"name": "hashmarks_task_evidence",
+                                 "arguments": "{}"},
+                }]}, "finish_reason": "tool_calls",
+            }]})
             with patch(
+                "benchmarks.harness.opencode_native_gateway._forward_pre_evidence",
+                return_value=issued,
+            ), patch(
                 "benchmarks.harness.opencode_native_gateway.dispatch_verified_chat_response",
                 side_effect=lambda **kw: (observed.append(kw), RESPONSE)[1],
             ) as upstream:
+                gateway._handle_request(
+                    request(selected=None, tool=False),
+                    authorization="Bearer " + gateway.token,
+                )
                 other = bound_request(
                     selected=json.loads(gateway.selected["selected_content"]),
                 )

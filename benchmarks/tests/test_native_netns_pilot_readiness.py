@@ -124,6 +124,9 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
                 "gateway": {
                     "kernel_netns_peer_check_required": True,
                     "native_chat_tool_wire_contract_enforced": True,
+                    "provider_issued_tool_observed": True,
+                    "provider_issued_tool_continuation_verified": True,
+                    "provider_issued_response_sha256": H("provider-issued-response"),
                     "distinct_netns_peer_connections": 1,
                 },
                 "native_session_binding": {
@@ -222,6 +225,41 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
                 self.assertFalse(result["paired_pilot_observations_ready_for_independent_grading"])
                 self.assertIn("inconsistent-or-self-upgraded-native-isolation-receipt", result["blockers"])
         path.write_bytes(original)
+
+    def test_missing_or_fake_provider_issued_tool_cannot_promote_signed_pilot(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        receipt = self.results / trial / "trial-execution.json"
+        before = receipt.read_bytes()
+        for key, tamper in (
+            ("provider_issued_tool_observed", False),
+            ("provider_issued_tool_continuation_verified", False),
+            ("provider_issued_response_sha256", "not-a-sha"),
+        ):
+            with self.subTest(key=key):
+                report = json.loads(before)
+                report["gateway"][key] = tamper
+                receipt.write_bytes(canonical(report) + b"\n")
+                verdict = self.assess()
+                self.assertFalse(verdict["paired_pilot_observations_ready_for_independent_grading"])
+                self.assertIn("inconsistent-or-self-upgraded-native-isolation-receipt",
+                              verdict["blockers"])
+                with self.assertRaises(ValueError):
+                    sign_isolation_report(
+                        report, execution_bytes=receipt.read_bytes(),
+                        provider_attestation_bytes=b"synthetic-provider",
+                        host_identity="privileged-host", host_key=KEY,
+                    )
+        receipt.write_bytes(before)
+
+    def test_provider_response_sha_changes_without_reauthorization(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        receipt = self.results / trial / "trial-execution.json"
+        report = json.loads(receipt.read_bytes())
+        report["gateway"]["provider_issued_response_sha256"] = H("other-response")
+        receipt.write_bytes(canonical(report) + b"\n")
+        verdict = self.assess()
+        self.assertFalse(verdict["paired_pilot_observations_ready_for_independent_grading"])
+        self.assertIn("host-isolation-attestation-unverified", verdict["blockers"])
 
     def test_realistic_incompatible_pair_or_diagnostic_never_qualifies(self):
         self.synthetic_wire_pairs["fully_compatible_for_paired_study"] = False
