@@ -136,6 +136,7 @@ class TrustedModelRequestCapture:
             or type(response_bytes) is not int or not 0 < response_bytes <= 2_097_152
         ):
             raise ValueError("timing-prior-provider-submission-invalid")
+        prior["endpoint_sha256"] = endpoint_sha256
         prior["transport_sha256"] = hashlib.sha256(canonical({
             "endpoint_sha256": endpoint_sha256,
             "http_status": status,
@@ -280,6 +281,17 @@ class TrustedModelRequestCapture:
             "model_attention_proven": "false",
         }
 
+    def validate_delivery_provider_origin(self, *, endpoint_sha256: str) -> None:
+        """Reject a cross-origin deferred request *before* any provider I/O."""
+        if not _hex64(endpoint_sha256):
+            raise ValueError("invalid-delivery-provider-origin")
+        if self._manifest["design"]["study"] == "timing" and self._arm == "variant":
+            if (
+                self._prior_request is None
+                or self._prior_request.get("endpoint_sha256") != endpoint_sha256
+            ):
+                raise ValueError("timing-cross-request-provider-origin-drift")
+
     def begin_provider_transport(self) -> None:
         """One attempt only. Even failed/ambiguous dispatch cannot retry or sign."""
         if self._transport_attempted or not self._recorded:
@@ -313,6 +325,12 @@ class TrustedModelRequestCapture:
         ]
         if len(found) != 1 or "transport" in found[0]:
             raise ValueError("provider-submission-request-mismatch-or-duplicate")
+        if self._manifest["design"]["study"] == "timing" and self._arm == "variant":
+            if (
+                self._prior_request is None
+                or self._prior_request.get("endpoint_sha256") != endpoint_sha256
+            ):
+                raise ValueError("timing-cross-request-provider-origin-drift")
         found[0]["transport"] = {
             "boundary": "https-response",
             "endpoint_sha256": endpoint_sha256,
