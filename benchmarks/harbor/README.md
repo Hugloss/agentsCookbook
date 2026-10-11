@@ -1720,8 +1720,15 @@ A successful confined run writes a create-only
 `trial-execution.json` outside the evaluated workspace, preserving
 its observed gateway namespace peers, bwrap binary SHA-256, Hashmarks
 SHA-256, session/ATIF/host-receipt result and any failure state.
-These local reports are host-observed evidence, not remote provider
-signatures or independent provenance attestation.
+Qualified confined trials additionally receive a create-only
+`trial-execution.attestation.json` with a separate host-key MAC
+binding the exact execution JSON bytes, trial/manifest identity,
+SHA-pinned binaries, observed namespace peer count and SHA-256 of the
+existing signed provider input receipt. The E260 verifier checks this
+signature with externally custodied host-key bytes and rejects
+unsigned replacement of either artifact. The HMAC authenticates the
+privileged host's observation, not a remote provider or an independent
+kernel auditor.
 
 ### E260 — paired pilot readiness; no invented causal result
 
@@ -1731,8 +1738,9 @@ verifier. Admission requires both arms, exact source treatment,
 native export, HMAC-signed host packet delivery, complete provider
 submission, a kernel-distinct namespace peer, single response relay,
 pinned bubblewrap/Hashmarks executables and unchanged campaign identity.
-Missing arms, altered reports, source changes, or failed transport
-cannot become a completed paired pilot.
+Missing arms, altered/unsigned reports, forged kernel peer counts,
+replayed provider receipts, source changes, or failed transport cannot
+become a completed paired pilot.
 
 ```sh
 export BENCHMARK_UPSTREAM_API_KEY=<privileged-host-secret>
