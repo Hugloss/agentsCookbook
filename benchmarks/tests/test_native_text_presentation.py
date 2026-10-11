@@ -234,7 +234,7 @@ class NativeTextStudyTests(unittest.TestCase):
                              tool=True)
             observed = json.loads(actual)
             prompt = {"request_settings": {
-                k: v for k, v in observed.items() if k != "messages",
+                k: v for k, v in observed.items() if k != "messages"
             }, "non_tool_messages": [m for m in observed["messages"]
                                      if m["role"] != "tool"]}
             receipt = capture.observe_outbound_request(
