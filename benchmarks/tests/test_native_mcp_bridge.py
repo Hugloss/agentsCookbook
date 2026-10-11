@@ -141,6 +141,9 @@ class NativeMcpBridgeContractAttacks(unittest.TestCase):
             hashmarks.write_text("#!/bin/sh\nexit 0\n")
             hashmarks.chmod(0o700)
             python = Path("/usr/bin/python3")
+            opencode = root / "opencode"
+            opencode.write_text("#!/bin/sh\\nexit 0\\n")
+            opencode.chmod(0o700)
             for name in ("home", "config", "cache", "data", "state", "gateway"):
                 (run / name).mkdir()
             (run / "opencode.json").write_text("{}")
@@ -169,7 +172,7 @@ class NativeMcpBridgeContractAttacks(unittest.TestCase):
                 "BENCHMARK_NATIVE_GATEWAY_TOKEN": "x" * 32, "PATH": os.defpath,
             }
             argv = build_isolated_argv(
-                substrate, executable=hashmarks, workspace=work,
+                substrate, executable=opencode, workspace=work,
                 run_root=run, gateway_dir=run / "gateway", environment=environment,
                 command=[str(hashmarks), "test"], worker_port=42424,
                 hashmarks_executable=hashmarks, use_native_mcp_bridge=True,
