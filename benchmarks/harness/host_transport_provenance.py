@@ -62,7 +62,11 @@ def audit_transport_provenance(
         )
         if (verified.get("attestation_state") != "VERIFIED"
                 or verified.get("delivery_state") != "PROVEN"
-                or verified.get("provider_submission_state") != "SUBMITTED"):
+                or verified.get("provider_submission_state") != "SUBMITTED"
+                or type(verified.get("returned_packets")) is not int
+                or verified["returned_packets"] <= 0
+                or verified.get("verified_provider_submission_packets")
+                != verified["returned_packets"]):
             problems["trial-missing-independent-signed-provider-submission"] += 1
             continue
         try:
@@ -78,15 +82,29 @@ def audit_transport_provenance(
             row = records[0]
             meta = row.get("intervention")
             transport = row.get("transport")
+            study = frozen["design"]["study"]
+            expected_sequence = (
+                2 if study == "timing" and cell["arm"] == "variant" else 1
+            )
             if (not isinstance(meta, dict) or not isinstance(transport, dict)
                     or row.get("host_identity") != expected_host_identity
                     or row.get("host_build_sha256") != frozen["host_build_sha256"]
                     or transport.get("endpoint_sha256") != approved_endpoint_sha256
-                    or row.get("model_request_sequence") != 1
+                    or row.get("model_request_sequence") != expected_sequence
                     or meta.get("arm") != cell["arm"]
-                    or meta.get("study") != frozen["design"]["study"]
+                    or meta.get("study") != study
                     or meta.get("design_sha256") != frozen["design_sha256"]):
                 raise ValueError("host-build-endpoint-assignment-or-sequence-mismatch")
+            if study == "timing":
+                prior_request = meta.get("prior_request_sha256")
+                prior_transport = meta.get("prior_transport_sha256")
+                if (meta.get("delivery_request_sequence") != expected_sequence
+                        or not _hex64(prior_request)
+                        or not _hex64(prior_transport)
+                        or ((prior_request == "0" * 64
+                             or prior_transport == "0" * 64)
+                            != (cell["arm"] == "control"))):
+                    raise ValueError("timing-prior-submission-or-sequence-unqualified")
             key_cell = (cell["harness"], cell["task"], cell["replicate"], cell["arm"])
             provenance[key_cell] = {
                 "trial_id": trial,
@@ -97,6 +115,12 @@ def audit_transport_provenance(
                 "request_sha256": row["model_request_sha256"],
                 "response_sha256": transport["response_sha256"],
                 "request_sequence": row["model_request_sequence"],
+                "prior_request_sha256": (
+                    meta["prior_request_sha256"] if study == "timing" else None
+                ),
+                "prior_transport_sha256": (
+                    meta["prior_transport_sha256"] if study == "timing" else None
+                ),
                 "catalog_sha256": meta["catalog_sha256"],
                 "prompt_sha256": meta["prompt_sha256"],
                 "oracle_sha256": meta["oracle_sha256"],
@@ -123,6 +147,14 @@ def audit_transport_provenance(
             "catalog_sha256", "prompt_sha256", "oracle_sha256", "workspace_sha256",
         )):
             problems["cross-arm-host-or-context-transport-drift"] += 1
+        if frozen["design"]["study"] == "timing" and (
+            left["request_sequence"] != 1 or right["request_sequence"] != 2
+            or left["prior_request_sha256"] != "0" * 64
+            or left["prior_transport_sha256"] != "0" * 64
+            or right["prior_request_sha256"] in (None, "0" * 64)
+            or right["prior_transport_sha256"] in (None, "0" * 64)
+        ):
+            problems["cross-arm-timing-transport-sequence-unqualified"] += 1
     if len(provenance) != len(frozen["assignments"]):
         problems["missing-planned-trial-transport"] = len(frozen["assignments"]) - len(provenance)
     return {
@@ -132,6 +164,13 @@ def audit_transport_provenance(
         "expected_cells": len(frozen["assignments"]),
         "verified_cells": len(provenance),
         "expected_pairs": len(expected_pairs),
+        "timing_arm_transport_protocol": (
+            "DIRECT_REQUEST_1_VS_DEFERRED_REQUEST_2"
+            if frozen["design"]["study"] == "timing" else None
+        ),
+        "timing_extra_model_request_confound": (
+            frozen["design"]["study"] == "timing"
+        ),
         "cross_trial_transport_qualified": not problems,
         "issues": dict(sorted(problems.items())),
         # No raw prompts/secret transport payloads or token-level answers.
