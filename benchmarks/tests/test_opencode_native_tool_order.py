@@ -127,6 +127,7 @@ class NativeToolOrderQualificationTests(unittest.TestCase):
             [tool("grep", CALL_ID), native_packet(), textpart()],
             [tool("grep", "grep-1", status="running"), native_packet(), textpart()],
             [tool("hashmarks_other", "unknown"), native_packet(), textpart()],
+            [tool("mcp__enola__find", "foreign"), native_packet(), textpart()],
             [tool("read", "bad-args", arguments={"path": "p"}),
              {**native_packet(), "state": {"status": "completed", "output": json.dumps(PACKET),
                                             "input": ["not-a-map"]}}, textpart()],
@@ -156,6 +157,8 @@ class NativeToolOrderQualificationTests(unittest.TestCase):
                          "all-native-completed-tool-parts")
         self.assertFalse(result["native_process_origin_proven"])
         self.assertFalse(result["provider_model_attention_proven"])
+        self.assertTrue(result["native_text_after_last_tool_observed"])
+        self.assertFalse(result["native_terminal_stop_proven"])
 
 
 if __name__ == "__main__":
