@@ -15,6 +15,10 @@ from unittest.mock import patch
 
 from benchmarks.harness.native_netns_pilot_readiness import evaluate_native_netns_pilot
 from benchmarks.harness.opencode_native_trial import SCHEMA as TRIAL_SCHEMA
+from benchmarks.harness.native_netns_host_attestation import (
+    sign_isolation_report, write_isolation_attestation,
+)
+from benchmarks.harness.host_input_attestation import canonical
 from benchmarks.tests.test_opencode_native_gateway import KEY, H, manifest
 
 
@@ -67,7 +71,18 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
                     "signed_host_input_and_transport_verified": True,
                 },
             }
-            (folder / "trial-execution.json").write_text(json.dumps(report))
+            execution_bytes = canonical(report) + b"\n"
+            provider_bytes = b'{"synthetic-provider-packet-receipt":true}'
+            (folder / "trial-execution.json").write_bytes(execution_bytes)
+            (folder / "host-attestation.json").write_bytes(provider_bytes)
+            signed = sign_isolation_report(
+                report, execution_bytes=execution_bytes,
+                provider_attestation_bytes=provider_bytes,
+                host_identity="privileged-host", host_key=KEY,
+            )
+            write_isolation_attestation(
+                folder / "trial-execution.attestation.json", signed,
+            )
 
     def assess(self):
         with patch(
@@ -119,6 +134,27 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
                 self.assertIn("inconsistent-or-self-upgraded-native-isolation-receipt",
                               report["blockers"])
         path.write_text(json.dumps(base))
+
+    def test_unsigned_self_upgrade_cannot_fake_kernel_peer_evidence(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        folder = self.results / trial
+        original = folder / "trial-execution.json"
+        receipt = json.loads(original.read_bytes())
+        # All other local flags remain admissible, so only the external
+        # host HMAC detects this unsigned peer-count modification.
+        receipt["gateway"]["distinct_netns_peer_connections"] = 2
+        original.write_bytes(canonical(receipt) + b"\n")
+        audited = self.assess()
+        self.assertFalse(audited["paired_pilot_observations_ready_for_independent_grading"])
+        self.assertIn("host-isolation-attestation-unverified", audited["blockers"])
+
+    def test_provider_receipt_replacement_cannot_reuse_isolation_signature(self):
+        trial = self.frozen["assignments"][0]["trial_id"]
+        attested_provider = self.results / trial / "host-attestation.json"
+        attested_provider.write_bytes(b'{"foreign-provider-submission":true}')
+        audited = self.assess()
+        self.assertFalse(audited["paired_pilot_observations_ready_for_independent_grading"])
+        self.assertIn("host-isolation-attestation-unverified", audited["blockers"])
 
     def test_missing_pair_or_unverified_native_cohort_rejects(self):
         trial = self.frozen["assignments"][0]["trial_id"]
