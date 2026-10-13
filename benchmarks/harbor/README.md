@@ -2732,3 +2732,37 @@ uv run --no-project python -m unittest \
   benchmarks.tests.test_native_provenance_and_empirical_decision \
   benchmarks.tests.test_timing_campaign_qualification -v
 ```
+
+### Opt-in host-authenticated nested search comparison
+
+Opaque ATIF shell and tool-router calls never qualify as zero hidden searches. The
+separate `benchmarks.harness.host_nested_search` verifier accepts *only*
+externally MAC-authenticated host observations against exactly matched immutable
+bare/Hashmarks bundles. The privileged host must instrument all nested execution
+outside the agent workspace and seal actual tool calls using its separately
+custodied host key. An agent-origin `nested_calls` field is rejected.
+
+Receipts bind campaign/trial, exact ATIF bytes, expected host identity/build,
+all opaque parent IDs, child IDs, tool names and inputs. Every router and shell
+must have an explicitly complete observed child list, including nested routers.
+Missing parents, duplicate direct/nested IDs, wrong source, forged MAC, unsafe
+files, unqualified tool order and unmatched trial identities fail closed.
+
+Model-free local regression including a full immutable two-arm bundle:
+
+    make benchmark-host-nested-search-check
+
+Opt-in verification of existing externally captured data:
+
+    make benchmark-host-nested-search-pair \
+      BARE_BUNDLE=/bundles/bare HASHMARKS_BUNDLE=/bundles/treated \
+      BARE_NESTED_RECEIPT=/host/bare.json HASHMARKS_NESTED_RECEIPT=/host/treated.json \
+      HOST_KEY_FILE=/host/host.key HOST_IDENTITY=trusted-host \
+      HOST_BUILD_SHA256=<64-character-pinned-host-build-digest>
+
+The report records explicit, authenticated-nested and combined observed
+native-search counts and a matched two-arm delta. It does not overwrite the
+canonical Harbor report or retroactively qualify unsigned ATIF evidence.
+`host_asserted_complete` is a key-holder assertion, not independent proof
+that every operation was intercepted. `native_search_savings_proven`,
+`model_attention_proven` and `causal_influence_proven` remain false.
