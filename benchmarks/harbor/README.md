@@ -2959,3 +2959,39 @@ canonical Harbor report or retroactively qualify unsigned ATIF evidence.
 `host_asserted_complete` is a key-holder assertion, not independent proof
 that every operation was intercepted. `native_search_savings_proven`,
 `model_attention_proven` and `causal_influence_proven` remain false.
+
+## E281–E284: independently re-read host execve and provider-session custody
+
+The existing `benchmark-netns-pilot-readiness` verifier now re-opens the
+exact create-only host-execve attestation for each opt-in native trial,
+verifies its HMAC with the separately custodied host key and frozen campaign,
+trial, host and build identities, and compares the **exact receipt bytes**
+against `native_host_execve_evidence.receipt_sha256`. Successful native exit
+status, the host's observed search-process count and conservative no-completeness
+claims must also agree. An unrequested or stray execve receipt is rejected.
+
+An independently signed trial-execution report must also bind the native
+session's complete provider-issued argument identity to the **same actual
+provider-response SHA-256** as the captured gateway. Confined trials without
+the binding do not qualify for independent grading readiness.
+
+Opt-in and opt-out trials cannot be mixed within the same frozen paired cohort:
+comparing positive observations against absent measurements would be unsound.
+Existing fully opt-out trial cohorts remain supported.
+
+The verifier does NOT synthesize host process traces, re-sign evidence, infer
+zero hidden searches, turn process launches into tool-call ancestry, establish
+kernel tracing completeness or certify randomized causal uplift. A verified
+MAC attests its host key holder's statement, not independent OS provenance.
+The existing `benchmark-netns-pilot-readiness` CLI and `--require-ready`
+flag remain the authoritative command; no second readiness verdict is made.
+
+```sh
+make benchmark-native-execve-readback-tests
+# Use the existing real frozen manifest, sources, workspace, host key and
+# binary pins when invoking benchmark-netns-pilot-readiness.
+```
+
+Model-free regressions cover valid host-key receipts, missing/tampered/replayed
+receipts, signed but inconsistent counts, forbidden completeness promotion,
+mixed observation cohorts and mismatched provider-response identities.

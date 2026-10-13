@@ -19,6 +19,7 @@ from .host_input_attestation import load_host_key
 from .native_session_cohort_audit import audit_native_session_cohort
 from .opencode_native_trial import SCHEMA as TRIAL_SCHEMA
 from .native_netns_host_attestation import verify_isolation_attestation
+from .native_execve_evidence_join import verify_native_execve_join
 from .native_netns_probe import kernel_probe_receipt_valid
 from .native_mount_probe import inspect_mount_probe
 from .native_chat_pair_admission import verify_native_chat_pair_claim
@@ -61,6 +62,8 @@ def evaluate_native_netns_pilot(
     if not cohort["native_session_cohort_observationally_consistent"]:
         issues["unqualified-native-session-cohort"] += 1
     checked = 0
+    execve_requested = 0
+    execve_verified = 0
     for cell in frozen["assignments"]:
         receipt = results_root / cell["trial_id"] / "trial-execution.json"
         if (receipt.is_symlink() or not receipt.is_file()
@@ -139,7 +142,11 @@ def evaluate_native_netns_pilot(
         binding = evidence.get("native_session_binding")
         if (not isinstance(binding, dict)
                 or binding.get("native_session_to_gateway_packet_bound") is not True
-                or binding.get("signed_host_input_and_transport_verified") is not True):
+                or binding.get("signed_host_input_and_transport_verified") is not True
+                or binding.get("provider_issued_native_arguments_bound") is not True
+                or evidence.get("provider_issued_native_export_arguments_bound") is not True
+                or binding.get("provider_issued_response_sha256")
+                   != evidence["gateway"]["provider_issued_response_sha256"]):
             issues["incomplete-native-session-transport-binding"] += 1
             continue
         # Execution JSON is agent-adjacent local data, not independent
@@ -160,7 +167,22 @@ def evaluate_native_netns_pilot(
         except (OSError, ValueError, TypeError):
             issues["host-isolation-attestation-unverified"] += 1
             continue
+        if evidence.get("native_host_execve_observation_required") is True:
+            execve_requested += 1
+        try:
+            if verify_native_execve_join(
+                evidence, trial_dir=results_root / cell["trial_id"],
+                key=host_key, campaign_id=frozen["design"]["campaign_id"],
+                trial_id=cell["trial_id"], host_identity=host_identity,
+                host_build_sha256=frozen["host_build_sha256"],
+            ):
+                execve_verified += 1
+        except (OSError, ValueError, TypeError, KeyError, UnicodeError):
+            issues["native-execve-host-receipt-join-unverified"] += 1
+            continue
         checked += 1
+    if execve_requested and execve_requested != len(frozen["assignments"]):
+        issues["mixed-native-execve-observation-cohort"] += 1
     if checked != len(frozen["assignments"]):
         issues["incomplete-planned-native-isolation-population"] += 1
     return {
@@ -169,6 +191,11 @@ def evaluate_native_netns_pilot(
         "manifest_sha256": frozen["manifest_sha256"],
         "planned_trials": len(frozen["assignments"]),
         "verified_local_isolation_receipts": checked,
+        "native_execve_observation_requested_trials": execve_requested,
+        "native_execve_host_receipts_independently_verified": execve_verified,
+        "native_execve_per_tool_call_ancestry_proven": False,
+        "native_execve_no_hidden_searches_proven": False,
+        "native_execve_causal_search_savings_proven": False,
         "native_session_cohort": cohort,
         "independently_checked_chat_pairs": pairs,
         "paired_pilot_observations_ready_for_independent_grading": not issues,
