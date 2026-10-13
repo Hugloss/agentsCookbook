@@ -2870,6 +2870,62 @@ uv run --no-project python -m unittest \
   benchmarks.tests.test_native_provider_tool_provenance -v
 ```
 
+### Opt-in real Linux process execution observation for native OpenCode
+
+The pinned native OpenCode launcher now supports a **host-owned** `strace -f`
+observer on the actual `bwrap` native process invocation. This is disabled by
+default. Pre-work admission requires an explicitly pinned, absolute tracer
+executable and its SHA-256, plus `--require-netns-isolation`. Unconfined
+fallback or an incomplete tracer selection is rejected before model work.
+
+An observing host launches the exact isolated command, follows forked process
+`execve` events, parses only unambiguous successful syscall observations,
+and creates a private, MAC-authenticated diagnostic receipt containing counts
+and source digests. Raw syscall logs can contain prompt text and arguments:
+they are held outside the sandbox, never added to the report or model input,
+and deleted after processing. Receipt bytes are create-only and mode 0600.
+
+To explicitly request it when launching the native pilot:
+
+```sh
+make benchmark-opencode-native-netns \
+  MANIFEST=/authority/manifest.json TRIAL_ID=... \
+  OPENCODE_BIN=/pinned/opencode OPENCODE_SHA256=... OPENCODE_VERSION=... \
+  HASHMARKS_BIN=/pinned/hashmarks HASHMARKS_SHA256=... \
+  RUN_ROOT=/private/run WORKSPACE=/workspace PROMPT_FILE=/prompt.txt \
+  CURRENT_SOURCE=/source.json HOST_KEY_FILE=/trusted/host.key \
+  HOST_IDENTITY=trusted-host UPSTREAM=... APPROVED_ORIGIN=... \
+  CATALOG_SHA256=... ORACLE_SHA256=... WORKSPACE_SHA256=... \
+  REQUIRE_NATIVE_EXECVE_OBSERVATION=1 \
+  NATIVE_EXECVE_TRACER=/usr/bin/strace \
+  NATIVE_EXECVE_TRACER_SHA256=<pinned-64-character-sha256>
+```
+
+Or use the CLI flags `--require-native-execve-observation`,
+`--native-execve-tracer-bin`, and `--native-execve-tracer-sha256` with the
+existing `benchmarks.harness.opencode_native_trial` command.
+
+Run the local model-free and tamper regression:
+
+    make benchmark-native-host-execve-check
+
+One optional test runs actual Linux `strace` plus a real process when supported
+by the host; other tests execute a real subprocess through a simulated
+transport adapter **without** claiming synthetic logs are kernel evidence.
+Kernel tracing can interfere with a sandbox in some environments. If tracing
+fails or is incomplete, the explicitly requested trial cannot qualify;
+the launcher never disables the observer to let a trial pass.
+
+**Evidence limit:** recognized `rg`/`grep`-family executable launches are
+only a lower bound on some search-related processes. Shell builtins, in-process
+library searches, `git grep`, other executables, and operations without an
+`execve` are not counted as zero. This is **not** per-tool-call ancestry or
+proof that all nested calls were intercepted. It does not populate the
+host-authenticated per-parent receipt from PR #248, upgrade the canonical
+Harbor search-savings denominator, or establish model attention or causation.
+Host-signed syscall observation remains a key-holder assertion, not external
+independent kernel attestation.
+
 ### Opt-in host-authenticated nested search comparison
 
 Opaque ATIF shell and tool-router calls never qualify as zero hidden searches. The

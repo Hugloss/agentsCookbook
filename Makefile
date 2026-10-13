@@ -415,7 +415,8 @@ benchmark-opencode-native-netns:
 		--workspace-sha256 "$(WORKSPACE_SHA256)" \
 		--hashmarks-binary "$(HASHMARKS_BIN)" \
 		--hashmarks-sha256 "$(HASHMARKS_SHA256)" --require-netns-isolation \
-		$(if $(VERIFIED_NATIVE_MCP_BRIDGE),--verified-native-mcp-bridge,)
+		$(if $(VERIFIED_NATIVE_MCP_BRIDGE),--verified-native-mcp-bridge,) \
+		$(if $(filter 1,$(REQUIRE_NATIVE_EXECVE_OBSERVATION)),--require-native-execve-observation --native-execve-tracer-bin "$(NATIVE_EXECVE_TRACER)" --native-execve-tracer-sha256 "$(NATIVE_EXECVE_TRACER_SHA256)",)
 
 benchmark-netns-pilot-readiness:
 	@if [ -z "$(MANIFEST)" ] || [ -z "$(NATIVE_RESULTS_ROOT)" ] || [ -z "$(SOURCES_ROOT)" ] || [ -z "$(WORKSPACE)" ] || [ -z "$(HOST_KEY_FILE)" ] || [ -z "$(HOST_IDENTITY)" ] || [ -z "$(APPROVED_ENDPOINT_SHA256)" ] || [ -z "$(BWRAP_SHA256)" ] || [ -z "$(HASHMARKS_SHA256)" ]; then \
@@ -485,6 +486,12 @@ benchmark-native-mcp-live-smoke:
 		--workspace "$(WORKSPACE)" --current "$(CURRENT_SOURCE)" \
 		$(if $(REPLACED_SOURCE),--replaced "$(REPLACED_SOURCE)",) \
 		--tool-name "$(TOOL_NAME)" --tool-args-file "$(TOOL_ARGS_FILE)"
+ 
+# Host-owned native Linux process observation. This does not assert that each
+# execution maps to a specific agent tool or that all nested calls were seen.
+.PHONY: benchmark-native-host-execve-check
+benchmark-native-host-execve-check:
+	@uv run --no-project python -m unittest benchmarks.tests.test_native_host_execve -v
 
 # E279/E280: read-only diagnostic probe of real pinned native MCP wire.
 # No model, no OpenCode/provider, no synthetic source normalization.
