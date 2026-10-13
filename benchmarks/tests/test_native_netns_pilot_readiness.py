@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import copy
 import errno
+import hashlib
+import hmac
 import json
 import tempfile
 import unittest
@@ -23,6 +25,9 @@ from benchmarks.harness.native_netns_host_attestation import (
     sign_isolation_report, write_isolation_attestation,
 )
 from benchmarks.harness.host_input_attestation import canonical
+from benchmarks.harness.native_host_execve import (
+    SCHEMA as EXECVE_SCHEMA, DOMAIN as EXECVE_DOMAIN, SEARCH_EXECUTABLES,
+)
 from benchmarks.tests.test_opencode_native_gateway import KEY, H, manifest
 
 
@@ -129,9 +134,12 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
                     "provider_issued_response_sha256": H("provider-issued-response"),
                     "distinct_netns_peer_connections": 1,
                 },
+                "provider_issued_native_export_arguments_bound": True,
                 "native_session_binding": {
                     "native_session_to_gateway_packet_bound": True,
                     "signed_host_input_and_transport_verified": True,
+                    "provider_issued_native_arguments_bound": True,
+                    "provider_issued_response_sha256": H("provider-issued-response"),
                 },
             }
             execution_bytes = canonical(report) + b"\n"
@@ -374,6 +382,140 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
         self.cohort["native_session_cohort_observationally_consistent"] = False
         self.assertIn("unqualified-native-session-cohort", self.assess()["blockers"])
 
+
+    def _resign_trial(self, trial_id, report):
+        folder = self.results / trial_id
+        raw = canonical(report) + b"\n"
+        (folder / "trial-execution.json").write_bytes(raw)
+        provider = (folder / "host-attestation.json").read_bytes()
+        signed = sign_isolation_report(
+            report, execution_bytes=raw, provider_attestation_bytes=provider,
+            host_identity="privileged-host", host_key=KEY,
+        )
+        (folder / "trial-execution.attestation.json").write_bytes(
+            canonical(signed) + b"\n"
+        )
+
+    def _add_execve_fixture(self, trial_id, *, searches=0):
+        """Synthetic HMAC receipt exercises read-back, NOT kernel tracing."""
+        folder = self.results / trial_id
+        report = json.loads((folder / "trial-execution.json").read_bytes())
+        obs = {
+            "measurement_qualified": True,
+            "successful_execve_observations": searches + 1,
+            "recognized_search_process_launches": searches,
+            "recognized_search_executables": sorted(SEARCH_EXECUTABLES),
+            "observation_scope": "strace-observed-successful-execve-executable-path",
+            "complete_nested_tool_call_coverage_proven": False,
+            "no_hidden_searches_proven": False,
+            "tool_call_ancestry_proven": False,
+            "model_attention_proven": False,
+            "causal_search_savings_proven": False,
+        }
+        body = {
+            "schema": EXECVE_SCHEMA,
+            "campaign_id": self.frozen["design"]["campaign_id"],
+            "trial_id": trial_id,
+            "host_identity": "privileged-host",
+            "host_build_sha256": self.frozen["host_build_sha256"],
+            "tracer_sha256": H("test-tracer"),
+            "trace_sha256": H("test-trace-" + trial_id),
+            "exit_code": 0, "observation": obs,
+        }
+        signed = {**body, "mac_sha256": hmac.new(
+            KEY, EXECVE_DOMAIN + canonical(body), hashlib.sha256
+        ).hexdigest()}
+        data = canonical(signed) + b"\n"
+        (folder / "host-execve.attestation.json").write_bytes(data)
+        report["native_host_execve_observation_required"] = True
+        report["native_host_execve_evidence"] = {
+            "state": "HOST_EXECVE_OBSERVED",
+            "receipt_sha256": hashlib.sha256(data).hexdigest(),
+            "observed_search_launches": searches,
+            "host_execve_key_holder_authenticated": True,
+            "nested_call_completeness_proven": False,
+            "causal_search_savings_proven": False,
+        }
+        self._resign_trial(trial_id, report)
+        return report
+
+    def test_signed_execve_receipt_join_is_rechecked_without_claiming_completeness(self):
+        for cell in self.frozen["assignments"]:
+            self._add_execve_fixture(cell["trial_id"])
+        verdict = self.assess()
+        self.assertTrue(verdict["paired_pilot_observations_ready_for_independent_grading"])
+        self.assertEqual(verdict["native_execve_observation_requested_trials"], 2)
+        self.assertEqual(verdict["native_execve_host_receipts_independently_verified"], 2)
+        self.assertFalse(verdict["native_execve_no_hidden_searches_proven"])
+        self.assertFalse(verdict["native_execve_per_tool_call_ancestry_proven"])
+
+    def test_execve_missing_tampered_or_replayed_receipt_never_qualifies(self):
+        for cell in self.frozen["assignments"]:
+            self._add_execve_fixture(cell["trial_id"])
+        first, second = [x["trial_id"] for x in self.frozen["assignments"]]
+        path = self.results / first / "host-execve.attestation.json"
+        good = path.read_bytes()
+        other = (self.results / second / "host-execve.attestation.json").read_bytes()
+        for raw in (b'{"forged":true}\n', other):
+            with self.subTest(raw=raw[:20]):
+                path.write_bytes(raw)
+                result = self.assess()
+                self.assertFalse(result["paired_pilot_observations_ready_for_independent_grading"])
+                self.assertIn("native-execve-host-receipt-join-unverified", result["blockers"])
+        path.unlink()
+        result = self.assess()
+        self.assertIn("native-execve-host-receipt-join-unverified", result["blockers"])
+        path.write_bytes(good)
+
+    def test_execve_signed_report_count_and_semantic_drift_rejected(self):
+        for cell in self.frozen["assignments"]:
+            self._add_execve_fixture(cell["trial_id"])
+        trial_id = self.frozen["assignments"][0]["trial_id"]
+        path = self.results / trial_id / "trial-execution.json"
+        original = json.loads(path.read_bytes())
+        for field, value in (
+            ("observed_search_launches", 17),
+            ("nested_call_completeness_proven", True),
+            ("receipt_sha256", H("foreign")),
+        ):
+            with self.subTest(field=field):
+                altered = copy.deepcopy(original)
+                altered["native_host_execve_evidence"][field] = value
+                self._resign_trial(trial_id, altered)
+                result = self.assess()
+                self.assertIn("native-execve-host-receipt-join-unverified", result["blockers"])
+        self._resign_trial(trial_id, original)
+
+    def test_execve_unrequested_or_mixed_arm_observation_rejected(self):
+        first = self.frozen["assignments"][0]["trial_id"]
+        second = self.frozen["assignments"][1]["trial_id"]
+        self._add_execve_fixture(first)
+        result = self.assess()
+        self.assertIn("mixed-native-execve-observation-cohort", result["blockers"])
+        self._add_execve_fixture(second)
+        report = json.loads((self.results / first / "trial-execution.json").read_bytes())
+        report["native_host_execve_observation_required"] = False
+        report["native_host_execve_evidence"] = None
+        self._resign_trial(first, report)
+        result = self.assess()
+        self.assertIn("native-execve-host-receipt-join-unverified", result["blockers"])
+
+    def test_provider_issued_session_response_join_required_at_readback(self):
+        trial_id = self.frozen["assignments"][0]["trial_id"]
+        original = json.loads(
+            (self.results / trial_id / "trial-execution.json").read_bytes()
+        )
+        for patch in (
+            {"provider_issued_native_export_arguments_bound": False},
+            {"native_session_binding": {
+                **original["native_session_binding"],
+                "provider_issued_response_sha256": H("different-response"),
+            }},
+        ):
+            self._resign_trial(trial_id, {**original, **patch})
+            result = self.assess()
+            self.assertIn("incomplete-native-session-transport-binding", result["blockers"])
+        self._resign_trial(trial_id, original)
 
 if __name__ == "__main__":
     unittest.main()
