@@ -2733,6 +2733,98 @@ uv run --no-project python -m unittest \
   benchmarks.tests.test_timing_campaign_qualification -v
 ```
 
+
+## E277–E280: verify actual Hashmarks MCP server, catalog and original wire before a pilot
+
+This checkpoint strengthens the E273–E276 stdio bridge *without* creating
+a new evidence format inside Hashmarks or redefining its semantics.
+The existing standalone Hashmarks native MCP server publishes:
+`serverInfo.name=Hashmarks`, a typed `tools/list` catalog with
+`inputSchema`, the real native operations `task_evidence` and `find`,
+and successful tool results with `structuredContent` on the MCP SDK.
+These behaviors are grounded in Hashmarks' upstream
+`hashmarks/mcp_server.py`, `hashmarks/mcp_contract.py` and
+`tests/test_mcp_native_interop.py`. A different installed version must
+still be observed and verified.
+
+**E277 — prove the initialized native server identity.**
+The bridge now tracks the observed JSON-RPC `initialize` response,
+requires an initialized `Hashmarks` server with a bounded version
+string, and refuses extra initialization. A JSON-RPC server that
+happens to echo a frozen evidence packet cannot impersonate Hashmarks
+merely by replaying that packet.
+
+**E278 — bind response to the actual listed input contract.**
+The same bridge observes `tools/list` and requires an unambiguous
+catalog of typed object input schemas. The subject result is not
+released until its native tool is present in that catalog and its
+arguments satisfy declared required fields and basic JSON types;
+unknown extra arguments are refused when `additionalProperties=false`.
+The genuine Hashmarks tool/server still owns full JSON-Schema validation.
+No source is invented, no foreign result substituted, and
+`structuredContent` must agree with the original parsed text packet
+before the frozen textual presentation can replace it.
+This does **not** establish that OpenCode subsequently used the
+selected content; its provider gateway and exported native session
+remain separate verification owners.
+
+**E279 — inspect a real installed MCP version without guessing its shape.**
+The new direct wire probe launches a SHA-pinned Hashmarks executable
+in a scrubbed environment and performs bounded sequential native
+`initialize → tools/list → tools/call` over actual subprocess pipes,
+with a strict timeout and an exact selected tool name. It records
+only native server version, catalog/tool-schema digests, original
+result digest, explicit content-shape observations and compatibility
+flags, **not the returned repository code**. The optional frozen
+original packet is used to compare semantic identity; it is never
+replaced or silently normalized.
+
+```sh
+# Diagnostic even if the installed result uses a different format:
+make benchmark-native-mcp-wire-probe \
+  HASHMARKS_BIN=/trusted/hashmarks HASHMARKS_SHA256=<64-hex> \
+  WORKSPACE=/disposable/repo TOOL_NAME=task_evidence \
+  TOOL_ARGS_FILE=/frozen/task-args.json \
+  ORIGINAL_PACKET=/frozen/original-packet.json
+
+# Same probe, but nonzero exit unless it can safely feed the current
+# E273 bridge with the exact frozen original packet:
+make benchmark-native-mcp-wire-probe REQUIRE_BRIDGE_COMPATIBLE=1 \
+  HASHMARKS_BIN=/trusted/hashmarks HASHMARKS_SHA256=<64-hex> \
+  WORKSPACE=/disposable/repo TOOL_NAME=task_evidence \
+  TOOL_ARGS_FILE=/frozen/task-args.json \
+  ORIGINAL_PACKET=/frozen/original-packet.json
+```
+
+For a real `task_evidence` call, the input is
+`{"task":"locate the source-owner behavior"}`, **not** a synthetic
+`{"path": ...}` argument; for `find`, use a `query` string.
+An installed version whose catalog or original content differs
+must fail the strict gate. The result is a compatibility finding, not
+a claim about a model's code-edit success.
+
+**E280 — end-to-end protocol attack ring with accurate nonclaims.**
+The local executable tests now simulate the real MCP initialize
+identity, schema-bearing catalog, subject call and dual-format
+structured/text response. Negative cases include spoofed server,
+missing tool, duplicate/malformed input schemas, absent required
+argument, wrong argument type, foreign argument, original packet
+drift and partial/replayed responses.
+
+```sh
+uv run --no-project python -m unittest benchmarks.tests.test_native_mcp_bridge -v
+uv run --no-project python -m unittest discover -s benchmarks/tests
+```
+
+CI executes a deterministic local MCP executable, not a released
+Hashmarks/OpenCode/provider stack. The direct wire probe has **no
+independent host-signature custody**, OS network isolation or model
+calls; a local process can still emit deceptive data. In particular,
+this does not prove the original Hashmarks response was independently
+host-attested, that native OpenCode received the presentation, or that
+paired agent performance improved. Those are requirements for later
+real paired trials, not flags that this protocol test may set.
+
 ### Opt-in host-authenticated nested search comparison
 
 Opaque ATIF shell and tool-router calls never qualify as zero hidden searches. The

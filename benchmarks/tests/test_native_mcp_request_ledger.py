@@ -18,12 +18,12 @@ from benchmarks.harness.native_mcp_bridge_contract import (
 )
 from benchmarks.harness.native_mcp_stdio_bridge import run_stdio, sha_file
 from benchmarks.tests.test_native_mcp_bridge import (
-    call_frame, result_frame, selection, source,
+    admitted_state, call_frame, result_frame, selection, source,
 )
 from benchmarks.harness.host_input_attestation import canonical
 
 
-def request(mid: object, method: str = "tools/list") -> bytes:
+def request(mid: object, method: str = "ping") -> bytes:
     return canonical({"jsonrpc": "2.0", "id": mid, "method": method, "params": {}})
 
 
@@ -45,7 +45,7 @@ def state() -> BridgeState:
 class NativeMcpRequestLedgerTests(unittest.TestCase):
     def test_out_of_order_unrelated_responses_are_forwarded_once(self):
         bridge = state()
-        init = request("init", "initialize")
+        init = request("init", "ping")
         listing = request(5)
         self.assertEqual(bridge.receive_request(init), init)
         self.assertEqual(bridge.receive_request(listing), listing)
@@ -122,10 +122,10 @@ class NativeMcpRequestLedgerTests(unittest.TestCase):
             }))
 
     def test_subject_can_complete_only_after_exact_issued_jsonrpc_request(self):
-        bridge = state()
-        bridge.receive_request(request("list"))
+        bridge = admitted_state(state().contract)
+        bridge.receive_request(request("unrelated"))
         bridge.receive_request(call_frame())
-        self.assertEqual(bridge.receive_response(response("list")), response("list"))
+        self.assertEqual(bridge.receive_response(response("unrelated")), response("unrelated"))
         processed = json.loads(bridge.receive_response(result_frame()))
         self.assertEqual(
             processed["result"]["content"][0]["text"],
@@ -164,7 +164,11 @@ class NativeMcpRequestLedgerTests(unittest.TestCase):
             status = run_stdio(
                 hashmarks_executable=binary, hashmarks_sha256=sha_file(binary),
                 workspace=workspace, contract_path=contract_file,
-                stdin=io.BytesIO(request("tools") + b"\n" + call_frame() + b"\n"),
+                stdin=io.BytesIO(
+                    request("init", "initialize") + b"\n"
+                    + request("list", "tools/list") + b"\n"
+                    + call_frame() + b"\n"
+                ),
                 stdout=output,
             )
             self.assertEqual(status, 2)
