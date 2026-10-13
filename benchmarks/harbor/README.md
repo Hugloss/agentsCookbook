@@ -2825,6 +2825,51 @@ host-attested, that native OpenCode received the presentation, or that
 paired agent performance improved. Those are requirements for later
 real paired trials, not flags that this protocol test may set.
 
+
+### Native provider-issued call ↔ OpenCode export semantic-argument binding
+
+The host gateway already captures a complete provider-issued Hashmarks
+function call before accepting a client continuation. The native trial now
+also requires the **saved, completed OpenCode session tool part** to carry the
+same call ID, one of the two explicitly approved Hashmarks operations, and
+the **entire semantic argument object** from that observed provider response.
+The provider's original argument-byte digest is retained for strict
+provider-continuation verification; a separate canonical argument digest
+supports SDK exports that retain the same JSON object with different
+whitespace or key order. Nested fields and non-navigation arguments are
+not discarded for the identity check, even though the human-readable ATIF
+navigation projection deliberately remains limited.
+
+The new strict join is performed by
+`opencode_native_session.inspect_native_export` before any native export,
+ATIF or host MAC receipt is written. The confined native launcher supplies
+the actual `NativeOpenCodeGateway.provider_issued_tool` and requires its
+provider-response SHA-256 to agree with the gateway's observed response.
+The completed trial reports
+`provider_issued_native_export_arguments_bound`. A synthetic legacy
+gateway/ATIF fixture may still be inspected for older tests, but returns
+`provider_issued_native_arguments_bound=false` and cannot satisfy the
+confined-run strict gate. Only known `task_evidence` and `find` operation
+aliases normalize; changing operation, call ID, nested arguments or omitting
+provider-issued evidence fails before receipt creation.
+
+This joins **host-observed provider issuance → native-session observation →
+verified Hashmarks packet in host-model-input receipt**. It does not prove
+that a specific isolated MCP subprocess generated the returned bytes:
+the native MCP bridge's own original-packet authority and the guest/host
+execution-boundary proof remain distinct. Nor does it establish provider
+attention, external native origin, an independently graded outcome, or
+causal Hashmarks uplift.
+
+Model-free regression:
+
+```sh
+uv run --no-project python -m unittest \
+  benchmarks.tests.test_native_provider_session_chain \
+  benchmarks.tests.test_opencode_native_session \
+  benchmarks.tests.test_native_provider_tool_provenance -v
+```
+
 ### Opt-in host-authenticated nested search comparison
 
 Opaque ATIF shell and tool-router calls never qualify as zero hidden searches. The

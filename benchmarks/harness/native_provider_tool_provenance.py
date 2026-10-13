@@ -45,8 +45,15 @@ def _bounded_call(value: object) -> dict[str, str]:
         raise ValueError("provider-issued-tool-arguments-invalid-json") from None
     if not isinstance(parsed, dict):
         raise ValueError("provider-issued-tool-arguments-not-object")
-    return {"call_id": tool_id, "function_name": name,
-            "arguments_sha256": hashlib.sha256(arguments.encode("utf-8")).hexdigest()}
+    from .host_input_attestation import canonical
+    return {
+        "call_id": tool_id, "function_name": name,
+        "arguments_sha256": hashlib.sha256(arguments.encode("utf-8")).hexdigest(),
+        # Canonical semantic digest permits SDKs to store the same decoded
+        # arguments as a dict without requiring identical JSON whitespace.
+        # Raw arguments digest remains authoritative for provider continuation.
+        "arguments_semantic_sha256": hashlib.sha256(canonical(parsed)).hexdigest(),
+    }
 
 
 def _from_json(body: bytes) -> dict[str, str] | None:
