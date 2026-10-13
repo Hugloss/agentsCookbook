@@ -267,7 +267,9 @@ class NativeNetnsPilotAdmissionTests(unittest.TestCase):
         receipt.write_bytes(canonical(report) + b"\n")
         verdict = self.assess()
         self.assertFalse(verdict["paired_pilot_observations_ready_for_independent_grading"])
-        self.assertIn("host-isolation-attestation-unverified", verdict["blockers"])
+        # E283 rejects mismatched provider/native identity before the
+        # later host-isolation MAC check; this is an earlier failure gate.
+        self.assertIn("incomplete-native-session-transport-binding", verdict["blockers"])
 
     def test_realistic_incompatible_pair_or_diagnostic_never_qualifies(self):
         self.synthetic_wire_pairs["fully_compatible_for_paired_study"] = False
