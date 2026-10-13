@@ -492,3 +492,20 @@ benchmark-native-mcp-live-smoke:
 .PHONY: benchmark-native-host-execve-check
 benchmark-native-host-execve-check:
 	@uv run --no-project python -m unittest benchmarks.tests.test_native_host_execve -v
+
+# Host-owned positive read-back of independently authenticated nested tool
+# observations. No agent/model execution; never infer completeness from ATIF.
+.PHONY: benchmark-host-nested-search-check benchmark-host-nested-search-pair
+benchmark-host-nested-search-check:
+	@uv run --no-project python -m unittest benchmarks.tests.test_host_nested_search -v
+
+benchmark-host-nested-search-pair:
+	@if [ -z "$(BARE_BUNDLE)" ] || [ -z "$(HASHMARKS_BUNDLE)" ] || [ -z "$(BARE_NESTED_RECEIPT)" ] || [ -z "$(HASHMARKS_NESTED_RECEIPT)" ] || [ -z "$(HOST_KEY_FILE)" ] || [ -z "$(HOST_IDENTITY)" ] || [ -z "$(HOST_BUILD_SHA256)" ]; then \
+		echo 'Set BARE_BUNDLE HASHMARKS_BUNDLE BARE_NESTED_RECEIPT HASHMARKS_NESTED_RECEIPT HOST_KEY_FILE HOST_IDENTITY HOST_BUILD_SHA256' >&2; exit 2; fi
+	@uv run --no-project python -m benchmarks.harness.host_nested_search \
+		--bare-bundle "$(BARE_BUNDLE)" --hashmarks-bundle "$(HASHMARKS_BUNDLE)" \
+		--bare-attestation "$(BARE_NESTED_RECEIPT)" \
+		--hashmarks-attestation "$(HASHMARKS_NESTED_RECEIPT)" \
+		--host-key-file "$(HOST_KEY_FILE)" \
+		--expected-host-identity "$(HOST_IDENTITY)" \
+		--expected-host-build-sha256 "$(HOST_BUILD_SHA256)" --require-qualified
