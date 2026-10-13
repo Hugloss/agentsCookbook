@@ -376,7 +376,15 @@ def launch_native_trial(
                     expected_provider="agentscookbook-captured",
                     expected_model=frozen["design"]["model"],
                     original_packet=current["content"],
+                    provider_issued=gateway.provider_issued_tool,
+                    require_provider_issued=use_netns_isolation,
                 )
+                if use_netns_isolation and (
+                    not session_result["provider_issued_native_arguments_bound"]
+                    or session_result["provider_issued_response_sha256"]
+                    != observation["provider_issued_response_sha256"]
+                ):
+                    raise ValueError("native-provider-issued-session-identity-not-joined")
             except (OSError, ValueError, TypeError, UnicodeError):
                 session_error = "native-session-not-bound-to-observed-provider-submission"
         qualified = (
@@ -397,6 +405,10 @@ def launch_native_trial(
             "verified_native_mcp_bridge_configured": verified_native_mcp_bridge,
             "frozen_native_mcp_bridge_sha256": bridge_contract_sha256,
             "native_mcp_original_hashmarks_response_independently_attested": False,
+            "provider_issued_native_export_arguments_bound": (
+                session_result is not None
+                and session_result["provider_issued_native_arguments_bound"]
+            ),
             "native_exit_code": exit_code,
             "native_host_execve_observation_required": require_native_execve_observation,
             "native_host_execve_evidence": native_execve_evidence,
