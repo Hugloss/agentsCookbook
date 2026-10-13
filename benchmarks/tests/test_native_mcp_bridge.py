@@ -11,6 +11,7 @@ import hashlib
 import io
 import json
 import os
+import queue
 import tempfile
 import unittest
 from pathlib import Path
@@ -221,9 +222,9 @@ class NativeMcpBridgeContractAttacks(unittest.TestCase):
                 },
             }]},
         }))
-        state.receive_request(call_frame())
         with self.assertRaisesRegex(ValueError, "not-listed"):
-            state.receive_response(result_frame())
+            state.receive_request(call_frame())
+        self.assertEqual(state.subject_calls, 0)
         for schema in (
             {"type": "array", "properties": {}},
             {"type": "object", "properties": {"task": {}},
@@ -259,11 +260,48 @@ class NativeMcpBridgeContractAttacks(unittest.TestCase):
                 "jsonrpc": "2.0", "id": 3, "method": "tools/call",
                 "params": {"name": "task_evidence", "arguments": params},
             })
-            state.receive_request(raw)
             with self.subTest(params=params), self.assertRaisesRegex(
                 ValueError, "catalog-",
             ):
-                state.receive_response(result_frame())
+                state.receive_request(raw)
+            self.assertEqual(state.subject_calls, 0)
+            self.assertEqual(state.subject_responses, 0)
+
+    def test_speculative_subject_rejected_until_real_catalog_response(self):
+        # An issued initialize/list request is not completed catalog proof.
+        state = BridgeState(self.contract)
+        for mid, method in (("init", "initialize"), ("list", "tools/list")):
+            state.receive_request(canonical({
+                "jsonrpc": "2.0", "id": mid, "method": method, "params": {},
+            }))
+        with self.assertRaisesRegex(ValueError, "before-verified-catalog"):
+            state.receive_request(call_frame())
+        self.assertEqual(state.subject_calls, 0)
+        self.assertFalse(any(m == "tools/call" for m in state.inflight.values()))
+        state.receive_response(canonical({
+            "jsonrpc": "2.0", "id": "init",
+            "result": {"serverInfo": {"name": "Hashmarks", "version": "fixture"}},
+        }))
+        with self.assertRaisesRegex(ValueError, "before-verified-catalog"):
+            state.receive_request(call_frame())
+        state.receive_response(canonical({
+            "jsonrpc": "2.0", "id": "list",
+            "result": {"tools": [CATALOG_TOOL]},
+        }))
+        self.assertEqual(state.receive_request(call_frame()), call_frame())
+
+    def test_rejected_arguments_never_enter_request_ledger(self):
+        state = admitted_state(self.contract)
+        prior_ids, prior_inflight = set(state.seen_ids), dict(state.inflight)
+        for args in ({}, {"task": False}, {"task": "owner", "secret": "x"}):
+            with self.subTest(args=args), self.assertRaisesRegex(ValueError, "catalog-"):
+                state.receive_request(canonical({
+                    "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                    "params": {"name": "task_evidence", "arguments": args},
+                }))
+            self.assertEqual(state.subject_calls, 0)
+            self.assertEqual(state.seen_ids, prior_ids)
+            self.assertEqual(state.inflight, prior_inflight)
 
     def test_create_only_contract_and_guest_mcp_binding(self):
         with tempfile.TemporaryDirectory() as td:
@@ -320,6 +358,43 @@ class NativeMcpBridgeContractAttacks(unittest.TestCase):
                 self.assertIn(guest, argv)
             self.assertIn("--ro-bind", argv)
             self.assertNotIn("--share-net", argv)
+
+
+
+class _SequencedMcpInput:
+    """Test-only parent that waits for actual MCP responses before calling."""
+
+    def __init__(self, *, call):
+        self.waiting = queue.Queue()
+        self.call = call
+        self.waiting.put(canonical({
+            "jsonrpc": "2.0", "id": "init", "method": "initialize",
+            "params": {"protocolVersion": "2024-11-05"},
+        }) + b"\n")
+
+    def readline(self, limit):
+        return self.waiting.get(timeout=5)
+
+
+class _SequencedMcpOutput(io.BytesIO):
+    def __init__(self, source_input):
+        super().__init__()
+        self.source_input = source_input
+
+    def write(self, data):
+        size = super().write(data)
+        # Advance only on the native child response, not on an assumption
+        # that catalog identity and tool schema will eventually pass.
+        mid = json.loads(data)["id"]
+        if mid == "init":
+            self.source_input.waiting.put(canonical({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/list",
+                "params": {},
+            }) + b"\n")
+        elif mid == 1:
+            self.source_input.waiting.put(self.source_input.call + b"\n")
+            self.source_input.waiting.put(b"")
+        return size
 
 
 class ExecutableHashmarksStdioFixture(unittest.TestCase):
@@ -438,19 +513,12 @@ for line in sys.stdin.buffer:
                 hashmarks_sha256=sha_file(executable),
             )
             write_bridge_contract(contract, frozen)
-            input_bytes = (
-                canonical({"jsonrpc":"2.0","id":"init","method":"initialize",
-                           "params":{"protocolVersion":"2024-11-05"}})
-                + b"\n"
-                + canonical({"jsonrpc":"2.0","id":1,
-                             "method":"tools/list","params":{}})
-                + b"\n" + call_frame() + b"\n"
-            )
-            output = io.BytesIO()
+            source_input = _SequencedMcpInput(call=call_frame())
+            output = _SequencedMcpOutput(source_input)
             status = run_stdio(
                 hashmarks_executable=executable, hashmarks_sha256=sha_file(executable),
                 workspace=workspace, contract_path=contract,
-                stdin=io.BytesIO(input_bytes), stdout=output,
+                stdin=source_input, stdout=output,
             )
             self.assertEqual(status, 0)
             lines = [json.loads(line) for line in output.getvalue().splitlines()]
@@ -469,14 +537,53 @@ for line in sys.stdin.buffer:
             )
             other = root / "wrong-contract.json"
             write_bridge_contract(other, wrong_contract)
-            drift_output = io.BytesIO()
+            drift_input = _SequencedMcpInput(call=call_frame())
+            drift_output = _SequencedMcpOutput(drift_input)
             status = run_stdio(
                 hashmarks_executable=executable, hashmarks_sha256=wrong_digest,
                 workspace=workspace, contract_path=other,
-                stdin=io.BytesIO(input_bytes), stdout=drift_output,
+                stdin=drift_input, stdout=drift_output,
             )
             self.assertEqual(status, 2)
             self.assertNotIn(chosen["selected_content"].encode(), drift_output.getvalue())
+
+    def test_real_child_never_executes_rejected_arguments(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            executable = root / "hashmarks"
+            marker = workspace / "child-was-invoked"
+            self._fixture(executable)
+            body = executable.read_text()
+            hook = "    elif method == 'tools/call':\n"
+            self.assertEqual(body.count(hook), 1)
+            executable.write_text(body.replace(
+                hook, hook + "        open(" + repr(str(marker))
+                + ", 'w').write('executed')\n",
+            ))
+            executable.chmod(0o700)
+            frozen = freeze_bridge_contract(
+                selection(), original_packet=source()["content"],
+                hashmarks_sha256=sha_file(executable),
+            )
+            contract = root / "contract.json"
+            write_bridge_contract(contract, frozen)
+            invalid = canonical({
+                "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                "params": {"name": "task_evidence", "arguments": {"task": 404}},
+            })
+            incoming = _SequencedMcpInput(call=invalid)
+            outgoing = _SequencedMcpOutput(incoming)
+            status = run_stdio(
+                hashmarks_executable=executable, hashmarks_sha256=sha_file(executable),
+                workspace=workspace, contract_path=contract,
+                stdin=incoming, stdout=outgoing,
+            )
+            self.assertEqual(status, 2)
+            self.assertFalse(marker.exists(),
+                             "invalid tool call reached native Hashmarks child")
+            self.assertNotIn(frozen["selected_text"].encode(), outgoing.getvalue())
 
 
 if __name__ == "__main__":
