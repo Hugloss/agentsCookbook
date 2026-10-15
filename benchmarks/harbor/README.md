@@ -2995,3 +2995,40 @@ make benchmark-native-execve-readback-tests
 Model-free regressions cover valid host-key receipts, missing/tampered/replayed
 receipts, signed but inconsistent counts, forbidden completeness promotion,
 mixed observation cohorts and mismatched provider-response identities.
+
+
+## E285–E288: admit native MCP tool work before dispatch
+
+E285 requires the actual successful and verified native MCP \`initialize\`
+and \`tools/list\` responses **before** forwarding a subject \`tools/call\`
+to the SHA-pinned Hashmarks executable. An outstanding catalog request is not
+authorization. A client that speculatively submits the subject is rejected,
+not retried silently or granted authority from a guessed schema.
+
+E286 moves the native tool catalog membership and observable input-schema
+checks (required fields, JSON primitive types, additional properties) to the
+one canonical \`BridgeState.receive_request\` admission boundary. Previously,
+some of these checks ran only when a response was returned, after Hashmarks
+could already have performed work. Full JSON Schema validation remains owned
+by the Hashmarks server. The bridge still validates the original returned
+packet against the frozen source before any selected presentation is exposed.
+
+E287 tests that denied requests cannot enter the JSON-RPC in-flight ledger or
+reserve a completed subject identity. E288 exercises the actual local stdio
+bridge with a deterministic executable fixture, waiting for real initialization
+and catalog replies before issuing a subject call. A test-only native child
+writes an observable marker only if it receives \`tools/call\`: malformed
+arguments are denied, no marker is created and no selected evidence is emitted.
+
+Existing interface, binary pinning, sandbox execution and bridge contract
+format are preserved. There is no second MCP proxy, new agent harness, new
+benchmark denominator, or per-call receipt writer.
+
+\`\`\`sh
+make benchmark-native-mcp-bridge-tests
+uv run --no-project python -m unittest discover -s benchmarks/tests
+\`\`\`
+
+These regressions use a deterministic local child; they do not establish
+independent native-process origin, full kernel/process tracing completeness,
+installed Hashmarks compatibility or model-visible provider causality.

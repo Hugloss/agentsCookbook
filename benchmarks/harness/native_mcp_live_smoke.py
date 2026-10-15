@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -27,6 +28,7 @@ from .native_mcp_bridge_contract import (
     SUPPORTED_TOOLS, freeze_bridge_contract, write_bridge_contract,
 )
 from .native_mcp_stdio_bridge import sha_file
+from .native_mcp_wire_probe import _one_response, _send
 from .trusted_treatments import load_manifest, select_treatment, verify_manifest
 
 SCHEMA = "agentscookbook.native-hashmarks-stdio-live-smoke.v1"
@@ -82,7 +84,9 @@ def smoke_real_native_mcp(
         {"jsonrpc": "2.0", "id": "native-subject", "method": "tools/call",
          "params": {"name": tool_name, "arguments": dict(tool_args)}},
     ]
-    input_bytes = b"".join(canonical(req) + b"\n" for req in reqs)
+    # E288: a catalog request is not catalog proof. Use the existing bounded
+    # native MCP wire transport and wait for each real response before sending
+    # the subject call to the canonical bridge. No second bridge is created.
     with tempfile.TemporaryDirectory(prefix="agentscookbook-native-mcp-") as private:
         directory = Path(private)
         contract_path = directory / "bridge.json"
@@ -99,22 +103,74 @@ def smoke_real_native_mcp(
             "XDG_STATE_HOME": str(directory / "state"),
         }
         executable = Path(__file__).with_name("native_mcp_stdio_bridge.py")
+        deadline = time.monotonic() + timeout
+        process = None
         try:
-            run = subprocess.run(
+            process = subprocess.Popen(
                 [sys.executable, str(executable),
                  "--hashmarks", str(binary), "--sha256", sha256,
                  "--workspace", str(workspace),
                  "--contract", str(contract_path)],
-                input=input_bytes, stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL, env=env, cwd=workspace,
-                timeout=timeout, check=False,
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL, env=env, cwd=workspace, bufsize=0,
             )
+            pending = bytearray()
+            frames = []
+            _send(process, "initialize", "native-init", reqs[0]["params"])
+            initialized, raw = _one_response(
+                process, expected_id="native-init",
+                deadline=deadline, pending=pending,
+            )
+            frames.append(raw)
+            info = initialized.get("result", {}).get("serverInfo") if (
+                isinstance(initialized.get("result"), dict)
+            ) else None
+            if (not isinstance(info, dict)
+                    or info.get("name") != "Hashmarks"
+                    or type(info.get("version")) is not str
+                    or not info["version"]):
+                raise ValueError("native-mcp-live-initialization-unverified")
+            assert process.stdin is not None
+            process.stdin.write(canonical(reqs[1]) + b"\n")
+            process.stdin.flush()
+            _send(process, "tools/list", "native-list", reqs[2]["params"])
+            listed, raw = _one_response(
+                process, expected_id="native-list",
+                deadline=deadline, pending=pending,
+            )
+            frames.append(raw)
+            catalog = listed.get("result", {}).get("tools") if (
+                isinstance(listed.get("result"), dict)
+            ) else None
+            if (not isinstance(catalog, list)
+                    or tool_name not in {
+                        tool.get("name") for tool in catalog
+                        if isinstance(tool, dict)
+                    }):
+                raise ValueError("native-mcp-live-subject-not-listed")
+            _send(process, "tools/call", "native-subject", reqs[3]["params"])
+            _, raw = _one_response(
+                process, expected_id="native-subject",
+                deadline=deadline, pending=pending,
+            )
+            frames.append(raw)
+            process.stdin.close()
+            process.stdin = None
+            remaining = max(0.001, deadline - time.monotonic())
+            out_tail, _ = process.communicate(timeout=remaining)
+            if process.returncode != 0 or pending.strip() or out_tail.strip():
+                raise ValueError("native-mcp-live-extra-or-unqualified-response")
+            output = b"\n".join(frames) + b"\n"
+            if not 0 < len(output) <= MAX_RESPONSE:
+                raise ValueError("native-mcp-live-stdio-contract-unqualified")
         except (OSError, subprocess.SubprocessError) as exc:
             raise ValueError("native-mcp-live-executable-unavailable") from exc
-    if run.returncode != 0 or not 0 < len(run.stdout) <= MAX_RESPONSE:
-        raise ValueError("native-mcp-live-stdio-contract-unqualified")
+        finally:
+            if process is not None and process.poll() is None:
+                process.kill()
+                process.wait()
     try:
-        rows = [json.loads(line) for line in run.stdout.splitlines()]
+        rows = [json.loads(line) for line in output.splitlines()]
     except (ValueError, UnicodeError) as exc:
         raise ValueError("native-mcp-live-stdio-output-invalid") from exc
     # A dictionary comprehension would silently discard duplicate IDs,
@@ -160,7 +216,7 @@ def smoke_real_native_mcp(
         "mcp_tool": tool_name,
         "mcp_stdio_source_and_treatment_qualified": True,
         "actual_external_hashmarks_subprocess_called": True,
-        "observed_stdio_sha256": hashlib.sha256(run.stdout).hexdigest(),
+        "observed_stdio_sha256": hashlib.sha256(output).hexdigest(),
         "model_requests_performed": 0,
         "sandbox_isolation_proven": False,
         "provider_evidence_delivery_proven": False,

@@ -211,7 +211,6 @@ class BridgeState:
         self.catalog_request_id: object | None = None
         self.initialized_server_version: str | None = None
         self.catalog_tools: dict[str, dict[str, Any]] | None = None
-        self.subject_arguments: dict[str, Any] | None = None
 
     def receive_request(self, frame: bytes) -> bytes:
         if not isinstance(frame, bytes) or not 0 < len(frame) <= MAX_FRAME:
@@ -246,8 +245,12 @@ class BridgeState:
                 raise ValueError("native-mcp-catalog-request-outside-initialization")
             self.catalog_request_id = request_id
         if method == "tools/call":
-            if self.initialize_request_id is None or self.catalog_request_id is None:
-                raise ValueError("native-mcp-subject-before-catalog-request")
+            # E285: both real server and real catalog must already be
+            # *validated*. Issued but unfinished JSON-RPC requests are
+            # never authorization to perform native repository work.
+            if (self.initialized_server_version is None
+                    or self.catalog_tools is None):
+                raise ValueError("native-mcp-subject-before-verified-catalog")
             if self.subject_calls != 0 or self.pending is not None:
                 raise ValueError("native-mcp-extra-subject-call-denied")
             params = message.get("params")
@@ -256,10 +259,16 @@ class BridgeState:
                     or not isinstance(params.get("arguments"), dict)
                     or len(canonical(params["arguments"])) > 16_384):
                 raise ValueError("native-mcp-foreign-or-unbounded-tool-call")
+            tool = self.catalog_tools.get(params["name"])
+            if tool is None:
+                raise ValueError("native-mcp-original-subject-not-listed")
+            # E286: the schema shape decision belongs to pre-dispatch
+            # admission, never after Hashmarks has already executed.
+            # Full JSON Schema semantics remain Hashmarks' authority.
+            _validate_call_input(tool, params["arguments"])
             self.pending = _id(message)
             self.subject_calls = 1
             self.subject_tool = params["name"]
-            self.subject_arguments = dict(params["arguments"])
         if token is not None:
             self.seen_ids.add(token)
             self.inflight[token] = method
@@ -329,12 +338,10 @@ class BridgeState:
             return frame
         if (self.catalog_tools is None
                 or self.subject_tool not in self.catalog_tools
-                or self.initialized_server_version is None
-                or self.subject_arguments is None):
+                or self.initialized_server_version is None):
             raise ValueError("native-mcp-original-subject-not-listed")
-        _validate_call_input(
-            self.catalog_tools[self.subject_tool], self.subject_arguments,
-        )
+        # The original native response still needs exact source proof,
+        # but the argument admission occurred once before subprocess work.
         if "error" in response or not isinstance(response.get("result"), dict):
             raise ValueError("native-mcp-original-hashmarks-call-failed")
         result = response["result"]
