@@ -13,7 +13,7 @@
         "anchors": [
           {
             "path": "import_owner.py",
-            "line": 10,
+            "line": 12,
             "quote": "if precise and module == \"pathlib\":"
           },
           {
