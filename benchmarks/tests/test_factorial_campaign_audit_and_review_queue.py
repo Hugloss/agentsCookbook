@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import copy
+import json
+import json
 import unittest
 from pathlib import Path
 
@@ -163,9 +165,16 @@ class IndependentReviewQueue(unittest.TestCase):
         result = build_repo_review_queue(root)
         self.assertEqual(result["multidomain_cases_total"], 60)
         self.assertEqual(result["multidomain_review_required"], 60)
-        skill_files = tuple((root / "skills").glob("*/SKILL.md"))
-        self.assertTrue((root / "skills/canonical-consumer-contract-review/SKILL.md").is_file())
-        self.assertEqual(result["skills_total"], len(skill_files))
+        skill_cases = json.loads(
+            (root / "evals/sharp-skill-cases.json").read_text(encoding="utf-8")
+        )["cases"]
+        evaluated_skills = {case["skill"] for case in skill_cases}
+        self.assertIn("canonical-consumer-contract-review", evaluated_skills)
+        self.assertTrue(all(
+            (root / "skills" / name / "SKILL.md").is_file()
+            for name in evaluated_skills
+        ))
+        self.assertEqual(result["skills_total"], len(evaluated_skills))
         self.assertEqual(result["skills_missing_confusion"], 54)
         self.assertFalse(result["independent_review_completed"])
         self.assertTrue(all(
