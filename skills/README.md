@@ -80,6 +80,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 
 - `authority-escalation-review` — Find derived evidence that gains stronger authority without new qualifying proof.
 - `semantic-redecision-review` — Find the same semantic answer being independently decided twice.
+- `canonical-consumer-contract-review` — Find consumers that silently break when a canonical owner legitimately refines its result classifications.
 - `single-source-of-truth-review` — Find one semantic truth whose authoritative owner changes across paths, callers, phases, or producers.
 - `durable-commit-path-review` — Find one durable transition committing through multiple paths.
 - `resolved-fact-regression-review` — Find downstream code falling back from resolved facts to raw inputs.
