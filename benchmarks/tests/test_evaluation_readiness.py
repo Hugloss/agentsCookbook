@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
@@ -15,9 +16,16 @@ class EvaluationReadinessTests(unittest.TestCase):
         self.assertFalse(result["evaluation_claim_qualified"])
         self.assertEqual(result["multidomain"]["cases"], 60)
         self.assertEqual(result["qualification_blockers"]["unreviewed_multidomain_cases"], 60)
-        skill_files = tuple((root / "skills").glob("*/SKILL.md"))
-        self.assertTrue((root / "skills/canonical-consumer-contract-review/SKILL.md").is_file())
-        self.assertEqual(result["skill_corpus"]["skills"], len(skill_files))
+        skill_cases = json.loads(
+            (root / "evals/sharp-skill-cases.json").read_text(encoding="utf-8")
+        )["cases"]
+        evaluated_skills = {case["skill"] for case in skill_cases}
+        self.assertIn("canonical-consumer-contract-review", evaluated_skills)
+        self.assertTrue(all(
+            (root / "skills" / name / "SKILL.md").is_file()
+            for name in evaluated_skills
+        ))
+        self.assertEqual(result["skill_corpus"]["skills"], len(evaluated_skills))
         self.assertEqual(result["qualification_blockers"]["skills_without_confusion_case"], 54)
         self.assertEqual(result["qualification_blockers"]["fixture_positive_without_pinned_anchor"], 0)
         self.assertFalse(result["qualification_blockers"]["host_model_input_delivery_attested"])
