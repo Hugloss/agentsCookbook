@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import unittest
 from pathlib import Path
 
@@ -159,10 +160,20 @@ class ExactFactorialCampaignCoverage(unittest.TestCase):
 
 class IndependentReviewQueue(unittest.TestCase):
     def test_current_frozen_corpora_are_only_actionable_queues(self) -> None:
-        result = build_repo_review_queue(Path(__file__).resolve().parents[2])
+        root = Path(__file__).resolve().parents[2]
+        result = build_repo_review_queue(root)
         self.assertEqual(result["multidomain_cases_total"], 60)
         self.assertEqual(result["multidomain_review_required"], 60)
-        self.assertEqual(result["skills_total"], 66)
+        skill_cases = json.loads(
+            (root / "evals/sharp-skill-cases.json").read_text(encoding="utf-8")
+        )["cases"]
+        evaluated_skills = {case["skill"] for case in skill_cases}
+        self.assertIn("canonical-consumer-contract-review", evaluated_skills)
+        self.assertTrue(all(
+            (root / "skills" / name / "SKILL.md").is_file()
+            for name in evaluated_skills
+        ))
+        self.assertEqual(result["skills_total"], len(evaluated_skills))
         self.assertEqual(result["skills_missing_confusion"], 54)
         self.assertFalse(result["independent_review_completed"])
         self.assertTrue(all(

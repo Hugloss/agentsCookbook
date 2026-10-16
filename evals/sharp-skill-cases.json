@@ -2,6 +2,48 @@
   "schema_version": 1,
   "cases": [
     {
+      "id": "canonical-consumer-contract-positive",
+      "skill": "canonical-consumer-contract-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "fixture": "evals/fixtures/canonical-consumer-contract",
+      "scenario": "Trace the canonical import owner into the filesystem observation consumer. For the same pathlib import, the owner improves classification from unknown to module(pathlib), which is permitted, but the consumer stops detecting the relevant filesystem import. Establish the paired outcome and whether the consumer depends on an accidental historical unknown result rather than the owner contract.",
+      "evidence_contract": {
+        "status": "pinned-fixture-anchor",
+        "anchors": [
+          {
+            "path": "import_owner.py",
+            "line": 12,
+            "quote": "if precise and module == \"pathlib\":"
+          },
+          {
+            "path": "filesystem_consumer.py",
+            "line": 7,
+            "quote": "if binding.kind != \"unknown\":"
+          },
+          {
+            "path": "filesystem_consumer.py",
+            "line": 10,
+            "quote": "return module == \"pathlib\""
+          }
+        ]
+      }
+    },
+    {
+      "id": "canonical-consumer-contract-control",
+      "skill": "canonical-consumer-contract-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The canonical import owner returns explicit Module(pathlib) or Unknown with documented meanings. The filesystem consumer observes recognized filesystem operations only for proven Module(pathlib), preserves explicit uncertainty for Unknown, and its behavior was checked under old and refined owner output variants. No independent observation is silently lost."
+    },
+    {
+      "id": "canonical-consumer-contract-confusion",
+      "skill": "canonical-consumer-contract-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "Two independent modules parse the same import syntax and agree on present results; this may be a single-source-of-truth or semantic-redecision defect, but no evidence establishes a historical/allowed refined owner result that causes consumer behavior to violate an independent obligation. Decide only whether the canonical-consumer-contract-review failure class has been proven."
+    },
+    {
       "id": "stale-work-race-positive",
       "skill": "stale-work-race-review",
       "kind": "positive",
@@ -102,7 +144,7 @@
       "kind": "positive",
       "expected": "FINDING",
       "fixture": "evals/fixtures/semantic-authority",
-      "scenario": "The API layer and worker layer both decide the same can-run policy from the same raw configuration. There is no documented distinction between the two decisions.",
+      "scenario": "Public admission is the only accepted authority for can-run. An API helper and a separate worker diagnostic both receive the same raw configuration and independently compute the identical can-run boolean for reachable API output and worker warning paths. The diagnostic does not grant admission or override its result. No previously resolved value is discarded across a downstream boundary. Identify the repeated semantic interpretation, not split authoritative producers.",
       "evidence_contract": {
         "status": "pinned-fixture-anchor",
         "anchors": [
@@ -1388,6 +1430,27 @@
       "kind": "confusion",
       "expected": "CLEAN",
       "scenario": "The requirements explicitly define request-scoped temporary-directory ownership, child-process completion, cleanup ordering, and crash recovery. The implementation nevertheless deletes the directory in the request handler while a spawned child still reads it. Determine whether this requirements-closure skill should report the implementation defect as its own finding."
+    },
+    {
+      "id": "single-source-of-truth-confusion-consumer-contract",
+      "skill": "single-source-of-truth-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "One canonical import owner legitimately refines an ordinary pathlib import from Unknown to Module(pathlib). One filesystem consumer used to recognize that import only while it was Unknown, so an observation disappears. There is still exactly one producer of authoritative import bindings and no path independently establishes a competing binding. Review solely for split accepted semantic authority."
+    },
+    {
+      "id": "semantic-redecision-confusion-resolved-backtrack",
+      "skill": "semantic-redecision-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "Admission resolves a stable repository identity and passes that value alongside the raw path to execution. Execution ignores the available resolved result and recomputes the identity from the raw path. This is specifically backward crossing of an available resolved-result boundary; report under resolved-fact-regression-review, not a separate semantic-redecision repair."
+    },
+    {
+      "id": "resolved-fact-regression-confusion-owner-refinement",
+      "skill": "resolved-fact-regression-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "The canonical import owner refines a binding from Unknown to Module(pathlib). Its consumer receives and branches on the refined binding directly but incorrectly requires kind=Unknown before reporting a filesystem observation. No resolved fact is discarded or recreated from raw inputs; the defect belongs to canonical-consumer-contract-review."
     }
   ]
 }
