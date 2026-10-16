@@ -24,6 +24,7 @@ Trace important production paths and hunt strong signals:
 - one semantic truth whose authoritative owner changes by caller, outer workflow, entrypoint, lifecycle phase, or independent producer;
 - multiple durable commit paths;
 - resolved facts reconstructed from raw inputs;
+- consumers whose existing observations silently disappear when a canonical semantic owner refines a result from unknown/default to a more precise classification;
 - competing state authorities;
 - invalid state combinations;
 - named/legacy identities, exception sets, compatibility aliases, or fallback recognition that grant behavior not justified by a current semantic owner/consumer;
