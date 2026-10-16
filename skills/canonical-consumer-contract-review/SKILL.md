@@ -1,6 +1,6 @@
 ---
 name: canonical-consumer-contract-review
-description: Finds consumers whose behavior breaks when a canonical semantic owner legitimately refines its result, because they depend on undocumented classifications, sentinels, or implementation details.
+description: Finds consumers that silently lose required behavior when a canonical owner's semantic result becomes more precise.
 license: MIT
 ---
 
