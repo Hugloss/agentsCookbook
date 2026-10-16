@@ -2,6 +2,48 @@
   "schema_version": 1,
   "cases": [
     {
+      "id": "canonical-consumer-contract-positive",
+      "skill": "canonical-consumer-contract-review",
+      "kind": "positive",
+      "expected": "FINDING",
+      "fixture": "evals/fixtures/canonical-consumer-contract",
+      "scenario": "Trace the canonical import owner into the filesystem observation consumer. For the same pathlib import, the owner improves classification from unknown to module(pathlib), which is permitted, but the consumer stops detecting the relevant filesystem import. Establish the paired outcome and whether the consumer depends on an accidental historical unknown result rather than the owner contract.",
+      "evidence_contract": {
+        "status": "pinned-fixture-anchor",
+        "anchors": [
+          {
+            "path": "import_owner.py",
+            "line": 10,
+            "quote": "if precise and module == \"pathlib\":"
+          },
+          {
+            "path": "filesystem_consumer.py",
+            "line": 7,
+            "quote": "if binding.kind != \"unknown\":"
+          },
+          {
+            "path": "filesystem_consumer.py",
+            "line": 10,
+            "quote": "return module == \"pathlib\""
+          }
+        ]
+      }
+    },
+    {
+      "id": "canonical-consumer-contract-control",
+      "skill": "canonical-consumer-contract-review",
+      "kind": "control",
+      "expected": "CLEAN",
+      "scenario": "The canonical import owner returns explicit Module(pathlib) or Unknown with documented meanings. The filesystem consumer observes recognized filesystem operations only for proven Module(pathlib), preserves explicit uncertainty for Unknown, and its behavior was checked under old and refined owner output variants. No independent observation is silently lost."
+    },
+    {
+      "id": "canonical-consumer-contract-confusion",
+      "skill": "canonical-consumer-contract-review",
+      "kind": "confusion",
+      "expected": "CLEAN",
+      "scenario": "Two independent modules parse the same import syntax and agree on present results; this may be a single-source-of-truth or semantic-redecision defect, but no evidence establishes a historical/allowed refined owner result that causes consumer behavior to violate an independent obligation. Decide only whether the canonical-consumer-contract-review failure class has been proven."
+    },
+    {
       "id": "stale-work-race-positive",
       "skill": "stale-work-race-review",
       "kind": "positive",
