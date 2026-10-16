@@ -58,7 +58,7 @@ Do not report:
 - `static-evidence-overclaim-review` — an analyzer claims exact evidence it cannot prove.
 - `test-contract-coupling-review` — tests freeze internal choreography rather than meaningful behavior.
 
-Use **this** skill when a canonical owner is identifiable but a *consumer relies on historical or accidental owner-result behavior*, and a legitimate owner refinement exposes the dependency.
+Use **this** skill when a canonical owner is identifiable but a *consumer relies on historical or accidental owner-result behavior*, and a legitimate owner refinement exposes the dependency. If independent accepted authority or backward re-resolution is also proven, report that under its narrower owner; attach this consumer regression as a consequence rather than requesting two competing repairs.
 
 ## PREFER
 
