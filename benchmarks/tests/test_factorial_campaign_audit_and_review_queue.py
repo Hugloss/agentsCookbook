@@ -159,10 +159,13 @@ class ExactFactorialCampaignCoverage(unittest.TestCase):
 
 class IndependentReviewQueue(unittest.TestCase):
     def test_current_frozen_corpora_are_only_actionable_queues(self) -> None:
-        result = build_repo_review_queue(Path(__file__).resolve().parents[2])
+        root = Path(__file__).resolve().parents[2]
+        result = build_repo_review_queue(root)
         self.assertEqual(result["multidomain_cases_total"], 60)
         self.assertEqual(result["multidomain_review_required"], 60)
-        self.assertEqual(result["skills_total"], 66)
+        skill_files = tuple((root / "skills").glob("*/SKILL.md"))
+        self.assertTrue((root / "skills/canonical-consumer-contract-review/SKILL.md").is_file())
+        self.assertEqual(result["skills_total"], len(skill_files))
         self.assertEqual(result["skills_missing_confusion"], 54)
         self.assertFalse(result["independent_review_completed"])
         self.assertTrue(all(
