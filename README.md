@@ -8,11 +8,11 @@ The library works with **OpenCode, Pi, or another compatible agent runtime**. Th
 
 > The goal is not to make the agent sound more confident. The goal is to make it inspect the repository, find the right thing to investigate, prove what is actually wrong, and prefer the smallest correction that removes the problem.
 
-## Agent Economics: import or pin it
+## Benchmarks and Agent Economics
 
-Agent Economics is a first-class standalone Python package inside this repository. Other repositories can import it directly by placing `scripts` on `PYTHONPATH`, or pin an exact agentsCookbook commit with `scripts/bootstrap-agent-economics.sh`. Repository-specific wrappers are not required for normal probes; keep adapters only for repository-owned parity or schema translation.
+Benchmark execution, evaluation corpora, and the Agent Economics support toolkit now live in **[EvalShot](https://github.com/Hugloss/EvalShot)**. EvalShot owns their runners, tests, configuration, and documentation. This repository owns the canonical skills, agent prompts, flows, protocols, and OpenCode/Pi adapters.
 
-See [scripts/agent_economics/README.md](scripts/agent_economics/README.md) for the import API, exact bootstrap contract, CLI examples, evidence boundaries, and probe catalog.
+Use the cookbook directly for prompts and runtime installation. To evaluate those prompts, point EvalShot at the cookbook checkout you want to test; the skills remain here as one canonical source. See [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md) and [Agent Economics documentation](https://github.com/Hugloss/EvalShot/blob/main/scripts/agent_economics/README.md).
 
 ## 30-second setup
 
@@ -95,7 +95,7 @@ This repository intentionally does not own your execution environment.
 
 Agents Cookbook remains a **prompt library at its core**, not a model server, sandbox, repository indexer, workflow engine, or autonomous orchestration framework. OpenCode, Pi, or another host owns model execution, source edits, permissions, and isolation.
 
-The optional `scripts/agent_economics/` package is a deliberately narrower exception: a stdlib-only **capability helper** for hosts such as ChatGPT that need deterministic repository evidence or bounded execution of repository-declared verification commands. Task continuity uses a plain, disposable working-evidence file rather than a database or hidden state service; reusable repository intelligence should remain with Hashmarks (or another repository-intelligence provider) rather than being copied into that file. It is not an autonomous agent. It never chooses or performs source repairs, installs dependencies, interprets arbitrary shell strings, claims CI/certification authority, or claims sandbox/network isolation that the host did not enforce.
+Evaluation infrastructure and optional execution/evidence helpers belong to [EvalShot](https://github.com/Hugloss/EvalShot). Installing and using this prompt library does not require that tooling.
 
 ## The repository-improvement chain
 
@@ -229,11 +229,11 @@ For runtime qualification and the local 98,304-token context profile, see [`docs
 
 A prompt loading successfully proves almost nothing about its quality.
 
-`evals/` focuses on **discrimination**: can the skill find its own failure class while rejecting safe cases and neighboring failure classes?
+The [evaluation corpus in EvalShot](https://github.com/Hugloss/EvalShot/tree/main/evals) focuses on **discrimination**: can the skill find its own failure class while rejecting safe cases and neighboring failure classes?
 
-The cookbook supplies the prompt and evaluation contract. The host runtime owns actual model execution, sandboxing, tool access, and repository materialization.
+The cookbook supplies the canonical prompt. EvalShot owns the evaluation contract and benchmark execution. The host runtime owns actual model execution, sandboxing, tool access, and repository materialization.
 
-See [`evals/README.md`](evals/README.md) and [`evals/sharp-skill-discrimination.md`](evals/sharp-skill-discrimination.md).
+See [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md) and [sharp skill discrimination contract](https://github.com/Hugloss/EvalShot/blob/main/evals/sharp-skill-discrimination.md). Cookbook CI checks the canonical sources and adapters; behavioral evaluation runs through EvalShot against an explicitly selected cookbook checkout.
 
 ## Repository layout
 
@@ -243,8 +243,7 @@ agents/       thin role and coordinator prompts
 flows/        optional composition recipes
 protocols/    portable evidence/context/output conventions
 adapters/     OpenCode/Pi integration
-scripts/      install/validation helpers + optional agent_economics capability bridge
-evals/        prompt-quality and discrimination cases
+scripts/      prompt installation, validation, and artifact helpers
 docs/         architecture and usage documentation
 ```
 
@@ -263,12 +262,12 @@ Agents Cookbook owns:
 The host owns:
 
 - model execution and context management;
-- model/tool execution and permissions outside the explicit named-command capability bridge;
-- filesystem/process/network isolation; the capability bridge reports these boundaries but does not invent them;
+- model/tool execution and permissions;
+- filesystem/process/network isolation;
 - delegation and session lifecycle;
 - persistence and runtime state.
 
-That boundary is intentional. The useful thing in this repository should remain the **prompts**. Agent Economics may define a small file-oriented task-state contract (`task`, `known`, `decisions`, `remaining`), but it must not grow a repository graph, ownership graph, verification cache, or persistent evidence database.
+That boundary is intentional. The useful thing in this repository should remain the **prompts**. Evaluation methodology can remain a reusable skill here while the executable evaluation infrastructure stays in EvalShot.
 
 ## Contributing and security
 
@@ -277,34 +276,6 @@ Contributions are welcome when they sharpen a distinct prompt boundary, add a mi
 Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before proposing a new skill. Security-sensitive issues in installer/adapter code should follow [`SECURITY.md`](SECURITY.md) rather than posting exploit details publicly.
 
 The repository is licensed under the [`MIT License`](LICENSE).
-
-## Agent Economics: repository evidence before another agent turn
-
-The optional Agent Economics package is for coding-agent environments where repository context and verification are expensive. It gives the host a small set of deterministic, bounded helpers instead of asking the model to repeatedly rediscover the same repository facts.
-
-Current capabilities include:
-
-| Need | Command | What it provides |
-| --- | --- | --- |
-| find likely refactor/test ownership | `refactor-focus` | confirmed/supporting/candidate evidence with explicit authority |
-| choose a bounded context set | `context-focus` | ranked repository evidence under file/line/byte/token budgets |
-| choose verification scope | `test-focus` | direct → affected → repository verification suggestions |
-| inspect reverse impact | `change-impact` | bounded static dependents and explicit uncertainty |
-| inspect historical coupling | `coupling-focus` | bounded Git co-change correlation, never dependency authority |
-| find investigation hotspots | `hotspot-focus` | visible size/branch/fan/churn/ownership dimensions, no opaque score |
-| measure analyzer debt | `quality-debt` | bounded Ruff-derived debt and comparable baseline evidence |
-| `refactor-locality` | pre/post navigation, file, symbol, edit, evidence, and forwarding locality without a composite score |
-| inspect local execution capability | `capabilities` | honest host/Git/process/isolation capability facts |
-| execute an authorized check | `run-command` | argv-only repository command with cwd/time/output/mutation bounds |
-| escalate local verification | `qualify-local` | focused → affected → component → repository receipts |
-| compare agent economics | `benchmark-outcomes` | paired baseline/bridge measurements without automatic promotion |
-| freeze dogfood tasks | `dogfood-corpus` | stable adversarial task identities and experiment protocol |
-
-A useful host loop is: **inspect → select evidence → edit in the host → run the smallest authorized verification → escalate only when justified**. For structural cleanup, size/branch/complexity evidence selects an investigation target only. Before decomposing, compare explicit refactor-locality evidence; a smaller entry point is not architectural improvement proof if it increases file fan-out, forwarding layers, navigation depth, edit surface, or evidence surface. Agent Economics owns the evidence and bounded command receipt; the coding agent still owns reasoning and edits.
-
-## Optional Agent Economics capability bridge
-
-The capability bridge requires **Python 3.11+** and only runs commands selected from an explicit repository TOML manifest. Selecting a manifest is an authorization decision: those commands execute with the host process's filesystem, environment, and network authority unless the host separately isolates them. The bridge adds cwd containment, hard time/output bounds, tracked-byte mutation checks, structured failure evidence, no-progress budgets, and staged local qualification; it is **not a security sandbox**. See [`scripts/agent_economics/README.md`](scripts/agent_economics/README.md) and [`docs/agent-economics-probes.md`](docs/agent-economics-probes.md).
 
 ## Documentation
 
@@ -315,12 +286,9 @@ The capability bridge requires **Python 3.11+** and only runs commands selected 
 - [Local runtime qualification](docs/local-runtime-qualification.md)
 - [Context budget](protocols/context-budget.md)
 - [Run artifacts](protocols/run-artifacts.md)
-- [Evaluation guidance](evals/README.md)
-- [Sharp skill discrimination](evals/sharp-skill-discrimination.md)
+- [Evaluation guidance in EvalShot](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md)
+- [Sharp skill discrimination in EvalShot](https://github.com/Hugloss/EvalShot/blob/main/evals/sharp-skill-discrimination.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 - [Non-technical walkthrough](docs/non-technical-walkthrough.md)
-- [Agent Economics guide](docs/agent-economics-probes.md)
-- [Working evidence](docs/working-evidence.md)
-- [Agent Economics real-agent dogfood gate](docs/agent-economics-dogfood.md)
-- [Agent Economics hardening phases](docs/agent-economics-probe-phases.md)
+- [Agent Economics guide in EvalShot](https://github.com/Hugloss/EvalShot/blob/main/scripts/agent_economics/README.md)

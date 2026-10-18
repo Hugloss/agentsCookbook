@@ -111,7 +111,6 @@ pass review_artifact_export
 
 for script in "$repo_root"/scripts/*.sh; do bash -n "$script"; done
 node --check "$repo_root/scripts/check-pi-session.js"
-node --check "$repo_root/scripts/run-opencode-benchmarks.js"
 node --check "$repo_root/scripts/export-review-artifacts.js"
 node --check "$repo_root/adapters/opencode/review-artifact.js"
 node --check "$repo_root/adapters/pi/index.js"

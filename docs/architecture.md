@@ -92,28 +92,15 @@ The run-store checker validates exact reviewer sets, receipt identity, hashes, o
 
 ## Mandatory versus installable capabilities
 
-The repository currently installs 12 agents and 75 skills. Nine reviewer agents are mandatory in the Ping-Pong/Ping-Ping full-review gate. Additional standalone agents and skills do not automatically enlarge that gate.
+The repository currently installs 12 agents and the skills listed in the [canonical catalog](../skills/README.md). Nine reviewer agents are mandatory in the Ping-Pong/Ping-Ping full-review gate. Additional standalone agents and skills do not automatically enlarge that gate.
 
 This distinction prevents new capabilities from silently changing established workflow cost or semantics.
 
 
-## Optional Agent Economics capability helper
+## Evaluation and support tooling
 
-`scripts/agent_economics/` is an optional host capability bridge, not another agent layer. It exists for coding-agent environments that have repository bytes but lack convenient local analysis or verification tooling.
+[EvalShot](https://github.com/Hugloss/EvalShot) owns benchmark execution, evaluation corpora, and the complete Agent Economics support toolkit. The toolkit and its bounded process implementation stay together with their tests and documentation.
 
-```text
-coding agent -> reasoning + source edits
-             -> Agent Economics -> bounded evidence / named verification commands
-             -> repository tools
-CI/CD        -> independent final qualification
-```
+Agents Cookbook remains the canonical owner of skills, agents, flows, protocols, and OpenCode/Pi adapters. EvalShot evaluates an explicitly selected cookbook checkout and loads its skill sources and adapter helpers from that checkout. Benchmark runners and evaluation fixtures are maintained in EvalShot rather than copied into runtime adapters.
 
-Ownership is deliberately split:
-
-- the coding agent owns reasoning and edits;
-- Agent Economics owns deterministic evidence, declared-command execution bounds, mutation observation, failure classification, and local-verification receipts;
-- the repository manifest names the commands a user/host is willing to execute;
-- the host owns filesystem/process/network isolation and credentials;
-- CI/CD retains independent qualification authority.
-
-The bridge never converts a focused pass into repository-wide authority, never auto-installs dependencies, and never treats optional Hashmarks-style intelligence as mandatory. It requires Python 3.11+.
+Cookbook installation and structural validation operate independently of EvalShot. The host still owns model execution, permissions, isolation, and credentials. See [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md) for the evaluation contract and [Agent Economics documentation](https://github.com/Hugloss/EvalShot/blob/main/scripts/agent_economics/README.md) for optional evidence and verification helpers.

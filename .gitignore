@@ -5,9 +5,10 @@
 !.planning/
 !.planning/phases/
 artifacts/
-# Runtime artifacts
+# Runtime artifacts, including historical local benchmark runs
 .artifacts/**
 .benchmark-runs/
+.runs/
 src/app/data/runtime/
 src/app/data/schedule_runs/
 opencode.json
