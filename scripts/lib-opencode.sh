@@ -24,16 +24,18 @@ AC_STANDALONE_AGENT_FILES=""
 
 AC_AGENT_FILES="$AC_PRIMARY_AGENT_FILES$AC_FLOW_REVIEWER_AGENT_FILES$AC_STANDALONE_AGENT_FILES"
 
+# Reviewer-to-skill mapping only. Model aliases belong to the agent
+# wrappers and may be replaced by the user's host/provider configuration.
 AC_FLOW_REVIEWER_SKILL_MAP="
-plan-improver-model2 plan-gap-scout liteLLM/gpt-oss
-plan-improver-model3 alternative-route-challenge liteLLM/gpt-oss
-plan-validation-designer validation-gap-finder liteLLM/gpt-oss
-plan-coverage-reviewer coverage-design-review liteLLM/gpt-oss
-plan-red-team-gate red-team-leftover-gate liteLLM/gpt-oss
-plan-implementation-simulator implementation-dry-run liteLLM/gpt-oss
-plan-fact-auditor fact-grounding-auditor liteLLM/gemma4
-code-performance-optimization-auditor code-performance-optimization-audit liteLLM/devstral
-plan-contract-checker plan-contract-guard liteLLM/gemma4
+plan-improver-model2 plan-gap-scout
+plan-improver-model3 alternative-route-challenge
+plan-validation-designer validation-gap-finder
+plan-coverage-reviewer coverage-design-review
+plan-red-team-gate red-team-leftover-gate
+plan-implementation-simulator implementation-dry-run
+plan-fact-auditor fact-grounding-auditor
+code-performance-optimization-auditor code-performance-optimization-audit
+plan-contract-checker plan-contract-guard
 "
 
 AC_STANDALONE_AGENT_SKILL_MAP=""

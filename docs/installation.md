@@ -84,7 +84,7 @@ Until the project publishes a formal release/backport policy, `main` should be t
 
 The `skills/` library does not require a particular model provider.
 
-Some files under `agents/` include repository-owner deployment aliases such as `liteLLM/gemma4`, `liteLLM/gpt-oss`, or `liteLLM/devstral`. These are example/default wrapper configuration, not requirements of the underlying methodology. Adapt or override them for your runtime.
+Some files under `agents/` include repository-owner deployment aliases such as `liteLLM/gemma4`, `liteLLM/gpt-oss`, or `liteLLM/devstral`. These are example/default wrapper configuration, not requirements of the underlying methodology. Configure the provider/model in OpenCode or Pi, or adapt/remove the wrapper's `model:` field for that host. Cookbook preflight verifies reviewer identity, skill and permissions, **not** which model alias is chosen.
 
 ## Validation
 

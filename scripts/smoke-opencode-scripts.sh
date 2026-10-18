@@ -123,6 +123,19 @@ expected_skill_count="$(printf '%s\n' $AC_SKILL_NAMES | sed '/^$/d' | wc -l)"
 printf '%s\n' $AC_FLOW_REVIEWER_AGENT_FILES | grep -qx 'code-performance-optimization-auditor.md' || fail performance_reviewer_missing_from_flow_gate
 pass registry_boundaries
 
+# The reviewer-to-skill map has no model authority: operators can configure
+# each reviewer model in the selected host without changing this registry.
+while read -r reviewer skill extra; do
+  [ -n "$reviewer" ] || continue
+  [ -n "$skill" ] && [ -z "$extra" ] || fail reviewer_skill_map_contains_model_alias
+done <<EOF
+$AC_FLOW_REVIEWER_SKILL_MAP
+EOF
+if grep -Fq '^model: $model$' "$repo_root/scripts/preflight-opencode-ping-pong.sh"; then
+  fail preflight_pins_reviewer_model_alias
+fi
+pass operator_owned_model_selection
+
 for adapter in "$repo_root/adapters/opencode/review-artifact.js" "$repo_root/adapters/pi/review-artifact.js"; do
   grep -Fq 'AGENTS_COOKBOOK_RUN_DIR' "$adapter" || fail artifact_adapter_env "file=$adapter"
   grep -Fq 'flag: "wx"' "$adapter" || fail artifact_adapter_no_overwrite "file=$adapter"

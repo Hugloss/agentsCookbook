@@ -77,13 +77,13 @@ for primary_file in $AC_PRIMARY_AGENT_FILES; do
   if grep -q '^mode: primary$' "$path" && grep -q '^  task:$' "$path" && grep -q '^  review_artifact_read: allow$' "$path" && grep -Fq 'OpenCode: `task({' "$path" && grep -Fq 'Pi + `pi-open-agents`: `subagent({' "$path"; then pass "source_primary_$name" "runtime_adapter=present artifact_read=allow"; else fail "source_primary_$name" primary_contract_mismatch; fi
 done
 
-while read -r reviewer skill model; do
+while read -r reviewer skill; do
   [ -n "$reviewer" ] || continue; path="$agent_src_dir/$reviewer.md"
-  if [ -f "$path" ] && grep -q '^mode: subagent$' "$path" && grep -q '^maxDepth: 0$' "$path" && grep -q "^model: $model$" "$path" && grep -Fq '  "*": deny' "$path" && grep -Fq "skills: [$skill]" "$path" && grep -q '^  review_artifact: allow$' "$path" && grep -Fq "Load \`$skill\` first" "$path"; then pass "flow_reviewer_$reviewer" "skill=$skill deny_by_default=true artifact_write=bounded"; else fail "flow_reviewer_$reviewer" reviewer_contract_mismatch; fi
+  if [ -f "$path" ] && grep -q '^mode: subagent$' "$path" && grep -q '^maxDepth: 0$' "$path" && grep -Fq '  "*": deny' "$path" && grep -Fq "skills: [$skill]" "$path" && grep -q '^  review_artifact: allow$' "$path" && grep -Fq "Load \`$skill\` first" "$path"; then pass "flow_reviewer_$reviewer" "skill=$skill deny_by_default=true artifact_write=bounded"; else fail "flow_reviewer_$reviewer" reviewer_contract_mismatch; fi
 done <<EOF
 $AC_FLOW_REVIEWER_SKILL_MAP
 EOF
-while read -r reviewer skill model; do
+while read -r reviewer skill; do
   [ -n "$reviewer" ] || continue; path="$agent_src_dir/$reviewer.md"
   if grep -Fq '  "*": deny' "$path" && grep -q '^  review_artifact: allow$' "$path"; then pass "standalone_agent_$reviewer" "deny_by_default=true artifact_write=bounded flow_gate=false"; else fail "standalone_agent_$reviewer" standalone_contract_mismatch; fi
 done <<EOF
