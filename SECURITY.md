@@ -40,10 +40,13 @@ Until tagged releases and a backport policy exist, security fixes target the cur
 OpenCode, Pi, model providers, shells, containers, operating systems, and other external runtimes remain responsible for their own security boundaries. Agents Cookbook does not provide a general sandbox or execution-security layer.
 
 
-## Agent Economics command trust boundary
+## Evaluation tooling and process execution
 
-The optional Agent Economics capability bridge can execute repository-declared commands. **Selecting a command manifest authorizes those argv entries to run.** Treat a manifest from an untrusted repository like other executable repository code.
+Benchmarks, Agent Economics and their bounded command runner are implemented in
+[EvalShot](https://github.com/Hugloss/EvalShot). Their executable-manifest
+authorization, process control, mutation observations and security reporting
+belong to [EvalShot's security policy](https://github.com/Hugloss/EvalShot/blob/main/SECURITY.md).
+This repository does not provide or duplicate their execution bridge.
 
-The bridge reduces accidental authority by using argv arrays rather than shell strings, confining command cwd to the repository, hard-bounding stdout/stderr and wall time, terminating process trees where the platform capability is available, and comparing tracked bytes before/after verification commands. It does not remove environment variables, credentials, filesystem access outside cwd, or network access from the child process. Those remain host/sandbox responsibilities.
-
-Unexpected tracked mutation is a policy failure, not an automatic rollback. Allowed generated/cache paths must be declared explicitly. Capability output reports whether process-tree termination, mutation guarding, network isolation, and sandbox isolation are actually available; unsupported controls must not be inferred from a successful command.
+The cookbook remains responsible for the installation and runtime-adapter
+boundaries listed above.

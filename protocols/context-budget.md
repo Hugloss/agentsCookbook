@@ -1,25 +1,28 @@
-# Local-Model Context Budget
+# Active Context Discipline
 
-The supported local profile assumes a maximum context of 98,304 tokens.
+This protocol belongs to the reusable Agents Cookbook prompts and adapters.
+It specifies **how to use** available context, not the maximum context size
+of a particular model, provider, experiment or host.
 
-This is a ceiling, not a target.
+The runtime/operator selects the model and its available context window.
+The reviewer must stay within that configured limit, reserve space for tools,
+reasoning and completion, and disclose unknown usage rather than claim a
+token-budget qualification it did not measure.
 
-## Operating targets
-
-- model maximum: 98,304
-- normal working target: about 65,536 or less
-- workflow hard target: about 73,728 or less
-- reserve: about 24,576 for tool schemas, evidence variance, reasoning/compaction, and final output
-
-These are design targets rather than tokenizer-independent exact limits. Deterministic gates measure characters/bytes; runtime qualification also measures the actual deployed tokenizer when available.
+Concrete model profiles, numerical ceilings, reserve targets, tokenizer
+measurements and empirical context qualification are owned by
+[EvalShot](https://github.com/Hugloss/EvalShot/blob/main/docs/context-profiles.md).
+They are not installation or preflight prerequisites for using a cookbook
+skill, agent or flow.
 
 ## Description economics
 
-- preferred agent/skill description: <= 120 characters
-- repository maximum: <= 160 characters
-- external OpenCode/Pi compatibility limit remains a ceiling, not a writing target
+- preferred agent/skill description: 120 characters or fewer
+- repository maximum: 160 characters
+- external OpenCode/Pi compatibility limits remain ceilings, not writing targets
 
-Descriptions contain capability + selection trigger only. Procedure belongs in the body.
+Descriptions contain capability and selection trigger only. Procedure
+belongs in the body.
 
 ## Active-context rules
 
@@ -30,4 +33,5 @@ Descriptions contain capability + selection trigger only. Procedure belongs in t
 - explicit unknowns beat guessed context;
 - reserve completion/tool headroom before adding optional evidence.
 
-A run artifact store may preserve detail outside active context, but final synthesis must not reload every artifact indiscriminately.
+A run artifact store may preserve detail outside active context, but final
+synthesis must not reload every artifact indiscriminately.

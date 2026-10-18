@@ -91,7 +91,7 @@ $AC_STANDALONE_AGENT_SKILL_MAP
 EOF
 
 plan_source="$agent_src_dir/ping-pong-plan.md"
-if grep -Fq 'Attempt every reviewer exactly once' "$plan_source" && grep -Fq '98,304' "$plan_source" && grep -Fq 'review_artifact_read' "$plan_source" && grep -Fq 'code-performance-optimization-auditor' "$plan_source"; then pass source_ping_pong_gate "mandatory_reviewers=9 context_98k=true selective_artifact_read=true"; else fail source_ping_pong_gate gate_contract_mismatch; fi
+if grep -Fq 'Attempt every reviewer exactly once' "$plan_source" && grep -Fq 'Reserve headroom for tool calls' "$plan_source" && grep -Fq 'review_artifact_read' "$plan_source" && grep -Fq 'code-performance-optimization-auditor' "$plan_source"; then pass source_ping_pong_gate "mandatory_reviewers=9 context_discipline=true selective_artifact_read=true"; else fail source_ping_pong_gate gate_contract_mismatch; fi
 
 if [ -d "$repo_root/.opencode/agents" ] || [ -d "$repo_root/.agents/skills" ]; then fail canonical_layout legacy_hidden_source_dirs_present; else pass canonical_layout hidden_source_dirs=absent; fi
 

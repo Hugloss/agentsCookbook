@@ -56,7 +56,7 @@ Never call both schemas or invent another wrapper. A review counts only when the
 
 ## Context discipline
 
-The target local-model ceiling is 98,304 tokens. Keep the active working set well below it.
+Keep the active working set below the configured runtime context limit. Reserve headroom for tool calls, evidence variance, and the final response; do not assume one model-specific ceiling.
 
 - Carry the current plan, compact verified facts, unresolved uncertainty, and material accepted/rejected findings.
 - Do not forward whole earlier reviewer reports into later reviews.

@@ -223,7 +223,7 @@ scripts/link-opencode-local.sh
 
 Runtime adapters handle the small integration differences required by those hosts. They are not separate behavioral copies of the prompts.
 
-For runtime qualification and the local 98,304-token context profile, see [`docs/local-runtime-qualification.md`](docs/local-runtime-qualification.md) and [`protocols/context-budget.md`](protocols/context-budget.md).
+For cookbook adapter/session qualification and portable context-use guidance, see [`docs/local-runtime-qualification.md`](docs/local-runtime-qualification.md) and [`protocols/context-budget.md`](protocols/context-budget.md). Concrete model context limits and empirical profile qualification are owned by [EvalShot](https://github.com/Hugloss/EvalShot/blob/main/docs/context-profiles.md).
 
 ## Evaluation
 
