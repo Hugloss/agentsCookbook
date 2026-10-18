@@ -29,7 +29,7 @@ const fs=require("fs");const skill=process.argv[1],artifact=process.argv[2]==="t
   fi
 }
 
-while read -r reviewer skill model; do
+while read -r reviewer skill; do
   [ -n "$reviewer" ] || continue
   check_reviewer "$reviewer" "$skill"
 done <<EOF
