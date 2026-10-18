@@ -14,10 +14,11 @@ requirements. The default reviewer aliases may be mapped to different
 local endpoints that support their required tools and output contracts.
 
 Agents Cookbook owns adapter setup, review-flow behavior and direct host-session
-checks. The operator configures the runtime context window. EvalShot owns
-[concrete context profiles, limits and measurement qualification](https://github.com/Hugloss/EvalShot/blob/main/docs/context-profiles.md).
-No numeric context profile is required to install or preflight the reusable
-cookbook prompts.
+checks. The operator configures the model context window and compaction in the chosen
+model provider/host, where supported. See the [OpenCode provider settings](https://docs.opencode.ai/docs/providers/).
+[EvalShot](https://github.com/Hugloss/EvalShot/blob/main/docs/model-context-observation.md)
+can measure actual context behavior, but neither repository mandates a model-specific
+context size to install, preflight or use reusable prompts.
 
 ## 1. Install and preflight
 
@@ -119,9 +120,9 @@ A runtime/profile is qualified only when the relevant claims below are true:
 - every specialist claimed as qualified passes its positive and control cases;
 - confusion cases pass for the high-overlap skill boundaries being promoted;
 - no context overflow, silent truncation, or model-server rejection occurs;
-- actual context usage, when exposed by the runtime/model server, remains within the configured model and host limits; any numerical target claimed for a tested profile is qualified in EvalShot.
+- observed context usage and compaction, when exposed by the runtime/model server, are recorded against the selected runtime/model configuration; no cookbook token-window threshold is enforced.
 
-If actual token usage cannot be measured, record that limitation. Do not claim that a model-specific context profile is empirically qualified solely from character-count gates.
+If actual token usage cannot be measured, record that limitation. Character-count checks must not be used as proof of token-window compliance.
 
 ## 7. Fallback mode
 
