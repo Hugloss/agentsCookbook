@@ -77,7 +77,7 @@ Before merging a new or materially changed skill, apply `skill-contract-review` 
 1. Add `skills/<skill-name>/SKILL.md`. Canonical skill discovery is derived from `skills/*/SKILL.md`; do not maintain a second manual skill registry.
 2. Add the skill to `skills/README.md` in the narrowest fitting category.
 3. Document overlap boundaries when another skill could plausibly report the same code.
-4. Add or update evaluation evidence when the change affects behavioral discrimination.
+4. Add or update evaluation evidence in [EvalShot](https://github.com/Hugloss/EvalShot/tree/main/evals) when the change affects behavioral discrimination. Link the associated evaluation change or evidence from the skill PR.
 5. Do not add a new agent wrapper or mandatory flow step unless the role itself is distinct and the extra workflow cost is intentional.
 
 ## Agent prompts
@@ -100,27 +100,11 @@ OpenCode, Pi, or another host owns execution, tools, sandboxing, model/session l
 
 Runtime-specific code belongs only where it bridges the prompt library into a supported host. Do not add a second agent execution engine, sandbox, repository database, scheduler, or autonomous framework.
 
-The optional `scripts/agent_economics/` package may execute **explicitly named argv-array verification commands** from its versioned manifest. That narrow capability exists to compensate for missing host tools; it must remain bounded, non-autonomous, source-edit-free, and honest about host isolation. General shell execution, dependency installation, source repair, and replacement CI/certification authority remain out of scope.
+Benchmark runners, evaluation corpora, and the complete Agent Economics support toolkit belong to [EvalShot](https://github.com/Hugloss/EvalShot). Changes to that implementation, its Python runtime, or its benchmark configuration go there. Keep canonical skills and prompt-facing adapters here; EvalShot consumes an explicitly selected cookbook checkout when evaluating them.
 
-## Python runtime
+## Evaluation ownership
 
-Repository-owned Python commands run through uv. Python 3.11 is pinned in `.python-version`.
-
-Use:
-
-```bash
-uv run --no-project python -m <module>
-```
-
-Do not add repository entrypoints, CI steps, or documentation that call `python` or `python3` directly. The current Python utilities are stdlib-only, so do not add a `pyproject.toml` or dependency wrapper merely to launch them.
-
-## Benchmark readiness
-
-Benchmark execution has no implicit agent population. `BENCHMARK_AGENT` must explicitly select one or more native agents in `.env` before Make preflight, execution, reporting, or specialized scoring. Direct `preflight` and `run` CLI calls likewise require `--agent`. `benchmark-check` checks each distinct agent/subject pair in the suite once, including bare conditions, without expanding tasks or seeds; direct `check --agent` can narrow that diagnostic. Never restore an all-agents execution default for preflight or execution; adding a new suite agent must not silently expose another model/provider to a trial.
-
-`make benchmark-check` is a runtime-connectivity check, not trial admission. It may resolve/fingerprint native hosts and subjects, validate the explicit Hashmarks checkout, and check each unique MCP exposure once in a disposable workspace. It must not load task authority, materialize repositories, apply mutations, run oracles, inspect receipts, derive trial identities, invoke a model, or retry automatically.
-
-Use `make benchmark-check-all` when exhaustive frozen-definition preflight is explicitly wanted. `make benchmark` must not invoke either check implicitly.
+Use [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md) for positive/control/confusion cases and model-backed skill evaluation. Use its [benchmark guide](https://github.com/Hugloss/EvalShot/blob/main/benchmarks/README.md) for campaign configuration, readiness, and execution. A prompt loading successfully, a corpus validating, and a model passing the behavioral cases establish different claims; report the evidence actually collected.
 
 ## Validation
 
@@ -128,12 +112,11 @@ Run the repository-owned structural checks before opening a PR:
 
 ```bash
 scripts/check-canonical-sources.sh
-node scripts/run-skill-benchmarks.js --validate-corpus
 scripts/smoke-opencode-scripts.sh
 scripts/smoke-run-artifacts.sh
 ```
 
-The GitHub workflow validates the prompt/adapters and the complete Agent Economics deterministic, adversarial, dogfood-corpus, and bounded stress qualification suite on Ubuntu with uv-managed Python 3.11. The Agent Economics job has a 20-minute outer safety window; individual subprocesses keep their own smaller hard bounds. Real model-backed OpenCode/Pi qualification and empirical baseline-vs-bridge dogfood remain host-environment checks.
+The GitHub workflow validates canonical prompts, adapters, artifact integrity, reviewer authority, and JavaScript/shell syntax on Ubuntu. These checks run without a benchmark checkout or Python environment. EvalShot owns the benchmark and Agent Economics test suites. Real model-backed OpenCode/Pi qualification remains a host-environment check; follow [local runtime qualification](docs/local-runtime-qualification.md) for the applicable evidence.
 
 ## Pull requests
 

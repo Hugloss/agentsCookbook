@@ -17,7 +17,7 @@
 - [ ] False positives / nearby concerns are explicit where relevant.
 - [ ] Existing skill overlap was checked before adding a new skill.
 - [ ] Runtime-specific behavior was not moved into reusable methodology.
-- [ ] No standalone skill was silently added to the mandatory eight-review flow.
+- [ ] No standalone skill was silently added to the mandatory nine-review flow.
 
 ## Public-repo checklist
 
@@ -29,8 +29,7 @@
 ## Validation
 
 - [ ] `scripts/check-canonical-sources.sh`
-- [ ] `node scripts/run-skill-benchmarks.js --validate-corpus`
 - [ ] `scripts/smoke-opencode-scripts.sh`
 - [ ] `scripts/smoke-run-artifacts.sh`
 
-<!-- Add any model-backed or runtime-specific evidence that was actually run. Do not mark skipped validation as passing. -->
+<!-- For behavioral changes, link the associated EvalShot evaluation change or evidence: https://github.com/Hugloss/EvalShot. Add any model-backed or runtime-specific evidence actually run. Do not mark skipped validation as passing. -->

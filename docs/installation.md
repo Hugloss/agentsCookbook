@@ -92,7 +92,6 @@ Structural repository checks:
 
 ```bash
 scripts/check-canonical-sources.sh
-node scripts/run-skill-benchmarks.js --validate-corpus
 scripts/smoke-opencode-scripts.sh
 scripts/smoke-run-artifacts.sh
 ```
@@ -105,3 +104,5 @@ scripts/preflight-pi-ping-pong.sh
 ```
 
 These preflight scripts verify repository/runtime contracts; they do not make general guarantees about your model server, operating system, or third-party host implementation.
+
+Benchmark execution, the behavioral evaluation corpus, and Agent Economics tooling are maintained separately in [EvalShot](https://github.com/Hugloss/EvalShot). They are not prerequisites for installing the cookbook. When evaluating a skill or runtime profile, follow [local runtime qualification](local-runtime-qualification.md) and [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md).

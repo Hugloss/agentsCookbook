@@ -1,6 +1,6 @@
 # Local Runtime Qualification
 
-GitHub CI proves repository structure, adapter safety, deterministic smoke behavior, corpus consistency, and script syntax. It does **not** prove that your installed OpenCode/Pi versions, local model endpoints, tokenizer, 98,304-token serving configuration, or specialist discrimination behave correctly together.
+Cookbook CI proves repository structure, adapter safety, deterministic smoke behavior, and script syntax. [EvalShot](https://github.com/Hugloss/EvalShot) owns corpus validation and executable benchmarks. Neither repository's model-free checks prove that your installed OpenCode/Pi versions, local model endpoints, tokenizer, 98,304-token serving configuration, or specialist discrimination behave correctly together.
 
 Use this as the promotion gate for a real local deployment.
 
@@ -22,14 +22,13 @@ From this repository:
 ```bash
 scripts/link-opencode-local.sh
 scripts/check-canonical-sources.sh
-node scripts/run-skill-benchmarks.js --validate-corpus
 scripts/smoke-opencode-scripts.sh
 scripts/smoke-run-artifacts.sh
 scripts/preflight-opencode-ping-pong.sh
 scripts/preflight-pi-ping-pong.sh
 ```
 
-Do not proceed if a preflight or corpus contract fails. Fix the runtime, installation, skill registry, or evaluation data rather than weakening the gate.
+Do not proceed if a preflight contract fails. Fix the runtime, installation, or canonical sources before claiming the local profile is qualified. Validate the evaluation corpus through EvalShot when performing behavioral qualification in step 5.
 
 ## 2. Use a fresh artifact root per run
 
@@ -66,14 +65,7 @@ scripts/check-opencode-session.sh --scope latest-segment
 scripts/check-run-artifacts.js --run-dir "$AGENTS_COOKBOOK_RUN_DIR"
 ```
 
-For broader regression coverage, run the fixed benchmark suite **without reusing the single-run artifact root**:
-
-```bash
-unset AGENTS_COOKBOOK_RUN_DIR
-scripts/run-opencode-benchmarks.js --suite all --repo "$PWD" --artifacts-dir "$PWD/.runs/benchmarks"
-```
-
-The benchmark runner owns its own evidence directory. A live artifact root must be unique per review run because reviewer artifact IDs are intentionally create-only.
+For broader regression coverage, use the [flow benchmark runner in EvalShot](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md) with an explicit cookbook checkout. Unset `AGENTS_COOKBOOK_RUN_DIR` before that benchmark and use its own evidence directory. A live artifact root must be unique per review run because reviewer artifact IDs are intentionally create-only.
 
 ## 4. Qualify Pi full flow
 
@@ -99,35 +91,9 @@ Pi's subagent wrapper returns the child `result.output` as parent-visible tool t
 
 ## 5. Qualify sharp specialist discrimination
 
-Install/discovery and full-flow success do not prove that a narrow skill keeps its edge. Run the canonical positive/control/confusion corpus against the intended local model profile.
+Install/discovery and full-flow success do not prove that a narrow skill keeps its edge. Run the canonical positive/control/confusion corpus in [EvalShot](https://github.com/Hugloss/EvalShot/tree/main/evals) against the intended local model profile and the exact cookbook checkout being promoted.
 
-Start with a few high-overlap specialists:
-
-```bash
-unset AGENTS_COOKBOOK_RUN_DIR
-node scripts/run-skill-benchmarks.js \
-  --runtime opencode \
-  --skill stale-work-race-review \
-  --skill durable-commit-path-review \
-  --skill retry-idempotency-review \
-  --artifacts-dir "$PWD/.runs/skill-evals"
-
-node scripts/run-skill-benchmarks.js \
-  --runtime pi \
-  --skill stale-work-race-review \
-  --skill durable-commit-path-review \
-  --skill retry-idempotency-review \
-  --artifacts-dir "$PWD/.runs/skill-evals"
-```
-
-Then run the full corpus when promoting a model/profile intended to use all specialists:
-
-```bash
-node scripts/run-skill-benchmarks.js --runtime opencode --all --artifacts-dir "$PWD/.runs/skill-evals"
-node scripts/run-skill-benchmarks.js --runtime pi --all --artifacts-dir "$PWD/.runs/skill-evals"
-```
-
-Use `--model ID` or `SKILL_EVAL_MODEL` when the benchmark should target a specific local endpoint.
+Follow [EvalShot's sharp skill discrimination guide](https://github.com/Hugloss/EvalShot/blob/main/evals/sharp-skill-discrimination.md) for corpus validation, `--cookbook-root` selection, OpenCode/Pi execution, and artifact paths. Start with high-overlap specialists such as `stale-work-race-review`, `durable-commit-path-review`, and `retry-idempotency-review`, then run the full corpus when promoting a profile intended to use all specialists. Keep benchmark artifacts separate from the full-flow artifact roots used above.
 
 A specialist is behaviorally qualified only when its positive cases produce in-scope findings, its control cases stay clean, and its confusion cases refuse neighboring failure classes. The runner requires concise evidence for every verdict and records elapsed time/output size per case.
 
