@@ -80,11 +80,34 @@ For reproducible use, pin the clone to a known commit or tag rather than automat
 
 Until the project publishes a formal release/backport policy, `main` should be treated as active development rather than a long-term compatibility branch.
 
-## Model aliases in agent wrappers
+## Runtime configuration ownership
 
-The `skills/` library does not require a particular model provider.
+Canonical agent files contain role identity, skill bindings, permission boundaries
+and prompt/output contracts. They do **not** set a model, temperature, thinking
+level, context window, or compaction policy. The installer links those files but
+never edits OpenCode/Pi model configuration or synthesizes inference defaults.
 
-Some files under `agents/` include repository-owner deployment aliases such as `liteLLM/gemma4`, `liteLLM/gpt-oss`, or `liteLLM/devstral`. These are example/default wrapper configuration, not requirements of the underlying methodology. Configure the provider/model in OpenCode or Pi, or adapt/remove the wrapper's `model:` field for that host. Cookbook preflight verifies reviewer identity, skill and permissions, **not** which model alias is chosen.
+Use the host's normal configuration resolution: global, project, per-agent and
+explicit command-line settings remain the host's responsibility. In OpenCode,
+configure models and per-agent inference options in your selected
+`opencode.json`/`opencode.jsonc`; in Pi, use its native model selection and
+settings. A missing option means native default behavior, not a cookbook default.
+See [OpenCode configuration](https://opencode.ai/docs/config/) and
+[agent options](https://opencode.ai/docs/agents/).
+
+**Upgrade from older cookbook revisions:** previous wrappers supplied
+`liteLLM/gemma4`, `liteLLM/gpt-oss`, `liteLLM/devstral`, and temperature
+settings. They are no longer selected automatically. To preserve a previous
+experiment, explicitly configure the desired model/options in the host and
+record that configuration with the new campaign. Do not edit historical receipts
+or frozen prompt revisions. Installing this revision does not migrate or rewrite
+user settings.
+
+Read-only roles, skill bindings, delegation limits, and the planning coordinator's
+`systemPrompt: replace` remain unchanged: these define the selected role rather
+than tune inference. Cookbook preflight verifies those role contracts, not a
+particular model. The install regression exercises both untouched custom settings
+(including false/zero values) and absent native configuration.
 
 ## Validation
 
