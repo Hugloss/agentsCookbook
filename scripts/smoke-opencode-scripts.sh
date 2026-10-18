@@ -51,6 +51,16 @@ pass pi_extension_directory_complete
 "$repo_root/scripts/preflight-opencode-ping-pong.sh" --quick --global-dir "$global_dir" --shared-skill-dir "$skills_dir" "$target_dir" >/dev/null
 pass opencode_quick_preflight
 
+# Regression: portable prompts cannot require a fixed model context window.
+# The runtime/provider owns its window, not this repository's review preflight.
+if grep -R -Eq '98,304|98304|73,728|73728' "$repo_root/agents" "$repo_root/flows" "$repo_root/protocols" "$repo_root/skills" "$repo_root/docs"; then
+  fail fixed_model_context_leaked_into_cookbook
+fi
+if grep -Eq 'context_98k=true|context_discipline=true|Reserve headroom for tool calls' "$repo_root/scripts/preflight-opencode-ping-pong.sh"; then
+  fail context_profile_gate_in_preflight
+fi
+pass runtime_owned_model_context
+
 # Exercise a compatible version newer than the minimum so this smoke test
 # protects the >= policy rather than accidentally reintroducing an exact pin.
 mkdir -p "$pi_dir/npm/node_modules/pi-open-agents"

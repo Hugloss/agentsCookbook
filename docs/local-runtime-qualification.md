@@ -1,19 +1,24 @@
 # Local Runtime Qualification
 
-Cookbook CI proves repository structure, adapter safety, deterministic smoke behavior, and script syntax. [EvalShot](https://github.com/Hugloss/EvalShot) owns corpus validation and executable benchmarks. Neither repository's model-free checks prove that your installed OpenCode/Pi versions, local model endpoints, tokenizer, 98,304-token serving configuration, or specialist discrimination behave correctly together.
+Cookbook CI proves repository structure, adapter safety, deterministic smoke behavior, and script syntax. [EvalShot](https://github.com/Hugloss/EvalShot) owns corpus validation and executable benchmarks. Neither repository's model-free checks prove that your installed OpenCode/Pi versions, local model endpoints, actual tokenizer/context configuration, or specialist discrimination behave correctly together.
 
 Use this as the promotion gate for a real local deployment.
 
-## Supported local profile
+## Host compatibility and context selection
 
-- model maximum context: **98,304 tokens**;
-- normal working target: about **65,536 tokens or less**;
-- workflow hard target: about **73,728 tokens or less**;
-- reserve: about **24,576 tokens** for tool schemas, evidence variance, reasoning/compaction, and final output;
 - Pi: `>=0.85.0`;
 - `pi-open-agents`: `>=0.1.20`.
 
-The canonical `liteLLM/...` model names are deployment aliases, not methodology requirements. The default profile currently routes general reviewers through `liteLLM/gpt-oss`, coordinator/final-fact gates through `liteLLM/gemma4`, and the performance auditor through `liteLLM/devstral`. You may point those aliases at different local endpoints as long as the required tool use, context window, and output contracts remain compatible.
+The canonical `liteLLM/...` model names are deployment aliases, not methodology
+requirements. The default reviewer aliases may be mapped to different
+local endpoints that support their required tools and output contracts.
+
+Agents Cookbook owns adapter setup, review-flow behavior and direct host-session
+checks. The operator configures the model context window and compaction in the chosen
+model provider/host, where supported. See the [OpenCode provider settings](https://docs.opencode.ai/docs/providers/).
+[EvalShot](https://github.com/Hugloss/EvalShot/blob/main/docs/model-context-observation.md)
+can measure actual context behavior, but neither repository mandates a model-specific
+context size to install, preflight or use reusable prompts.
 
 ## 1. Install and preflight
 
@@ -115,9 +120,9 @@ A runtime/profile is qualified only when the relevant claims below are true:
 - every specialist claimed as qualified passes its positive and control cases;
 - confusion cases pass for the high-overlap skill boundaries being promoted;
 - no context overflow, silent truncation, or model-server rejection occurs;
-- actual context usage, when exposed by the runtime/model server, stays below the 98,304-token model maximum and should stay below the 73,728-token workflow target.
+- observed context usage and compaction, when exposed by the runtime/model server, are recorded against the selected runtime/model configuration; no cookbook token-window threshold is enforced.
 
-If actual token usage cannot be measured, record that limitation. Do not claim the 98k deployment profile is empirically qualified solely from character-count gates.
+If actual token usage cannot be measured, record that limitation. Character-count checks must not be used as proof of token-window compliance.
 
 ## 7. Fallback mode
 

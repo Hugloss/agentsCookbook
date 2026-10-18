@@ -51,7 +51,7 @@ You are the only actor in this workflow allowed to modify project files. Reviewe
 
 ## Context discipline
 
-The target local-model ceiling is 98,304 tokens. Keep the active working set substantially below it.
+Keep the active working set below the configured runtime context limit. Reserve space for tool calls, evidence variation, and the final response; do not assume one model-specific ceiling.
 
 - Maintain a compact changed-file summary, validation receipt, unresolved risk list, and material reviewer findings.
 - Do not forward whole earlier reviewer reports to later reviewers.

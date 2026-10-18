@@ -43,7 +43,7 @@ The exact nine mandatory reviewers are listed in `reviewers.json`. The performan
 
 ## Context discipline
 
-Each reviewer receives a bounded, self-contained evidence packet. Later reviewers do not receive raw sibling reports by default. The supported local profile assumes a 98,304-token maximum context with normal work targeted substantially below that ceiling.
+Each reviewer receives a focused, self-contained evidence packet. Later reviewers can inspect prior full reports when material facts require it, rather than forwarding all sibling output automatically. The provider/host owns context limits and compaction; the agent chooses appropriate evidence without a fixed token-budget requirement.
 
 When `AGENTS_COOKBOOK_RUN_DIR` is unset, reviewers return their complete skill-defined artifacts normally.
 

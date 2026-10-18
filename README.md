@@ -223,7 +223,7 @@ scripts/link-opencode-local.sh
 
 Runtime adapters handle the small integration differences required by those hosts. They are not separate behavioral copies of the prompts.
 
-For runtime qualification and the local 98,304-token context profile, see [`docs/local-runtime-qualification.md`](docs/local-runtime-qualification.md) and [`protocols/context-budget.md`](protocols/context-budget.md).
+For cookbook adapter/session qualification and portable context-use guidance, see [`docs/local-runtime-qualification.md`](docs/local-runtime-qualification.md) and [`protocols/context-discipline.md`](protocols/context-discipline.md). Model context limits and compaction settings belong to the chosen provider and agent host (such as OpenCode or Pi). [EvalShot](https://github.com/Hugloss/EvalShot/blob/main/docs/model-context-observation.md) measures observed context behavior; it does not prescribe a universal model window.
 
 ## Evaluation
 
@@ -284,7 +284,7 @@ The repository is licensed under the [`MIT License`](LICENSE).
 - [Architecture](docs/architecture.md)
 - [Ping-Pong planning example](docs/ping-pong-plan-flow.md)
 - [Local runtime qualification](docs/local-runtime-qualification.md)
-- [Context budget](protocols/context-budget.md)
+- [Context discipline](protocols/context-discipline.md)
 - [Run artifacts](protocols/run-artifacts.md)
 - [Evaluation guidance in EvalShot](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md)
 - [Sharp skill discrimination in EvalShot](https://github.com/Hugloss/EvalShot/blob/main/evals/sharp-skill-discrimination.md)
