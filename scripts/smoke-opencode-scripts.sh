@@ -51,12 +51,28 @@ pass pi_extension_directory_complete
 "$repo_root/scripts/preflight-opencode-ping-pong.sh" --quick --global-dir "$global_dir" --shared-skill-dir "$skills_dir" "$target_dir" >/dev/null
 pass opencode_quick_preflight
 
-# Regression: portable prompts cannot require a fixed model context window.
-# The runtime/provider owns its window, not this repository's review preflight.
-if grep -R -Eq '98,304|98304|73,728|73728' "$repo_root/agents" "$repo_root/flows" "$repo_root/protocols" "$repo_root/skills" "$repo_root/docs"; then
-  fail fixed_model_context_leaked_into_cookbook
+# Regression: catch new numeric model-context requirements, not just the old
+# 98k values. Scope to canonical prompt/protocol sources; documentation may
+# legitimately describe example host configurations and historical experiments.
+# This is a focused guard, not a second model-context admission mechanism.
+fixed_model_context_pattern='(model[[:space:]_-]+(context|maximum|max|ceiling|window)|(max|maximum)[[:space:]_-]+context|context[[:space:]_-]+(window|size|length|limit|ceiling|maximum|max|budget|target|reserve)|tokens?[[:space:]_-]+(budget|limit|window|reserve)|(normal|workflow)[[:space:]_-]+(working[[:space:]_-]+)?target|limit[.]context).{0,85}[[:space:]:=<>~-]+([0-9]{3,}([,0-9]*|[kKmM]?)|[0-9]{1,3}[kKmM])'
+for example in \
+  'model maximum: 32768 tokens' \
+  'Context window: 128k tokens' \
+  'normal working target: 12000 tokens' \
+  'limit.context: 131072'; do
+  if ! printf '%s\n' "$example" | grep -Eqi "$fixed_model_context_pattern"; then fail context_guard_missed_numeric_fixture; fi
+done
+for example in \
+  'Artifact receipt maximum: 1200 characters' \
+  'The model provider may select any context window'; do
+  if printf '%s\n' "$example" | grep -Eqi "$fixed_model_context_pattern"; then fail context_guard_rejected_non_context_fixture; fi
+done
+if grep -REiq "$fixed_model_context_pattern" "$repo_root/agents" "$repo_root/flows" "$repo_root/protocols" "$repo_root/skills"; then
+  fail numeric_model_context_in_canonical_prompt
 fi
-if grep -Eq 'context_98k=true|context_discipline=true|Reserve headroom for tool calls' "$repo_root/scripts/preflight-opencode-ping-pong.sh"; then
+# Preflight checks flow/adapters, never model-window text or token arithmetic.
+if grep -Eq 'context_([0-9]+k|discipline)=true|grep[[:space:]][^;]*context[[:space:]_-]*(window|size|limit|ceiling)' "$repo_root/scripts/preflight-opencode-ping-pong.sh"; then
   fail context_profile_gate_in_preflight
 fi
 pass runtime_owned_model_context
