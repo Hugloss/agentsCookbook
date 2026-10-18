@@ -54,6 +54,26 @@ protocol -> interchange/context contract
 adapter -> runtime exposure + proven runtime compatibility enforcement
 ```
 
+### Context ownership — canonical boundary
+
+The **selected model provider and agent host** (OpenCode, Pi, or another
+compatible runtime) exclusively configure effective model-context capacity,
+output limits and compaction. Cookbook agents and skills **consume** the
+available context; they do not prescribe a token window, impose a reserve,
+or add an admission/preflight rule based on context size.
+
+`protocols/context-discipline.md` defines portable evidence-selection
+guidance, not a second resource policy. Use host support for compaction or
+context continuation, preserve material evidence, and treat unknown context
+capacity as unknown. EvalShot may measure actual use and compare explicitly
+configured host/model conditions, but does not override that configuration.
+A specific experiment's bounds or an artifact-output size contract must not
+silently become a global agent-context restriction.
+
+This boundary applies to all new skills, agents, flow recipes, adapter
+changes, installation checks and future refactoring; it is not limited to
+removing the historical 98K setting.
+
 ## Standalone contract
 
 Every reviewer agent must work when:

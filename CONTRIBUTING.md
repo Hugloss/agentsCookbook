@@ -102,6 +102,29 @@ Runtime-specific code belongs only where it bridges the prompt library into a su
 
 Benchmark runners, evaluation corpora, and the complete Agent Economics support toolkit belong to [EvalShot](https://github.com/Hugloss/EvalShot). Changes to that implementation, its Python runtime, or its benchmark configuration go there. Keep canonical skills and prompt-facing adapters here; EvalShot consumes an explicitly selected cookbook checkout when evaluating them.
 
+### Model context ownership — do not drift
+
+**The model/provider and agent host own the context window, output limits, and
+compaction configuration.** A reusable cookbook skill, agent, flow, protocol,
+or preflight must not require a particular model-context size, reserve a fixed
+token count, change model settings, or reject a valid agent for using a
+different context window.
+
+Keep context guidance qualitative: select the evidence needed for the task,
+avoid indiscriminate bulk-loading, preserve critical facts, and let the host
+apply supported compaction. If context usage is not observable, do not invent
+a capacity. Model-specific tuning belongs in the operator's OpenCode/Pi/provider
+configuration; measured context outcomes belong in
+[EvalShot](https://github.com/Hugloss/EvalShot/blob/main/docs/model-context-observation.md).
+
+This rule is independent of **output-schema/receipt size bounds**, which may
+still be necessary for interoperable artifacts. Do not turn such artifact
+contracts into a hidden model token-window requirement.
+
+Before merging an agent/skill/flow/preflight change, confirm that it does not
+introduce another model-context owner. See the canonical
+[context discipline protocol](protocols/context-discipline.md).
+
 ## Evaluation ownership
 
 Use [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md) for positive/control/confusion cases and model-backed skill evaluation. Use its [benchmark guide](https://github.com/Hugloss/EvalShot/blob/main/benchmarks/README.md) for campaign configuration, readiness, and execution. A prompt loading successfully, a corpus validating, and a model passing the behavioral cases establish different claims; report the evidence actually collected.
