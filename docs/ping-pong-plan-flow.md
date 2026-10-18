@@ -43,7 +43,7 @@ The exact nine mandatory reviewers are listed in `reviewers.json`. The performan
 
 ## Context discipline
 
-Each reviewer receives a bounded, self-contained evidence packet. Later reviewers do not receive raw sibling reports by default. The supported local profile assumes a 98,304-token maximum context with normal work targeted substantially below that ceiling.
+Each reviewer receives a bounded, self-contained evidence packet. Later reviewers do not receive raw sibling reports by default. The host determines the effective model context limit; prompts preserve headroom while EvalShot owns numerical profile qualification.
 
 When `AGENTS_COOKBOOK_RUN_DIR` is unset, reviewers return their complete skill-defined artifacts normally.
 

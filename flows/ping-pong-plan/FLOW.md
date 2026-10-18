@@ -27,7 +27,7 @@ Every mandatory reviewer is attempted exactly once. A failed reviewer does not e
 
 ## Context economics
 
-Target model ceiling: 98,304 tokens. Normal work should remain substantially below that ceiling.
+Use the configured host/model context limit. Keep the active working set below it and reserve completion/tool headroom; numerical context profiles belong to EvalShot.
 
 Each review receives a bounded evidence packet. Later reviewers receive the current subject and material decisions, not raw earlier reports. External run artifacts may preserve full reports outside active context, but they are optional and must never become a prerequisite for standalone reviewer use.
 

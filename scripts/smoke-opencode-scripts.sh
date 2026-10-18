@@ -53,7 +53,7 @@ pass opencode_quick_preflight
 
 # Regression: a reusable prompt/preflight must not hard-code an evaluator-owned
 # model-context profile. Earlier source gates required the literal 98,304.
-if grep -Fq '98,304' "$repo_root/agents/ping-pong-plan.md" || \
+if grep -R -Eq '98,304|98304|73,728|73728' "$repo_root/agents" "$repo_root/flows" "$repo_root/protocols" || \
    grep -Fq 'context_98k=true' "$repo_root/scripts/preflight-opencode-ping-pong.sh"; then
   fail context_profile_leaked_into_cookbook_preflight
 fi

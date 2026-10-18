@@ -34,7 +34,7 @@ The scout does not manufacture findings; finding derivation does not replace the
 
 ### Protocols
 
-`protocols/` defines portable context/evidence conventions: bounded evidence packets, local-model context budgets, and run-artifact identity/retention rules. Protocols are not additional authority systems.
+`protocols/` defines portable context/evidence conventions: bounded evidence packets, portable active-context discipline, and run-artifact identity/retention rules. Protocols are not additional authority systems.
 
 ### Adapters
 
