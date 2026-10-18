@@ -55,7 +55,7 @@ pass opencode_quick_preflight
 # 98k values. Scope to canonical prompt/protocol sources; documentation may
 # legitimately describe example host configurations and historical experiments.
 # This is a focused guard, not a second model-context admission mechanism.
-fixed_model_context_pattern='(model[[:space:]_-]+(context|maximum|max|ceiling|window)|(max|maximum)[[:space:]_-]+context|context[[:space:]_-]+(window|size|length|limit|ceiling|maximum|max|budget|target|reserve)|tokens?[[:space:]_-]+(budget|limit|window|reserve)|(normal|workflow)[[:space:]_-]+(working[[:space:]_-]+)?target|limit[.]context).{0,85}[[:space:]:=<>~-]+([0-9]{3,}([,0-9]*|[kKmM]?)|[0-9]{1,3}[kKmM])|([0-9]{3,}([,0-9]*|[kKmM]?)|[0-9]{1,3}[kKmM])([[:space:]]+tokens?)?([[:space:]]+of)?[[:space:]]+context([[:space:]]+(window|size|length|limit|capacity))?|context[[:space:]]*[:=][[:space:]]*([0-9]{3,}([,0-9]*|[kKmM]?)|[0-9]{1,3}[kKmM])'
+fixed_model_context_pattern='(model[[:space:]_-]+(context|maximum|max|ceiling|window)|(max|maximum)[[:space:]_-]+context|context[[:space:]_-]+(window|size|length|limit|ceiling|maximum|max|budget|target|reserve)|tokens?[[:space:]_-]+(budget|limit|window|reserve)|(normal|workflow)[[:space:]_-]+(working[[:space:]_-]+)?target|limit[.]context).{0,85}[[:space:]:=<>|~-]+([0-9]{3,}([,0-9]*|[kKmM]?)|[0-9]{1,3}[kKmM])|([0-9]{3,}([,0-9]*|[kKmM]?)|[0-9]{1,3}[kKmM])([[:space:]]+tokens?)?([[:space:]]+of)?[[:space:]]+context([[:space:]]+(window|size|length|limit|capacity))?|context[[:space:]]*[:=][[:space:]]*([0-9]{3,}([,0-9]*|[kKmM]?)|[0-9]{1,3}[kKmM])'
 for example in \
   'model maximum: 32768 tokens' \
   'Context window: 128k tokens' \
@@ -65,13 +65,16 @@ for example in \
   'The agent must have 65536 tokens of context' \
   'Set a 128k context window for all reviewers' \
   'context: 8192' \
-  'context=32768'; do
+  'context=32768' \
+  '| Context window | 131072 |' \
+  '| Model maximum | 32768 |'; do
   if ! printf '%s\n' "$example" | grep -Eqi "$fixed_model_context_pattern"; then fail context_guard_missed_numeric_fixture; fi
 done
 for example in \
   'Artifact receipt maximum: 1200 characters' \
   'The model provider may select any context window' \
-  'Use a window of 8 files for verification'; do
+  'Use a window of 8 files for verification' \
+  '| Artifact receipt bytes | 1200 |'; do
   if printf '%s\n' "$example" | grep -Eqi "$fixed_model_context_pattern"; then fail context_guard_rejected_non_context_fixture; fi
 done
 if grep -REiq "$fixed_model_context_pattern" "$repo_root/agents" "$repo_root/flows" "$repo_root/protocols" "$repo_root/skills"; then
