@@ -87,7 +87,7 @@ If the evidence is incomplete, the correct result is **insufficient evidence**, 
 
 “Improve maintainability” and “reduce complexity” are too vague to be useful.
 
-The specialist skills each own a narrow question: stale work, retry idempotency, semantic redecision, state authority, hidden effects, duplicate observation, test contamination, dependency surface, and so on. Each skill says what to hunt, what must be proved, what not to report, and what kind of correction to prefer.
+The specialist skills each own a narrow question: stale work, retry idempotency, semantic redecision, state authority, hidden effects, duplicate observation, test contamination, contract coupling, and so on. Each skill says what to hunt, what must be proved, what not to report, and what kind of correction to prefer.
 
 ### Agent frameworks can become the product
 
@@ -193,11 +193,11 @@ flow   -> optional composition recipe
 
 ### Agent prompts
 
-`agents/` contains thin runtime-ready wrappers around skills plus a few coordinator prompts. They add role boundaries, permissions, default model aliases, or output contracts; they should not duplicate the methodology in the skill.
+`agents/` contains thin runtime-ready wrappers around skills plus a few coordinator prompts. They add role boundaries, permissions, and output contracts; they should not duplicate the methodology in the skill.
 
 The repository currently has **12 agent prompts**.
 
-The `liteLLM/...` model names in these wrappers are repository-owner deployment aliases, not requirements of the underlying skills. Adapt or override them for your environment.
+Agent definitions do not set model/provider, temperature, or reasoning defaults. Use your host's normal global, project, or per-agent configuration. See [runtime configuration ownership](docs/installation.md#runtime-configuration-ownership) for migration from the former wrapper aliases.
 
 ### Flows
 
@@ -211,7 +211,7 @@ The provided `ping-pong-plan` and `ping-ping-build` flows use exactly nine indep
 
 For reproducible use, pin your clone or dependency reference to a known commit/tag instead of automatically tracking `main`.
 
-Prompt methodology is intended to remain portable, but host-specific frontmatter, model aliases, and adapter behavior can change as OpenCode/Pi evolve.
+Prompt methodology is intended to remain portable, but host-specific role metadata and adapter behavior can change as OpenCode/Pi evolve.
 
 ## OpenCode and Pi
 

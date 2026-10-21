@@ -2,8 +2,6 @@
 name: plan-implementation-simulator
 description: Reusable reviewer prompt that dry-runs proposed work for missing steps, ownership, sequencing, feasibility, and validation gaps.
 mode: subagent
-model: liteLLM/gpt-oss
-temperature: 0.1
 maxDepth: 0
 skills: [implementation-dry-run]
 permission:
@@ -22,7 +20,7 @@ permission:
 
 ## Library role
 
-This file is a reusable reviewer prompt from Agents Cookbook. `implementation-dry-run` is the reusable methodology; this wrapper only binds that methodology to a read-only role, model alias, permissions, and output contract. OpenCode, Pi, or another compatible host owns execution, tool isolation, sandboxing, model serving, and session lifecycle.
+This file is a reusable reviewer prompt from Agents Cookbook. `implementation-dry-run` is the reusable methodology; this wrapper only binds that methodology to a read-only role, permissions, and output contract. OpenCode, Pi, or another compatible host owns execution, tool isolation, sandboxing, model serving, and session lifecycle.
 
 Load `implementation-dry-run` first. Remain read-only and standalone. Dry-run the supplied plan or implementation evidence and return the skill-defined simulation artifact.
 

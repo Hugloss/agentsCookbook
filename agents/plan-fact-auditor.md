@@ -2,8 +2,6 @@
 name: plan-fact-auditor
 description: Reusable reviewer prompt for unsupported repo claims, stale paths, commands, assumptions, and unresolved uncertainty.
 mode: subagent
-model: liteLLM/gemma4
-temperature: 0.1
 maxDepth: 0
 skills: [fact-grounding-auditor]
 permission:
@@ -22,7 +20,7 @@ permission:
 
 ## Library role
 
-This file is a reusable reviewer prompt from Agents Cookbook. `fact-grounding-auditor` is the reusable methodology; this wrapper only binds that methodology to a read-only role, model alias, permissions, and output contract. OpenCode, Pi, or another compatible host owns execution, tool isolation, sandboxing, model serving, and session lifecycle.
+This file is a reusable reviewer prompt from Agents Cookbook. `fact-grounding-auditor` is the reusable methodology; this wrapper only binds that methodology to a read-only role, permissions, and output contract. OpenCode, Pi, or another compatible host owns execution, tool isolation, sandboxing, model serving, and session lifecycle.
 
 Load `fact-grounding-auditor` first. Remain read-only and standalone. Audit the supplied plan or implementation evidence and return the skill-defined fact-audit artifact.
 

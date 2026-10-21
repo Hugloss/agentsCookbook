@@ -9,9 +9,10 @@ Use this as the promotion gate for a real local deployment.
 - Pi: `>=0.85.0`;
 - `pi-open-agents`: `>=0.1.20`.
 
-The canonical `liteLLM/...` model names are deployment aliases, not methodology
-requirements. The default reviewer aliases may be mapped to different
-local endpoints that support their required tools and output contracts.
+The canonical agents contain no model, temperature, or reasoning defaults.
+Select the model and inference options through the native host configuration.
+The selected model must support the role's tools and output contract; the
+cookbook does not silently choose a different deployment.
 
 Agents Cookbook owns adapter setup, review-flow behavior and direct host-session
 checks. The operator configures the model context window and compaction in the chosen

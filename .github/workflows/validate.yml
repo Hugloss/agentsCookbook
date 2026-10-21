@@ -22,6 +22,9 @@ jobs:
       - name: Adapter smoke tests
         run: ./scripts/smoke-opencode-scripts.sh
 
+      - name: Native configuration ownership through installation
+        run: node --test scripts/test-runtime-config-ownership.js
+
       - name: Live artifact integrity smoke tests
         run: bash ./scripts/smoke-run-artifacts.sh
 

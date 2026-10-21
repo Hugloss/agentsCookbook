@@ -2,8 +2,6 @@
 name: code-performance-optimization-auditor
 description: Reusable reviewer prompt for material performance wins from algorithms, repeated work, I/O, memory, batching, or contention.
 mode: subagent
-model: liteLLM/devstral
-temperature: 0.1
 maxDepth: 0
 skills: [code-performance-optimization-audit]
 permission:
@@ -22,7 +20,7 @@ permission:
 
 ## Library role
 
-This file is a reusable reviewer prompt from Agents Cookbook. `code-performance-optimization-audit` is the reusable methodology; this wrapper only binds that methodology to a read-only role, model alias, permissions, and output contract. OpenCode, Pi, or another compatible host owns execution, tool isolation, sandboxing, model serving, and session lifecycle.
+This file is a reusable reviewer prompt from Agents Cookbook. `code-performance-optimization-audit` is the reusable methodology; this wrapper only binds that methodology to a read-only role, permissions, and output contract. OpenCode, Pi, or another compatible host owns execution, tool isolation, sandboxing, model serving, and session lifecycle.
 
 Load `code-performance-optimization-audit` first. Remain read-only and standalone when invoked directly. Audit the supplied repository evidence or explicit performance question and return the skill-defined performance artifact. In Ping-Pong/Ping-Ping, this auditor is one of the nine mandatory reviewers.
 

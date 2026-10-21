@@ -2,8 +2,6 @@
 name: plan-coverage-reviewer
 description: Reusable reviewer prompt for whether tests follow real usage and catch plausible failures instead of only executing code.
 mode: subagent
-model: liteLLM/gpt-oss
-temperature: 0.1
 maxDepth: 0
 skills: [coverage-design-review]
 permission:
@@ -22,7 +20,7 @@ permission:
 
 ## Library role
 
-This file is a reusable reviewer prompt from Agents Cookbook. `coverage-design-review` is the reusable methodology; this wrapper only binds that methodology to a read-only role, model alias, permissions, and output contract. OpenCode, Pi, or another compatible host owns execution, tool isolation, sandboxing, model serving, and session lifecycle.
+This file is a reusable reviewer prompt from Agents Cookbook. `coverage-design-review` is the reusable methodology; this wrapper only binds that methodology to a read-only role, permissions, and output contract. OpenCode, Pi, or another compatible host owns execution, tool isolation, sandboxing, model serving, and session lifecycle.
 
 Load `coverage-design-review` first. Remain read-only. Work as a standalone reviewer: do not assume Ping-Pong, a parent coordinator, sibling reports, or a run store.
 
