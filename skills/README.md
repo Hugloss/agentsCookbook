@@ -80,6 +80,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 
 - `authority-escalation-review` — Find derived evidence that gains stronger authority without new qualifying proof.
 - `semantic-redecision-review` — Find the same semantic answer being independently decided twice.
+- `known-good-contract-reconstruction` — Recover behavioral contracts from verified historical revisions and design durable fixes instead of restoring incidental code.
 - `canonical-consumer-contract-review` — Find consumers that silently break when a canonical owner legitimately refines its result classifications.
 - `single-source-of-truth-review` — Find one semantic truth whose authoritative owner changes across paths, callers, phases, or producers.
 - `durable-commit-path-review` — Find one durable transition committing through multiple paths.
@@ -126,6 +127,8 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `architecture-risk-triage` — Route evidence-backed hotspots to the narrow specialist skill.
 
 ## Overlap boundaries
+
+- `known-good-contract-reconstruction` owns **historical-to-current behavioral contract recovery and durable repair design**; `canonical-consumer-contract-review` owns **consumer dependence on accidental shapes of one canonical owner's result**; `test-contract-coupling-review` owns tests that freeze implementation details. Use the historical comparison as evidence, not competing contract authority.
 
 Use the narrowest skill that owns the question:
 
