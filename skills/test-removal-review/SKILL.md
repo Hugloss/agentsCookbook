@@ -66,12 +66,15 @@ Recommend the smallest correction that preserves the current requirement: repair
 
 ## NEIGHBORING SKILLS
 
+- `source-change-review` owns whether a source delta fulfills the applicable requirement; this skill owns lost failure detection through a test or test-execution change. Both may inspect source and tests as evidence.
 - `coverage-design-review` owns general missing behavioral coverage; this skill owns protection lost through a specific test or test-execution change.
 - `test-contract-coupling-review` owns whether a test freezes incidental internals; use that distinction when judging the removed assertion.
 - `baseline-self-authorization-review` owns candidate changes that weaken their own governing policy or oracle; route an independently proven authority defect there without duplicating the finding.
 - `known-good-contract-reconstruction` owns historical contract recovery and repair design; this skill remains a review of the removal's justification and consequence.
 
 These boundaries do not require loading other skills to complete this review.
+
+When paired with `source-change-review`, use the same comparison and applicable requirements. Establish each conclusion from inspected evidence. Reconcile a shared source defect and its removed detection into one causal finding while preserving the distinct source and verification consequences. Keep independent gaps and each review's unresolved scope visible; one verdict cannot substitute for the other.
 
 ## OUTPUT
 

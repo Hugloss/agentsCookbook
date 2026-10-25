@@ -1,0 +1,4 @@
+interface:
+  display_name: "Source Change Review"
+  short_description: "Review source changes against applicable requirements"
+  default_prompt: "Use $source-change-review to trace source changes against current requirements, distinguish intended changes from defects, and report the evidence."
