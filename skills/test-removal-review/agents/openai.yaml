@@ -1,0 +1,4 @@
+interface:
+  display_name: "Test Removal Review"
+  short_description: "Review deleted tests and lost behavioral protection"
+  default_prompt: "Use $test-removal-review to review deleted, disabled, or weakened tests in this change, tracing each requirement to its current evidence."

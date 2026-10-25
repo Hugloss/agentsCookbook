@@ -18,6 +18,11 @@ A strong finding normally removes a path, decision, representation, traversal, b
 
 - `skill-contract-review` — Review whether a skill owns one sharp, evidence-closed contract with non-gameable finding and clean outcomes.
 
+## Change review
+
+- `source-change-review` — Review source changes against applicable requirements and directly affected supported behavior.
+- `test-removal-review` — Review deleted, disabled, or weakened tests against active requirements and replacement evidence.
+
 ## Planning and evidence
 
 - `plan-gap-scout` — Find missing implementation work without rewriting the plan.
@@ -140,6 +145,8 @@ Use the narrowest skill that owns the question:
 - `codebase-finding-derivation` asks **whether inspected code evidence justifies a finding at all**; `fact-grounding-auditor` asks **whether an existing repository-specific claim is supported**.
 - `requirements-lifecycle-closure-review` asks **whether an effectful specification can represent every reachable partial transition, race, crash, teardown, unresolved state, and recovery path deterministically**; `plan-gap-scout` asks **what implementation work is missing**; `implementation-dry-run` asks **where carrying out the proposed work would require guessing**; `failure-contract-review`, `resource-lifetime-review`, and `atomic-operation-review` own corresponding defects in implemented behavior rather than an open requirements lifecycle.
 - `coverage-design-review` asks **what real behavior is not proved**; `test-contract-coupling-review` asks **what tests freeze private implementation**.
+- `source-change-review` asks **whether a specific source delta fulfills the applicable requirements across directly affected supported paths**; `test-removal-review` asks **whether a specific test change loses valid failure detection**. Review the same revisions and requirements, prove each conclusion from inspected evidence, and reconcile a shared source defect plus removed detection into one causal finding with distinct consequences. Neither verdict closes the other review's unresolved scope. `codebase-finding-derivation` owns general finding proof; `known-good-contract-reconstruction` owns historical contract recovery and repair design; the narrow causal specialists retain their semantic or lifecycle ownership.
+- `test-removal-review` asks **whether a specific removal or weakening loses valid protection for an active requirement**; `coverage-design-review` owns general missing behavioral coverage; `test-contract-coupling-review` owns invalid coupling to incidental internals; `baseline-self-authorization-review` owns candidate mutation of governing policy/oracle authority. Separate a proved verification gap from a proved product defect, and report one causal finding rather than duplicating it across skills.
 - `code-performance-optimization-audit` asks **where runtime cost scales badly**; `test-work-amplification-review` starts from measured slow tests; `single-observation-review` asks whether one logical operation observes the same input world twice.
 - **Four semantic-authority specialists:** `single-source-of-truth-review` owns two independently **accepted sources of authority**; `resolved-fact-regression-review` owns a consumer **backtracking across an available resolved-result boundary**; `semantic-redecision-review` owns repeated interpretation **inside one authority chain without either of those defects**; `canonical-consumer-contract-review` owns **a consumer obligation broken by an allowed refinement of its sole owner's result**. The same trace can suggest several problems: choose the first proven causal owner, link secondary symptoms, and request one coherent repair. Do not create four independent fixes or four implementations of the same decision.
 - All four end with exactly one bounded result: `FINDING`, `CLEAN`, `LEAVE ALONE`, or `INSUFFICIENT EVIDENCE`. `CLEAN` is scoped to completed inspection; missing reachable paths or inconclusive owner contracts are never clean.

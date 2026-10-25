@@ -60,10 +60,14 @@ You do **not** need to run a giant review flow. Pick the smallest prompt that an
 | find obsolete alternate implementation paths | [`alternate-path-removal-review`](skills/alternate-path-removal-review/SKILL.md) |
 | find slow work caused by repeated repository/runtime effort | [`code-performance-optimization-audit`](skills/code-performance-optimization-audit/SKILL.md) |
 | review whether tests exercise real behavior | [`coverage-design-review`](skills/coverage-design-review/SKILL.md) |
+| review whether source changes fulfill the applicable requirements | [`source-change-review`](skills/source-change-review/SKILL.md) |
+| review whether deleting or weakening tests loses required protection | [`test-removal-review`](skills/test-removal-review/SKILL.md) |
 | plan a change through nine independent review passes | [`ping-pong-plan`](agents/ping-pong-plan.md) |
 | implement, validate, review, fix, and polish a change | [`ping-ping-build`](agents/ping-ping-build.md) |
 
 The complete skill catalog and its overlap boundaries are in [`skills/README.md`](skills/README.md).
+
+For changes to both source and tests, pair `source-change-review` with `test-removal-review` on the same base/candidate comparison and applicable requirements. The first reviews implemented behavior; the second reviews lost failure detection. Each establishes its own evidence. Reconcile a shared defect and its removed regression check into one finding with both consequences, while retaining independent findings and unresolved scope.
 
 ## Why this library exists
 
