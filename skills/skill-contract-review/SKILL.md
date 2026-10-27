@@ -90,7 +90,10 @@ Return `# Skill Contract Review` with:
 - smallest correction;
 - benchmark discrimination needed.
 
-End with one:
-- `CLEAN` — the skill is narrow and its material outcomes are evidence-closed;
-- `LEAVE ALONE` — suspicious structure was reviewed but is justified by the skill's semantics;
-- `INSUFFICIENT EVIDENCE` — the skill's intended role or governing context is too unclear to judge safely.
+End with exactly one bounded verdict:
+- `FINDING` — at least one material skill-contract defect is established from the inspected definition, with the failed proof obligation and smallest correction identified; preserve any other unresolved scope explicitly;
+- `CLEAN` — the full declared skill-definition scope and relevant neighboring boundaries were inspected and no material contract defect was found;
+- `LEAVE ALONE` — the examined suspicious structure is positively justified by the skill's semantics, with no unresolved question material to that conclusion;
+- `INSUFFICIENT EVIDENCE` — no defect is established and missing role, governing context, neighboring contract, or source prevents a bounded conclusion.
+
+A demonstrated defect does not become `CLEAN` because some other questions remain unresolved. Conversely, a suspicion or incomplete inspection is not a `FINDING`. Report only conclusions supported by the declared inspected scope; a static review does not qualify model-backed behavioral discrimination.
