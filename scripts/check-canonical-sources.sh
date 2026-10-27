@@ -86,7 +86,11 @@ done
 
 # Exercise the OpenCode plugin with a foreign working directory and a hostile
 # project-local reviewer list. The adapter must use only its cookbook catalog.
-opencode_boundary_output="$(node "$repo_root/scripts/check-opencode-reviewer-boundary.js" 2>&1)"; opencode_boundary_status=$?
+if opencode_boundary_output="$(node "$repo_root/scripts/check-opencode-reviewer-boundary.js" 2>&1)"; then
+  opencode_boundary_status=0
+else
+  opencode_boundary_status=$?
+fi
 printf '%s\n' "$opencode_boundary_output"
 [ "$opencode_boundary_status" -eq 0 ] || fail opencode_reviewer_runtime_boundary "status=$opencode_boundary_status"
 
@@ -103,7 +107,11 @@ fi
 # wildcard permission block. Canonical reviewers intentionally keep wildcard
 # deny-by-default for OpenCode, so the Pi adapter owns an explicit child-process
 # boundary. Prove that contract independently of the runtime package.
-pi_boundary_output="$(node "$repo_root/scripts/check-pi-reviewer-boundary.js" 2>&1)"; pi_boundary_status=$?
+if pi_boundary_output="$(node "$repo_root/scripts/check-pi-reviewer-boundary.js" 2>&1)"; then
+  pi_boundary_status=0
+else
+  pi_boundary_status=$?
+fi
 printf '%s\n' "$pi_boundary_output"
 [ "$pi_boundary_status" -eq 0 ] || fail pi_reviewer_runtime_boundary "status=$pi_boundary_status"
 
