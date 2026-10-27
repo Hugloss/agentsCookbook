@@ -66,9 +66,15 @@ The canonical files remain in the cloned repository. The runtime locations are l
 
 ## Removing the cookbook
 
-There is currently no automatic uninstaller.
+Use the repository-provided uninstaller with the same destination options used for installation:
 
-To remove an installation, delete only the cookbook-created symlinks whose resolved target points into your cloned `agentsCookbook` repository. Do not recursively delete an OpenCode/Pi configuration directory that may contain unrelated user content.
+```bash
+scripts/unlink-opencode-local.sh
+# If custom destinations were used:
+scripts/unlink-opencode-local.sh --global-dir DIR --pi-agent-dir DIR --shared-skill-dir DIR
+```
+
+The uninstaller removes only recognized cookbook-owned links; it preserves unrelated files and links. Run it before deleting or moving your cookbook checkout so it can still identify the links it owns. Do not recursively delete an OpenCode/Pi configuration directory that may contain unrelated user content.
 
 If you installed with `--force`, the installer may have created timestamped backup paths beside previous conflicts. Those backups are intentionally never deleted automatically; restore or remove them manually after verifying their contents.
 
