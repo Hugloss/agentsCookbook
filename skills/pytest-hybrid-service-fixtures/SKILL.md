@@ -43,9 +43,13 @@ Python APIs, async lifetimes, URL handling, or a concrete fixture graph.
 
 2. **Share expensive infrastructure only as far as isolation permits.** Prefer
    session-scoped containers/endpoints and function-scoped mutable state. Pytest
-   session scope is per worker under xdist. Give concurrent runs, workers, and tests
-   distinct allocations where they can interfere. Retain narrower containers for
-   tests of startup, failure recovery, or state that cannot be reset safely.
+   session scope lasts one pytest invocation, per worker under xdist; parametrized
+   fixtures can create multiple instances within that scope. Give concurrent runs,
+   workers, and tests distinct allocations where they can interfere. If the schema
+   is safely reusable, prepare/migrate a worker-owned database once and reset only
+   test state between tests. Retain narrower containers/schemas for lifecycle or
+   migration tests and state that cannot be reset safely. Session scope does not
+   imply reuse across separate pytest runs or a live async client shared by all tests.
 
 3. **Keep the external path independent of Docker.** Import Testcontainers and
    create Docker clients only inside the local branch. Avoid global autouse startup
@@ -76,6 +80,10 @@ Python APIs, async lifetimes, URL handling, or a concrete fixture graph.
    database/schema/allocation. Route application workers into that same allocation.
    Rollback is sufficient only if all relevant writes participate in its transaction;
    workers committing on other connections need their own bounded cleanup.
+   Define per-test reset separately from session teardown: closing connections or
+   dropping the container at session end does not isolate earlier tests. Establish
+   the required starting state for each test, and do not reuse an allocation whose
+   cleanup failed without restoring that state.
 
 7. **Protect every acquisition, including failed setup.** Use `yield` with
    `try/finally`, context managers, or correctly registered finalizers. Code after
@@ -104,7 +112,12 @@ boundaries that could invalidate the change:
 - isolated tests/workers and unchanged borrowed data outside the allocation;
 - settings restoration and async client shutdown on the correct loop.
 
-Inspect actual startup counts or durations before claiming a speed improvement.
+For an optimization request, separate provisioning/migrations, test execution,
+waits, and reset/teardown costs. Compare the same test selection and worker count,
+including whole-run elapsed time and startup/migration counts. Keep cold-image
+and warm-image runs separate; a faster run with skipped tests is not an improvement.
+Use the reference's timing recipe. Large gains are possible when repeated setup
+dominates, but hybrid selection or session scope alone does not establish a gain.
 Separate helper/fake checks from real service runs. If Docker, credentials, or a
 dedicated external allocation are unavailable, complete the inspectable work and
 report those modes as unverified; never infer parity from one passing mode.

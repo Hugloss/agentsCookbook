@@ -2,11 +2,52 @@
 
 ## Contents
 
+- [Lifetimes and database reset](#lifetimes-and-database-reset)
 - [Selection and lifetime scaffold](#selection-and-lifetime-scaffold)
 - [Client URLs](#client-urls)
 - [Readiness and administration](#readiness-and-administration)
 - [Kafka and mixed environments](#kafka-and-mixed-environments)
+- [Measuring the speed benefit](#measuring-the-speed-benefit)
 - [Sources](#sources)
+
+## Lifetimes and database reset
+
+Choose each lifetime independently; `scope="session"` on a container does not
+make its schema, data, clients, or background workers safe to share.
+Here, session means the pytest fixture lifetime, not a database transaction,
+an ORM session, or an asyncio event loop.
+
+| Resource | Typical lifetime | Cleanup boundary |
+| --- | --- | --- |
+| Local container/service | Session per pytest worker | Stop the owned container after its consumers finish |
+| External service | Borrowed for the session | Close test clients; leave the external service running |
+| Owned migrated database/schema | Session per worker when its baseline is safely resettable | Drop only the owned allocation at session end |
+| Mutable rows, transactions, test namespaces | Function/per test | Roll back, remove owned rows, or drop a per-test allocation before reuse |
+| Live async clients/pools, observers, application workers | Function by default; broader only with an aligned loop and owner | Stop/join producers and observers, reset owned state, then close clients |
+
+There are two valid database layouts:
+
+- **Reusable worker database/schema:** create and migrate it once, then restore
+  the required data baseline for each test using a transaction or scoped reset.
+  Use this only when the schema remains compatible, tests sharing the allocation
+  do not overlap, and every relevant write can be isolated. Stop workers before
+  reset; a rollback on the test connection does not undo their independent commits.
+- **Fresh test database/schema:** create, migrate or clone an approved baseline,
+  and remove the allocation for each test. Keep this stronger boundary when
+  schema mutations, concurrent tests, or independent connections make reuse unsafe.
+  It still saves container startup, but migration/allocation cost may remain.
+
+Session fixtures are created on demand within one pytest run. Xdist runs them
+independently in each worker, and parametrization can instantiate them more than
+once. Do not treat session scope as a persistent service across separate commands.
+Sharing one container across workers needs an explicit owner/coordinator and
+isolated allocations; it is not obtained merely by choosing session scope.
+
+Both layouts must start each test from its declared baseline. Closing a client
+does not remove committed rows, and session-end deletion does not prevent earlier
+test contamination. Surface reset failures and restore or replace an unusable
+owned allocation before reusing it. Cleanup on ordinary failure still requires
+the protected acquisition/teardown path described below.
 
 ## Selection and lifetime scaffold
 
@@ -54,17 +95,29 @@ def database_endpoint():
 
 @pytest_asyncio.fixture
 async def database(database_endpoint, test_allocation):
-    # A settings/allocation fixture must also route application workers here.
+    # test_allocation owns schema preparation at its chosen fixture scope.
+    # Settings must also route application workers into this allocation.
     manager = DatabaseManager(database_endpoint.url, allocation=test_allocation)
     try:
         await manager.connect_and_check_ready(timeout=30.0)
-        await manager.initialize_owned_state()
+        await manager.prepare_test_state()
         yield manager
     finally:
         # Must tolerate connect/initialize failing midway. Internally arrange
         # cleanup in nested finally blocks so one failure cannot skip close.
-        await manager.cleanup_and_close(timeout=10.0)
+        await manager.reset_test_state_and_close(timeout=10.0)
 ```
+
+This scaffold leaves the allocation layout explicit in `test_allocation`.
+`prepare_test_state()` establishes this test's data baseline; it does not run
+schema migrations. For a reusable worker database, a session-scoped allocation
+fixture owns creation/migrations and yields metadata; the function fixture owns
+data reset and live async clients. Its `reset_test_state_and_close()` preserves
+the schema. For a fresh test schema, a function-scoped allocation fixture owns
+schema initialization and removal around that same client fixture. Choose one
+layout from the inspected application contract rather than implementing both.
+Keep any async preparation on a correctly scoped loop; never retain its clients
+in endpoint metadata after that loop closes.
 
 The endpoint is deliberately metadata, not a ready connection. Only the `database`
 fixture yields a usable service; application consumers must depend on that readiness
@@ -125,12 +178,13 @@ capabilities after permitted initialization. Socket polling or `pg_isready` alon
 does not prove those credentials or migrations work. Apply bounded readiness to
 external services as well as containers.
 
-The manager's contract is small and explicit:
+Keep schema preparation and per-test manager work distinct:
 
 | Operation | Required boundary |
 | --- | --- |
 | Connect/probe | Same DSN, credentials, TLS, and deadline as the test configuration; no secret diagnostics |
-| Initialize | Use application migrations only inside the verified test allocation |
+| Prepare schema | Allocation owner uses application migrations inside the verified allocation at its chosen lifetime |
+| Reset test state | Restore the declared baseline per test without dropping a schema owned by a broader fixture |
 | Seed/read | Use production domain/schema contracts and the same allocation as background workers |
 | Cleanup | Remove only owned state, including partial initialization; do not reset unrelated workers |
 | Close | Always release clients/pools even if state cleanup fails; bound cancellation and shutdown |
@@ -162,11 +216,49 @@ Validate all-local and all-external configurations plus each supported mixed
 configuration. Report unavailable combinations explicitly. A stub proving branch
 selection cannot establish real broker/network/schema parity.
 
+## Measuring the speed benefit
+
+Measure the existing suite before changing fixture scope. Use the project's normal
+runner and the same selected tests, assertions, plugins, worker count, service
+versions, and data workload for the comparison. For example:
+
+```bash
+python -m pytest tests/integration --durations=20 --durations-min=0
+```
+
+Inspect fixture setup separately with `--setup-show` when scope/repetition is
+unclear; do not compare a noisy diagnostic run with a quiet timing run. Record
+whole-process elapsed time as well as setup/call/teardown durations. Session setup
+and teardown may be attributed to the first/last dependent tests, so the duration
+list alone does not reveal how often containers or migrations ran. Count those
+operations using existing logs or a focused counter, and account for data-reset
+cost. Separate cold image pulls from warm runs and local from external-service
+results; external networking can offset the saved startup time.
+
+For a serial illustrative model, let `S` be expensive service/schema setup plus
+release cost, `T` test work, `R` per-test reset cost, and `N` the test count:
+
+- Rebuilding for every test costs approximately `N * (S + T)`.
+- Reusing a safely resettable setup costs approximately `S + N * (T + R)`.
+
+For **hypothetical** `N=100`, `S=2 s`, `T=0.05 s`, and `R=0.01 s`, those totals
+are 205 s and 8 s. This arithmetic explains the opportunity; it is not a benchmark
+or an expected speedup for an unmeasured suite. When actual test work, per-test
+migrations, network latency, or reset dominates, the improvement may be small.
+Parallel wall time also depends on duplicated worker setup and contention.
+
+Repeat comparable timings enough to expose material noise, preserve pass/skip
+counts and isolation checks, and report the observed result without a universal
+speedup target. Event-based completion can save fixed-delay time by returning as
+soon as the correlated result arrives; keep the full required deadline for slow
+valid outcomes. Do not shorten timeouts or drop assertions to improve the number.
+
 ## Sources
 
 Check these primary references against the repository's locked versions:
 
 - [Pytest fixture teardown](https://docs.pytest.org/en/stable/how-to/fixtures.html)
+- [Pytest duration reporting](https://docs.pytest.org/en/stable/how-to/usage.html#profiling-test-execution-duration)
 - [Pytest monkeypatch context](https://docs.pytest.org/en/stable/how-to/monkeypatch.html)
 - [pytest-asyncio fixture loop scope](https://pytest-asyncio.readthedocs.io/en/stable/reference/decorators/index.html)
 - [pytest-xdist session fixtures and run identity](https://pytest-xdist.readthedocs.io/en/stable/how-to.html)
