@@ -62,6 +62,8 @@ You do **not** need to run a giant review flow. Pick the smallest prompt that an
 | review whether tests exercise real behavior | [`coverage-design-review`](skills/coverage-design-review/SKILL.md) |
 | review whether source changes fulfill the applicable requirements | [`source-change-review`](skills/source-change-review/SKILL.md) |
 | review whether deleting or weakening tests loses required protection | [`test-removal-review`](skills/test-removal-review/SKILL.md) |
+| make pytest integration fixtures support local, external, and mixed services | [`pytest-hybrid-service-fixtures`](skills/pytest-hybrid-service-fixtures/SKILL.md) |
+| replace integration-test timing assumptions with correlated completion | [`event-driven-test-verification`](skills/event-driven-test-verification/SKILL.md) |
 | plan a change through nine independent review passes | [`ping-pong-plan`](agents/ping-pong-plan.md) |
 | implement, validate, review, fix, and polish a change | [`ping-ping-build`](agents/ping-ping-build.md) |
 
