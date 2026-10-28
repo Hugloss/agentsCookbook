@@ -2,7 +2,10 @@
 
 Cookbook CI proves repository structure, adapter safety, deterministic smoke behavior, and script syntax. [EvalShot](https://github.com/Hugloss/EvalShot) owns corpus validation and executable benchmarks. Neither repository's model-free checks prove that your installed OpenCode/Pi versions, local model endpoints, actual tokenizer/context configuration, or specialist discrimination behave correctly together.
 
-Use this as the promotion gate for a real local deployment.
+Use this as the promotion gate for a real local deployment. It qualifies a
+particular host/model profile; it is not a prerequisite for authoring,
+installing, or using a canonical skill. For contribution checks, follow
+[evaluation ownership and evidence](../CONTRIBUTING.md#evaluation-ownership-and-evidence).
 
 ## Host compatibility and context selection
 

@@ -32,4 +32,4 @@
 - [ ] `scripts/smoke-opencode-scripts.sh`
 - [ ] `scripts/smoke-run-artifacts.sh`
 
-<!-- For behavioral changes, link the associated EvalShot evaluation change or evidence: https://github.com/Hugloss/EvalShot. Add any model-backed or runtime-specific evidence actually run. Do not mark skipped validation as passing. -->
+<!-- Describe validation appropriate to the change and its claims; see CONTRIBUTING.md#evaluation-ownership-and-evidence. Reuse relevant evidence. Link an EvalShot change only when its corpus, runner, or other evaluation assets need updating; a skill change alone does not require a paired PR. Distinguish source review/example application from model-backed or runtime execution. Do not mark skipped validation as passing or claim measured quality without execution evidence. -->
