@@ -1,6 +1,6 @@
 ---
 name: pytest-hybrid-service-fixtures
-description: Builds pytest service fixtures that work with local Testcontainers, external endpoints, and mixed environments.
+description: Builds fast pytest fixtures for local containers, external services, and mixed environments with safe cleanup.
 license: MIT
 ---
 
@@ -8,7 +8,9 @@ license: MIT
 
 Construct or refactor the requested integration fixtures. Own the transformation
 from environment-specific setup to one service contract with explicit provisioning
-and cleanup ownership. Keep application behavior and integration assertions intact.
+and cleanup ownership. Optimize the test code by removing avoidable service startup,
+schema rebuilding, data preparation, and waiting. Keep application behavior,
+isolation, and integration assertions intact.
 
 ## INVARIANT
 
@@ -112,12 +114,9 @@ boundaries that could invalidate the change:
 - isolated tests/workers and unchanged borrowed data outside the allocation;
 - settings restoration and async client shutdown on the correct loop.
 
-For an optimization request, separate provisioning/migrations, test execution,
-waits, and reset/teardown costs. Compare the same test selection and worker count,
-including whole-run elapsed time and startup/migration counts. Keep cold-image
-and warm-image runs separate; a faster run with skipped tests is not an improvement.
-Use the reference's timing recipe. Large gains are possible when repeated setup
-dominates, but hybrid selection or session scope alone does not establish a gain.
+Apply the reference's code-level speed choices directly. Do not make timing runs,
+benchmarks, counters, or performance reports prerequisites for these improvements.
+Verify the changed fixture behavior and preserve test coverage and assertions.
 Separate helper/fake checks from real service runs. If Docker, credentials, or a
 dedicated external allocation are unavailable, complete the inspectable work and
 report those modes as unverified; never infer parity from one passing mode.
@@ -129,6 +128,7 @@ Keep deliberate lifecycle tests, legitimate function-scoped resources, direct
 configuration injection, and existing safe administrative helpers. Do not add a
 container to a unit test or invent a Manager hierarchy solely for naming uniformity.
 
+This construction workflow is standalone; neighboring reviews are optional.
 `repeated-test-setup-review` owns unnecessary construction cost;
 `test-state-contamination-review` owns cross-test state leaks;
 `test-isolation-boundary-review` owns unrelated effects forced into local tests;
@@ -139,10 +139,11 @@ service provisioning is correct. Reconcile a shared cause into one correction.
 ## OUTPUT
 
 Report the inspected fixture/consumer scope, endpoint-selection rules, ownership
-and namespace boundary, changes made, and validation by mode with actual results.
+and namespace boundary, repeated work removed, changes made, and functional
+validation by mode with actual results.
 For inspection-only requests, return a bounded `FINDING`, `CLEAN`, `LEAVE ALONE`,
 or `INSUFFICIENT EVIDENCE`: prove a contract violation before reporting a finding;
 support clean/leave-alone conclusions from the complete declared scope; preserve
 uninspected paths as unknown. For implementation, distinguish completed edits from
-verified behavior and unresolved modes. Do not claim the suite is environment
-agnostic or faster without the corresponding evidence.
+verified behavior and unresolved modes. Describe the implemented optimizations
+without inventing speedup figures; keep unverified environments explicit.

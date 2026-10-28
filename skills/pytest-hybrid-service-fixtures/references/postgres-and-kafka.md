@@ -7,7 +7,7 @@
 - [Client URLs](#client-urls)
 - [Readiness and administration](#readiness-and-administration)
 - [Kafka and mixed environments](#kafka-and-mixed-environments)
-- [Measuring the speed benefit](#measuring-the-speed-benefit)
+- [Optimize fixture code for speed](#optimize-fixture-code-for-speed)
 - [Sources](#sources)
 
 ## Lifetimes and database reset
@@ -216,49 +216,40 @@ Validate all-local and all-external configurations plus each supported mixed
 configuration. Report unavailable combinations explicitly. A stub proving branch
 selection cannot establish real broker/network/schema parity.
 
-## Measuring the speed benefit
+## Optimize fixture code for speed
 
-Measure the existing suite before changing fixture scope. Use the project's normal
-runner and the same selected tests, assertions, plugins, worker count, service
-versions, and data workload for the comparison. For example:
+Implement the following choices wherever the inspected test contract permits:
 
-```bash
-python -m pytest tests/integration --durations=20 --durations-min=0
-```
+- Start services on demand and reuse them at session scope per worker, instead
+  of starting a container for each test or for tests that do not use it.
+- Create and migrate a reusable owned database/schema once at its allocation
+  scope. Keep migrations out of per-test client and data-reset fixtures.
+- Restore only the test state that must be isolated: use a transaction when it
+  contains all writes, or scoped row/namespace cleanup for independent commits.
+  Preserve the prepared schema instead of rebuilding the whole database.
+- Prepare only the rows and fixtures a test needs. Share immutable reference
+  data when its ownership and read-only contract allow it; isolate mutable seeds
+  and preserve deliberate workload tests.
+- Reuse existing settings and safe client/pool owners rather than rebuilding the
+  application for every assertion. Keep async clients on their owning event loop
+  and retain function scope when wider reuse would violate that lifetime.
+- Return as soon as the correlated terminal outcome is observed. Replace fixed
+  completion delays with an event or bounded condition wait, while preserving the
+  required timeout and handling terminal failure immediately.
+- Keep external-only setup free of Docker work, and give parallel workers
+  independent state allocations so resets do not interfere.
 
-Inspect fixture setup separately with `--setup-show` when scope/repetition is
-unclear; do not compare a noisy diagnostic run with a quiet timing run. Record
-whole-process elapsed time as well as setup/call/teardown durations. Session setup
-and teardown may be attributed to the first/last dependent tests, so the duration
-list alone does not reveal how often containers or migrations ran. Count those
-operations using existing logs or a focused counter, and account for data-reset
-cost. Separate cold image pulls from warm runs and local from external-service
-results; external networking can offset the saved startup time.
-
-For a serial illustrative model, let `S` be expensive service/schema setup plus
-release cost, `T` test work, `R` per-test reset cost, and `N` the test count:
-
-- Rebuilding for every test costs approximately `N * (S + T)`.
-- Reusing a safely resettable setup costs approximately `S + N * (T + R)`.
-
-For **hypothetical** `N=100`, `S=2 s`, `T=0.05 s`, and `R=0.01 s`, those totals
-are 205 s and 8 s. This arithmetic explains the opportunity; it is not a benchmark
-or an expected speedup for an unmeasured suite. When actual test work, per-test
-migrations, network latency, or reset dominates, the improvement may be small.
-Parallel wall time also depends on duplicated worker setup and contention.
-
-Repeat comparable timings enough to expose material noise, preserve pass/skip
-counts and isolation checks, and report the observed result without a universal
-speedup target. Event-based completion can save fixed-delay time by returning as
-soon as the correlated result arrives; keep the full required deadline for slow
-valid outcomes. Do not shorten timeouts or drop assertions to improve the number.
+Inspect the fixture dependencies and resulting code to confirm that avoidable
+work has been removed, then run the applicable functional tests. Timing runs,
+instrumentation, and benchmark reports are not part of this workflow. Retain
+fresh setup where the test exercises lifecycle/migrations or cannot otherwise
+isolate its state; never gain speed by skipping cleanup, assertions, or tests.
 
 ## Sources
 
 Check these primary references against the repository's locked versions:
 
 - [Pytest fixture teardown](https://docs.pytest.org/en/stable/how-to/fixtures.html)
-- [Pytest duration reporting](https://docs.pytest.org/en/stable/how-to/usage.html#profiling-test-execution-duration)
 - [Pytest monkeypatch context](https://docs.pytest.org/en/stable/how-to/monkeypatch.html)
 - [pytest-asyncio fixture loop scope](https://pytest-asyncio.readthedocs.io/en/stable/reference/decorators/index.html)
 - [pytest-xdist session fixtures and run identity](https://pytest-xdist.readthedocs.io/en/stable/how-to.html)
