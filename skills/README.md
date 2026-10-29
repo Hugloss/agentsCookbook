@@ -45,6 +45,7 @@ A strong finding normally removes a path, decision, representation, traversal, b
 
 ## Execution integrity
 
+- `kafka-delivery-safety-review` — Prove Kafka fetch-to-ack delivery safety across long processing, rebalances, replay, and protected effects.
 - `atomic-operation-review` — Find logical operations that can expose partial externally visible state.
 - `retry-idempotency-review` — Find replay/retry paths that can repeat one-shot effects.
 - `resource-lifetime-review` — Find resources that leak, close too early, or outlive their owner.
@@ -153,6 +154,7 @@ Use the narrowest skill that owns the question:
 - `hidden-authority-cucumber-attack` asks whether a historical/name-based exception or incidental repair/transport staging location is itself acting as authority without a current semantic owner or consumer; `single-source-of-truth-review` asks whether multiple current owners establish the same truth; `alternate-path-removal-review` asks whether an obsolete implementation path remains beside the canonical path.
 - `state-authority-review` asks **which representation is truth**; `invalid-state-model-review` asks **whether that representation can express impossible states**.
 - `stale-work-race-review` asks whether superseded old work can still commit; `retry-idempotency-review` asks whether the **same logical operation** can repeat a one-shot effect.
+- `kafka-delivery-safety-review` owns **Kafka-specific fetch, admission, partition-offset acknowledgement, rebalance, and recovery composition**; `retry-idempotency-review` owns transport-agnostic duplicate effects, `stale-work-race-review` owns generic superseded work, `failure-contract-review` owns cross-layer failure classification, and `resource-lifetime-review` owns general cleanup. Do not split one proven Kafka delivery failure into duplicate specialist findings.
 - `durable-commit-path-review` asks why one transition has multiple commit authorities; `atomic-operation-review` asks whether one legitimate path can expose only part of its required outcome.
 - `resource-lifetime-review` owns general acquire/use/release lifetime; `ui-lifecycle-race-review` owns delayed work specifically outliving a UI/view generation.
 - `failure-contract-review` owns failure meaning, retryability, and recovery semantics; `unknown-state-collapse-review` owns loss of uncertainty when no failure contract is being reinterpreted; `semantic-redecision-review` owns broader repeated policy interpretation.
