@@ -1,6 +1,6 @@
 ---
 name: kafka-delivery-safety-review
-description: Finds Kafka consumer paths that lose, prematurely acknowledge, or concurrently repeat work during long processing and recovery.
+description: Finds Kafka acknowledgements, rebalances, and long-running work that lose messages or repeat protected effects.
 license: MIT
 ---
 
