@@ -16,6 +16,8 @@ const FULL_REVIEWERS = [
   'code-performance-optimization-auditor',
   'plan-contract-checker',
 ];
+const MAX_REPORT_CHARS = 65536;
+const MAX_SUMMARY_CHARS = 1200;
 
 function usage() {
   process.stdout.write(`Usage: scripts/check-run-artifacts.js --run-dir DIR [--reviewer NAME ...]\n\n`);
@@ -34,6 +36,8 @@ function parseArgs(argv) {
   }
   if (!options.help && !options.runDir) throw new Error('--run-dir is required.');
   if (options.reviewers.some((value) => !value)) throw new Error('--reviewer requires a non-empty name.');
+  if (options.reviewers.some((value) => !FULL_REVIEWERS.includes(value))) throw new Error('--reviewer must name a canonical cookbook reviewer.');
+  if (new Set(options.reviewers).size !== options.reviewers.length) throw new Error('--reviewer must not be repeated.');
   return options;
 }
 
@@ -49,9 +53,23 @@ function readJson(file) {
 function listBaseNames(dir, suffix) {
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(suffix))
+    .filter((entry) => entry.name.endsWith(suffix))
     .map((entry) => entry.name.slice(0, -suffix.length))
     .sort();
+}
+
+function isWithin(parent, candidate) {
+  const relative = path.relative(parent, candidate);
+  return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+function confinedDirectory(root, name) {
+  const candidate = path.join(root, name);
+  if (!fs.existsSync(candidate)) return candidate;
+  const resolved = fs.realpathSync(candidate);
+  if (!isWithin(root, resolved)) throw new Error(`${name} escapes configured run root.`);
+  if (!fs.statSync(resolved).isDirectory()) throw new Error(`${name} is not a directory.`);
+  return resolved;
 }
 
 function sameSet(actual, expected) {
@@ -69,9 +87,10 @@ function main() {
   if (options.help) { usage(); return; }
 
   const runDir = fs.realpathSync(path.resolve(options.runDir));
-  const reviewsDir = path.join(runDir, 'reviews');
-  const receiptsDir = path.join(runDir, 'receipts');
-  const expected = [...new Set(options.reviewers.length ? options.reviewers : FULL_REVIEWERS)].sort();
+  if (!fs.statSync(runDir).isDirectory()) throw new Error('--run-dir is not a directory.');
+  const reviewsDir = confinedDirectory(runDir, 'reviews');
+  const receiptsDir = confinedDirectory(runDir, 'receipts');
+  const expected = [...(options.reviewers.length ? options.reviewers : FULL_REVIEWERS)].sort();
   const reviewNames = listBaseNames(reviewsDir, '.md');
   const receiptNames = listBaseNames(receiptsDir, '.json');
 
@@ -87,33 +106,46 @@ function main() {
   for (const reviewer of expected) {
     const artifactFile = path.join(reviewsDir, `${reviewer}.md`);
     const receiptFile = path.join(receiptsDir, `${reviewer}.json`);
-    if (!fs.existsSync(artifactFile) || !fs.existsSync(receiptFile)) continue;
+    if (!fs.existsSync(artifactFile) || !fs.existsSync(receiptFile)) {
+      fail(`artifact_pair_${reviewer}`, 'missing_report_or_receipt');
+      continue;
+    }
 
     const artifactReal = fs.realpathSync(artifactFile);
     const receiptReal = fs.realpathSync(receiptFile);
-    if (!artifactReal.startsWith(`${fs.realpathSync(reviewsDir)}${path.sep}`)) {
+    if (!isWithin(reviewsDir, artifactReal) || !fs.statSync(artifactReal).isFile()) {
       fail(`artifact_path_${reviewer}`, 'escapes_reviews_dir');
       continue;
     }
-    if (!receiptReal.startsWith(`${fs.realpathSync(receiptsDir)}${path.sep}`)) {
+    if (!isWithin(receiptsDir, receiptReal) || !fs.statSync(receiptReal).isFile()) {
       fail(`receipt_path_${reviewer}`, 'escapes_receipts_dir');
       continue;
     }
 
+    if (fs.statSync(artifactReal).size > (MAX_REPORT_CHARS + 1) * 4) {
+      fail(`artifact_budget_${reviewer}`, `bytes_exceed_report_limit`);
+      continue;
+    }
     const body = fs.readFileSync(artifactReal, 'utf8');
     const receipt = readJson(receiptReal);
     const expectedHash = sha256(body);
-    const identityOkay = receipt.schema_version === 1
+    const identityOkay = receipt && typeof receipt === 'object' && !Array.isArray(receipt)
+      && receipt.schema_version === 1
+      && receipt.run_id === path.basename(runDir)
       && receipt.reviewer === reviewer
       && receipt.artifact_id === reviewer
       && receipt.artifact === `reviews/${reviewer}.md`;
     identityOkay ? pass(`receipt_identity_${reviewer}`) : fail(`receipt_identity_${reviewer}`, 'identity_mismatch');
+    if (!identityOkay) continue;
     receipt.sha256 === expectedHash ? pass(`artifact_sha256_${reviewer}`) : fail(`artifact_sha256_${reviewer}`, 'hash_mismatch');
-    receipt.chars === body.length ? pass(`artifact_chars_${reviewer}`, `chars=${body.length}`) : fail(`artifact_chars_${reviewer}`, `receipt=${receipt.chars} actual=${body.length}`);
+    Number.isInteger(receipt.chars) && receipt.chars === body.length ? pass(`artifact_chars_${reviewer}`, `chars=${body.length}`) : fail(`artifact_chars_${reviewer}`, `receipt=${receipt.chars} actual=${body.length}`);
+
+    if (body.trim() && body.length <= MAX_REPORT_CHARS + 1) pass(`artifact_budget_${reviewer}`, `chars=${body.length}`);
+    else fail(`artifact_budget_${reviewer}`, `chars=${body.length} max=${MAX_REPORT_CHARS + 1}`);
 
     const summary = typeof receipt.summary === 'string' ? receipt.summary : '';
-    if (summary.length > 0 && summary.length <= 1200) pass(`summary_budget_${reviewer}`, `chars=${summary.length}`);
-    else fail(`summary_budget_${reviewer}`, `chars=${summary.length} max=1200`);
+    if (summary.trim() && summary.length <= MAX_SUMMARY_CHARS) pass(`summary_budget_${reviewer}`, `chars=${summary.length}`);
+    else fail(`summary_budget_${reviewer}`, `chars=${summary.length} max=${MAX_SUMMARY_CHARS}`);
 
     if (['opencode', 'pi'].includes(receipt.runtime)) pass(`runtime_${reviewer}`, `runtime=${receipt.runtime}`);
     else fail(`runtime_${reviewer}`, `runtime=${String(receipt.runtime)}`);

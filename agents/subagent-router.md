@@ -6,6 +6,7 @@ maxDepth: 1
 allowedAgents: [plan-improver-model2, plan-improver-model3, plan-validation-designer, plan-coverage-reviewer, plan-red-team-gate, plan-implementation-simulator, plan-fact-auditor, code-performance-optimization-auditor, plan-contract-checker]
 permission:
   "*": deny
+  subagent: allow
   task:
     "*": deny
     plan-improver-model2: allow

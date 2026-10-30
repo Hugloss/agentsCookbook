@@ -4,10 +4,12 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { parsePiSession, collectPiTools, object } = require('./lib-pi-session');
 
 function usage() {
   process.stdout.write(`Usage: scripts/export-review-artifacts.js --runtime opencode|pi --input FILE --out DIR [options]\n\n`);
   process.stdout.write('Materialize reviewer outputs from an existing runtime trace without granting reviewers write access.\n\n');
+  process.stdout.write('Pi exports use the active branch. The output directory must be absent or empty.\n\n');
   process.stdout.write('Options:\n');
   process.stdout.write('  --run-id ID              Stable run identifier (default: derived from input bytes).\n');
   process.stdout.write('  --subject-id ID          Optional reviewed subject identifier.\n');
@@ -42,12 +44,6 @@ function parseArgs(argv) {
 
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
-}
-
-function parseMaybeJson(value) {
-  if (value && typeof value === 'object') return value;
-  if (typeof value !== 'string') return {};
-  try { return JSON.parse(value); } catch { return {}; }
 }
 
 function safeName(value) {
@@ -95,88 +91,85 @@ function piTextContent(result) {
 }
 
 function parsePi(raw) {
-  const entries = raw.split(/\r?\n/).filter(Boolean).map((line, index) => {
-    try { return JSON.parse(line); }
-    catch (error) { throw new Error(`Invalid Pi JSONL at line ${index + 1}: ${error.message}`); }
+  const session = parsePiSession(raw, 'Pi export');
+  const calls = collectPiTools(session.entries, 'Pi export').filter((call) => call.name === 'subagent').map((call) => {
+    if (typeof call.args.agent !== 'string' || !call.args.agent) throw new Error('Pi export: subagent call is missing its reviewer identity.');
+    const { result } = call;
+    const details = result && object(result.details) ? result.details : {};
+    if (result && details.agent !== call.args.agent) throw new Error('Pi export: subagent result reviewer identity does not match its call.');
+    const output = normalizeOutput(details.output);
+    const runtimeStatus = String(details.status || (result ? 'unknown' : 'missing-result'));
+    let status = 'unknown';
+    if (!result) status = 'missing';
+    else if (result.isError === true || ['error', 'failed', 'cancelled', 'canceled', 'aborted'].includes(runtimeStatus)) status = 'failed';
+    else if (['running', 'pending', 'queued'].includes(runtimeStatus)) status = 'incomplete';
+    else if (runtimeStatus === 'done' && result.isError === false) status = output ? 'succeeded' : 'failed';
+    return {
+      reviewer: call.args.agent, runtimeStatus, status, output,
+      error: status === 'failed' ? (piTextContent(result) || output || 'Reviewer returned no usable output.') : '',
+      toolCallId: call.id,
+    };
   });
-
-  const results = new Map();
-  for (const entry of entries) {
-    if (entry.type !== 'message' || !entry.message) continue;
-    if (entry.message.role === 'toolResult' && entry.message.toolCallId) {
-      results.set(entry.message.toolCallId, entry.message);
-    }
-    if (Array.isArray(entry.message.content)) {
-      for (const part of entry.message.content) {
-        if (part && part.type === 'toolResult' && part.toolCallId) results.set(part.toolCallId, part);
-      }
-    }
-  }
-
-  const calls = [];
-  for (const entry of entries) {
-    if (entry.type !== 'message' || !entry.message || !Array.isArray(entry.message.content)) continue;
-    for (const part of entry.message.content) {
-      if (!part || part.type !== 'toolCall' || part.name !== 'subagent') continue;
-      const args = parseMaybeJson(part.arguments);
-      const result = results.get(part.id);
-      const details = result && result.details && typeof result.details === 'object' ? result.details : {};
-      const output = normalizeOutput(details.output) || piTextContent(result);
-      const errorText = result && result.isError ? (piTextContent(result) || normalizeOutput(details.output)) : '';
-      const failed = Boolean(result && (result.isError || ['error', 'failed'].includes(String(details.status || '').toLowerCase())));
-      calls.push({
-        reviewer: String(args.agent || '<missing agent>'),
-        runtimeStatus: String(details.status || (result ? 'unknown' : 'missing-result')),
-        status: !result ? 'missing' : failed ? 'failed' : output ? 'succeeded' : 'failed',
-        output,
-        error: errorText,
-        toolCallId: part.id || '',
-      });
-    }
-  }
-  return calls;
-}
-
-function readJsonObject(raw, label) {
-  const start = raw.indexOf('{');
-  if (start < 0) throw new Error(`${label}: missing JSON object.`);
-  return JSON.parse(raw.slice(start));
+  return { calls, sessionId: session.header.id, scope: 'active-branch' };
 }
 
 function parseOpenCode(raw) {
-  const root = readJsonObject(raw, 'OpenCode export');
+  const root = JSON.parse(raw);
+  if (!object(root) || !object(root.info) || typeof root.info.id !== 'string' || !root.info.id || !Array.isArray(root.messages)) {
+    throw new Error('OpenCode export: expected a native session info object and messages array.');
+  }
   const calls = [];
-
-  function visit(value) {
-    if (!value || typeof value !== 'object') return;
-    if (value.tool === 'task') {
-      const state = value.state && typeof value.state === 'object' ? value.state : {};
-      const input = parseMaybeJson(state.input ?? value.input ?? {});
-      const output = normalizeOutput(state.output ?? value.output ?? '');
-      const runtimeStatus = String(state.status || value.status || 'unknown');
-      const failed = ['error', 'failed'].includes(runtimeStatus.toLowerCase());
+  const messageIds = new Set();
+  const partIds = new Set();
+  for (const message of root.messages) {
+    const info = message && message.info;
+    if (!object(info) || typeof info.id !== 'string' || !info.id || messageIds.has(info.id)
+        || info.sessionID !== root.info.id || !['user', 'assistant'].includes(info.role) || !Array.isArray(message.parts)) {
+      throw new Error('OpenCode export: invalid or duplicate message identity.');
+    }
+    messageIds.add(info.id);
+    const callIds = new Set();
+    for (const part of message.parts) {
+      if (!object(part) || typeof part.id !== 'string' || !part.id || partIds.has(part.id)
+          || part.sessionID !== root.info.id || part.messageID !== info.id || typeof part.type !== 'string') {
+        throw new Error('OpenCode export: invalid or duplicate part identity.');
+      }
+      partIds.add(part.id);
+      if (part.type !== 'tool') continue;
+      if (info.role !== 'assistant' || typeof part.callID !== 'string' || !part.callID || callIds.has(part.callID)) {
+        throw new Error('OpenCode export: invalid or duplicate tool-call identity.');
+      }
+      callIds.add(part.callID);
+      if (part.tool !== 'task') continue;
+      const state = part.state;
+      if (!object(state) || !object(state.input) || typeof state.input.subagent_type !== 'string' || !state.input.subagent_type) {
+        throw new Error('OpenCode export: task is missing structured state or reviewer identity.');
+      }
+      const output = normalizeOutput(state.output);
+      const runtimeStatus = typeof state.status === 'string' && state.status ? state.status : 'unknown';
+      const wrapper = output.match(/^<task\b([^>]*)>[\s\S]*<\/task>$/);
+      const taskState = wrapper && (wrapper[1].match(/\bstate=["']([^"']+)["']/) || [])[1];
+      const nativeWrapper = output.match(/^<task id="[^"]+" state="([^"]+)">\s*(?:<summary>[\s\S]*?<\/summary>\s*)?<task_result>([\s\S]*)<\/task_result>\s*<\/task>$/);
+      const resultEnvelope = output.match(/<task_result>([\s\S]*?)<\/task_result>\s*(?:<\/task>)?$/);
+      const recognizableEnvelope = /^<task(?:\s|>)/.test(output) || /^<task_result>/.test(output) || /^task_id:/.test(output);
+      let status = 'unknown';
+      if (['error', 'failed', 'cancelled', 'canceled', 'aborted'].includes(runtimeStatus) || taskState === 'error') status = 'failed';
+      else if (['running', 'pending'].includes(runtimeStatus) || (state.metadata && state.metadata.background === true) || taskState === 'running') status = 'incomplete';
+      else if (runtimeStatus === 'completed') {
+        if (!output || (resultEnvelope && !normalizeOutput(resultEnvelope[1]))) status = 'failed';
+        else if (recognizableEnvelope && !resultEnvelope) status = 'unknown';
+        else if (/^<task(?:\s|>)/.test(output) && !nativeWrapper) status = 'unknown';
+        else if (wrapper && taskState !== 'completed') status = 'unknown';
+        else status = 'succeeded';
+      }
       calls.push({
-        reviewer: String(input.subagent_type || '<missing subagent_type>'),
-        runtimeStatus,
-        status: failed ? 'failed' : output ? 'succeeded' : 'failed',
-        output,
-        error: failed ? output : '',
-        toolCallId: String(value.id || value.callID || value.callId || ''),
+        reviewer: state.input.subagent_type, runtimeStatus, status, output,
+        error: status === 'failed' ? (normalizeOutput(state.error) || output || 'Reviewer returned no usable output.') : '',
+        toolCallId: part.callID,
       });
     }
-    if (Array.isArray(value)) {
-      for (const child of value) visit(child);
-    } else {
-      for (const child of Object.values(value)) visit(child);
-    }
   }
-
-  visit(root);
-  return calls;
-}
-
-function ensureDir(dir) {
-  fs.mkdirSync(dir, { recursive: true });
+  return { calls, sessionId: root.info.id, scope: 'session' };
 }
 
 function artifactBody(call) {
@@ -197,29 +190,37 @@ function main() {
 
   const inputPath = path.resolve(options.input);
   const outputDir = path.resolve(options.outputDir);
-  const raw = fs.readFileSync(inputPath, 'utf8');
-  const calls = options.runtime === 'pi' ? parsePi(raw) : parseOpenCode(raw);
-  const runId = options.runId || `run-${sha256(raw).slice(0, 16)}`;
+  const source = fs.readFileSync(inputPath);
+  const raw = source.toString('utf8');
+  const parsed = options.runtime === 'pi' ? parsePi(raw) : parseOpenCode(raw);
+  const { calls } = parsed;
+  const sourceHash = sha256(source);
+  const runId = options.runId || `run-${sourceHash.slice(0, 16)}`;
   const subject = {
     id: options.subjectId || null,
     revision: options.subjectRevision || null,
     sha256: options.subjectSha256 || null,
   };
 
-  const reviewsDir = path.join(outputDir, 'reviews');
-  const receiptsDir = path.join(outputDir, 'receipts');
-  ensureDir(reviewsDir);
-  ensureDir(receiptsDir);
+  let existing;
+  try { existing = fs.lstatSync(outputDir); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (existing && (!existing.isDirectory() || existing.isSymbolicLink() || fs.readdirSync(outputDir).length)) {
+    throw new Error('--out must be an absent or empty directory; existing artifacts are not overwritten.');
+  }
 
   const manifest = {
     schema_version: 1,
     run_id: runId,
     runtime: options.runtime,
     source_file: path.basename(inputPath),
+    source_sha256: sourceHash,
+    session_id: parsed.sessionId,
+    scope: parsed.scope,
     subject,
     reviewers: [],
   };
 
+  const files = [];
   calls.forEach((call, index) => {
     const sequence = index + 1;
     const prefix = String(sequence).padStart(2, '0');
@@ -236,6 +237,9 @@ function main() {
       status: call.status,
       runtime_status: call.runtimeStatus,
       tool_call_id: call.toolCallId || null,
+      source_sha256: sourceHash,
+      session_id: parsed.sessionId,
+      scope: parsed.scope,
       subject,
       artifact: artifactRel,
       output_sha256: sha256(body),
@@ -244,8 +248,7 @@ function main() {
       summary_hint: firstSummaryLine(body),
     };
 
-    fs.writeFileSync(path.join(outputDir, artifactRel), body, 'utf8');
-    fs.writeFileSync(path.join(outputDir, receiptRel), `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
+    files.push([artifactRel, body], [receiptRel, `${JSON.stringify(receipt, null, 2)}\n`]);
     manifest.reviewers.push({
       sequence,
       reviewer: call.reviewer,
@@ -262,10 +265,24 @@ function main() {
     succeeded: manifest.reviewers.filter((item) => item.status === 'succeeded').length,
     failed: manifest.reviewers.filter((item) => item.status === 'failed').length,
     missing: manifest.reviewers.filter((item) => item.status === 'missing').length,
+    incomplete: manifest.reviewers.filter((item) => item.status === 'incomplete').length,
+    unknown: manifest.reviewers.filter((item) => item.status === 'unknown').length,
   };
-  fs.writeFileSync(path.join(outputDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  files.push(['manifest.json', `${JSON.stringify(manifest, null, 2)}\n`]);
 
-  process.stdout.write(`SUMMARY status=pass runtime=${options.runtime} run_id=${runId} reviewers=${manifest.counts.total} succeeded=${manifest.counts.succeeded} failed=${manifest.counts.failed} out=${outputDir}\n`);
+  const parent = path.dirname(outputDir);
+  fs.mkdirSync(parent, { recursive: true });
+  const staging = fs.mkdtempSync(path.join(parent, '.cookbook-export-'));
+  try {
+    fs.mkdirSync(path.join(staging, 'reviews'));
+    fs.mkdirSync(path.join(staging, 'receipts'));
+    for (const [relative, content] of files) fs.writeFileSync(path.join(staging, relative), content, { encoding: 'utf8', flag: 'wx' });
+    fs.renameSync(staging, outputDir);
+  } finally {
+    fs.rmSync(staging, { recursive: true, force: true });
+  }
+
+  process.stdout.write(`SUMMARY status=pass operation=export runtime=${options.runtime} run_id=${runId} reviewers=${manifest.counts.total} succeeded=${manifest.counts.succeeded} failed=${manifest.counts.failed} missing=${manifest.counts.missing} incomplete=${manifest.counts.incomplete} unknown=${manifest.counts.unknown} out=${outputDir}\n`);
 }
 
 try {

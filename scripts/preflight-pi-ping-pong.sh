@@ -46,24 +46,17 @@ check_link() {
   if [ ! -L "$dest" ]; then fail "$name" "path=$dest expected=$expected"; return; fi
   resolved="$(realpath -- "$dest" 2>/dev/null || true)"; [ "$resolved" = "$expected" ] && pass "$name" "path=$dest" || fail "$name" "resolved=${resolved:-<unresolved>} expected=$expected"
 }
-version_at_least() {
-  local minimum="$1" actual="$2"
-  [ -n "$actual" ] && [ "$(printf '%s\n%s\n' "$minimum" "$actual" | sort -V | head -n 1)" = "$minimum" ]
-}
-
 if command -v pi >/dev/null 2>&1; then
-  pi_version="$(pi --version 2>/dev/null | sed -n '1s/[^0-9]*\([0-9][0-9.]*\).*/\1/p')"
-  if version_at_least 0.85.0 "$pi_version"; then pass command_pi "version=$pi_version minimum=0.85.0"; else fail command_pi "version=${pi_version:-unknown} minimum=0.85.0"; fi
+  pi_version_output="$(pi --version 2>/dev/null)"; pi_version_status=$?
+  pi_version="$(printf '%s\n' "$pi_version_output" | sed -nE '1s/^(pi[[:space:]]+)?([0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*$/\2/p')"
+  if [ "$pi_version_status" -eq 0 ] && [ "$pi_version" = 1.4.0 ]; then pass command_pi "version=$pi_version checked_host=1.4.0"; else fail command_pi "version=${pi_version:-unknown} exit=$pi_version_status checked_host=1.4.0 run_native_compatibility_review_before_full_flow_qualification=true"; fi
 else fail command_pi missing; fi
 
-package_json="$pi_agent_dir/npm/node_modules/pi-open-agents/package.json"
-if [ -f "$package_json" ]; then
-  package_version="$(node -e 'const p=require(process.argv[1]);process.stdout.write(String(p.version||""))' "$package_json" 2>/dev/null || true)"
-  if version_at_least 0.1.20 "$package_version"; then pass pi_open_agents_package "version=$package_version minimum=0.1.20"; else fail pi_open_agents_package "version=${package_version:-unknown} minimum=0.1.20"; fi
-else fail pi_open_agents_package "missing=$package_json"; fi
-
-settings="$pi_agent_dir/settings.json"
-if [ -f "$settings" ] && node -e 'const fs=require("fs"),s=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const v=[...(Array.isArray(s.extensions)?s.extensions:[]),...(Array.isArray(s.packages)?s.packages:[])];process.exit(v.some(x=>typeof x==="string"&&/^npm:pi-open-agents(?:@|$)/.test(x))?0:1)' "$settings" 2>/dev/null; then pass pi_open_agents_enabled "settings=$settings"; else fail pi_open_agents_enabled "settings=$settings extension=npm:pi-open-agents"; fi
+if node "$repo_root/scripts/check-pi-installation.js" "$pi_agent_dir" "$target_repo" "$agent_src_dir"; then
+  pass pi_package_and_discovery checked=true
+else
+  fail pi_package_and_discovery native_compatibility_or_installation_mismatch
+fi
 
 for agent_file in $AC_AGENT_FILES; do check_link "pi_agent_${agent_file%.md}" "$pi_agent_dir/agents/$agent_file" "$agent_src_dir/$agent_file"; done
 for skill_name in $AC_SKILL_NAMES; do check_link "shared_skill_$skill_name" "$shared_skill_dir/$skill_name" "$skill_src_dir/$skill_name"; done
@@ -78,7 +71,7 @@ if [ -e "$legacy_pi_extension" ] || [ -L "$legacy_pi_extension" ]; then fail pi_
 expected_allowed="allowedAgents: [$(node -e 'const fs=require("fs");process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],"utf8")).join(", "))' "$repo_root/reviewers.json")]"
 for primary_file in $AC_PRIMARY_AGENT_FILES; do
   path="$agent_src_dir/$primary_file"
-  if grep -Fqx "$expected_allowed" "$path" && grep -q '^maxDepth: 1$' "$path" && grep -Fq '  "*": deny' "$path" && grep -q '^  review_artifact_read: allow$' "$path"; then pass "pi_contract_${primary_file%.md}" "allowed_reviewers=9 artifact_read=allow"; else fail "pi_contract_${primary_file%.md}" primary_contract_mismatch; fi
+  if grep -Fqx "$expected_allowed" "$path" && grep -q '^maxDepth: 1$' "$path" && grep -Fq '  "*": deny' "$path" && grep -q '^  subagent: allow$' "$path" && grep -q '^  review_artifact_read: allow$' "$path"; then pass "pi_contract_${primary_file%.md}" "allowed_reviewers=9 native_subagent=allow artifact_read=allow"; else fail "pi_contract_${primary_file%.md}" primary_contract_mismatch; fi
 done
 
 while read -r reviewer skill; do
@@ -94,13 +87,5 @@ done <<EOF
 $AC_STANDALONE_AGENT_SKILL_MAP
 EOF
 
-for agent_file in $AC_AGENT_FILES; do
-  canonical="$agent_src_dir/$agent_file"
-  for candidate in "$target_repo/.opencode/agents/$agent_file" "$target_repo/.pi/agents/$agent_file" "$target_repo/.agents/$agent_file"; do
-    [ -e "$candidate" ] || [ -L "$candidate" ] || continue
-    resolved="$(realpath -- "$candidate" 2>/dev/null || true)"; [ "$resolved" = "$canonical" ] && pass "project_override_${agent_file%.md}" "path=$candidate canonical=true" || fail "project_override_${agent_file%.md}" "path=$candidate shadows=$canonical"
-  done
-done
-
-if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass runtime=pi agents=12 skills=%s adapters=1 mandatory_flow_reviewers=9 pi_open_agents=%s\n' "$expected_skill_count" "$package_version"; exit 0; fi
+if [ "$failures" -eq 0 ]; then printf 'SUMMARY status=pass runtime=pi agents=12 skills=%s adapters=1 mandatory_flow_reviewers=9 evidence=static_preflight\n' "$expected_skill_count"; exit 0; fi
 printf 'SUMMARY status=fail runtime=pi failures=%s\n' "$failures"; exit 1

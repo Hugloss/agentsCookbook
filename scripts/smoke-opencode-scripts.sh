@@ -22,14 +22,16 @@ cleanup() { rm -rf "$temp_root"; }
 trap cleanup EXIT
 
 global_dir="$temp_root/global opencode"; pi_dir="$temp_root/pi agent"; skills_dir="$temp_root/shared skills"; target_dir="$temp_root/target repo"
-mkdir -p "$target_dir" "$global_dir/agents" "$skills_dir" "$temp_root/bin"
+mkdir -p "$target_dir" "$global_dir/agents" "$global_dir/plugins" "$skills_dir" "$temp_root/bin"
 
 ln -s "$repo_root/.opencode/agents/ping-pong-plan.md" "$global_dir/agents/ping-pong-plan.md"
 ln -s "$repo_root/.agents/skills/plan-gap-scout" "$skills_dir/plan-gap-scout"
+ln -s "$repo_root/adapters/opencode/review-artifact.js" "$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN"
 mkdir -p "$pi_dir/extensions"
 ln -s "$repo_root/adapters/pi/review-artifact.js" "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY"
 "$repo_root/scripts/link-opencode-local.sh" --dry-run --global-dir "$global_dir" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" >/dev/null
 [ -L "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY" ] || fail dry_run_preserves_legacy_pi_extension
+[ -L "$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN" ] || fail dry_run_preserves_legacy_opencode_plugin
 pass link_dry_run
 "$repo_root/scripts/link-opencode-local.sh" --global-dir "$global_dir" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" >/dev/null
 
@@ -41,7 +43,8 @@ assert_link pi_reviewer "$pi_dir/agents/plan-contract-checker.md" "$repo_root/ag
 assert_link shared_skill "$skills_dir/plan-gap-scout" "$repo_root/skills/plan-gap-scout"
 assert_link alternative_route_skill "$skills_dir/alternative-route-challenge" "$repo_root/skills/alternative-route-challenge"
 assert_link performance_skill "$skills_dir/code-performance-optimization-audit" "$repo_root/skills/code-performance-optimization-audit"
-assert_link opencode_artifact_plugin "$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN" "$repo_root/adapters/opencode/review-artifact.js"
+ac_opencode_artifact_entry_matches "$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN" "$repo_root/adapters/opencode/review-artifact.js" || fail opencode_artifact_native_entry
+pass opencode_artifact_native_entry
 assert_link pi_artifact_extension "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION" "$repo_root/adapters/pi"
 [ -f "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION/index.js" ] || fail pi_extension_entry_missing
 [ -f "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION/reviewer-tool-boundary.js" ] || fail pi_extension_helper_missing
@@ -86,14 +89,14 @@ if grep -Eq 'context_([0-9]+k|discipline)=true|grep[[:space:]][^;]*context[[:spa
 fi
 pass runtime_owned_model_context
 
-# Exercise a compatible version newer than the minimum so this smoke test
-# protects the >= policy rather than accidentally reintroducing an exact pin.
+# The latest pi-open-agents changes permission inheritance. Keep the verified
+# integration explicit; an unbounded minimum version is not a compatibility gate.
 mkdir -p "$pi_dir/npm/node_modules/pi-open-agents"
-printf '{"version":"0.1.22"}\n' >"$pi_dir/npm/node_modules/pi-open-agents/package.json"
-printf '{"extensions":["npm:pi-open-agents@0.1.22"]}\n' >"$pi_dir/settings.json"
-printf '#!/usr/bin/env bash\nprintf "pi 0.85.0\\n"\n' >"$temp_root/bin/pi"; chmod +x "$temp_root/bin/pi"
+printf '{"name":"pi-open-agents","version":"0.1.26"}\n' >"$pi_dir/npm/node_modules/pi-open-agents/package.json"
+printf '{"packages":["npm:pi-open-agents@0.1.26"]}\n' >"$pi_dir/settings.json"
+printf '#!/usr/bin/env bash\nprintf "pi 1.4.0\\n"\n' >"$temp_root/bin/pi"; chmod +x "$temp_root/bin/pi"
 PATH="$temp_root/bin:$PATH" "$repo_root/scripts/preflight-pi-ping-pong.sh" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" "$target_dir" >/dev/null
-pass pi_preflight_newer_compatible_plugin
+pass pi_preflight_verified_plugin
 
 ln -s "$repo_root/adapters/pi/review-artifact.js" "$pi_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY"
 if PATH="$temp_root/bin:$PATH" "$repo_root/scripts/preflight-pi-ping-pong.sh" --pi-agent-dir "$pi_dir" --shared-skill-dir "$skills_dir" "$target_dir" >/dev/null 2>&1; then fail pi_preflight_accepts_duplicate_legacy_extension; fi
@@ -146,9 +149,9 @@ pass artifact_adapter_static_safety
 pi_trace="$temp_root/pi-trace.jsonl"; opencode_trace="$temp_root/opencode-export.json"; pi_artifacts="$temp_root/pi-artifacts"; opencode_artifacts="$temp_root/opencode-artifacts"
 node - "$pi_trace" "$opencode_trace" <<'NODE'
 const fs=require('fs');const [piPath,ocPath]=process.argv.slice(2);
-const pi=[{type:'session',version:3,id:'session-artifacts',cwd:'/repo'},{type:'message',id:'a1',parentId:'u1',message:{role:'assistant',content:[{type:'toolCall',id:'call-1',name:'subagent',arguments:{agent:'plan-coverage-reviewer',task:'review'}}]}},{type:'message',id:'r1',parentId:'a1',message:{role:'toolResult',toolCallId:'call-1',toolName:'subagent',isError:false,content:[{type:'text',text:'review complete'}],details:{agent:'plan-coverage-reviewer',status:'done',output:'# Coverage Design Review\n\n## Meaningful Coverage Gaps\n\nOne realistic gap.'}}},{type:'message',id:'a2',parentId:'r1',message:{role:'assistant',content:[{type:'toolCall',id:'call-2',name:'subagent',arguments:{agent:'plan-red-team-gate',task:'review'}}]}},{type:'message',id:'r2',parentId:'a2',message:{role:'toolResult',toolCallId:'call-2',toolName:'subagent',isError:true,content:[{type:'text',text:'model unavailable'}],details:{agent:'plan-red-team-gate',status:'error',output:''}}}];
+const pi=[{type:'session',version:3,id:'session-artifacts',cwd:'/repo'},{type:'message',id:'u1',parentId:null,message:{role:'user',content:[{type:'text',text:'Review this plan.'}]}},{type:'message',id:'a1',parentId:'u1',message:{role:'assistant',content:[{type:'toolCall',id:'call-1',name:'subagent',arguments:{agent:'plan-coverage-reviewer',task:'review'}}]}},{type:'message',id:'r1',parentId:'a1',message:{role:'toolResult',toolCallId:'call-1',toolName:'subagent',isError:false,content:[{type:'text',text:'review complete'}],details:{agent:'plan-coverage-reviewer',status:'done',output:'# Coverage Design Review\n\n## Meaningful Coverage Gaps\n\nOne realistic gap.'}}},{type:'message',id:'a2',parentId:'r1',message:{role:'assistant',content:[{type:'toolCall',id:'call-2',name:'subagent',arguments:{agent:'plan-red-team-gate',task:'review'}}]}},{type:'message',id:'r2',parentId:'a2',message:{role:'toolResult',toolCallId:'call-2',toolName:'subagent',isError:true,content:[{type:'text',text:'model unavailable'}],details:{agent:'plan-red-team-gate',status:'error',output:''}}}];
 fs.writeFileSync(piPath,`${pi.map(JSON.stringify).join('\n')}\n`);
-const oc={messages:[{info:{role:'assistant'},parts:[{type:'tool',tool:'task',id:'task-1',state:{status:'completed',input:{subagent_type:'plan-fact-auditor'},output:'# Fact Audit Report\n\n## Fact Audit Verdict\n\nPass'}}]}]};fs.writeFileSync(ocPath,`${JSON.stringify(oc)}\n`);
+const oc={info:{id:'session-opencode-artifacts'},messages:[{info:{id:'msg-1',sessionID:'session-opencode-artifacts',role:'assistant'},parts:[{type:'tool',tool:'task',id:'task-1',messageID:'msg-1',sessionID:'session-opencode-artifacts',callID:'call-1',state:{status:'completed',input:{subagent_type:'plan-fact-auditor'},output:'# Fact Audit Report\n\n## Fact Audit Verdict\n\nPass'}}]}]};fs.writeFileSync(ocPath,`${JSON.stringify(oc)}\n`);
 NODE
 node "$repo_root/scripts/export-review-artifacts.js" --runtime pi --input "$pi_trace" --out "$pi_artifacts" --run-id smoke-pi --subject-id plan-v2 --subject-revision 2 >/dev/null
 node "$repo_root/scripts/export-review-artifacts.js" --runtime opencode --input "$opencode_trace" --out "$opencode_artifacts" --run-id smoke-opencode >/dev/null
@@ -157,9 +160,13 @@ const fs=require('fs'),path=require('path');const [piDir,ocDir]=process.argv.sli
 NODE
 pass review_artifact_export
 
+node "$repo_root/scripts/smoke-opencode-runtime.mjs"
+pass opencode_runtime_contract_regressions
+
 for script in "$repo_root"/scripts/*.sh; do bash -n "$script"; done
 node --check "$repo_root/scripts/check-pi-session.js"
 node --check "$repo_root/scripts/export-review-artifacts.js"
+node --check "$repo_root/scripts/smoke-opencode-runtime.mjs"
 node --check "$repo_root/adapters/opencode/review-artifact.js"
 node --check "$repo_root/adapters/pi/index.js"
 node --check "$repo_root/adapters/pi/review-artifact.js"

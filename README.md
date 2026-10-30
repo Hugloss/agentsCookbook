@@ -36,6 +36,13 @@ The installer fails closed on unrelated conflicts unless you explicitly pass `--
 
 That installs the same canonical agent and skill sources for OpenCode and Pi. You can also ignore the adapters completely and copy or load any `SKILL.md` directly in another agent system.
 
+**Runtime compatibility:** the full OpenCode integration targets the 1.x API
+(native checks on 1.19.5). OpenCode 2 needs a plugin/API port; full preflight
+rejects it. The Pi adapter was checked with Pi 1.4.0 and `pi-open-agents` 0.1.26;
+0.1.27 changes permission inheritance and is incompatible with this reviewer
+flow. See the [version and evidence boundaries](docs/installation.md#runtime-versions)
+before upgrading a host or extension.
+
 Check the local installation with:
 
 ```bash
@@ -233,7 +240,8 @@ Prompt methodology is intended to remain portable, but host-specific role metada
 
 ## OpenCode and Pi
 
-OpenCode and Pi are supported consumers of the same canonical Markdown sources.
+OpenCode and Pi consume the same canonical Markdown sources. Full runtime
+integration depends on the [checked host/extension versions](docs/installation.md#runtime-versions).
 
 ```bash
 scripts/link-opencode-local.sh
@@ -304,6 +312,7 @@ The repository is licensed under the [`MIT License`](LICENSE).
 - [Architecture](docs/architecture.md)
 - [Ping-Pong planning example](docs/ping-pong-plan-flow.md)
 - [Local runtime qualification](docs/local-runtime-qualification.md)
+- [Runtime compatibility review, 2026-10-30](docs/runtime-compatibility-review-2026-10-30.md)
 - [Context discipline](protocols/context-discipline.md)
 - [Run artifacts](protocols/run-artifacts.md)
 - [Evaluation guidance in EvalShot](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md)

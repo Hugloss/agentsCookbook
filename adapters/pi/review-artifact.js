@@ -99,13 +99,30 @@ function writeArtifact(args, reviewerName) {
 function readArtifact(args) {
   const root = requireRunRoot()
   const reviews = ensureChildDir(root, "reviews")
+  const receipts = ensureChildDir(root, "receipts")
   const id = validateId(args.artifact_id)
   const candidate = path.join(reviews, `${id}.md`)
   const resolved = fs.realpathSync(candidate)
   const prefix = `${reviews}${path.sep}`
   if (!resolved.startsWith(prefix)) throw new Error("artifact escapes review directory")
   const body = fs.readFileSync(resolved, "utf8")
-  if (body.length > MAX_REPORT_CHARS + 1) throw new Error("artifact exceeds configured report limit")
+  if (!body.trim() || body.length > MAX_REPORT_CHARS + 1) throw new Error("artifact is empty or exceeds configured report limit")
+
+  const receiptPath = fs.realpathSync(path.join(receipts, `${id}.json`))
+  if (!receiptPath.startsWith(`${receipts}${path.sep}`)) throw new Error("receipt escapes receipt directory")
+  const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"))
+  if (!receipt || receipt.schema_version !== 1 || receipt.runtime !== "pi"
+      || receipt.run_id !== path.basename(root)
+      || receipt.reviewer !== id || receipt.artifact_id !== id
+      || receipt.artifact !== `reviews/${id}.md`) {
+    throw new Error("receipt identity does not match requested Pi artifact")
+  }
+  if (receipt.sha256 !== sha256(body) || !Number.isInteger(receipt.chars) || receipt.chars !== body.length) {
+    throw new Error("artifact does not match its receipt hash and character count")
+  }
+  if (typeof receipt.summary !== "string" || !receipt.summary.trim() || receipt.summary.length > MAX_SUMMARY_CHARS) {
+    throw new Error("receipt summary is empty or exceeds configured summary limit")
+  }
   return body
 }
 
@@ -163,10 +180,8 @@ export default function registerAgentsCookbookReviewArtifacts(pi) {
     const allowedTools = reviewerAllowedTools({ artifactEnabled })
     const applyReviewerToolBoundary = () => pi.setActiveTools(allowedTools)
 
-    // Apply during extension registration and again after Pi has completed
-    // session initialization. The latter is the documented lifecycle point for
-    // runtime tool selection and protects against later startup configuration.
-    applyReviewerToolBoundary()
+    // Runtime action methods are unavailable while the factory loads. Pi binds
+    // them before session_start, including starts caused by reload/resume.
     pi.on("session_start", async () => {
       applyReviewerToolBoundary()
     })

@@ -9,9 +9,10 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/link-opencode-local.sh [--dry-run] [--force] [--global-dir DIR] [--pi-agent-dir DIR] [--shared-skill-dir DIR]
 
-Install canonical agents/skills and the optional bounded review-artifact adapters
-for OpenCode and Pi. Artifact tools register only when AGENTS_COOKBOOK_RUN_DIR
-is set for the runtime process.
+Install canonical agents/skills and bounded review-artifact adapters for
+OpenCode and Pi. OpenCode gets a native entry that imports its SDK beside the
+host's dependencies and delegates to the canonical implementation. Artifact
+tools register only when AGENTS_COOKBOOK_RUN_DIR is set for the runtime process.
 USAGE
 }
 
@@ -37,7 +38,6 @@ if [ -n "$shared_skill_dir_arg" ]; then shared_skill_dir="$(ac_absolute_path "$s
 
 agent_src_dir="$(ac_agent_source_dir "$repo_root")"
 skill_src_dir="$(ac_skill_source_dir "$repo_root")"
-AC_SKILL_NAMES="$(ac_skill_names "$repo_root")"
 opencode_adapter="$(ac_opencode_artifact_adapter "$repo_root")"
 pi_adapter="$(ac_pi_artifact_adapter "$repo_root")"
 pi_adapter_dir="$(dirname -- "$pi_adapter")"
@@ -48,10 +48,36 @@ pi_extensions_dir="$pi_agent_dir/extensions"
 
 [ -d "$agent_src_dir" ] || ac_die "source agents directory missing: $agent_src_dir"
 [ -d "$skill_src_dir" ] || ac_die "source skills directory missing: $skill_src_dir"
+AC_SKILL_NAMES="$(ac_skill_names "$repo_root")"
+# Validate the complete source set before creating or replacing destination paths.
+for agent_file in $AC_AGENT_FILES; do
+  [ -f "$agent_src_dir/$agent_file" ] || ac_die "required agent Markdown file missing: $agent_src_dir/$agent_file"
+done
+for skill_name in $AC_SKILL_NAMES; do
+  [ -f "$skill_src_dir/$skill_name/SKILL.md" ] || ac_die "required skill file missing: $skill_src_dir/$skill_name/SKILL.md"
+done
 [ -f "$opencode_adapter" ] || ac_die "OpenCode adapter missing: $opencode_adapter"
 [ -f "$pi_adapter" ] || ac_die "Pi adapter missing: $pi_adapter"
 [ -f "$pi_adapter_dir/index.js" ] || ac_die "Pi extension entry missing: $pi_adapter_dir/index.js"
 [ -f "$pi_adapter_dir/reviewer-tool-boundary.js" ] || ac_die "Pi extension helper missing: $pi_adapter_dir/reviewer-tool-boundary.js"
+command -v node >/dev/null 2>&1 || ac_die "Node.js is required to validate the adapter reviewer catalog before installation"
+node - "$repo_root/reviewers.json" $AC_FLOW_REVIEWER_AGENT_FILES <<'NODE'
+const fs = require('node:fs');
+const [file, ...agents] = process.argv.slice(2);
+try {
+  const reviewers = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const expected = agents.map(name => name.replace(/\.md$/, '')).sort();
+  if (!Array.isArray(reviewers) || reviewers.length !== expected.length
+      || reviewers.some(name => typeof name !== 'string')
+      || [...reviewers].sort().some((name, i) => name !== expected[i])) {
+    throw new Error('must contain exactly the canonical flow reviewer names');
+  }
+} catch (error) {
+  console.error(`Error: invalid required reviewer catalog ${file}: ${error.message}`);
+  process.exit(1);
+}
+NODE
+opencode_entry="$(ac_opencode_artifact_entry_source "$opencode_adapter")"
 
 move_to_backup() {
   local path="$1" backup; backup="$(ac_backup_path_for "$path")"
@@ -109,6 +135,34 @@ verify_link() {
   [ "$resolved" = "$src" ] || ac_die "post-link verification failed for $dest; resolved=${resolved:-<unresolved>} expected=$src"
 }
 
+install_opencode_entry() {
+  local dest="$opencode_plugins_dir/$AC_OPENCODE_ARTIFACT_PLUGIN" temp_entry
+  if ac_opencode_artifact_entry_matches "$dest" "$opencode_adapter"; then
+    ac_info "ENTRY type=OpenCodeArtifactPlugin status=already_correct path=$dest"; return 0
+  fi
+  if [ -e "$dest" ] || [ -L "$dest" ]; then
+    if link_target_matches "$dest" "$opencode_adapter"; then
+      remove_owned_legacy_link "$dest" "$opencode_adapter" "OpenCodeArtifactPlugin"
+    else
+      [ "$force" = true ] || ac_die "conflict at $dest; pass --force to back it up before installing the native entry"
+      move_to_backup "$dest"
+    fi
+  fi
+  if [ "$dry_run" = true ]; then
+    ac_info "ENTRY type=OpenCodeArtifactPlugin status=would_create path=$dest source=$opencode_adapter"; return 0
+  fi
+  temp_entry="$(mktemp "$opencode_plugins_dir/.agents-cookbook-entry.XXXXXX")"
+  if ! printf '%s\n' "$opencode_entry" >"$temp_entry" || ! chmod 644 "$temp_entry"; then
+    rm -f -- "$temp_entry"; ac_die "could not materialize the OpenCode native entry"
+  fi
+  # Publish complete bytes without replacing a path that appeared meanwhile.
+  if ! ln -- "$temp_entry" "$dest"; then
+    rm -f -- "$temp_entry"; ac_die "could not create OpenCode native entry at $dest"
+  fi
+  rm -- "$temp_entry"
+  ac_info "ENTRY type=OpenCodeArtifactPlugin status=created path=$dest source=$opencode_adapter"
+}
+
 ensure_real_dir "$global_dir"
 ensure_real_dir "$opencode_agents_dir"
 ensure_real_dir "$opencode_plugins_dir"
@@ -128,8 +182,6 @@ if [ -e "$legacy_pi_extension" ] || [ -L "$legacy_pi_extension" ]; then
   fi
 fi
 
-for skill_name in $AC_SKILL_NAMES; do remove_owned_legacy_link "$global_dir/skills/$skill_name" "$repo_root/.opencode/skills/$skill_name" "OlderLegacySkill"; done
-
 agent_count=0
 for agent_file in $AC_AGENT_FILES; do
   src="$agent_src_dir/$agent_file"; legacy="$repo_root/.opencode/agents/$agent_file"
@@ -147,7 +199,7 @@ for skill_name in $AC_SKILL_NAMES; do
   skill_count=$((skill_count + 1))
 done
 
-link_one "$opencode_adapter" "$opencode_plugins_dir/$AC_OPENCODE_ARTIFACT_PLUGIN" "OpenCodeArtifactPlugin"
+install_opencode_entry
 link_one "$pi_adapter_dir" "$pi_extensions_dir/$AC_PI_ARTIFACT_EXTENSION" "PiArtifactExtension"
 
 for agent_file in $AC_AGENT_FILES; do
@@ -155,11 +207,39 @@ for agent_file in $AC_AGENT_FILES; do
   verify_link "$agent_src_dir/$agent_file" "$pi_agents_dir/$agent_file" "Pi agent"
 done
 for skill_name in $AC_SKILL_NAMES; do verify_link "$skill_src_dir/$skill_name" "$shared_skill_dir/$skill_name" "shared skill"; done
-verify_link "$opencode_adapter" "$opencode_plugins_dir/$AC_OPENCODE_ARTIFACT_PLUGIN" "OpenCode artifact plugin"
+if [ "$dry_run" = false ]; then
+  ac_opencode_artifact_entry_matches "$opencode_plugins_dir/$AC_OPENCODE_ARTIFACT_PLUGIN" "$opencode_adapter" || ac_die "post-install verification failed for the OpenCode native entry"
+fi
 verify_link "$pi_adapter_dir" "$pi_extensions_dir/$AC_PI_ARTIFACT_EXTENSION" "Pi artifact extension"
 
+# Reconcile retired names only after the current links have been verified. An
+# owned link must target this checkout's same-named source, including when that
+# source no longer exists. Foreign links, custom aliases and real files survive.
+for candidate in "$opencode_agents_dir/"*.md "$pi_agents_dir/"*.md; do
+  [ -L "$candidate" ] || continue
+  name="${candidate##*/}"; current=false
+  for agent_file in $AC_AGENT_FILES; do
+    if [ "$name" = "$agent_file" ]; then current=true; break; fi
+  done
+  [ "$current" = false ] || continue
+  remove_owned_legacy_link "$candidate" "$agent_src_dir/$name" "RetiredAgent"
+  remove_owned_legacy_link "$candidate" "$repo_root/.opencode/agents/$name" "RetiredLegacyAgent"
+done
+for candidate in "$shared_skill_dir/"*; do
+  [ -L "$candidate" ] || continue
+  name="${candidate##*/}"
+  [ ! -f "$skill_src_dir/$name/SKILL.md" ] || continue
+  remove_owned_legacy_link "$candidate" "$skill_src_dir/$name" "RetiredSkill"
+  remove_owned_legacy_link "$candidate" "$repo_root/.agents/skills/$name" "RetiredLegacySkill"
+done
+for candidate in "$global_dir/skills/"*; do
+  [ -L "$candidate" ] || continue
+  name="${candidate##*/}"
+  remove_owned_legacy_link "$candidate" "$repo_root/.opencode/skills/$name" "OlderLegacySkill"
+done
+
 cat <<NEXT_STEPS
-Installed cookbook links from canonical sources:
+Installed cookbook integration from canonical sources:
   Source agents:     $agent_src_dir
   Source skills:     $skill_src_dir
   OpenCode agents:   $opencode_agents_dir

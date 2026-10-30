@@ -4,6 +4,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const assert = require('assert/strict');
 const { pathToFileURL } = require('url');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -57,23 +58,133 @@ async function main() {
     fs.rmSync(foreignCwd, { recursive: true, force: true });
   }
 
-  const adapter = fs.readFileSync(adapterPath, 'utf8');
-  const requiredFragments = [
-    'if (artifactEnabled && reviewerName)',
-    'if (artifactEnabled && !reviewerName)',
-    'review_artifact is available only to a delegated reviewer child',
-    'unknown reviewer artifact_id',
-    'pi.setActiveTools(allowedTools)',
-    'pi.on("session_start"',
-    'pi.on("tool_call"',
-    'reviewerToolAllowed(event.toolName',
-    'artifact_id must equal current reviewer name',
-  ];
-  for (const fragment of requiredFragments) {
-    if (!adapter.includes(fragment)) fail(`adapter_missing=${JSON.stringify(fragment)}`);
-  }
+  await exerciseAdapter();
+  process.stdout.write('CHECK name=pi_reviewer_runtime_boundary status=pass evidence=adapter_with_lifecycle_stub reviewers=9 normal_tools=4 artifact_tools=5 role_separated_artifacts=true receipt_integrity=true session_start=true defense_in_depth=true\n');
+}
 
-  process.stdout.write('CHECK name=pi_reviewer_runtime_boundary status=pass reviewers=9 normal_tools=4 artifact_tools=5 role_separated_artifacts=true known_ids_only=true session_start=true defense_in_depth=true\n');
+async function exerciseAdapter() {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'cookbook-pi-adapter-'));
+  const adapterDir = path.join(scratch, 'adapters', 'pi');
+  const typeboxDir = path.join(adapterDir, 'node_modules', 'typebox');
+  const originalCwd = process.cwd();
+  const envKeys = ['PI_OPEN_AGENTS_DEPTH', 'PI_OPEN_AGENTS_NAME', 'AGENTS_COOKBOOK_RUN_DIR'];
+  const savedEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  try {
+    fs.mkdirSync(typeboxDir, { recursive: true });
+    fs.copyFileSync(path.join(repoRoot, 'reviewers.json'), path.join(scratch, 'reviewers.json'));
+    fs.copyFileSync(corePath, path.join(adapterDir, 'reviewer-tool-boundary.js'));
+    fs.copyFileSync(adapterPath, path.join(adapterDir, 'review-artifact.js'));
+    fs.writeFileSync(path.join(adapterDir, 'package.json'), '{"type":"module"}\n');
+    fs.writeFileSync(path.join(typeboxDir, 'package.json'), '{"type":"module","exports":"./index.js"}\n');
+    // Schema construction is a test double. The adapter and its storage code
+    // execute unchanged; native SDK loading has a separate optional check.
+    fs.writeFileSync(path.join(typeboxDir, 'index.js'), 'export const Type = { Object: value => value, String: value => value, Optional: value => value };\n');
+    const foreign = path.join(scratch, 'foreign');
+    fs.mkdirSync(foreign);
+    fs.writeFileSync(path.join(foreign, 'reviewers.json'), '["unknown-agent"]\n');
+    process.chdir(foreign);
+    const register = (await import(pathToFileURL(path.join(adapterDir, 'review-artifact.js')).href)).default;
+
+    function load(name, artifactEnabled) {
+      process.env.PI_OPEN_AGENTS_DEPTH = name ? '1' : '0';
+      process.env.PI_OPEN_AGENTS_NAME = name || '';
+      if (artifactEnabled) process.env.AGENTS_COOKBOOK_RUN_DIR = path.join(scratch, 'run');
+      else delete process.env.AGENTS_COOKBOOK_RUN_DIR;
+      let bound = false;
+      let active = [];
+      const handlers = new Map();
+      const tools = new Map();
+      register({
+        registerTool(tool) { tools.set(tool.name, tool); },
+        on(event, handler) {
+          if (!handlers.has(event)) handlers.set(event, []);
+          handlers.get(event).push(handler);
+        },
+        setActiveTools(names) {
+          if (!bound) throw new Error('Extension runtime not initialized. Action methods cannot be called during extension loading.');
+          active = [...names];
+        },
+      });
+      assert.deepEqual(active, [], 'factory must only register, not call bound runtime actions');
+      bound = true;
+      return {
+        tools,
+        get active() { return active; },
+        replaceActive(names) { active = [...names]; },
+        async emit(event, data = {}) {
+          let result;
+          for (const handler of handlers.get(event) || []) result = await handler({ type: event, ...data }, {});
+          return result;
+        },
+      };
+    }
+
+    for (const name of expectedReviewers) {
+      for (const artifactEnabled of [false, true]) {
+        const host = load(name, artifactEnabled);
+        assert.deepEqual([...host.tools.keys()], artifactEnabled ? ['review_artifact'] : []);
+        const allowed = [...expectedBaseTools, ...(artifactEnabled ? ['review_artifact'] : [])];
+        await host.emit('session_start', { reason: 'new' });
+        assert.deepEqual(host.active, allowed);
+        host.replaceActive(['read', 'bash', 'write']);
+        await host.emit('session_start', { reason: 'reload' });
+        assert.deepEqual(host.active, allowed);
+        for (const toolName of allowed) assert.equal(await host.emit('tool_call', { toolName }), undefined);
+        for (const toolName of ['bash', 'edit', 'write', 'subagent', 'task', 'review_artifact_read', 'unknown']) {
+          assert.equal((await host.emit('tool_call', { toolName })).block, true);
+        }
+      }
+    }
+
+    const reviewer = expectedReviewers[0];
+    const child = load(reviewer, true);
+    const writer = child.tools.get('review_artifact').execute;
+    const args = { artifact_id: reviewer, summary: 'One material finding.', content: '# Review\n\nOne finding.' };
+    await assert.rejects(() => writer('bad', { ...args, artifact_id: 'unknown-agent' }), /unknown reviewer artifact_id/);
+    await assert.rejects(() => writer('wrong', { ...args, artifact_id: expectedReviewers[1] }), /must equal current reviewer/);
+    const written = await writer('write', args);
+    assert.equal(written.details.reviewer, reviewer);
+    await assert.rejects(() => writer('repeat', args), /already exists/);
+
+    const primary = load('', true);
+    assert.deepEqual([...primary.tools.keys()], ['review_artifact_read']);
+    await primary.emit('session_start');
+    assert.deepEqual(primary.active, [], 'primary authority stays with its native agent');
+    const read = () => primary.tools.get('review_artifact_read').execute('read', { artifact_id: reviewer });
+    assert.equal((await read()).content[0].text, `${args.content}\n`);
+    const reportPath = path.join(scratch, 'run', 'reviews', `${reviewer}.md`);
+    const receiptPath = path.join(scratch, 'run', 'receipts', `${reviewer}.json`);
+    const receiptText = fs.readFileSync(receiptPath, 'utf8');
+    fs.writeFileSync(reportPath, 'Tampered report.\n');
+    await assert.rejects(read, /does not match its receipt/);
+    fs.writeFileSync(reportPath, `${args.content}\n`);
+    for (const patch of [{ runtime: 'opencode' }, { run_id: 'different-run' }, { reviewer: expectedReviewers[1] }, { chars: 1 }, { summary: ' ' }]) {
+      fs.writeFileSync(receiptPath, JSON.stringify({ ...JSON.parse(receiptText), ...patch }));
+      await assert.rejects(read);
+    }
+    fs.unlinkSync(receiptPath);
+    await assert.rejects(read, /ENOENT/);
+    const externalReceipt = path.join(scratch, 'external-receipt.json');
+    fs.writeFileSync(externalReceipt, receiptText);
+    fs.symlinkSync(externalReceipt, receiptPath);
+    await assert.rejects(read, /receipt escapes/);
+    fs.unlinkSync(receiptPath);
+    fs.writeFileSync(receiptPath, receiptText);
+    fs.unlinkSync(reportPath);
+    const externalReport = path.join(scratch, 'external-report.md');
+    fs.writeFileSync(externalReport, `${args.content}\n`);
+    fs.symlinkSync(externalReport, reportPath);
+    await assert.rejects(read, /artifact escapes/);
+
+    assert.deepEqual([...load('', false).tools.keys()], []);
+  } finally {
+    process.chdir(originalCwd);
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
 }
 
 main().catch((error) => {

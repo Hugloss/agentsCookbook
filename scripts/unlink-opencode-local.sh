@@ -9,7 +9,8 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/unlink-opencode-local.sh [--dry-run] [--global-dir DIR] [--pi-agent-dir DIR] [--shared-skill-dir DIR]
 
-Remove only this checkout's OpenCode/Pi agent, shared-skill, and artifact-adapter symlinks.
+Remove only this checkout's agent/skill/adapter symlinks and exact unmodified
+OpenCode native entry. Preserve foreign or modified files.
 USAGE
 }
 
@@ -30,13 +31,13 @@ done
 repo_root="$(ac_repo_root_from_script "${BASH_SOURCE[0]}")"
 agent_src_dir="$(ac_agent_source_dir "$repo_root")"
 skill_src_dir="$(ac_skill_source_dir "$repo_root")"
-AC_SKILL_NAMES="$(ac_skill_names "$repo_root")"
 opencode_adapter="$(ac_opencode_artifact_adapter "$repo_root")"
 pi_adapter="$(ac_pi_artifact_adapter "$repo_root")"
 pi_adapter_dir="$(dirname -- "$pi_adapter")"
 if [ -n "$global_dir_arg" ]; then global_dir="$(ac_absolute_path "$global_dir_arg")"; elif ! global_dir="$(ac_default_global_dir)"; then ac_die "HOME is not set"; fi
 if [ -n "$pi_agent_dir_arg" ]; then pi_agent_dir="$(ac_absolute_path "$pi_agent_dir_arg")"; elif ! pi_agent_dir="$(ac_default_pi_agent_dir)"; then ac_die "HOME is not set"; fi
 if [ -n "$shared_skill_dir_arg" ]; then shared_skill_dir="$(ac_absolute_path "$shared_skill_dir_arg")"; elif ! shared_skill_dir="$(ac_default_shared_skill_dir)"; then ac_die "HOME is not set"; fi
+command -v node >/dev/null 2>&1 || ac_die "Node.js is required to verify OpenCode entry ownership before removal"
 
 removed_any=false
 remove_owned_link() {
@@ -57,18 +58,32 @@ remove_empty_dir() {
   fi
 }
 
-for agent_file in $AC_AGENT_FILES; do
-  remove_owned_link "$global_dir/agents/$agent_file" "$agent_src_dir/$agent_file" "OpenCodeAgent"
-  remove_owned_link "$pi_agent_dir/agents/$agent_file" "$agent_src_dir/$agent_file" "PiAgent"
-  remove_owned_link "$global_dir/agents/$agent_file" "$repo_root/.opencode/agents/$agent_file" "LegacyOpenCodeAgent"
-  remove_owned_link "$pi_agent_dir/agents/$agent_file" "$repo_root/.opencode/agents/$agent_file" "LegacyPiAgent"
+# Inspect installed names as well as current sources, so deleted or renamed
+# upstream files do not leave dangling cookbook-owned links behind.
+for candidate in "$global_dir/agents/"*.md "$pi_agent_dir/agents/"*.md; do
+  [ -L "$candidate" ] || continue
+  name="${candidate##*/}"
+  remove_owned_link "$candidate" "$agent_src_dir/$name" "Agent"
+  remove_owned_link "$candidate" "$repo_root/.opencode/agents/$name" "LegacyAgent"
 done
-for skill_name in $AC_SKILL_NAMES; do
-  remove_owned_link "$shared_skill_dir/$skill_name" "$skill_src_dir/$skill_name" "SharedSkill"
-  remove_owned_link "$shared_skill_dir/$skill_name" "$repo_root/.agents/skills/$skill_name" "LegacySharedSkill"
-  remove_owned_link "$global_dir/skills/$skill_name" "$repo_root/.opencode/skills/$skill_name" "OlderLegacySkill"
+for candidate in "$shared_skill_dir/"*; do
+  [ -L "$candidate" ] || continue
+  name="${candidate##*/}"
+  remove_owned_link "$candidate" "$skill_src_dir/$name" "SharedSkill"
+  remove_owned_link "$candidate" "$repo_root/.agents/skills/$name" "LegacySharedSkill"
 done
-remove_owned_link "$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN" "$opencode_adapter" "OpenCodeArtifactPlugin"
+for candidate in "$global_dir/skills/"*; do
+  [ -L "$candidate" ] || continue
+  name="${candidate##*/}"
+  remove_owned_link "$candidate" "$repo_root/.opencode/skills/$name" "OlderLegacySkill"
+done
+opencode_entry="$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN"
+if ac_opencode_artifact_entry_matches "$opencode_entry" "$opencode_adapter"; then
+  if [ "$dry_run" = true ]; then ac_info "UNLINK type=OpenCodeArtifactEntry status=would_remove path=$opencode_entry"; else rm -- "$opencode_entry"; ac_info "UNLINK type=OpenCodeArtifactEntry status=removed path=$opencode_entry"; fi
+  removed_any=true
+else
+  remove_owned_link "$opencode_entry" "$opencode_adapter" "LegacyOpenCodeArtifactPlugin"
+fi
 remove_owned_link "$pi_agent_dir/extensions/$AC_PI_ARTIFACT_EXTENSION" "$pi_adapter_dir" "PiArtifactExtension"
 remove_owned_link "$pi_agent_dir/extensions/$AC_PI_ARTIFACT_EXTENSION_LEGACY" "$pi_adapter" "LegacyPiArtifactExtension"
 
