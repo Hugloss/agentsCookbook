@@ -12,7 +12,7 @@ The library works with **OpenCode, Pi, or another compatible agent runtime**. Th
 
 Benchmark execution, evaluation corpora, and the Agent Economics support toolkit now live in **[EvalShot](https://github.com/Hugloss/EvalShot)**. EvalShot owns their runners, tests, configuration, and documentation. This repository owns the canonical skills, agent prompts, flows, protocols, and OpenCode/Pi adapters.
 
-Use the cookbook directly for prompts and runtime installation. To evaluate those prompts, point EvalShot at the cookbook checkout you want to test; the skills remain here as one canonical source. See [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md) and [Agent Economics documentation](https://github.com/Hugloss/EvalShot/blob/main/scripts/agent_economics/README.md).
+Use the cookbook directly for prompts and runtime installation. When running evaluations with EvalShot, point it at the cookbook checkout you want to test; the skills remain here as one canonical source. See [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md) and [Agent Economics documentation](https://github.com/Hugloss/EvalShot/blob/main/scripts/agent_economics/README.md).
 
 ## 30-second setup
 
@@ -62,6 +62,8 @@ You do **not** need to run a giant review flow. Pick the smallest prompt that an
 | review whether tests exercise real behavior | [`coverage-design-review`](skills/coverage-design-review/SKILL.md) |
 | review whether source changes fulfill the applicable requirements | [`source-change-review`](skills/source-change-review/SKILL.md) |
 | review whether deleting or weakening tests loses required protection | [`test-removal-review`](skills/test-removal-review/SKILL.md) |
+| make pytest integration fixtures support local, external, and mixed services | [`pytest-hybrid-service-fixtures`](skills/pytest-hybrid-service-fixtures/SKILL.md) |
+| replace integration-test timing assumptions with correlated completion | [`event-driven-test-verification`](skills/event-driven-test-verification/SKILL.md) |
 | plan a change through nine independent review passes | [`ping-pong-plan`](agents/ping-pong-plan.md) |
 | implement, validate, review, fix, and polish a change | [`ping-ping-build`](agents/ping-ping-build.md) |
 
@@ -231,13 +233,15 @@ For cookbook adapter/session qualification and portable context-use guidance, se
 
 ## Evaluation
 
-A prompt loading successfully proves almost nothing about its quality.
+A prompt loading successfully proves availability; it does not establish behavioral quality.
+
+Contributing or using a skill does not automatically require an EvalShot change or model-backed run. Choose validation for the changed behavior and the claims being made: source review and representative application can support an instruction change, while measured behavioral, runtime, or performance claims require the corresponding execution evidence. See [contribution validation guidance](CONTRIBUTING.md#evaluation-ownership-and-evidence).
 
 The [evaluation corpus in EvalShot](https://github.com/Hugloss/EvalShot/tree/main/evals) focuses on **discrimination**: can the skill find its own failure class while rejecting safe cases and neighboring failure classes?
 
-The cookbook supplies the canonical prompt. EvalShot owns the evaluation contract and benchmark execution. The host runtime owns actual model execution, sandboxing, tool access, and repository materialization.
+The cookbook supplies the canonical prompt. EvalShot owns reusable evaluation corpora, benchmark contracts, runners, and evidence tooling. The host runtime owns actual model execution, sandboxing, tool access, and repository materialization.
 
-See [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md) and [sharp skill discrimination contract](https://github.com/Hugloss/EvalShot/blob/main/evals/sharp-skill-discrimination.md). Cookbook CI checks the canonical sources and adapters; behavioral evaluation runs through EvalShot against an explicitly selected cookbook checkout.
+See [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md) and [sharp skill discrimination contract](https://github.com/Hugloss/EvalShot/blob/main/evals/sharp-skill-discrimination.md). Cookbook CI checks the canonical sources and adapters. Reusable behavioral benchmarks run through EvalShot against an explicitly selected cookbook checkout; ordinary contribution validation remains scoped to the change.
 
 ## Repository layout
 

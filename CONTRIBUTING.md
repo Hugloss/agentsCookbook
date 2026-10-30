@@ -68,7 +68,7 @@ Before merging a new or materially changed skill, apply `skill-contract-review` 
 - when success depends on a baseline, policy, threshold, probe contract, or qualification oracle, establish that authority independently of candidate success and do not let the candidate silently weaken it;
 - bind source identity, provenance, environment, freshness, or representation only when those dimensions can materially change interpretation—do not cargo-cult evidence machinery into simple bounded skills;
 - keep the real semantic owner visible, including upstream ownership; do not encode local workarounds merely to keep a workflow or branch self-contained;
-- use positive/control benchmark cases to protect behavioral discrimination, adding more cases only for real ambiguity rather than a fixed quota;
+- check positive/control behavior when reviewer discrimination changes; reuse relevant examples or evaluation cases, adding coverage for concrete ambiguity rather than a fixed quota;
 - compress repeated rules. Prompt length is not itself a defect, but repeated methodology that does not sharpen discrimination is runtime and maintenance cost.
 
 
@@ -77,7 +77,7 @@ Before merging a new or materially changed skill, apply `skill-contract-review` 
 1. Add `skills/<skill-name>/SKILL.md`. Canonical skill discovery is derived from `skills/*/SKILL.md`; do not maintain a second manual skill registry.
 2. Add the skill to `skills/README.md` in the narrowest fitting category.
 3. Document overlap boundaries when another skill could plausibly report the same code.
-4. Add or update evaluation evidence in [EvalShot](https://github.com/Hugloss/EvalShot/tree/main/evals) when the change affects behavioral discrimination. Link the associated evaluation change or evidence from the skill PR.
+4. Describe validation appropriate to the change and its claims using [evaluation ownership and evidence](#evaluation-ownership-and-evidence). Link relevant existing evidence or an EvalShot change when one is needed; adding a skill does not automatically require a second PR.
 5. Do not add a new agent wrapper or mandatory flow step unless the role itself is distinct and the extra workflow cost is intentional.
 
 ## Agent prompts
@@ -125,9 +125,38 @@ Before merging an agent/skill/flow/preflight change, confirm that it does not
 introduce another model-context owner. See the canonical
 [context discipline protocol](protocols/context-discipline.md).
 
-## Evaluation ownership
+## Evaluation ownership and evidence
 
-Use [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md) for positive/control/confusion cases and model-backed skill evaluation. Use its [benchmark guide](https://github.com/Hugloss/EvalShot/blob/main/benchmarks/README.md) for campaign configuration, readiness, and execution. A prompt loading successfully, a corpus validating, and a model passing the behavioral cases establish different claims; report the evidence actually collected.
+EvalShot owns reusable evaluation corpora, runners, and benchmark evidence tooling.
+Creating, updating, installing, or using a cookbook skill does not by itself
+require an EvalShot checkout, change, paired PR, or model-backed run.
+
+Choose validation for the changed behavior and the claims being made. Reuse
+relevant existing evidence rather than creating a new evaluation for every edit.
+
+| Change or claim | Appropriate evidence |
+| --- | --- |
+| Documentation, examples, or implementation guidance | Source/API review and repository checks; apply materially changed instructions to a representative task where useful. New or materially changed skills still receive `skill-contract-review`. |
+| Reviewer detection, routing, or false-positive behavior | Inspect relevant positive/control examples and neighboring cases. Add or update the EvalShot corpus when reusable regression coverage is needed; use model-backed runs before claiming evaluated behavioral quality or improvement. |
+| Runtime compatibility, successful implementation, reliability, or performance | Exercise the affected runtime, generated implementation, or service path. Support measured claims with the corresponding observations and comparison evidence. |
+
+Keep durable evaluation corpora and executable benchmark infrastructure in
+[EvalShot](https://github.com/Hugloss/EvalShot/tree/main/evals). Change that
+repository when the work concerns those assets, and link coordinated PRs when
+both repositories actually change. A bounded source review or representative
+skill application may be documented directly in the cookbook PR.
+
+Report what the evidence establishes: prompt loading, source review, example
+application, corpus validation, model behavior, and executed implementation are
+different results. Classification cases do not prove that a construction skill
+produces working code; static review does not establish live-service parity.
+Keep unavailable or unexecuted checks explicit. Existing runtime promotion and
+behavioral qualification requirements still apply when making those claims.
+
+Use [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md)
+for reusable positive/control/confusion cases and model-backed skill evaluation,
+and its [benchmark guide](https://github.com/Hugloss/EvalShot/blob/main/benchmarks/README.md)
+for campaign configuration, readiness, and execution.
 
 ## Validation
 

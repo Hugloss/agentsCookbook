@@ -117,6 +117,11 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `hidden-side-effect-review` — Find externally visible effects hidden behind misleading boundaries.
 - `dependency-surface-review` — Find APIs and contexts that expose far more state than behavior needs.
 
+## Integration test construction
+
+- `pytest-hybrid-service-fixtures` — Build equivalent pytest service fixtures for local containers, external endpoints, and mixed environments.
+- `event-driven-test-verification` — Construct bounded, operation-correlated observers that are armed before integration work starts.
+
 ## Test-derived architecture
 
 - `test-work-amplification-review` — Trace slow tests to disproportionate production work.
@@ -137,6 +142,9 @@ A strong finding normally removes a path, decision, representation, traversal, b
 - `known-good-contract-reconstruction` owns **historical-to-current behavioral contract recovery and durable repair design**; `canonical-consumer-contract-review` owns **consumer dependence on accidental shapes of one canonical owner's result**; `test-contract-coupling-review` owns tests that freeze implementation details. Use the historical comparison as evidence, not competing contract authority.
 
 Use the narrowest skill that owns the question:
+
+- `pytest-hybrid-service-fixtures` owns **constructing equivalent local/external service fixtures with explicit provisioning and cleanup ownership**; `event-driven-test-verification` owns **constructing an armed, correlated completion observer** after provisioning. Neither is a general conftest optimization review. Use them independently or in that order when both transformations are needed.
+- `deterministic-causality-test-review` owns **diagnosing timing assumptions and missing causal control**; `event-driven-test-verification` implements an observation contract at an integration boundary and preserves legitimate bounded polling. `repeated-test-setup-review`, `test-state-contamination-review`, `test-isolation-boundary-review`, and `resource-lifetime-review` retain ownership of construction cost, cross-test state, unrelated effects, and general lifetime defects. Report a shared cause once rather than requesting competing abstractions.
 
 - `sensitive-data-masking` owns **bounded transformation of supplied evidence for a declared disclosure policy**; `evidence-visibility-enforcement-review` owns **whether a system admits denied or hidden evidence across an operational visibility boundary**. Masking should preserve permitted public/reproducibility evidence rather than treating every operational-looking value as sensitive.
 

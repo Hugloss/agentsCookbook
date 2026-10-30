@@ -124,3 +124,8 @@ This distinction prevents new capabilities from silently changing established wo
 Agents Cookbook remains the canonical owner of skills, agents, flows, protocols, and OpenCode/Pi adapters. EvalShot evaluates an explicitly selected cookbook checkout and loads its skill sources and adapter helpers from that checkout. Benchmark runners and evaluation fixtures are maintained in EvalShot rather than copied into runtime adapters.
 
 Cookbook installation and structural validation operate independently of EvalShot. The host still owns model execution, permissions, isolation, and credentials. See [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md) for the evaluation contract and [Agent Economics documentation](https://github.com/Hugloss/EvalShot/blob/main/scripts/agent_economics/README.md) for optional evidence and verification helpers.
+
+This ownership boundary does not require coupled changes or paired PRs for each
+skill contribution. Choose evidence for the changed behavior and actual claims;
+update EvalShot when its evaluation assets need to change. See
+[evaluation ownership and evidence](../CONTRIBUTING.md#evaluation-ownership-and-evidence).
