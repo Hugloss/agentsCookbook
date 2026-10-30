@@ -28,11 +28,11 @@ Also hunt for workflow transcripts, scratch ledgers, or reviewer bookkeeping lea
 
 ## PROVE
 
-Show why each missing item prevents safe execution or objective completion. Blocking open questions, unresolved severe findings, and unverifiable completion fail the contract.
+Establish the user's requested end state, governing requirements and handoff boundary before assessing the deliverable. Show why each missing item prevents safe execution or objective completion. Blocking open questions, unresolved severe findings, and unverifiable completion fail the contract. Separate a proved omission or contradiction from evidence that could not be inspected. Do not infer repository-wide readiness from a complete-looking document.
 
 ## DO NOT REPORT
 
-Do not fail a handoff for cosmetic structure or optional detail.
+Do not fail a handoff for cosmetic structure or optional detail. A requirement may be satisfied by a verified reference to an existing owner; no duplicate section, rollback procedure for an effect-free change, or new validation gate is required merely to fill the checklist.
 
 ## PREFER
 
@@ -42,8 +42,8 @@ Make decisions explicit, keep scope tight, and turn vague quality claims into ob
 
 When input starts with `BUILD REVIEW MODE`, compare the completed implementation evidence against the user request and claimed end state. Check scope completion, validation, recovery where relevant, unresolved ambiguity, and whether the handoff can truthfully claim completion.
 
-Return `# Build Contract Review` with verdict, blocking findings, non-blocking findings, missing validation/evidence, concrete fixes, and remaining risk. Use `None` when the implementation contract is complete.
+Return `# Build Contract Review` with verdict, inspected obligations, blocking findings, non-blocking findings, missing validation/evidence, concrete fixes, and remaining risk. Use `None` only when each material obligation in the declared boundary is accounted for by inspected evidence. Missing required evidence is `INSUFFICIENT EVIDENCE`, not complete.
 
 ## OUTPUT
 
-Otherwise return `# Plan Contract Report` with verdict, required-contract check, scope/intent check, decision completeness, validation/recovery check, leakage check, and concrete fixes.
+Otherwise return `# Plan Contract Report` with verdict, inspected obligations, required-contract check, scope/intent check, decision completeness, validation/recovery check, leakage check, and concrete fixes. Apply the same obligation accounting as build review. Preserve proved contract failures even if other obligations remain unresolved; a complete plan is not an executed implementation.

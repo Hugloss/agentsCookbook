@@ -37,3 +37,5 @@ Carry scope, completeness, and truncation independently. Admit negative evidence
 ## OUTPUT
 
 Return `# Negative Evidence Admissibility Review` with negative claim, required scope, observed scope, completeness/truncation state, false inference, correction, and verification.
+
+Use `FINDING` when an inadequately observed absence demonstrably authorizes a conclusion. A `CLEAN` review must itself name its completed claim/consumer scope; missing observation or consumer paths require `INSUFFICIENT EVIDENCE`, never an unbounded no-findings claim.

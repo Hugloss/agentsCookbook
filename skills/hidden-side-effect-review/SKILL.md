@@ -30,4 +30,6 @@ Make the effect explicit at the existing semantic owner. Split pure decision fro
 
 ## OUTPUT
 
-Return `# Hidden Side Effect Review` with call path, hidden effect, owner, consequence, explicit boundary, code removable after clarification, and verification.
+Return `# Hidden Side Effect Review` with the inspected API and caller obligations, reachable hidden effect, owner, concrete consequence, smallest explicit boundary and focused verification.
+
+Use `FINDING` when a proved effect violates the boundary's apparent contract; `CLEAN` only after tracing material effect paths in the declared API scope and confirming their visibility to callers; `LEAVE ALONE` for effects the contract makes clear to callers; or `INSUFFICIENT EVIDENCE` for unresolved callees, hooks or effect ownership. Naming alone cannot prove purity or a hidden effect.

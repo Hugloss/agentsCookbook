@@ -36,3 +36,5 @@ Resolve strong explicit identifiers first, preserve them as target evidence, kee
 ## OUTPUT
 
 Return `# Explicit Target Resolution Review` with explicit target, resolution evidence, displacement path, authority distinction, correction, and verification.
+
+Use `FINDING` for proved displacement of a uniquely resolved target. Bound `CLEAN` to inspected target forms and resolution paths, and use `LEAVE ALONE` for correctly preserved genuine ambiguity. If the reviewer cannot establish target identity, request intent, or the resolution path, return `INSUFFICIENT EVIDENCE`.

@@ -23,7 +23,7 @@ Hunt for:
 
 ## PROVE
 
-Build one input containing a hard violation plus enough positive soft metrics to cross the aggregate pass threshold. Trace the code that returns qualified/pass despite the forbidden state.
+Establish the non-compensatory requirement independently of the candidate score and evaluator preference. Build one admissible input containing that hard violation plus enough positive soft metrics to cross the aggregate pass threshold. Trace the code that returns qualified/pass despite the forbidden state.
 
 ## DO NOT REPORT
 
@@ -36,3 +36,5 @@ Evaluate hard vetoes first, readiness second, then lower-order quality/economics
 ## OUTPUT
 
 Return `# Aggregate Hard-Failure Masking Review` with hard invariant, aggregate path, compensating metrics, false pass, corrected gate order, verification.
+
+Use `FINDING` for a proved compensated hard violation. `CLEAN` requires tracing the independently established hard requirements through the inspected aggregation paths; unknown hard/soft classification or untraced qualification consumers require `INSUFFICIENT EVIDENCE`.

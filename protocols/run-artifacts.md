@@ -47,7 +47,7 @@ Writes use create-only semantics; an existing artifact ID cannot be overwritten.
 
 Both live adapters bind writes to reviewer identity rather than trusting a free-form artifact name:
 
-- OpenCode binds `artifact_id` to the current reviewer identity exposed in tool context when available;
+- OpenCode requires the current reviewer identity in tool context and binds `artifact_id` to it;
 - Pi registers the write tool only inside a recognized delegated cookbook reviewer child, accepts only the nine known reviewer IDs, and requires `artifact_id` to equal `PI_OPEN_AGENTS_NAME`.
 
 Pi's top-level process never registers `review_artifact`; it may register only `review_artifact_read`. A directly selected standalone reviewer therefore still works but returns its full report normally. Use `subagent-router` for a one-reviewer Pi run that also needs live low-context persistence.
@@ -78,6 +78,17 @@ MASTER uses `summary` first. It reads the full report only when:
 
 Never bulk-read every report merely because it exists.
 
+Before returning a named report, the live reader validates its receipt's schema,
+runtime, run/reviewer identity, fixed relative path, hash, character count and
+summary budget. Both directories and files must resolve inside the configured
+run root. A missing or inconsistent receipt is a failed read, not an invitation
+to return unverified text. Live `run_id` is the basename of the canonical run
+root; preserve that name when relocating a live store for these checks.
+
+Receipt hashes are local integrity checks, not signatures. Someone able to
+rewrite both the body and its receipt can change both; a matching receipt also
+does not prove the review's substantive correctness.
+
 For Pi specifically, `pi-open-agents` returns the child `result.output` as the parent-visible subagent tool text and retains the richer child `AgentResult` separately in `details`. In artifact-backed mode the reviewer therefore returns the compact receipt as its final output; the full report remains in the run store unless MASTER selectively reads it. Runtime qualification still verifies this on the deployed Pi/plugin versions.
 
 ## Post-run fallback export
@@ -99,7 +110,16 @@ node scripts/export-review-artifacts.js \
   --out runs/<run-id>
 ```
 
-The exporter reads real `subagent` or `task` results and never synthesizes missing reviews.
+The exporter reads structured native `subagent` or `task` calls and matched
+results. Pi export follows the active session branch. Reviewer success requires
+explicit successful completion and usable output; attempted, unfinished and
+unknown work remains separate. Invalid session/entry identities or malformed
+input fail before output is published.
+
+The output directory must be absent or empty and cannot itself be a symlink.
+The exporter materializes a complete staging directory before publishing it;
+existing artifacts are never mixed with a new export. Its successful exit means
+the export operation completed, not that every reviewer succeeded.
 
 Its shape is sequence-oriented because it projects a completed runtime trace:
 
@@ -114,7 +134,11 @@ Its shape is sequence-oriented because it projects a completed runtime trace:
     └── ...
 ```
 
-A failed/missing call gets an explicit unavailable artifact instead of an invented review. Receipts record the output hash, size, headings, status, and a deterministic summary hint.
+A failed, missing, incomplete or unknown call gets an explicit unavailable
+artifact. Receipts record the output hash, size, headings, status, native call
+identity, source-file hash, session/branch scope and a deterministic summary hint.
+The manifest counts each outcome separately. These sequence-oriented exports
+are a different format from the live store checked by `check-run-artifacts.js`.
 
 ## Provenance and identity
 

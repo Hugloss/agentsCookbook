@@ -71,6 +71,20 @@ Before merging a new or materially changed skill, apply `skill-contract-review` 
 - check positive/control behavior when reviewer discrimination changes; reuse relevant examples or evaluation cases, adding coverage for concrete ambiguity rather than a fixed quota;
 - compress repeated rules. Prompt length is not itself a defect, but repeated methodology that does not sharpen discrimination is runtime and maintenance cost.
 
+### Precision, splitting, and quality claims
+
+Treat "platinum" as a quality goal, not a grade produced by loading a skill or passing structural CI. Evaluate the definition, the agent's decisions, and the resulting implementation separately.
+
+- Check selection from the name/description as well as direct invocation: one intended request and a plausible neighboring request should lead to the appropriate owner.
+- Require applicable facts before decisions. Verify repository paths and version-sensitive commands/APIs from actual source or primary documentation. Label pseudocode, assumed inputs and application-specific adapters; never substitute plausible names for missing contracts.
+- Make output states consistent. A proved defect needs a finding outcome; unresolved neighboring scope must stay visible without erasing that defect or becoming a clean claim.
+- Keep safe controls concrete. Existing valid idempotency, supported compatibility, intentional fresh reads and established validation boundaries must not become findings solely because they resemble a hunt pattern.
+- Split when each part has an independent trigger, proof obligation and correction owner. Keep tightly coupled end-to-end guarantees together. Use optional references for examples or variants of the same job, and update catalog/router references when a real split occurs.
+- For material detection/routing changes, reuse or inspect positive and safe-control cases, plus missing-evidence or competing-skill cases where relevant. A representative fresh-agent exercise is useful prompt-usability evidence; it is not a measured accuracy improvement or production qualification.
+- Improve obvious source-proved repeated work directly. Timing infrastructure is not a prerequisite to a safe structural optimization; numerical speedup claims still require suitable observations.
+
+Do not add another mandatory flow reviewer, model run or paired repository PR merely to apply these authoring rules.
+
 
 ## Adding a skill
 

@@ -76,6 +76,9 @@ done
 for primary_file in $AC_PRIMARY_AGENT_FILES; do
   file="$agent_src_dir/$primary_file"; name="${primary_file%.md}"
   if grep -Fq '  "*": deny' "$file" && grep -q '^  review_artifact_read: allow$' "$file" && ! grep -q '^  review_artifact: allow$' "$file"; then pass "primary_artifact_authority_$name" selective_read=true; else fail "primary_artifact_authority_$name" authority_mismatch; fi
+  # Pi names its native delegation tool subagent; task is OpenCode's key.
+  # pi-open-agents enforces exact allowedAgents and maxDepth on execution.
+  if grep -q '^  subagent: allow$' "$file" && grep -q '^maxDepth: 1$' "$file"; then pass "primary_pi_delegation_$name" native_subagent=true; else fail "primary_pi_delegation_$name" permission_or_depth_mismatch; fi
 done
 
 for pair in "opencode:$opencode_adapter" "pi:$pi_adapter"; do

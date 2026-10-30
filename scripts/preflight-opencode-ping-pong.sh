@@ -4,6 +4,8 @@ set -u
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 # shellcheck source=scripts/lib-opencode.sh
 . "$script_dir/lib-opencode.sh"
+# shellcheck source=scripts/lib-opencode-runtime.sh
+. "$script_dir/lib-opencode-runtime.sh"
 
 usage() {
   cat <<'USAGE'
@@ -70,7 +72,11 @@ for skill_name in $AC_SKILL_NAMES; do
   if [ -f "$path" ]; then skill_count=$((skill_count + 1)); validate_description skill "$skill_name" "$path" "$AC_SKILL_DESCRIPTION_MAX"; check_link "shared_skill_$skill_name" "$shared_skill_dir/$skill_name" "$skill_src_dir/$skill_name"; else fail "source_skill_$skill_name" "missing=$path"; fi
 done
 [ "$skill_count" -eq "$expected_skill_count" ] && pass canonical_skill_count "count=$expected_skill_count" || fail canonical_skill_count "count=$skill_count expected=$expected_skill_count"
-check_link opencode_artifact_plugin "$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN" "$opencode_adapter"
+if ac_opencode_artifact_entry_matches "$global_dir/plugins/$AC_OPENCODE_ARTIFACT_PLUGIN" "$opencode_adapter"; then
+  pass opencode_artifact_plugin native_entrypoint=owned
+else
+  fail opencode_artifact_plugin "entrypoint_missing_or_modified; rerun scripts/link-opencode-local.sh"
+fi
 
 for primary_file in $AC_PRIMARY_AGENT_FILES; do
   path="$agent_src_dir/$primary_file"; name="${primary_file%.md}"
@@ -96,20 +102,27 @@ if grep -Fq 'Attempt every reviewer exactly once' "$plan_source" && grep -Fq 're
 if [ -d "$repo_root/.opencode/agents" ] || [ -d "$repo_root/.agents/skills" ]; then fail canonical_layout legacy_hidden_source_dirs_present; else pass canonical_layout hidden_source_dirs=absent; fi
 
 if [ "$quick" = false ]; then
-  if ! command -v opencode >/dev/null 2>&1; then fail command_opencode missing; else
-    pass command_opencode "path=$(command -v opencode)"
+  if ! ac_require_opencode_v1; then fail opencode_runtime unsupported_or_unavailable; else
+    pass opencode_runtime "version=$AC_OPENCODE_VERSION adapter=1.x path=$(command -v opencode)"
     artifact_enabled=false; [ -n "${AGENTS_COOKBOOK_RUN_DIR:-}" ] && artifact_enabled=true
     for primary_file in $AC_PRIMARY_AGENT_FILES; do
-      name="${primary_file%.md}"; output="$(cd -- "$target_repo" && opencode debug agent "$name" 2>&1)"; status=$?
+      name="${primary_file%.md}"; output="$(cd -- "$target_repo" && opencode debug agent "$name")"; status=$?
       if [ "$status" -ne 0 ]; then fail "debug_agent_$name" "status=$status"; continue; fi
       mode=readonly; [ "$name" = ping-ping-build ] && mode=build
       if printf '%s\n' "$output" | node -e '
-const fs=require("fs");const mode=process.argv[1],artifact=process.argv[2]==="true";const raw=fs.readFileSync(0,"utf8"),start=raw.indexOf("{");if(start<0)process.exit(2);const a=JSON.parse(raw.slice(start)),t=a.tools||{};const e={task:true,read:true,grep:true,glob:true,skill:mode==="build",edit:mode==="build",write:mode==="build",bash:mode==="build",review_artifact_read:artifact};if(Object.entries(e).some(([k,v])=>t[k]!==v))process.exit(1);
-' "$mode" "$artifact_enabled"; then pass "debug_agent_$name" "tools=correct artifact_mode=$artifact_enabled"; else fail "debug_agent_$name" tools_incorrect; fi
+const fs=require("fs");const mode=process.argv[1],artifact=process.argv[2]==="true";const raw=fs.readFileSync(0,"utf8"),start=raw.indexOf("{");if(start<0)process.exit(2);const a=JSON.parse(raw.slice(start)),t=a.tools||{};if(a.name!==process.argv[3]||a.mode!=="primary")process.exit(1);const e={task:true,subagent:false,read:true,grep:true,glob:true,skill:false,edit:mode==="build",write:mode==="build",bash:mode==="build",review_artifact:false,review_artifact_read:artifact};if(Object.entries(e).some(([k,v])=>v?t[k]!==true:t[k]!==false&&t[k]!==undefined))process.exit(1);const allowed=new Set(["task","read","grep","glob","list","find","ls",...(mode==="build"?["edit","write","bash"]:[]),...(artifact?["review_artifact_read"]:[])]);if(Object.entries(t).some(([k,v])=>typeof v!=="boolean"||(v&&!allowed.has(k))))process.exit(1);
+' "$mode" "$artifact_enabled" "$name"; then pass "debug_agent_$name" "tools=correct artifact_mode=$artifact_enabled"; else fail "debug_agent_$name" tools_incorrect; fi
     done
     effective_output="$(bash "$repo_root/scripts/check-opencode-effective-reviewers.sh" "$target_repo" 2>&1)"; effective_status=$?; printf '%s\n' "$effective_output"; [ "$effective_status" -eq 0 ] && pass effective_reviewer_contracts reviewers=9 || fail effective_reviewer_contracts "status=$effective_status"
-    skill_output="$(cd -- "$target_repo" && opencode debug skill 2>&1)"; skill_status=$?
-    if [ "$skill_status" -ne 0 ]; then fail debug_skills "status=$skill_status"; else missing=""; for skill_name in $AC_SKILL_NAMES; do printf '%s\n' "$skill_output" | grep -q "$skill_name" || missing="$missing $skill_name"; done; [ -z "$missing" ] && pass debug_skills "all=$expected_skill_count" || fail debug_skills "missing=$missing"; fi
+    # V1.19.5 can exit before a large JSON write drains to a pipe. Redirect the
+    # native stream directly to a regular file and keep stderr out of the JSON.
+    if ! skill_output_file="$(mktemp "${TMPDIR:-/tmp}/opencode-skills.XXXXXX")"; then fail debug_skills temporary_file_unavailable; else
+      (cd -- "$target_repo" && opencode debug skill >"$skill_output_file"); skill_status=$?
+      if [ "$skill_status" -ne 0 ]; then fail debug_skills "status=$skill_status"; elif node -e '
+const fs=require("fs");let rows;try{rows=JSON.parse(fs.readFileSync(process.argv[1],"utf8"))}catch(error){console.error(`Invalid OpenCode skill JSON: ${error.message}`);process.exit(1)}if(!Array.isArray(rows))process.exit(1);const names=new Set(rows.map(row=>row.name));const missing=process.argv.slice(2).filter(name=>!names.has(name));if(missing.length){console.error(`Missing discovered skills: ${missing.join(", ")}`);process.exit(1);}
+' "$skill_output_file" $AC_SKILL_NAMES; then pass debug_skills "all=$expected_skill_count"; else fail debug_skills missing_or_invalid_discovery; fi
+      rm -f -- "$skill_output_file"
+    fi
   fi
 fi
 

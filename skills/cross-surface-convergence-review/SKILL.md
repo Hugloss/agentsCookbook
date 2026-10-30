@@ -23,11 +23,11 @@ Hunt across API, CLI, MCP, compact, report, UI, serialized, and persisted projec
 
 ## PROVE
 
-Run or trace the same semantic request through at least two surfaces from the same source/generation. Normalize presentation-only differences and compare the resulting semantic and authority state. Identify the adapter or projection where divergence appears.
+Run or trace the same semantic request through at least two surfaces from the same source/generation. Establish equivalent caller authorization, visibility, effective policy/configuration, and supported API semantics before expecting convergence. Normalize presentation-only differences and compare the resulting semantic and authority state. Identify the adapter or projection where divergence appears.
 
 ## DO NOT REPORT
 
-Do not report intentional formatting, naming, transport, or bounded-presentation differences that preserve the same semantic state and authority.
+Do not report intentional formatting, naming, transport, or bounded-presentation differences that preserve the same semantic state and authority. Correctly different results for different permissions, policies, versions, or query semantics are not a convergence defect; do not remove an access check to make outputs match.
 
 ## PREFER
 
@@ -36,3 +36,5 @@ Keep one canonical semantic owner and make public surfaces thin projections over
 ## OUTPUT
 
 Return `# Cross-Surface Convergence Review` with surfaces compared, canonical evidence, divergent fields, authority consequence, duplicated logic to remove, verification.
+
+Use `FINDING` for divergence under a proved equivalent request/context. Bound `CLEAN` to the compared surfaces and supported paths; unknown authorization, policy, configuration, or source equivalence is `INSUFFICIENT EVIDENCE`, not evidence that either surface is wrong.

@@ -32,8 +32,10 @@ Do not report evidence intentionally available in a privileged surface whose cal
 
 ## PREFER
 
-Apply visibility filtering once at the earliest canonical evidence boundary, bind visibility scope into reusable caches, and prevent downstream layers from reconstructing excluded data.
+Own visibility semantics at the earliest canonical evidence boundary, bind the caller/policy scope into reusable caches, and prevent downstream layers from reconstructing excluded data. Revalidate admission when caller or policy changes; an earlier privileged admission does not authorize later public reuse. Reuse one policy owner rather than duplicating decision logic.
 
 ## OUTPUT
 
 Return `# Evidence Visibility Enforcement Review` with visibility rule, leaked evidence path, affected surface/decision, consequence, earliest enforcement boundary, verification.
+
+Use `FINDING` for a proved forbidden influence or disclosure. `CLEAN` requires tracing the named policy scopes through relevant decisions, projections, and cache reuse; unknown authorization or policy transitions remain `INSUFFICIENT EVIDENCE`.

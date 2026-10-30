@@ -2,7 +2,6 @@ import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { tool } from "@opencode-ai/plugin"
 
 const sourceFile = fs.realpathSync(fileURLToPath(import.meta.url))
 const reviewers = JSON.parse(fs.readFileSync(path.resolve(path.dirname(sourceFile), "../../reviewers.json"), "utf8"))
@@ -34,7 +33,7 @@ function ensureChildDir(root, name) {
   fs.mkdirSync(target, { recursive: true })
   const resolved = fs.realpathSync(target)
   const prefix = `${root}${path.sep}`
-  if (resolved !== root && !resolved.startsWith(prefix)) throw new Error(`${name} escapes configured run root`)
+  if (!resolved.startsWith(prefix)) throw new Error(`${name} escapes configured run root`)
   return resolved
 }
 
@@ -103,18 +102,37 @@ function readArtifact(args, context) {
 
   const root = requireRunRoot()
   const reviews = ensureChildDir(root, "reviews")
+  const receipts = ensureChildDir(root, "receipts")
   const id = validateId(args.artifact_id)
-  const candidate = path.join(reviews, `${id}.md`)
-  const resolved = fs.realpathSync(candidate)
-  const prefix = `${reviews}${path.sep}`
-  if (!resolved.startsWith(prefix)) throw new Error("artifact escapes review directory")
-  const body = fs.readFileSync(resolved, "utf8")
+  const artifactPath = fs.realpathSync(path.join(reviews, `${id}.md`))
+  const receiptPath = fs.realpathSync(path.join(receipts, `${id}.json`))
+  if (!artifactPath.startsWith(`${reviews}${path.sep}`)) throw new Error("artifact escapes review directory")
+  if (!receiptPath.startsWith(`${receipts}${path.sep}`)) throw new Error("receipt escapes receipt directory")
+  const body = fs.readFileSync(artifactPath, "utf8")
+  if (!body.trim()) throw new Error("artifact must not be empty")
   if (body.length > MAX_REPORT_CHARS + 1) throw new Error("artifact exceeds configured report limit")
+  const receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"))
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)
+    || receipt.schema_version !== 1 || receipt.runtime !== "opencode"
+    || receipt.run_id !== path.basename(root)
+    || receipt.artifact_id !== id || receipt.reviewer !== id
+    || receipt.artifact !== `reviews/${id}.md`) {
+    throw new Error("receipt does not identify this OpenCode reviewer artifact")
+  }
+  if (typeof receipt.summary !== "string" || !receipt.summary.trim()
+    || receipt.summary.length > MAX_SUMMARY_CHARS) throw new Error("receipt summary is invalid")
+  if (!Number.isInteger(receipt.chars) || receipt.chars !== body.length
+    || receipt.sha256 !== sha256(body)) throw new Error("artifact does not match its receipt")
   return body
 }
 
-export const AgentsCookbookReviewArtifacts = async () => {
+// The config-local native entrypoint resolves the host SDK and supplies its
+// tool factory. Bare imports here would resolve at the cookbook's realpath.
+export const AgentsCookbookReviewArtifacts = async (tool) => {
   if (!process.env.AGENTS_COOKBOOK_RUN_DIR) return {}
+  if (typeof tool !== "function" || typeof tool.schema?.string !== "function") {
+    throw new Error("OpenCode tool factory is missing; reinstall the cookbook OpenCode entrypoint")
+  }
 
   return {
     tool: {

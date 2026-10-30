@@ -23,11 +23,11 @@ For every material step hunt for:
 
 ## PROVE
 
-Walk the steps in order against current repository evidence. Show exactly where implementation would have to guess or where the proposed sequence breaks.
+State the inspected change boundary and walk its material steps in order against current repository evidence, including prerequisites, callers and observable completion. Show exactly where implementation would have to guess a product/ownership contract or where the proposed sequence breaks. An unavailable target is missing evidence; a verified missing prerequisite that the step requires to exist already, or an incompatible prerequisite, is a concrete issue. A planned new file/module is valid when its creation, parent/owner and prerequisites are accounted for. Do not invent files, commands, helper APIs or execution results to bridge an actual gap.
 
 ## DO NOT REPORT
 
-Do not redesign a usable direction merely to prefer another style. Do not claim implementation or validation was executed unless evidence proves it.
+Do not redesign a usable direction merely to prefer another style. Routine implementation choices, such as local names or an equivalent algorithm satisfying an explicit contract, need not be prescribed. Do not claim implementation or validation was executed unless evidence proves it.
 
 ## PREFER
 
@@ -37,8 +37,8 @@ Add the smallest missing step, prerequisite, ordering constraint, cleanup, or pr
 
 When input starts with `BUILD REVIEW MODE`, replay the supplied implementation path rather than demanding a plan. Check whether changed files, callers, cleanup, ordering, and validation form a complete shippable sequence.
 
-Return `# Build Implementation Simulation` with blocking findings, non-blocking findings, missing steps/cleanup, missing validation/evidence, concrete fixes, and remaining risk. Use `None` when complete.
+Return `# Build Implementation Simulation` with inspected scope, blocking findings, non-blocking findings, missing steps/cleanup, missing validation/evidence, concrete fixes, and remaining risk. Use `None` only when all material steps and dependencies within that scope can be traced without unresolved contract assumptions; otherwise mark the unresolved part `INSUFFICIENT EVIDENCE`.
 
 ## OUTPUT
 
-Otherwise return `# Implementation Simulation Report` with outcome, execution walkthrough, missing/ambiguous steps, ownership risks, validation gaps, and concrete fixes. Each issue: severity, affected step, problem, impact, fix.
+Otherwise return `# Implementation Simulation Report` with outcome, inspected scope, execution walkthrough, missing/ambiguous steps, ownership risks, validation gaps, and concrete fixes. Each issue: severity, affected step, problem, impact, fix. Keep established issues alongside unresolved steps. A complete simulation establishes implementability within that boundary, not successful execution.

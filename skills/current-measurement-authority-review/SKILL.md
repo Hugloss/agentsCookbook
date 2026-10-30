@@ -24,7 +24,7 @@ Hunt for:
 
 ## PROVE
 
-Compare the historical/baseline source with an executable current observation and show a materially different result, ranking, or selected target while code still treats the baseline as current truth.
+Trace the claim of currentness and its freshness/identity guard. Prove either a materially different current result, ranking, or selected target, or a reachable reuse after a relevant source/tool/configuration change without evidence that the observation remains current. In the latter case report unsupported authority, not an invented measured difference. A cached observation remains admissible when its binding proves the relevant state is unchanged.
 
 ## DO NOT REPORT
 
@@ -37,3 +37,5 @@ Separate baseline authority from live observation authority. Measure current sta
 ## OUTPUT
 
 Return `# Current Measurement Authority Review` with claimed current fact, stale authority source, current observation, divergence, decision impact, correction, and verification.
+
+Use `FINDING` for a demonstrated stale-as-current authority path; distinguish a false current result from unsupported currentness. Bound `CLEAN` to inspected observations and freshness guards. If missing evidence prevents establishing either admissible reuse or a guard violation, return `INSUFFICIENT EVIDENCE`.

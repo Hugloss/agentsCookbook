@@ -29,7 +29,7 @@ Identify at least two independent dimensions and one legal combination the curre
 
 ## DO NOT REPORT
 
-Do not report a composite state machine when the dimensions are truly coupled by domain law and every legal state is representable.
+Do not report a composite state machine or exhaustive tagged encoding merely because it uses one field. Leave it alone when every legal combination and relevant distinction is representable and consumers preserve them, whether the axes are coupled by domain law or encoded as an explicit product.
 
 ## PREFER
 
@@ -38,3 +38,5 @@ Model orthogonal axes separately, derive presentation summaries afterward, and k
 ## OUTPUT
 
 Return `# Orthogonal State Axis Review` with collapsed dimensions, unrepresentable or misclassified state, consequence, separated model, and verification.
+
+Use `FINDING` for a proved legal state that is lost or misclassified. `CLEAN` covers the inspected domain states and consuming branches; uncertain independence or uninspected serialization paths remain `INSUFFICIENT EVIDENCE`. Do not infer failure from enum shape alone.

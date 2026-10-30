@@ -22,7 +22,9 @@ Construct `A starts → B supersedes A → B commits → A completes → A attem
 
 ## PROVE
 
-Identify logical owner, operation identity, current-identity source, projection/side effect, existing guard, and a realistic harmful ordering. Use real production triggers such as retry, reconnect, rapid selection, duplicate delivery, or worker restart.
+Identify logical owner, operation identity, current-identity source, projection/side effect, existing guard, and a realistic harmful ordering. Use real production triggers such as retry, reconnect, rapid selection, duplicate delivery, or worker restart. Establish that replacement actually revokes the older work's authority; a newer request alone does not invalidate an independently owned earlier operation.
+
+Follow the guard through the final effect. A current-owner check before an `await`, callback handoff, or remote write can race with replacement; prove atomic admission at the effect owner or an equivalent fence where required. Cancellation requested is not proof that already running work stopped. Distinguish a reachable source ordering from one actually executed in a test.
 
 ## DO NOT REPORT
 
@@ -34,4 +36,6 @@ Use exact owner tokens, generations/sequences, operation IDs, compare-and-transi
 
 ## OUTPUT
 
-Return `# Stale Work Race Review` with confirmed races, potential races, fragile guards, proven-safe paths, and deterministic tests. Every finding: owner, identity, projection, ordering, missing guard, consequence, smallest fix.
+Return `# Stale Work Race Review` with the inspected owners/effect paths, proved races, unresolved leads, safe guards, and deterministic tests. Every finding: owner, identity, projection, ordering, missing guard, consequence, smallest fix. Keep potential races and fragile-looking guards as leads unless the harmful ordering is established.
+
+Use `FINDING` for a proved stale-owner effect. Use `CLEAN` only when the declared replacement and effect paths are completely traced, or `LEAVE ALONE` when an inspected guard or independent ownership makes the suspected ordering safe. Missing effect-owner or cancellation semantics require `INSUFFICIENT EVIDENCE` when no finding is established; do not turn a local race review into system-wide safety.

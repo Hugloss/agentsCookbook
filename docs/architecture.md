@@ -40,9 +40,29 @@ The scout does not manufacture findings; finding derivation does not replace the
 
 `adapters/` and installation/preflight scripts bridge canonical sources into OpenCode and Pi. Runtime-specific path conventions do not become repository source conventions.
 
+The OpenCode installation has a small real plugin entry beside the host's own
+dependencies. It imports the native SDK helper there and passes it into the
+canonical adapter, avoiding bare SDK resolution from a symlinked checkout.
+The entry contains no storage or permission behavior. Installation, preflight
+and removal verify its exact canonical source URL and bytes.
+
 Artifact storage tools are inert unless `AGENTS_COOKBOOK_RUN_DIR` is set. They accept artifact IDs rather than arbitrary paths and confine all storage to the configured per-run root.
 
-Pi also has one runtime-authority compatibility responsibility: current `pi-open-agents` cannot derive a finite child `--tools` whitelist from canonical reviewer permissions containing `"*"`, even when the wildcard action is `deny`. The Pi adapter therefore recognizes cookbook reviewer child processes from `PI_OPEN_AGENTS_NAME`/`PI_OPEN_AGENTS_DEPTH`, sets an exact read-only active-tool set, and independently blocks any tool call outside that set. This adapter shim preserves the canonical deny-by-default agent contract rather than creating Pi-specific behavioral copies.
+Pi also has one runtime-authority compatibility responsibility: the checked
+`pi-open-agents` 0.1.26 cannot derive a finite child `--tools` whitelist from
+canonical reviewer permissions containing `"*"`, even when the wildcard action
+is `deny`. The Pi adapter therefore recognizes cookbook reviewer child processes
+from `PI_OPEN_AGENTS_NAME`/`PI_OPEN_AGENTS_DEPTH`, sets an exact read-only active
+tool set after the host has initialized the session, and independently blocks
+any tool call outside that set. Canonical primaries explicitly grant Pi's native
+`subagent` action, constrained by the native exact reviewer allowlist and depth
+limit. OpenCode 1 preflight rejects an unexpected enabled tool of that name.
+
+This adapter preserves the canonical deny-by-default agent contract. It does not
+override the stricter inheritance added in `pi-open-agents` 0.1.27; preflight
+rejects that incompatible integration. Remove the finite-tool compatibility
+code only when native execution proves the same allowed/forbidden boundary.
+See the [versioned compatibility evidence](runtime-compatibility-review-2026-10-30.md).
 
 ## Ownership
 

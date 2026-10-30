@@ -18,7 +18,7 @@ Hunt for sleeps, arbitrary delays, polling, retry-until loops, timeout inflation
 
 ## PROVE
 
-Show the required causal sequence and whether production exposes an observable completion/transition contract. Reproduce flakiness deterministically where evidence permits.
+Show the required causal sequence, the condition the test actually observes, and a supported ordering that produces a false pass, false failure, or unnecessary wait. Inspect whether production exposes a completion/transition contract and whether the test correlates it to the correct operation. Reproduce flakiness deterministically where evidence permits; a decisive ordering trace is also valid, but a timing smell alone is not a finding.
 
 ## DO NOT REPORT
 
@@ -34,4 +34,4 @@ Use `event-driven-test-verification` when asked to construct the integration obs
 
 ## OUTPUT
 
-Return `# Deterministic Causality Test Review` with timing smells, real causal events, missing contracts, deterministic test pattern, production changes if needed, and verification.
+Return `# Deterministic Causality Test Review` with inspected waits/triggers, proved causal defects, unresolved timing leads, deterministic test pattern, production changes if needed, and verification. Report which reproductions actually ran. Use `FINDING` for the established wrong ordering/wait; `CLEAN`/`LEAVE ALONE` requires the scoped waits to have justified causal or bounded-polling contracts. Missing completion semantics remains `INSUFFICIENT EVIDENCE`.

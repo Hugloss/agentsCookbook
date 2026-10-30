@@ -37,3 +37,5 @@ Make proof bases explicit, preserve ambiguity, distinguish external/dynamic case
 ## OUTPUT
 
 Return `# Static Evidence Overclaim Review` with analyzer claim, available proof, unresolved dimension, false exact result, safer classification, and regression.
+
+Use `FINDING` for a proved authoritative claim beyond the analyzer's model. Bound `CLEAN` to inspected claim classes and constructs; use `LEAVE ALONE` for correctly qualified unresolved constructs. If the reviewer cannot establish the proof model or claim path, return `INSUFFICIENT EVIDENCE`. Passing examples do not establish general analyzer soundness.

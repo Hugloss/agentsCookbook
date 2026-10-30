@@ -133,6 +133,7 @@ Return # Proxy Gate Authority Review with:
 - inspected qualification scope and any untraced gates.
 
 End with one:
-- CLEAN — every inspected hard gate is directly owned by the semantic contract it claims to qualify;
-- LEAVE ALONE — suspicious thresholds/proxies were inspected and each directly represents the claimed contract or is advisory only;
-- INSUFFICIENT EVIDENCE — the governing contract or real gate path could not be established far enough to distinguish a proxy from a legitimate hard requirement.
+- FINDING — at least one reachable gate uses a proxy beyond its established qualification authority; retain any other untraced gates explicitly;
+- CLEAN — all materially applicable hard gates within the declared review scope were traced and are directly owned by the contract they claim to qualify;
+- LEAVE ALONE — suspicious thresholds/proxies were inspected and each directly represents the claimed contract or is advisory only, with no material unresolved dependency;
+- INSUFFICIENT EVIDENCE — no violation was established and the governing contract or real gate path could not be established far enough to distinguish a proxy from a legitimate hard requirement.

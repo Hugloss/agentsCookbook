@@ -39,3 +39,5 @@ Bind provenance into one canonical evidence identity and validate it before reus
 ## OUTPUT
 
 Return `# Evidence Provenance Binding Review` with evidence artifact, missing provenance dimension, substitution/reuse path, authority consequence, required binding, verification.
+
+Use `FINDING` for a proved material substitution/reuse path. `CLEAN` covers only the inspected evidence producers, consumers, and authority-bearing dimensions; unknown reuse context or trust ownership requires `INSUFFICIENT EVIDENCE`.

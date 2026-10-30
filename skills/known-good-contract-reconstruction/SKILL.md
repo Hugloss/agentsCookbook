@@ -78,7 +78,7 @@ End with exactly one:
 
 - `FINDING` — reproduced or otherwise decisively established regression with a justified durable correction.
 - `CLEAN` — verified scoped variants obey the established contract.
-- `LEAVE ALONE` — intentional contract evolution or no justified repair.
+- `LEAVE ALONE` — the suspected regression is positively explained by intentional contract evolution or verified supported behavior; unresolved baseline or contract evidence belongs to `INSUFFICIENT EVIDENCE`.
 - `INSUFFICIENT EVIDENCE` — baseline, contract, or divergence not established.
 
 Do not claim tests passed unless they actually ran. If implementing, preserve the project's existing change/test workflow and add a focused regression for each reproduced defect.

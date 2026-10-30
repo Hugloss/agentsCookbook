@@ -25,7 +25,9 @@ Hunt acquisition/use/release paths for:
 
 ## PROVE
 
-Identify who acquires the resource, who owns its lifetime, every path that can release or abandon it, and one realistic ordering that causes leak, premature release, use-after-close, or ownership ambiguity.
+Identify who acquires the resource, who owns its lifetime, every relevant path that can release or abandon it, and one realistic ordering that causes leak, premature release, or use-after-close. Naming ambiguity alone is a lead; establish its concrete lifetime consequence.
+
+Include partial acquisition, failure before context/fixture entry completes, cancellation, ownership transfer, and escaped borrowers when reachable. Trace whether cleanup itself can fail or be cancelled and whether another owner finishes it. Cancellation of a task or closing one handle does not prove an external call, process, or shared resource stopped. A borrower must not destroy the owning service merely to release its own handle.
 
 ## DO NOT REPORT
 
@@ -37,4 +39,6 @@ Use lexical/structured ownership, existing context-management primitives, and on
 
 ## OUTPUT
 
-Return `# Resource Lifetime Review` with findings: resource, acquisition path, lifetime owner, release paths, harmful ordering, consequence, target ownership boundary, cleanup code that can disappear, deterministic verification.
+Return `# Resource Lifetime Review` with the inspected acquisition/borrow/release scope and findings: resource, lifetime owner, release paths, harmful ordering, consequence, target ownership boundary, cleanup code that can disappear, and deterministic verification.
+
+Use `FINDING` for a demonstrated lifetime violation. `CLEAN` requires the declared normal, partial-start, failure, and cancellation paths to have traced ownership; `LEAVE ALONE` requires a positive valid lifetime/transfer proof. Missing release or external-stop semantics remains `INSUFFICIENT EVIDENCE` if no violation is established. Report executed cleanup evidence separately from source reasoning.

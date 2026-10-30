@@ -18,7 +18,7 @@ Hunt for huge context objects, callback bags, orchestrators, broad hook returns,
 
 ## PROVE
 
-Show how the oversized surface increases coupling, invalid combinations, setup cost, test complexity, or internal-state leakage on a real operation.
+Trace what a real consumer reads, mutates and forwards, including lazy/optional paths and extension contracts. Show a concrete unnecessary dependency and the coupling, invalid state, setup cost or state exposure it causes. Establish that narrower existing inputs preserve the required consumer behavior. Field counts or the fraction used by one caller are leads, not proof.
 
 ## DO NOT REPORT
 
@@ -30,4 +30,6 @@ Pass focused existing inputs or final semantic results. Remove forwarded/unused 
 
 ## OUTPUT
 
-Return `# Dependency Surface Review` with boundary, supplied/used/forwarded dependency map, concrete coupling cost, target inputs, removals, and verification.
+Return `# Dependency Surface Review` with inspected consumer scope, supplied/used/forwarded dependencies, concrete unnecessary coupling, cohesive controls, target inputs and behavior-preserving verification.
+
+Use `FINDING` for a demonstrated unnecessary dependency with a material consequence; `CLEAN` only after the declared consumer paths were traced and the supplied dependencies are justified; `LEAVE ALONE` for a justified cohesive aggregate; otherwise `INSUFFICIENT EVIDENCE`. Uninspected dynamic/extension consumers cannot be assumed to use no other fields.

@@ -23,7 +23,7 @@ Hunt for:
 
 ## PROVE
 
-Identify the edit/behavior target, the selected verifier, and a stronger available verifier. Compare direct/indirect references, namespace/task locality, and behavioral ownership. Show how the weaker verifier can miss the changed behavior or lengthen validation.
+Identify the edit/behavior target, the selected verifier, and a stronger available verifier. Inspect their actual assertions, reachable production paths, discovery conditions, and applicable environment; filename proximity or a call reference alone does not establish behavioral strength. Show a changed-behavior failure the selected verifier can miss, or concrete unrelated work it introduces, while preserving required broader coverage.
 
 ## DO NOT REPORT
 
@@ -35,4 +35,4 @@ Keep reference evidence authoritative, then use target namespace/task locality a
 
 ## OUTPUT
 
-Return `# Verification Locality Review` with target, selected verifier, stronger candidate, evidence comparison, consequence, selection correction, and verification.
+Return `# Verification Locality Review` with inspected target/selection scope, selected verifier, stronger candidate, behavioral evidence comparison, consequence, correction, and verification. Use `FINDING` only when the candidate is demonstrably stronger for that obligation. `CLEAN`/`LEAVE ALONE` requires the relevant candidates and selection rule to be inspected; unavailable assertions or execution conditions remain `INSUFFICIENT EVIDENCE`. A local test choice does not certify whole-suite coverage.

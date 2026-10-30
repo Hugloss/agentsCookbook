@@ -36,3 +36,5 @@ Separate the complete proof scope from bounded presentation and record presentat
 ## OUTPUT
 
 Return `# Bounded Authority Monotonicity Review` with bound variants, proof scope, authority outcomes, newly admitted evidence if any, violation, correction, verification.
+
+Use `FINDING` only when the changed bound, rather than changed qualifying evidence, explains the authority change. Bound `CLEAN` to the compared requests, proof inputs, and limits; unknown proof dependencies require `INSUFFICIENT EVIDENCE`.

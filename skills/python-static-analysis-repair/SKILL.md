@@ -1,12 +1,12 @@
 ---
 name: python-static-analysis-repair
-description: Makes Ruff, Pyright, and ty clean while protecting behavior with focused tests before semantic repairs.
+description: Repairs configured Python lint and type errors while protecting runtime behavior before semantic changes.
 license: MIT
 ---
 
 # Python Static Analysis Repair
 
-Standalone repair discipline for Python repositories that use Ruff, Pyright, and ty.
+Standalone repair discipline for Python repositories using Ruff, Pyright, ty, or a repository-declared subset of those tools.
 
 This skill is for implementation work, not merely reporting static-analysis findings. The goal is a clean analyzer state without silently changing runtime behavior to satisfy the tools.
 
@@ -20,11 +20,13 @@ A green analyzer is evidence about the static model, not authority to redefine p
 
 Before editing production code:
 
-- identify the repository-owned test command and the repository-native invocations for Ruff, Pyright, and ty;
+- identify the repository-owned test command, configured analyzer set and repository-native invocations;
 - run the smallest existing tests relevant to the failing files or symbols when practical;
-- run all three analyzers and record the exact findings before repair;
+- run the required configured analyzers and record the exact findings before repair;
 - preserve repository configuration, analyzer scope, strictness, excludes, and target versions unless the task explicitly asks to change policy;
-- treat an unavailable, skipped, crashed, or unconfigured analyzer as incomplete work, not clean.
+- treat a required analyzer that is unavailable, skipped or crashed as incomplete work, not clean. A tool not selected by repository policy or the requested scope is not a missing gate; do not install or mandate it merely because this skill names it.
+
+Establish that tool set and checked scope before seeing results. If the repository requires all three analyzers, all three remain required. Do not drop a configured failing tool or narrow its paths to obtain a clean result.
 
 Prefer the repository's existing entrypoints. If the project uses a native environment owner such as uv, invoke project-local tools through that owner rather than resolving or installing parallel global executables.
 
@@ -72,7 +74,7 @@ For every semantic or uncertain repair:
 
 1. Trace at least one real caller or execution path to the affected code.
 2. State the observable behavior that must remain stable.
-3. Add the smallest focused test that proves that behavior through the most stable boundary available.
+3. Reuse an inspected existing test that decisively protects the affected behavior, or add the smallest missing test through the most stable boundary available.
 4. Run that test **before** changing production code.
 5. Require the pre-change test to pass when the task is behavior-preserving.
 6. Make the production change.
@@ -131,9 +133,7 @@ Do not declare success until:
 
 - focused behavior-preservation/regression tests pass;
 - the repository's relevant broader tests pass;
-- Ruff passes clean for the repository-owned scope;
-- Pyright passes clean for the repository-owned scope;
-- ty passes clean for the repository-owned scope;
+- every analyzer in the pre-established required tool set passes clean for the repository-owned scope;
 - no analyzer was skipped or hidden by a newly weakened configuration;
 - no new suppression, broad `Any`, or unproved cast was introduced merely to obtain green output.
 
@@ -157,14 +157,14 @@ Return `# Python Static Analysis Repair` with:
 
 - baseline test and analyzer commands/results;
 - finding clusters and their mechanical/semantic classification;
-- focused behavior tests added before semantic changes;
+- focused behavior tests reused or added before semantic changes;
 - production repairs made;
 - any intentional behavior change and its failing regression;
-- final Ruff, Pyright, ty, and test receipts;
+- final receipts for each required analyzer and test, plus tools not applicable to this repository;
 - any remaining blocker or analyzer that could not be run.
 
 End with exactly one:
 
-- `CLEAN` — relevant tests pass and Ruff, Pyright, and ty all pass for the unchanged repository-owned analysis scope;
+- `CLEAN` — relevant tests and every pre-established required analyzer pass for the unchanged repository-owned analysis scope; do not imply that an unselected tool ran;
 - `INCOMPLETE` — a required analyzer/test could not be run or remaining findings still exist;
 - `BLOCKED` — the requested clean state requires an unresolved behavior/product decision rather than a safe static-analysis repair.

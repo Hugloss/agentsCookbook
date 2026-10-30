@@ -9,6 +9,7 @@ permission:
   edit: allow
   write: allow
   bash: allow
+  subagent: allow
   task:
     "*": deny
     plan-improver-model2: allow

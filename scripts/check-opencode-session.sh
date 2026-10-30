@@ -4,12 +4,15 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 # shellcheck source=scripts/lib-opencode.sh
 . "$script_dir/lib-opencode.sh"
+# shellcheck source=scripts/lib-opencode-runtime.sh
+. "$script_dir/lib-opencode-runtime.sh"
 
 usage() {
   cat <<'USAGE'
 Usage: scripts/check-opencode-session.sh [--scope latest-segment|latest-turn|session] [--expect-subagent NAME] [--expect-no-subagent] [--db PATH] [--log-dir DIR] [--no-agent-log-check] [--failures-only] [--json] [session-id]
 
-Checks an OpenCode session for task-tool calls to the required planning/build
+Checks an OpenCode 1.x session for completed task-tool calls with nonempty
+results from the required planning/build
 reviewer subagents, or for one routed reviewer when the scoped primary agent is
 subagent-router. If no session ID is provided, checks the latest OpenCode
 session for the current working directory.
@@ -157,6 +160,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
+cli_checked=0
+require_opencode_cli() {
+  if [[ "$cli_checked" -eq 0 ]]; then
+    ac_require_opencode_v1 || exit 2
+    cli_checked=1
+  fi
+}
+
+expected_directory=""
+if [[ -z "$session_id" ]]; then expected_directory="$(pwd -P)"; fi
+
 db_available=0
 if command -v sqlite3 >/dev/null 2>&1 && [[ -n "$db_path" && -f "$db_path" ]]; then
   db_available=1
@@ -164,19 +178,21 @@ fi
 
 if [[ -z "$session_id" && "$db_available" -eq 1 ]]; then
   target_dir="$(pwd -P)"
-  latest_sql="select id from session where directory=$(sql_string "$target_dir") order by time_updated desc limit 1;"
+  latest_sql="select id from session where directory=$(sql_string "$target_dir") and parent_id is null order by time_updated desc limit 1;"
   session_id="$(sqlite3 -noheader "$db_path" "$latest_sql" 2>/dev/null || true)"
 fi
 
 if [[ -z "$session_id" ]]; then
-  if ! latest_sessions="$(opencode session list --max-count 1 --format json)"; then
+  require_opencode_cli
+  latest_sessions_file="$temp_dir/latest-sessions.json"
+  if ! opencode session list --format json >"$latest_sessions_file"; then
     echo "opencode session list failed." >&2
     exit 2
   fi
 
-  session_id="$(printf "%s\n" "$latest_sessions" | node -e '
+  session_id="$(node -e '
 const fs = require("fs");
-const raw = fs.readFileSync(0, "utf8");
+const raw = fs.readFileSync(process.argv[1], "utf8");
 let sessions;
 try {
   sessions = JSON.parse(raw);
@@ -184,12 +200,20 @@ try {
   console.error(`Could not parse opencode session list JSON: ${error.message}`);
   process.exit(2);
 }
-if (!Array.isArray(sessions) || sessions.length === 0 || !sessions[0].id) {
-  console.error("No OpenCode sessions found for the current working directory.");
+if (!Array.isArray(sessions)) {
+  console.error("OpenCode session list did not return an array.");
+  process.exit(2);
+}
+const selected = sessions.find(session => {
+  if (!session || typeof session.id !== "string" || typeof session.directory !== "string") return false;
+  try { return fs.realpathSync(session.directory) === process.argv[2]; } catch { return false; }
+});
+if (!selected) {
+  console.error("No session for the current working directory appears in OpenCode session list. Pass an explicit session ID or --db PATH; a different project directory cannot qualify this run.");
   process.exit(1);
 }
-process.stdout.write(sessions[0].id);
-')"
+process.stdout.write(selected.id);
+' "$latest_sessions_file" "$expected_directory")"
 fi
 
 session_file="$temp_dir/session.json"
@@ -222,6 +246,7 @@ if [[ "$db_available" -eq 1 ]]; then
 fi
 
 if [[ "$timeline_source" != "db" ]]; then
+  require_opencode_cli
   if ! opencode export "$session_id" >"$export_file"; then
     echo "opencode export failed for session: $session_id" >&2
     exit 2
@@ -231,6 +256,8 @@ fi
 
 export OPENCODE_SESSION_CHECK_SCOPE="$scope"
 export OPENCODE_SESSION_CHECK_SESSION_ID="$session_id"
+export OPENCODE_SESSION_CHECK_EXPECT_DIRECTORY="$expected_directory"
+export OPENCODE_SESSION_CHECK_REVIEWERS_FILE="$script_dir/../reviewers.json"
 export OPENCODE_SESSION_CHECK_EXPECT_SUBAGENT="$expected_subagent"
 export OPENCODE_SESSION_CHECK_TIMELINE_SOURCE="$timeline_source"
 export OPENCODE_SESSION_CHECK_DB_PATH="$db_path"
@@ -251,17 +278,7 @@ node >"$node_stdout" 2>"$node_stderr" <<'NODE'
 const fs = require("fs");
 const path = require("path");
 
-const required = [
-  "plan-improver-model2",
-  "plan-improver-model3",
-  "plan-validation-designer",
-  "plan-coverage-reviewer",
-  "plan-red-team-gate",
-  "plan-implementation-simulator",
-  "plan-fact-auditor",
-  "code-performance-optimization-auditor",
-  "plan-contract-checker",
-];
+const required = JSON.parse(fs.readFileSync(process.env.OPENCODE_SESSION_CHECK_REVIEWERS_FILE, "utf8"));
 const requiredSet = new Set(required);
 const workflowAgents = new Set(["ping-pong-plan", "ping-ping-build"]);
 const scopedPrimaryAgents = new Set(["ping-pong-plan", "ping-ping-build", "subagent-router"]);
@@ -282,11 +299,20 @@ if (expectedSubagent && expectedNoSubagent) {
   process.exit(2);
 }
 
-function readJsonFile(file, fallback) {
+function evidenceError(message) {
+  console.error(`Invalid OpenCode session evidence: ${message}`);
+  process.exit(2);
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function readJsonFile(file) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch {
-    return fallback;
+  } catch (error) {
+    evidenceError(`cannot parse JSON: ${error.message}`);
   }
 }
 
@@ -298,6 +324,57 @@ function parseMaybeJson(value) {
     return JSON.parse(value);
   } catch {
     return value;
+  }
+}
+
+function taskEvidence(state) {
+  if (state.status !== "completed") return { usable: false, reason: `task status is ${state.status || "unknown"}` };
+  if (state.metadata && state.metadata.background === true) return { usable: false, reason: "background launch is not a completed reviewer result" };
+  if (typeof state.output !== "string" || !state.output.trim()) return { usable: false, reason: "completed task has no output" };
+  const output = state.output.trim();
+  if (/^<task(?:\s|>)/.test(output)) {
+    const wrapper = output.match(/^<task id="[^"]+" state="([^"]+)">\s*(?:<summary>[\s\S]*?<\/summary>\s*)?<task_result>([\s\S]*)<\/task_result>\s*<\/task>$/);
+    if (!wrapper) return { usable: false, reason: "reviewer task envelope is malformed" };
+    if (wrapper[1] !== "completed") return { usable: false, reason: `reviewer task state is ${wrapper[1]}` };
+    if (!wrapper[2].trim()) return { usable: false, reason: "reviewer result is empty" };
+  } else {
+    const result = output.match(/<task_result>([\s\S]*)<\/task_result>$/);
+    if ((output.startsWith("task_id:") || output.startsWith("<task_result>")) && !result) return { usable: false, reason: "reviewer task envelope is malformed" };
+    if (result && !result[1].trim()) return { usable: false, reason: "reviewer result is empty" };
+  }
+  return { usable: true, reason: "" };
+}
+
+function collectToolPart(part, message, taskCalls, invalidToolCalls, seenToolCalls) {
+  if (part.type !== "tool") return;
+  if (part.tool !== "task" && part.tool !== "invalid") return;
+  if (message.role !== "assistant") evidenceError(`tool part ${part.id} does not belong to an assistant message`);
+  const callKey = `${message.id}\0${part.callID}`;
+  if (typeof part.callID !== "string" || !part.callID || seenToolCalls.has(callKey)) evidenceError(`tool part ${part.id} has an invalid or duplicate callID`);
+  seenToolCalls.add(callKey);
+  if (!isRecord(part.state) || !isRecord(part.state.input)) evidenceError(`tool part ${part.id} has no structured state/input`);
+  const state = part.state;
+  const call = {
+    id: part.id,
+    callId: part.callID,
+    messageId: message.id,
+    agent: message.agent,
+    time: part.createdTime || message.time,
+    status: typeof state.status === "string" ? state.status : "unknown",
+  };
+  if (part.tool === "task") {
+    taskCalls.push({
+      ...call,
+      subagentType: typeof state.input.subagent_type === "string" && state.input.subagent_type
+        ? state.input.subagent_type : "<missing subagent_type>",
+      ...taskEvidence(state),
+    });
+  } else {
+    invalidToolCalls.push({
+      ...call,
+      tool: typeof state.input.tool === "string" ? state.input.tool : "<unknown>",
+      error: typeof state.input.error === "string" ? state.input.error : String(state.output || ""),
+    });
   }
 }
 
@@ -318,9 +395,11 @@ function addCount(map, key) {
 
 function summarizeCalls(calls) {
   const found = new Map(required.map((name) => [name, 0]));
+  const attempted = new Map(required.map((name) => [name, 0]));
   for (const call of calls) {
     if (found.has(call.subagentType)) {
-      found.set(call.subagentType, found.get(call.subagentType) + 1);
+      attempted.set(call.subagentType, attempted.get(call.subagentType) + 1);
+      if (call.usable) found.set(call.subagentType, found.get(call.subagentType) + 1);
     }
   }
   let missing = 0;
@@ -332,22 +411,21 @@ function summarizeCalls(calls) {
       missing += 1;
     } else {
       foundRequired += 1;
-      if (count > 1) {
-        duplicates += 1;
-      }
     }
+    if (attempted.get(name) > 1) duplicates += 1;
   }
   const unexpectedCalls = calls.filter((call) => !requiredSet.has(call.subagentType));
-  return { found, foundRequired, missing, duplicates, unexpectedCalls };
+  return { found, attempted, foundRequired, missing, duplicates, unexpectedCalls };
 }
 
 function summarizeRouterCalls(calls, invalidToolCalls) {
   const unexpectedCalls = calls.filter((call) => !requiredSet.has(call.subagentType));
-  const selectedCalls = calls.filter((call) => requiredSet.has(call.subagentType));
+  const selectedCalls = calls.filter((call) => requiredSet.has(call.subagentType) && call.usable);
   const selected = selectedCalls.length === 1 ? selectedCalls[0].subagentType : "";
   const noReviewerPass = expectedNoSubagent && calls.length === 0 && invalidToolCalls.length === 0;
   const status = noReviewerPass || (
     calls.length === 1
+    && calls[0].usable
     && unexpectedCalls.length === 0
     && selected
     && (!expectedSubagent || selected === expectedSubagent)
@@ -377,85 +455,63 @@ function summarizeInvalidTools(calls) {
 }
 
 function collectDbTimeline() {
-  const sessionRows = readJsonFile(process.env.OPENCODE_SESSION_CHECK_SESSION_FILE, []);
-  const session = Array.isArray(sessionRows) && sessionRows.length > 0 ? sessionRows[0] : null;
-  if (!session) {
-    return null;
+  const sessionRows = readJsonFile(process.env.OPENCODE_SESSION_CHECK_SESSION_FILE);
+  const eventRows = readJsonFile(process.env.OPENCODE_SESSION_CHECK_EVENTS_FILE);
+  const messageRows = readJsonFile(process.env.OPENCODE_SESSION_CHECK_MESSAGES_FILE);
+  const partRows = readJsonFile(process.env.OPENCODE_SESSION_CHECK_PARTS_FILE);
+  if (![sessionRows, eventRows, messageRows, partRows].every(Array.isArray) || sessionRows.length !== 1) {
+    evidenceError("DB queries did not return one session and complete row arrays");
   }
-
-  const eventRows = readJsonFile(process.env.OPENCODE_SESSION_CHECK_EVENTS_FILE, []);
-  const messageRows = readJsonFile(process.env.OPENCODE_SESSION_CHECK_MESSAGES_FILE, []);
-  const partRows = readJsonFile(process.env.OPENCODE_SESSION_CHECK_PARTS_FILE, []);
-
+  const session = sessionRows[0];
+  const seenMessages = new Set();
   const messages = messageRows.map((row) => {
-    const data = parseMaybeJson(row.data) || {};
+    const data = parseMaybeJson(row.data);
+    if (!isRecord(data) || typeof row.id !== "string" || !row.id || seenMessages.has(row.id)
+      || !["user", "assistant"].includes(data.role)) evidenceError("invalid or duplicate DB message");
+    seenMessages.add(row.id);
     return {
       id: row.id,
-      role: data.role || "",
+      role: data.role,
+      agent: typeof data.agent === "string" ? data.agent : "unknown",
       time: valueTime(row.time_created),
     };
   }).sort((a, b) => a.time - b.time || a.id.localeCompare(b.id));
+  const messagesById = new Map(messages.map(message => [message.id, message]));
 
   const switches = eventRows
     .filter((row) => row.type === "agent-switched")
     .map((row) => {
-      const data = parseMaybeJson(row.data) || {};
-      return {
-        id: row.id,
-        agent: data.agent || "unknown",
-        time: valueTime(row.time_created),
-      };
+      const data = parseMaybeJson(row.data);
+      if (!isRecord(data) || typeof data.agent !== "string") evidenceError("invalid DB agent switch");
+      return { id: row.id, agent: data.agent, time: valueTime(row.time_created) };
     })
     .sort((a, b) => a.time - b.time || a.id.localeCompare(b.id));
 
   const taskCalls = [];
   const invalidToolCalls = [];
+  const seenParts = new Set();
+  const seenToolCalls = new Set();
   for (const row of partRows) {
-    const data = parseMaybeJson(row.data) || {};
-    const state = data.state && typeof data.state === "object" ? data.state : {};
-
-    if (data.tool === "task") {
-      const input = parseMaybeJson(state.input ?? data.input ?? {});
-      const subagentType = input && typeof input === "object" ? input.subagent_type : undefined;
-      taskCalls.push({
-        id: row.id,
-        messageId: row.message_id || "",
-        time: valueTime(row.time_created),
-        subagentType: subagentType || "<missing subagent_type>",
-        status: state.status || data.status || "unknown",
-      });
+    const data = parseMaybeJson(row.data);
+    const message = messagesById.get(row.message_id);
+    if (!isRecord(data) || typeof row.id !== "string" || !row.id || seenParts.has(row.id) || !message) {
+      evidenceError("invalid, duplicate or unbound DB part");
     }
-
-    if (data.tool === "invalid") {
-      const input = parseMaybeJson(state.input ?? data.input ?? {});
-      invalidToolCalls.push({
-        id: row.id,
-        messageId: row.message_id || "",
-        time: valueTime(row.time_created),
-        tool: input && typeof input === "object" && input.tool ? input.tool : "<unknown>",
-        status: state.status || data.status || "unknown",
-        error: input && typeof input === "object" && input.error ? input.error : String(state.output || ""),
-      });
-    }
+    seenParts.add(row.id);
+    collectToolPart({ ...data, id: row.id, createdTime: valueTime(row.time_created) }, message, taskCalls, invalidToolCalls, seenToolCalls);
   }
-
-  const maxTimes = [
-    valueTime(session.time_updated),
-    ...messages.map((message) => message.time),
-    ...switches.map((event) => event.time),
-    ...taskCalls.map((call) => call.time),
-    ...invalidToolCalls.map((call) => call.time),
-  ];
 
   return {
     source: "db",
     session: {
-      id: session.id || requestedSessionId,
+      id: session.id,
       title: session.title || "",
       directory: session.directory || "",
-      createdAgent: session.agent || "unknown",
+      createdAgent: typeof session.agent === "string" ? session.agent : "unknown",
       start: valueTime(session.time_created),
-      end: Math.max(...maxTimes, valueTime(session.time_created)),
+      end: Math.max(valueTime(session.time_updated), valueTime(session.time_created),
+        ...messages.map(message => message.time), ...switches.map(event => event.time),
+        ...taskCalls.map(call => call.time), ...invalidToolCalls.map(call => call.time)),
     },
     messages,
     switches,
@@ -464,150 +520,56 @@ function collectDbTimeline() {
   };
 }
 
-function collectSubagentTypeMatches(text) {
-  const matches = [];
-  const rawPattern = /"subagent_type"\s*:\s*"([^"]+)"/g;
-  const escapedPattern = /\\"subagent_type\\"\s*:\s*\\"([^\\"]+)\\"/g;
-  let match;
-  while ((match = rawPattern.exec(text)) !== null) {
-    matches.push({ index: match.index, value: match[1] });
-  }
-  while ((match = escapedPattern.exec(text)) !== null) {
-    matches.push({ index: match.index, value: match[1] });
-  }
-  matches.sort((a, b) => a.index - b.index);
-  return matches;
-}
-
 function collectExportTimeline() {
-  const raw = fs.readFileSync(process.env.OPENCODE_SESSION_CHECK_EXPORT_FILE, "utf8");
-  const start = raw.indexOf("{");
-  if (start === -1) {
-    console.error("No JSON object found in opencode export output.");
-    process.exit(2);
+  // V1 export owns the structured message/part envelope. Text matches, nested
+  // user payloads, and damaged JSON cannot establish a successful tool call.
+  const exported = readJsonFile(process.env.OPENCODE_SESSION_CHECK_EXPORT_FILE);
+  if (!isRecord(exported) || !isRecord(exported.info) || !Array.isArray(exported.messages)) {
+    evidenceError("export must contain an info object and messages array");
   }
-
-  const jsonText = raw
-    .slice(start)
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-    .replace(/[\u0000-\u001F]/g, "");
-
-  let exported = null;
-  let parseWarning = "";
-  try {
-    exported = JSON.parse(jsonText);
-  } catch (error) {
-    parseWarning = error.message;
-  }
-
+  const info = exported.info;
   const taskCalls = [];
   const invalidToolCalls = [];
-  function visit(value) {
-    if (!value || typeof value !== "object") {
-      return;
+  const messages = [];
+  const seenMessages = new Set();
+  const seenParts = new Set();
+  const seenToolCalls = new Set();
+  for (const entry of exported.messages) {
+    if (!isRecord(entry) || !isRecord(entry.info) || !Array.isArray(entry.parts)) evidenceError("invalid exported message envelope");
+    const message = entry.info;
+    if (typeof message.id !== "string" || !message.id || seenMessages.has(message.id)
+      || message.sessionID !== requestedSessionId || !["user", "assistant"].includes(message.role)) {
+      evidenceError("invalid, duplicate or foreign exported message identity");
     }
-    if (value.tool === "task") {
-      const state = value.state && typeof value.state === "object" ? value.state : {};
-      const input = parseMaybeJson(state.input ?? value.input ?? {});
-      const subagentType = input && typeof input === "object" ? input.subagent_type : undefined;
-      taskCalls.push({
-        id: value.id || "",
-        messageId: value.messageID || value.messageId || "",
-        time: 0,
-        subagentType: subagentType || "<missing subagent_type>",
-        status: state.status || value.status || "unknown",
-      });
-    }
-    if (value.tool === "invalid") {
-      const state = value.state && typeof value.state === "object" ? value.state : {};
-      const input = parseMaybeJson(state.input ?? value.input ?? {});
-      invalidToolCalls.push({
-        id: value.id || "",
-        messageId: value.messageID || value.messageId || "",
-        time: 0,
-        tool: input && typeof input === "object" && input.tool ? input.tool : "<unknown>",
-        status: state.status || value.status || "unknown",
-        error: input && typeof input === "object" && input.error ? input.error : String(state.output || ""),
-      });
-    }
-    for (const child of Object.values(value)) {
-      visit(child);
+    seenMessages.add(message.id);
+    const normalized = {
+      id: message.id,
+      role: message.role,
+      agent: typeof message.agent === "string" ? message.agent : "unknown",
+      time: valueTime(message.time && message.time.created),
+    };
+    messages.push(normalized);
+    for (const part of entry.parts) {
+      if (!isRecord(part) || typeof part.id !== "string" || !part.id || seenParts.has(part.id)
+        || part.sessionID !== requestedSessionId || part.messageID !== message.id || typeof part.type !== "string") {
+        evidenceError("invalid, duplicate or foreign exported part identity");
+      }
+      seenParts.add(part.id);
+      collectToolPart(part, normalized, taskCalls, invalidToolCalls, seenToolCalls);
     }
   }
-
-  function scanRawExport(text) {
-    const cleaned = text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
-    const toolPattern = /"tool"\s*:\s*"task"/g;
-    let match;
-    while ((match = toolPattern.exec(cleaned)) !== null) {
-      const nextTaskPattern = /"tool"\s*:\s*"task"/g;
-      nextTaskPattern.lastIndex = match.index + match[0].length;
-      const nextTaskMatch = nextTaskPattern.exec(cleaned);
-      const nextTask = nextTaskMatch ? nextTaskMatch.index : -1;
-      const maxWindowEnd = Math.min(cleaned.length, match.index + 250000);
-      const windowEnd = nextTask === -1 ? maxWindowEnd : Math.min(nextTask, maxWindowEnd);
-      const window = cleaned.slice(match.index, windowEnd);
-      const subagentMatches = collectSubagentTypeMatches(window);
-      const subagentType = subagentMatches.length > 0
-        ? subagentMatches[subagentMatches.length - 1].value
-        : "<missing subagent_type>";
-      taskCalls.push({
-        id: "",
-        messageId: "",
-        time: 0,
-        subagentType,
-        status: "unknown",
-      });
-    }
-
-    const invalidPattern = /"tool"\s*:\s*"invalid"/g;
-    while ((match = invalidPattern.exec(cleaned)) !== null) {
-      const window = cleaned.slice(match.index, Math.min(cleaned.length, match.index + 20000));
-      const toolMatch = window.match(/"tool"\s*:\s*"([^"]+)"/);
-      const attemptedToolMatch = window.match(/"input"\s*:\s*\{[^}]*"tool"\s*:\s*"([^"]+)"/);
-      const errorMatch = window.match(/"error"\s*:\s*"([^"]+)"/);
-      invalidToolCalls.push({
-        id: "",
-        messageId: "",
-        time: 0,
-        tool: attemptedToolMatch ? attemptedToolMatch[1] : (toolMatch ? toolMatch[1] : "<unknown>"),
-        status: "unknown",
-        error: errorMatch ? errorMatch[1] : "",
-      });
-    }
-  }
-
-  if (exported) {
-    visit(exported);
-  } else {
-    scanRawExport(raw);
-  }
-
-  if (parseWarning) {
-    console.error(`Warning: strict JSON parse failed, used task-call text scan instead: ${parseWarning}`);
-    console.error("");
-  }
-
-  const rawId = raw.match(/"id"\s*:\s*"(ses_[^"]+)"/);
-  const rawTitle = raw.match(/"title"\s*:\s*"([^"]+)"/);
-  const rawDirectory = raw.match(/"directory"\s*:\s*"([^"]+)"/);
-  const info = exported ? exported.info || {} : {
-    id: rawId ? rawId[1] : undefined,
-    title: rawTitle ? rawTitle[1] : undefined,
-    directory: rawDirectory ? rawDirectory[1] : undefined,
-  };
 
   return {
-    source: exported ? "export-strict" : "export-raw-scan",
+    source: "export-strict",
     session: {
-      id: info.id || requestedSessionId || "<unknown>",
+      id: info.id,
       title: info.title || "",
       directory: info.directory || "",
-      createdAgent: "unknown",
-      start: 0,
-      end: 0,
+      createdAgent: typeof info.agent === "string" ? info.agent : "unknown",
+      start: valueTime(info.time && info.time.created),
+      end: valueTime(info.time && info.time.updated),
     },
-    messages: [],
+    messages,
     switches: [],
     taskCalls,
     invalidToolCalls,
@@ -701,6 +663,7 @@ function buildScope(timeline) {
       agent: "unknown",
       userMessageId: "",
       available: false,
+      reason: "the selected scope requires the OpenCode SQLite timeline",
     };
   }
 
@@ -713,10 +676,11 @@ function buildScope(timeline) {
         end: timeline.session.end,
         agent: timeline.session.createdAgent,
         userMessageId: "",
-        available: true,
+        available: false,
+        reason: "latest-turn requires a recorded user prompt",
       };
     }
-    const priorSwitches = timeline.switches.filter((event) => event.time <= latestUser.time && scopedPrimaryAgents.has(event.agent));
+    const priorSwitches = timeline.switches.filter((event) => event.time <= latestUser.time);
     const latestSwitch = priorSwitches[priorSwitches.length - 1];
     return {
       start: latestUser.time,
@@ -727,8 +691,7 @@ function buildScope(timeline) {
     };
   }
 
-  const workflowSwitches = timeline.switches.filter((event) => scopedPrimaryAgents.has(event.agent));
-  const latestSwitch = workflowSwitches[workflowSwitches.length - 1];
+  const latestSwitch = timeline.switches[timeline.switches.length - 1];
   return {
     start: latestSwitch ? latestSwitch.time : timeline.session.start,
     end: timeline.session.end,
@@ -738,7 +701,7 @@ function buildScope(timeline) {
   };
 }
 
-function primaryCountsFromDb(timeline) {
+function primaryCountsFromTimeline(timeline) {
   const counts = new Map();
   if (timeline.session.createdAgent && scopedPrimaryAgents.has(timeline.session.createdAgent)) {
     addCount(counts, timeline.session.createdAgent);
@@ -748,6 +711,9 @@ function primaryCountsFromDb(timeline) {
       addCount(counts, event.agent);
     }
   }
+  for (const message of timeline.messages) {
+    if (message.role === "assistant" && scopedPrimaryAgents.has(message.agent)) addCount(counts, message.agent);
+  }
   return counts;
 }
 
@@ -756,10 +722,23 @@ if (!timeline) {
   console.error("Could not load OpenCode session timeline from DB or export.");
   process.exit(2);
 }
+if (timeline.session.id !== requestedSessionId) evidenceError("session identity does not match the requested session");
+const expectedDirectory = process.env.OPENCODE_SESSION_CHECK_EXPECT_DIRECTORY;
+if (expectedDirectory) {
+  let actualDirectory;
+  try { actualDirectory = fs.realpathSync(timeline.session.directory); } catch { evidenceError("session directory is unavailable"); }
+  if (actualDirectory !== expectedDirectory) evidenceError("automatically selected session belongs to another directory");
+}
+if (checkScope !== "session" && timeline.source === "db") {
+  const times = [timeline.session.start, timeline.session.end, ...timeline.messages.map(message => message.time),
+    ...timeline.switches.map(event => event.time), ...timeline.taskCalls.map(call => call.time),
+    ...timeline.invalidToolCalls.map(call => call.time)];
+  if (times.some(time => time <= 0)) evidenceError("scoped validation requires complete native timestamps");
+}
 
 const agentLog = scanAgentLogs(timeline.session.id);
-const dbPrimaryCounts = timeline.source === "db" ? primaryCountsFromDb(timeline) : new Map();
-const primaryCounts = dbPrimaryCounts.size > 0 ? dbPrimaryCounts : agentLog.primaryCounts;
+const observedPrimaryCounts = primaryCountsFromTimeline(timeline);
+const primaryCounts = observedPrimaryCounts.size > 0 ? observedPrimaryCounts : agentLog.primaryCounts;
 const primaryAgents = Array.from(primaryCounts.keys()).sort();
 const createdAgent = timeline.session.createdAgent !== "unknown" ? timeline.session.createdAgent : agentLog.createdAgent;
 const workflowPrimaryAgents = primaryAgents.filter((agent) => workflowAgents.has(agent));
@@ -769,6 +748,7 @@ const createdMismatch = createdWorkflowAgent
   : false;
 const mixedPrimaryAgents = workflowPrimaryAgents.length > 1 || createdMismatch;
 
+if (timeline.session.createdAgent === "unknown") timeline.session.createdAgent = createdAgent;
 const scopeInfo = buildScope(timeline);
 let scopedCalls = [];
 let scopedInvalidToolCalls = [];
@@ -787,8 +767,17 @@ if (!scopeInfo.available) {
   scopedInvalidToolCalls = (timeline.invalidToolCalls || []).filter((call) => call.time >= scopeInfo.start && call.time <= scopeInfo.end);
 }
 
+for (const call of scopedCalls) {
+  if (call.agent !== scopeInfo.agent) {
+    call.usable = false;
+    call.reason = `task belongs to primary agent ${call.agent || "unknown"}, not scoped agent ${scopeInfo.agent}`;
+  }
+}
+
 const sessionSummary = summarizeCalls(timeline.taskCalls);
 const scopeSummary = summarizeCalls(scopedCalls);
+const unusableCalls = scopedCalls.filter(call => !call.usable);
+const unknownScopeAgent = !scopedPrimaryAgents.has(scopeInfo.agent);
 const sessionInvalidSummary = summarizeInvalidTools(timeline.invalidToolCalls || []);
 const scopeInvalidSummary = summarizeInvalidTools(scopedInvalidToolCalls);
 const isRouterScope = scopeInfo.agent === "subagent-router";
@@ -828,6 +817,7 @@ if (checkScope === "latest-turn") {
   console.log(`SCOPE_USER_MESSAGE_ID=${scopeInfo.userMessageId || "unknown"}`);
 }
 console.log(`SCOPE_TASK_CALLS=${scopedCalls.length}`);
+console.log(`SCOPE_UNUSABLE_TASK_CALLS=${unusableCalls.length}`);
 console.log(`SCOPE_INVALID_TOOL_CALLS=${scopedInvalidToolCalls.length}`);
 console.log(`AGENT_LOG=${agentLog.status}`);
 console.log(`SESSION_CREATED_AGENT=${createdAgent}`);
@@ -844,8 +834,8 @@ if (timeline.session.directory) {
 console.log("");
 
 if (scopedUnavailable) {
-  console.log("Scoped validation is unavailable without the OpenCode SQLite timeline.");
-  console.log("Use --scope session for export-only validation, or provide --db PATH.");
+  console.log(`Scoped validation is unavailable: ${scopeInfo.reason}.`);
+  console.log("Provide the missing timeline evidence; --scope session intentionally checks the whole session.");
 } else if (isRouterScope) {
   console.log("Routed reviewer task call in scope:");
   const selected = routerSummary.noReviewerExpected ? "none" : (routerSummary.selected || "none");
@@ -890,7 +880,7 @@ if (!scopedUnavailable && !isRouterScope && scopeSummary.duplicates > 0) {
   console.log("");
   console.log("Duplicate required reviewer task calls in scope:");
   for (const name of required) {
-    const count = scopeSummary.found.get(name) || 0;
+    const count = scopeSummary.attempted.get(name) || 0;
     if (count > 1) {
       console.log(`DUPLICATE_SUBAGENT name=${name} count=${count}`);
     }
@@ -921,6 +911,10 @@ if (!scopedUnavailable && scopedInvalidToolCalls.length > 0) {
       console.log(`ROUTER_FORBIDDEN_TOOL_ATTEMPT tool=${call.tool} agent=subagent-router status=${call.status}`);
     }
   }
+}
+
+for (const call of unusableCalls) {
+  console.log(`UNUSABLE_TASK subagent_type=${call.subagentType} status=${call.status} reason=${call.reason}`);
 }
 
 if (!scopedUnavailable && scopedCalls.length === 0) {
@@ -970,7 +964,7 @@ if (mixedPrimaryAgents) {
 }
 
 let failed = false;
-if (scopedUnavailable) {
+if (scopedUnavailable || unknownScopeAgent || unusableCalls.length > 0) {
   failed = true;
 }
 if (!scopedUnavailable && (
@@ -994,6 +988,8 @@ if (failed) {
   if (scopedUnavailable) {
     console.error(`Scoped validation is unavailable for --scope ${checkScope}.`);
   }
+  if (unknownScopeAgent) console.error("The selected scope has no verified cookbook primary agent; cannot qualify reviewer completion.");
+  if (unusableCalls.length) console.error(`Found ${unusableCalls.length} task call${unusableCalls.length === 1 ? "" : "s"} without a completed, nonempty reviewer result.`);
   if (!scopedUnavailable && scopeSummary.missing > 0) {
     if (!isRouterScope) {
       console.error(`Missing ${scopeSummary.missing} required subagent task call${scopeSummary.missing === 1 ? "" : "s"} in scope.`);
@@ -1052,6 +1048,7 @@ elif [[ "$failures_only" -eq 1 ]]; then
     /^SUBAGENT .*status=missing/ ||
     /^DUPLICATE_SUBAGENT / ||
     /^UNEXPECTED_TASK / ||
+    /^UNUSABLE_TASK / ||
     /^INVALID_TOOL / ||
     /^FORBIDDEN_PLANNING_TOOL_ATTEMPT / ||
     /^SCOPE_SUMMARY / ||
@@ -1061,6 +1058,8 @@ elif [[ "$failures_only" -eq 1 ]]; then
   ' "$node_stdout"
   awk '
     /^Warning:/ ||
+    /^Invalid OpenCode session evidence:/ ||
+    /^The selected scope has no verified/ ||
     /^Session mixed primary workflow agents:/ ||
     /^Router scope / ||
     /^--expect-subagent / ||

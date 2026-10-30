@@ -24,11 +24,11 @@ Inspect important lifecycle, operation, admission, result, configuration, identi
 
 ## PROVE
 
-Enumerate representable combinations versus real valid combinations. Trace defensive branches, cleanup, or repeated validation caused by impossible states being constructible.
+Derive forbidden combinations from the current domain/lifecycle contract, not field names or a preferred type style. Trace construction, deserialization, mutation and admission into trusted consumers. Show a forbidden combination that can cross that boundary, or concrete avoidable downstream complexity caused by repeatedly handling it. Distinguish language-level representability from states the canonical validator actually admits.
 
 ## DO NOT REPORT
 
-Do not report optional fields whose independence is real. Do not introduce a state-machine framework merely to replace one enum.
+Do not report optional fields whose independence is real, raw transport/input models intentionally validated once before trusted use, or transient states permitted inside an enforced atomic boundary. Trust-boundary revalidation is not inherently redundant. Do not introduce a state-machine framework merely to replace one enum.
 
 ## PREFER
 
@@ -36,4 +36,6 @@ Use stronger concrete/discriminated types or tighter schemas when they remove in
 
 ## OUTPUT
 
-Return `# Invalid State Model Review` with model, impossible combinations, production consequences, defensive code caused, target representation, removals, and tests/invariants.
+Return `# Invalid State Model Review` with the governing invariant, model/admission boundary, forbidden and legitimate control states, reachable consequence or avoidable downstream cost, smallest representation correction, and verification.
+
+Use `FINDING` for a demonstrated admitted invalid state or material model-induced complexity; `CLEAN` only when the declared construction/admission/mutation scope is complete and its admitted states satisfy the invariant; `LEAVE ALONE` when one proved boundary rejects invalid inputs or permits the suspected state intentionally; otherwise `INSUFFICIENT EVIDENCE`. Do not infer all model states are safe from a few happy-path examples.

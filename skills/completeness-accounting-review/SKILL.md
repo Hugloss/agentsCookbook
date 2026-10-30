@@ -24,7 +24,7 @@ Hunt in scans, pagination, streams, batches, shards, parsers, indexes, and evide
 
 ## PROVE
 
-Establish the expected universe and reconcile it against terminal categories. Show the unaccounted unit or contradictory counters and the code path that can still emit complete/success.
+Establish the expected universe from the operation contract, selection, or source membership independently of the surviving result rows, then reconcile each unit against terminal categories without double counting. Show the unaccounted unit or contradictory counters and the code path that can still emit complete/success. Accounted-for failure or exclusion can establish completeness but cannot establish success unless the success contract permits it.
 
 ## DO NOT REPORT
 
@@ -37,3 +37,5 @@ Use explicit terminal categories, bounded counters, and a conservation check bef
 ## OUTPUT
 
 Return `# Completeness Accounting Review` with expected universe, accounting table, unaccounted units, false completion path, correction, and verification.
+
+Use `FINDING` for a demonstrated false completion path; `CLEAN` requires reconciling the independently established expected universe for the inspected operation. Use `LEAVE ALONE` for correctly limited best-effort output. If the reviewer cannot establish required membership or accounting, return `INSUFFICIENT EVIDENCE`, even when observed failures are zero.

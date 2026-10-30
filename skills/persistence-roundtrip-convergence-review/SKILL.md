@@ -38,3 +38,5 @@ Use canonical codecs, explicit schema/version handling, integrity checks, and fa
 ## OUTPUT
 
 Return `# Persistence Roundtrip Convergence Review` with persisted owner, roundtrip path, semantic drift or invalid acceptance, consequence, canonical representation, verification.
+
+Use `FINDING` for proved semantic drift or invalid acceptance. Bound `CLEAN` to the inspected codecs, supported versions, and reopen paths; missing schema semantics or an untraced reader is `INSUFFICIENT EVIDENCE`. State whether roundtrips were executed or only traced.

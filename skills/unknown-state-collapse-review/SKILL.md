@@ -38,3 +38,5 @@ Use explicit tagged states or separate value/status fields. Preserve uncertainty
 ## OUTPUT
 
 Return `# Unknown State Collapse Review` with source states, collapse point, downstream semantic error, canonical representation, correction, verification.
+
+Use `FINDING` for a proved downstream semantic error. Bound `CLEAN` to the inspected source states and consumers; use `LEAVE ALONE` for a demonstrated intentional equivalence, and `INSUFFICIENT EVIDENCE` when the domain contract cannot establish whether the distinction matters.

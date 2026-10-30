@@ -38,3 +38,5 @@ Bind validation to the previous authoritative baseline first, validate the basel
 ## OUTPUT
 
 Return `# Baseline Self-Authorization Review` with governing baseline, candidate mutation, self-authorization path, independent authority required, corrected validation order, verification.
+
+Use `FINDING` for proved self-authorization. Bound `CLEAN` to the inspected baseline changes and validation consumers, or `LEAVE ALONE` for demonstrated independent admission; unavailable prior authority or approval evidence requires `INSUFFICIENT EVIDENCE`.

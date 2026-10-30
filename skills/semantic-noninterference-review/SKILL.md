@@ -26,7 +26,7 @@ Also verify the converse: removing or changing decisive admitted evidence must b
 
 ## PROVE
 
-Construct a counterfactual pair that changes only out-of-scope evidence and compare semantic output. Then mutate decisive in-scope evidence to confirm the system is not simply frozen.
+Establish the semantic dependency contract from the supported request and actual decision inputs; do not let a candidate label a relevant dependency out of scope. Construct or trace a counterfactual pair that changes only irrelevant evidence and compare semantic output. Use a control whose independently established correct answer changes to exclude a frozen implementation. Removing redundant support need not change the answer while another valid proof remains.
 
 ## DO NOT REPORT
 
@@ -39,3 +39,5 @@ Declare semantic dependencies, isolate proof inputs from ambient context, and ad
 ## OUTPUT
 
 Return `# Semantic Non-Interference Review` with conclusion, declared scope, irrelevant mutation, observed interference, decisive control mutation, correction, verification.
+
+Use `FINDING` for proved influence from semantically irrelevant input. `CLEAN` is limited to the inspected dependency contract and mutation classes; an unestablished scope or inconclusive control is `INSUFFICIENT EVIDENCE`. Do not label an unexecuted counterfactual as an observed result.
