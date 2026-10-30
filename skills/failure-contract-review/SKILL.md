@@ -25,7 +25,9 @@ Hunt for:
 
 ## PROVE
 
-Trace one real failure from origin to caller-visible outcome. Show where its meaning changes, becomes ambiguous, or forces downstream callers to guess retryability, absence, corruption, or terminal failure.
+Establish the applicable error/result contract, then trace one real failure from origin to caller-visible outcome and recovery decision. Show where its meaning changes, becomes ambiguous, or forces downstream callers to guess retryability, absence, corruption, or terminal failure, with a concrete wrong outcome.
+
+Distinguish failure to observe an effect from proof that the effect did not happen. A timeout after remote success, cancellation during commit, or cleanup error after completion must not automatically become safe-to-retry absence or erase the original outcome. Inspect actual operation/client semantics instead of inferring retryability from an exception's name.
 
 ## DO NOT REPORT
 
@@ -37,4 +39,6 @@ Keep one explicit failure/result contract at the existing semantic owner and map
 
 ## OUTPUT
 
-Return `# Failure Contract Review` with findings: originating failure, current representations, semantic divergence, real consequence, canonical contract, mappings/branches that can disappear, verification.
+Return `# Failure Contract Review` with the inspected failure/consumer scope and findings: originating failure, current representations, semantic divergence, real consequence, canonical contract, mappings/branches that can disappear, and verification.
+
+Use `FINDING` for a proved meaning or recovery violation. `CLEAN` requires relevant origin, translation, caller, and recovery paths in the declared scope to preserve the established contract; `LEAVE ALONE` requires a positively justified protocol mapping. Missing governing semantics is `INSUFFICIENT EVIDENCE` when no defect is proved, not permission to invent a failure policy.

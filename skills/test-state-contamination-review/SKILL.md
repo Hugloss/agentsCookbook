@@ -18,7 +18,7 @@ Hunt for global reset fixtures, singleton replacement, cache clearing, module re
 
 ## PROVE
 
-Run or reason about different ordering/isolation where practical. Identify the exact shared production state, its lifetime, writers, and why tests must clean it.
+Run or reason about different ordering/isolation where practical. Identify the exact shared state in production or test support, its lifetime, writers, and reset owner. Show `test A writes → state survives → test B observes a different result than its declared baseline`, including worker/run namespaces when relevant. A global reset fixture is not itself a defect if it reliably restores owned mutable state before each consumer.
 
 ## DO NOT REPORT
 
@@ -30,4 +30,4 @@ Give mutable state an explicit owner and lifetime, or move it to the operation/t
 
 ## OUTPUT
 
-Return `# Test State Contamination Review` with shared state, contamination path, reproducing order, ownership defect, target lifetime, reset code that can disappear, and proof.
+Return `# Test State Contamination Review` with the inspected tests/state/reset scope, contamination sequence, ownership defect, target lifetime, removable resets, and proof. Label reasoned sequences separately from executed ordering checks. Use `FINDING` for established cross-test influence; `CLEAN`/`LEAVE ALONE` requires a traced isolation or reset boundary. Unknown writers/reset behavior requires `INSUFFICIENT EVIDENCE`, not an assumption that every shared fixture contaminates tests.

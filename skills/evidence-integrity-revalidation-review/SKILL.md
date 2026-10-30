@@ -24,16 +24,18 @@ Hunt for:
 
 ## PROVE
 
-Modify evidence content while preserving its claimed identity, then trace a consumer that accepts, compares, or derives authority from the tampered artifact without recomputing the canonical identity.
+Construct or trace a reachable content mutation that preserves the claimed identity, then follow a consumer that derives authority without verifying the binding. Account for existing signature/content verification, immutable storage guarantees, and the interval between validation and use; do not assume bytes can change where the actual owner prevents it. A digest stored beside mutable content is not by itself such a guarantee.
 
 ## DO NOT REPORT
 
-Do not report immutable in-process values that cannot be altered between identity creation and use and are never serialized, transported, cached, or supplied externally.
+Do not report a value whose current content/identity binding is already verified by a trusted owner and cannot change before this use, including a proven immutable storage or transport boundary. Serialization alone does not require redundant hashing; a self-asserted immutability flag or unchecked storage key is not proof.
 
 ## PREFER
 
-Recompute canonical identity at every trust/reuse boundary, reject mismatches before interpretation, and keep one canonical identity owner.
+Verify canonical identity where evidence crosses an untrusted or mutable boundary, reject mismatches before interpretation, and carry verified immutable ownership through subsequent uses. Recompute when that ownership no longer proves the binding; keep one canonical identity owner.
 
 ## OUTPUT
 
 Return `# Evidence Integrity Revalidation Review` with artifact, claimed identity, tamper path, unchecked consumer, consequence, canonical verification boundary, and regression.
+
+Use `FINDING` for reachable unchecked identity reuse, or `LEAVE ALONE` for a proven immutable verified value. `CLEAN` requires tracing relevant trust/mutation boundaries; unknown verification ownership or mutability is `INSUFFICIENT EVIDENCE`.

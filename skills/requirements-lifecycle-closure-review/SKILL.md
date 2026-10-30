@@ -38,6 +38,8 @@ Trace the declared lifecycle from creation through terminal evidence. Hunt for p
 
 Focus on lifecycle closure. Do not turn the review into a generic architecture critique.
 
+Declare the operation/effect scope and governing requirements before judging closure. Follow directly implicated phases and recovery owners discovered during inspection; do not drop a failing phase to obtain a clean verdict. Missing referenced contracts remain unresolved rather than assumed safe or absent.
+
 ## PROVE
 
 For each finding identify:
@@ -126,6 +128,7 @@ Return `# Requirements Lifecycle Closure Review` with:
 
 End with one:
 
-- `CLEAN` — the completed review scope has deterministic lifecycle, partial-failure, ordering, teardown, unresolved, and recovery semantics for every reachable effectful path inspected;
+- `FINDING` — at least one reachable lifecycle seam has the proved ambiguity and consequence above; retain any other unresolved boundaries explicitly;
+- `CLEAN` — every materially applicable path in the complete declared lifecycle scope has deterministic partial-failure, ordering, teardown, unresolved, and recovery semantics, with no material unresolved contract;
 - `LEAVE ALONE` — suspicious omissions were inspected but the current contract already makes those paths impossible or delegates them to an explicit owner;
 - `INSUFFICIENT EVIDENCE` — the lifecycle/effect boundary cannot be established far enough to justify either a finding or a clean claim.

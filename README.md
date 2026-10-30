@@ -164,9 +164,21 @@ Common rules across the library:
 - prove the consequence before calling something a defect;
 - protect coherent boundaries that do not need refactoring;
 - prefer deletion and consolidation over new managers, registries, wrappers, or compatibility layers;
-- accept `LEAVE ALONE`, `CLEAN`, or `INSUFFICIENT EVIDENCE` as legitimate outcomes;
+- preserve proved `FINDING` results while accepting bounded `LEAVE ALONE`, `CLEAN`, or `INSUFFICIENT EVIDENCE` outcomes;
 - avoid fixed finding quotas;
 - keep prompts small enough to work well with local models and bounded context.
+
+### Review the skills themselves
+
+Use [`skill-contract-review`](skills/skill-contract-review/SKILL.md) when writing or improving a skill. It checks selection from the name/description, required evidence, safe controls, missing inputs, output consistency, executable examples and overlap. It recommends sharpening or splitting only when that resolves a concrete decision gap.
+
+Example request:
+
+> Use skill-contract-review on skills/example/SKILL.md and its relevant references and neighboring skills. Identify material gaps with source evidence and realistic failure scenarios. Check a valid control and missing-evidence behavior. Recommend keep, sharpen or split, and state what was actually validated.
+
+For substantial changes, apply the revised skill to raw representative tasks with a fresh agent that has not seen the expected answer. Keep definition review, observed agent behavior and execution of generated code separate. "Platinum" is a reliability goal; neither a clean definition review nor structural CI establishes hallucination-free behavior.
+
+See the [2026-10-30 catalog review](docs/skill-quality-review-2026-10-30.md) for the inspected baseline, per-skill decisions, focused improvements, split rationale and validation limits. This is authoring guidance; the nine-reviewer runtime flow remains unchanged.
 
 ## Skill map
 

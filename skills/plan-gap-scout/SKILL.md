@@ -24,11 +24,11 @@ Hunt for:
 
 ## PROVE
 
-Tie every finding to the user's goal and current repository evidence. Show the consequence of leaving the gap unaddressed.
+Establish the requested end state and inspected plan/change boundary, including directly affected callers and obligations. Tie every finding to the user's goal and current repository evidence. Show the consequence of leaving the gap unaddressed. Distinguish work proved missing from work whose status cannot be checked because a material file or contract is unavailable.
 
 ## DO NOT REPORT
 
-Do not invent work, broaden scope, or propose an alternative architecture just for variety. `alternative-route-challenge` owns competing designs.
+Do not invent work, broaden scope, or propose an alternative architecture just for variety. Do not demand a migration, rollback, new test, or document when the affected contract does not need one; an existing referenced step can already own the work. `alternative-route-challenge` owns competing designs.
 
 ## PREFER
 
@@ -38,8 +38,8 @@ Return the smallest missing work that makes the current direction complete and i
 
 When input starts with `BUILD REVIEW MODE`, inspect the supplied change/evidence for omitted callers, cleanup, leftovers, validation, or incomplete implementation. Do not require plan-shaped sections.
 
-Return `# Build Gap Review` with blocking findings, non-blocking findings, missing validation/evidence, concrete fixes, and remaining risk. Use `None` when clean.
+Return `# Build Gap Review` with inspected scope, blocking findings, non-blocking findings, missing validation/evidence, concrete fixes, and remaining risk. Use `None` only after all material obligations within that scope were checked; otherwise preserve `INSUFFICIENT EVIDENCE` for unresolved coverage.
 
 ## OUTPUT
 
-Otherwise return `# Plan Gap Review` with missing work/leftovers, ownership and affected areas, sequencing/dependencies, risks/edge cases, validation gaps, and assumptions/missing evidence.
+Otherwise return `# Plan Gap Review` with inspected scope, missing work/leftovers, ownership and affected areas, sequencing/dependencies, risks/edge cases, validation gaps, and assumptions/missing evidence. A bounded no-gap conclusion requires the same completed obligation check as build review. Keep proved gaps visible even when other obligations remain unknown; incomplete inspection cannot prove the plan complete.

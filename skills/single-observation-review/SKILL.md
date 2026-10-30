@@ -23,11 +23,11 @@ Trace a real operation from source/config to discovery, reading/parsing, authori
 
 ## PROVE
 
-Show first observation, second observation, why the API causes repetition, and whether inputs could change between passes. Check whether the first artifact lacks only a small fact later stages genuinely need.
+Name one logical operation, its required observation lifetime, and the exact input scope. Trace the first and repeated reads, the artifact already available, and the extra work or inconsistent-version consequence. Prove that the first artifact can satisfy the later obligation at the required freshness; inspect whether it lacks only a small naturally owned fact. A repeated API name alone is not proof of redundant observation.
 
 ## DO NOT REPORT
 
-Do not report trivial recalculation. Do not solve a second observation with a hidden cache or registry.
+Do not report trivial recalculation, reads of different scopes, intentional fresh observation after a mutation, or independent trust-boundary verification. Preserve streaming/chunked reads whose combined scope is one observation. Do not solve a second observation with a hidden cache or registry.
 
 ## PREFER
 
@@ -35,4 +35,6 @@ Build once, pass the exact artifact forward, and add only facts that naturally b
 
 ## OUTPUT
 
-Return `# Single Observation Review` with production flow, repeated observations, artifact completeness, API boundary fixes, consistency risks, removal, and one-operation verification.
+Return `# Single Observation Review` with operation/input scope, freshness contract, both traced observations, reusable artifact, concrete repeated work or consistency risk, smallest API correction and verification.
+
+Use `FINDING` for proved unnecessary re-observation; `CLEAN` only when the declared operation's observation paths were traced and no unnecessary re-observation remains; `LEAVE ALONE` for independently required freshness or verification; otherwise `INSUFFICIENT EVIDENCE`. `stable-observation-snapshot-review` owns incoherent mixed generations without redundant observation.

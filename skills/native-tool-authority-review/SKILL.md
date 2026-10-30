@@ -47,6 +47,8 @@ The target is not a giant scanner for shell commands. Trace actual process-creat
 
 ## PROVE
 
+Verify the effective tool/version, configuration precedence and supported behavior from the selected native authority or its applicable primary documentation. Do not infer that a familiar command owns an invariant, supports a flag, or resolves credentials the same way in every version. Missing native semantics remain an evidence gap.
+
 For each finding show:
 - the real operation and process/tool launch path;
 - the **native or upstream owner** that already establishes the executable or semantics;
@@ -174,6 +176,7 @@ Return # Native Tool Authority Review with:
 - validation needed to prove behavior was preserved.
 
 End with one:
+- FINDING — a traced repository layer unjustifiably duplicates native authority or hides a genuinely new capability, with the affected caller and smallest correction established; preserve any unresolved scope separately;
 - CLEAN — no shadow native-tool semantics or redundant authority redeclarations were found in the completed inspection scope;
 - LEAVE ALONE — suspicious wrappers/declarations were inspected and each adds a distinct justified boundary or capability;
 - INSUFFICIENT EVIDENCE — the native operation or process/tool authority path could not be traced far enough to distinguish orchestration from semantic duplication.

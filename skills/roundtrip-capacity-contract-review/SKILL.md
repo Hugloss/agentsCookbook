@@ -24,7 +24,7 @@ Hunt for:
 
 ## PROVE
 
-Construct the largest or densest payload still valid under the producer/core contract, then trace it through every documented consumer and round-trip path. Show the exact boundary that rejects or cannot represent it.
+Construct or derive a boundary payload valid under the producer/core contract, then trace it through the required documented consumer or round-trip path. Account for actual units and representation changes: characters versus encoded bytes, escaping/framing, decompression, item count, and nesting depth where applicable. One reachable valid counterexample proves a mismatch; do not require materializing a dangerous maximum-size payload. Show the exact boundary that rejects or cannot represent it.
 
 ## DO NOT REPORT
 
@@ -37,3 +37,5 @@ Own one effective bound at the semantic layer and reuse it through transports. W
 ## OUTPUT
 
 Return `# Roundtrip Capacity Contract Review` with producer bound, downstream bounds, failing valid payload, broken composition path, correction, and verification.
+
+Use `FINDING` for a valid payload that provably fails a required boundary. `CLEAN` requires checking the named supported composition paths and limit units; unknown downstream limits or transformation semantics require `INSUFFICIENT EVIDENCE`.

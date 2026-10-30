@@ -37,3 +37,5 @@ Bind observations to one generation/revision, use stable read primitives, revali
 ## OUTPUT
 
 Return `# Stable Observation Snapshot Review` with logical observation, component reads, revision/generation mismatch, impossible combined result, correction, and verification.
+
+Use `FINDING` for a reachable incoherent observation. Bound `CLEAN` to the inspected logical reads, mutation sources, and snapshot guards; unknown consistency guarantees or untraced concurrent writers are `INSUFFICIENT EVIDENCE`.

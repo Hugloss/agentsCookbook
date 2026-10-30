@@ -18,7 +18,7 @@ Hunt tests with excessive fixtures, deep mocks, callback choreography, many life
 
 ## PROVE
 
-Trace which production responsibilities force the test to understand those concepts. Separate scenario complexity from architecture-induced complexity.
+Trace which production responsibilities force the test to understand those concepts. Separate scenario complexity from architecture-induced complexity. Establish an unnecessary responsibility/dependency and a concrete failure or maintenance consequence before reporting a defect; fixture, mock, callback, or line counts alone are leads. Show how the proposed boundary reduces required concepts while preserving the same behavioral assertion.
 
 ## DO NOT REPORT
 
@@ -30,4 +30,4 @@ Reduce production responsibilities, states, or dependencies so the test naturall
 
 ## OUTPUT
 
-Return `# Test Orchestration Complexity Review` with complex tests, orchestration map, production complexity revealed, target boundary, what disappears, and conceptual post-refactor test.
+Return `# Test Orchestration Complexity Review` with the inspected scenario, orchestration map, proved unnecessary responsibility, consequence, target boundary, and equivalent simpler test. Separate leads from `FINDING`. A bounded `CLEAN`/`LEAVE ALONE` needs the scenario's coordination duties traced and justified; use `INSUFFICIENT EVIDENCE` when the production obligation is missing rather than prescribing a rewrite from test size.

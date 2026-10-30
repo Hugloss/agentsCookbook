@@ -40,7 +40,7 @@ Block only material risk. Keep corrections narrow and evidence-driven. Keep the 
 
 When input starts with `BUILD REVIEW MODE`, anchor every finding in changed files, supplied evidence, or a production path affected by the change. Hunt especially for surviving old paths, stale authority, incomplete cleanup, and unproved failure behavior.
 
-Return `# Build Red-Team Review` with reviewed scope, blocking findings, non-blocking findings, missing validation/evidence, concrete fixes, and remaining risk. Use `None` only when the required build-review scope is complete and clean; otherwise use `INSUFFICIENT EVIDENCE`.
+Return `# Build Red-Team Review` with reviewed scope, blocking findings, non-blocking findings, missing validation/evidence, concrete fixes, and remaining risk. Use `None` only when the required build-review scope is complete and clean. Report established findings even when other scope is unresolved; use `INSUFFICIENT EVIDENCE` for the unresolved judgment, never to erase a proved blocker.
 
 ## OUTPUT
 

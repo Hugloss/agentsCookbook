@@ -97,6 +97,7 @@ Return `# Entrypoint Authority Review` with:
 - validation needed to prove all supported entrypoints resolve equivalently.
 
 End with one:
-- `CLEAN` — supported entrypoints converge on one launch/configuration owner;
+- `FINDING` — traced entrypoints independently own the same launch semantics, with a concrete affected workflow and a justified single owner;
+- `CLEAN` — all supported entrypoints in the declared inspection scope were traced and converge on one launch/configuration owner;
 - `LEAVE ALONE` — multiple entrypoints are justified aliases or distinct contracts and do not duplicate launch authority;
 - `INSUFFICIENT EVIDENCE` — callers or launch/configuration ownership could not be traced far enough to prove convergence or duplication.

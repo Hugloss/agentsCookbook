@@ -38,3 +38,5 @@ Define one canonical semantic projection, exclude diagnostics and bounded presen
 ## OUTPUT
 
 Return `# Semantic Identity Invariance Review` with findings: identity owner, claimed semantics, no-op mutation, semantic mutation, observed identity behavior, consequence, canonical identity inputs, verification.
+
+Use `FINDING` for a proved identity/semantics mismatch. Otherwise name the identities and transformations inspected; `CLEAN` covers only that completed scope, and unknown claimed semantics or untraced identity inputs require `INSUFFICIENT EVIDENCE`.

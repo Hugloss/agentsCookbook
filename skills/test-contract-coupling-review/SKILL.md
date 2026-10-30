@@ -18,7 +18,7 @@ Hunt assertions on private helper calls, exact internal call order, source strin
 
 ## PROVE
 
-Ask whether a behavior-preserving internal simplification would break the test. If yes, prove whether the asserted detail is a genuine architecture invariant or accidental structure.
+Establish the requirement the assertion protects, then give a concrete behavior-preserving simplification that would break it. Prove whether the asserted detail is a genuine architecture invariant or accidental structure. Trace what a replacement assertion would still detect; deleting an overcoupled assertion without preserving its valid behavioral protection is not a complete correction.
 
 ## DO NOT REPORT
 
@@ -30,4 +30,4 @@ Assert externally meaningful behavior and small explicit architectural constrain
 
 ## OUTPUT
 
-Return `# Test Contract Coupling Review` with coupled tests, frozen detail, real contract, false-failure risk, replacement assertion, removable mocks/guards, and verification.
+Return `# Test Contract Coupling Review` with inspected assertions/contracts, frozen detail, concrete false-failure witness, equivalent replacement protection, and verification. Use `FINDING` for proved incidental coupling; `CLEAN`/`LEAVE ALONE` requires traced behavioral or architectural authority for the scoped assertions. Missing requirement or replacement sensitivity remains `INSUFFICIENT EVIDENCE`, not permission to delete tests.

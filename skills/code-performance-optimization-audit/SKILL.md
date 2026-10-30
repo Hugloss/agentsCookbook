@@ -6,7 +6,7 @@ license: MIT
 
 # Code Performance Optimization Audit
 
-Standalone, read-only runtime performance review. Measure or bound real cost before proposing optimization.
+Standalone, read-only runtime performance review. Establish real repeated work or scaling cost through source evidence or measurements before proposing optimization; timing infrastructure is not a prerequisite.
 
 ## INVARIANT
 
@@ -22,7 +22,7 @@ Trace real entry points and hot paths. Hunt for:
 
 ## PROVE
 
-For each finding show the production path, cost per call, realistic call multiplier when known, and why the work is unnecessary or poorly scaled. Separate measured evidence from reasoned estimates. Never invent benchmark numbers.
+State the inspected operations and workload assumptions. For each finding show the production path, cost per call, realistic call multiplier when known, and why the work is unnecessary or poorly scaled. A traced repeated subprocess, N+1 query or redundant traversal can justify removing work without a timing run. Check whether existing caching, lazy evaluation, bounded inputs or required isolation already explains the apparent cost. Separate measured evidence from source-derived work counts and reasoned estimates. Unknown workload frequency prevents a total-impact claim, not a proved local work-reduction claim. Never invent benchmark numbers.
 
 ## DO NOT REPORT
 
@@ -36,8 +36,8 @@ Use this order: eliminate work → improve algorithm → improve data structure 
 
 When input starts with `BUILD REVIEW MODE`, inspect the changed production paths and supplied implementation evidence for material runtime cost. Report only costs supported by the change, its callers, or a realistic workload. Do not require a measured win when no material performance issue is found.
 
-Return `# Build Performance Review` with findings, missing measurement or evidence, concrete fixes, and remaining risk. Use `None` when no material performance issue is supported.
+Return `# Build Performance Review` with inspected operations, findings, missing evidence, concrete fixes, and remaining risk. Use `None` only for a completed bounded inspection with no material cost issue supported; unavailable material callers or cost semantics remain `INSUFFICIENT EVIDENCE`.
 
 ## OUTPUT
 
-Otherwise return `# Code Performance Optimization Audit` with `Performance Model`, `Findings`, `Final Performance Map`, and `Smallest Coherent Optimization Sequence`. Each finding: location, current cost, root cause, proposed cost, expected impact, correctness risk, measurement, priority.
+Otherwise return `# Code Performance Optimization Audit` with `Performance Model`, `Findings`, `Final Performance Map`, and `Smallest Coherent Optimization Sequence`. Each finding: location, current cost, root cause, proposed cost, expected impact, correctness risk, evidence type, priority. Bound the final map to inspected paths; mark unmeasured timing and unknown workload assumptions explicitly. A proposed optimization is not an observed speedup.

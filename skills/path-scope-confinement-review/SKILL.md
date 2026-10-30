@@ -19,13 +19,15 @@ Hunt for:
 - longest-prefix mistakes in overlapping path maps;
 - Windows/WSL/container path translation that drops root identity;
 - symlink resolution performed after an insufficient lexical check;
+- string-prefix checks that mistake a sibling name for a descendant path;
+- symlink, directory, or mount replacement between confinement validation and actual access;
 - absolute paths accepted without rebinding to the declared repository/workspace;
 - normalized paths reused across tenants, repositories, or analysis scopes;
 - whole-member or locator evidence escaping the admitted source universe.
 
 ## PROVE
 
-Start with an input accepted by the boundary and trace each normalization/mapping/resolution stage. Construct a path that reaches outside the declared root, or show that two different roots collapse to the same admitted locator.
+Start with an input accepted by the boundary and trace each normalization/mapping/resolution stage through the actual read, write, or evidence use. Construct a path that reaches outside the declared root, or show that two different roots collapse to the same admitted locator. For a race, establish who can mutate the relevant path components and the reachable check/use interleaving; do not assume an attacker can modify an immutable or inaccessible tree.
 
 ## DO NOT REPORT
 
@@ -33,8 +35,10 @@ Do not report deliberate cross-root access when the caller has explicit authorit
 
 ## PREFER
 
-Canonicalize once, resolve against an explicit root, apply deterministic longest-prefix mapping, re-check confinement after symlink/realpath resolution, and retain root identity in downstream evidence.
+Resolve against an explicit root, compare path-component boundaries using the target filesystem's semantics, apply deterministic mapping, and retain root identity in downstream evidence. Where concurrent path mutation is possible, use an access primitive or stable ownership boundary that enforces confinement at use; a prior realpath check alone does not close that race. Avoid inventing a universal cross-platform API.
 
 ## OUTPUT
 
 Return `# Path Scope Confinement Review` with input path, authority root, transformation chain, escape/collision point, consequence, corrected confinement boundary, and verification.
+
+Use `FINDING` for a reachable escape or cross-root identity collision. `CLEAN` requires inspecting the named locator forms through actual access/use under the relevant mutation model; unknown filesystem, mapping, or access semantics require `INSUFFICIENT EVIDENCE`.

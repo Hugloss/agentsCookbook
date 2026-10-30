@@ -23,7 +23,9 @@ Hunt for:
 
 ## PROVE
 
-Trace allocation, aliasing, escape, lifetime, and concurrent access. Prove whether two concurrent owners can reach the same mutable object or durable representation.
+Trace allocation, aliasing, escape, lifetime, and concurrent access. Prove whether two concurrent owners can reach the same mutable object or durable representation. A shallow copy can retain shared children; process-local handles can still name the same file, row, service, or external resource.
+
+Before recommending removal of a lock/transaction, inspect its entire protected operation and callers. A local mapping does not make another protected effect local. For a missing guard, establish conflicting reachable accesses and their consequence; shared mutation alone does not prove a race if another owner serializes it.
 
 ## DO NOT REPORT
 
@@ -35,4 +37,6 @@ Name the mutable-state owner explicitly. Remove unnecessary synchronization for 
 
 ## OUTPUT
 
-Return `# Shared State Ownership Review` with allocation/alias trace, concurrent owners, sharing proof or false-sharing proof, synchronization consequence, correction, verification.
+Return `# Shared State Ownership Review` with the inspected allocation/access scope, alias trace, concurrent owners, sharing or false-sharing proof, synchronization consequence, correction, and verification.
+
+Use `FINDING` only for a demonstrated ownership/synchronization error. `CLEAN` requires the relevant allocation, escapes, aliases, and protected accesses in the declared scope to be traced; `LEAVE ALONE` requires a positive local-state or existing-synchronization proof. Preserve an unavailable alias, caller, or external owner as `INSUFFICIENT EVIDENCE` when it prevents either conclusion.

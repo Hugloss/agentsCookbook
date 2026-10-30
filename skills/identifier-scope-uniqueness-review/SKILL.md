@@ -37,3 +37,5 @@ Name the uniqueness scope explicitly, enforce it at admission, and use composite
 ## OUTPUT
 
 Return `# Identifier Scope Uniqueness Review` with identifier, promised scope, consumer scope, collision path, consequence, corrected identity, and verification.
+
+Use `FINDING` for a reachable collision that violates the consumer's identity contract. Bound `CLEAN` to the inspected producers, admission checks, and lookup scopes; unknown uniqueness guarantees or untraced producers require `INSUFFICIENT EVIDENCE`.

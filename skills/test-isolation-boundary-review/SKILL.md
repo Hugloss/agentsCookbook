@@ -18,7 +18,7 @@ Hunt unit-like tests that require databases, filesystem trees, servers, subproce
 
 ## PROVE
 
-Show that the behavior itself does not semantically require the external effect, then identify the natural existing boundary where decision/computation and effect can be separated.
+Establish the behavior's input/output contract and show that it does not semantically require the external effect. Trace the production dependency that forces the effect, then identify the natural existing boundary where decision/computation and effect can be separated. Preserve tests of actual effect integration; an effect mocked away is not evidence that integration still works.
 
 ## DO NOT REPORT
 
@@ -30,4 +30,4 @@ Expose pure decision/computation through an existing domain/application boundary
 
 ## OUTPUT
 
-Return `# Test Isolation Boundary Review` with behavior, forced effects, production coupling cause, natural isolation boundary, code/setup removable, and simpler test shape.
+Return `# Test Isolation Boundary Review` with inspected behavior/dependencies, forced effects, proved coupling cause, natural isolation boundary, removable setup, and simpler test shape. Use `FINDING` for a demonstrated unrelated dependency; reserve `CLEAN`/`LEAVE ALONE` for traced dependency paths whose effects are absent or required. An unknown behavioral contract or dependency owner requires `INSUFFICIENT EVIDENCE`, not an invented pure boundary.

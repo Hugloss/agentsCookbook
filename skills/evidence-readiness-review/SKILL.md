@@ -39,3 +39,5 @@ Gate scoring on authority-derived readiness: valid membership, non-empty eligibl
 ## OUTPUT
 
 Return `# Evidence Readiness Review` with governing qualification contract, required scope/slices, claimed qualification, observed evidence membership, missing prerequisite, vacuous/invalid pass path, corrected gate, verification.
+
+Use `FINDING` for a proved qualification path missing a required prerequisite. `CLEAN` requires reconciling the governing slices and eligible membership for the named gate; unresolved ground truth, authority, or coverage remains `INSUFFICIENT EVIDENCE`.

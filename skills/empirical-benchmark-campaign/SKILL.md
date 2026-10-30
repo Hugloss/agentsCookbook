@@ -30,6 +30,8 @@ If the experiment contract must change, create a new experiment version before c
 
 Run the benchmark's real admission path without invoking the coding agent.
 
+Resolve the checks below against the selected frozen experiment and actual harness contracts. Native subject bindings, MCP registrations, shared stores and mutable mirrors apply only when that experiment uses them; record an evidence-backed not-applicable reason otherwise. Do not invent commands, status values or storage mechanisms, or add a second harness to satisfy this skill. An unavailable mechanism required by the experiment remains incomplete.
+
 Preflight must prove, for every selected definition:
 - exact repository commit/tree can be materialized;
 - the frozen mutation, if any, validates and applies;
@@ -52,6 +54,8 @@ Treat preflight states exactly:
 - `INVALID` — experiment/oracle/admission evidence is invalid;
 - `CONTAMINATED` — isolation was violated;
 - recorded non-outcome states remain evidence and are not silently overwritten.
+
+These labels describe the required distinctions. When a harness uses different native labels, report its observed label and an explicit justified mapping; never claim it emitted a cookbook label it does not implement.
 
 Do not interpret `INCOMPLETE`, `INVALID`, or `CONTAMINATED` as a product failure.
 

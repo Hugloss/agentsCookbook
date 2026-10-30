@@ -27,7 +27,7 @@ Trace one admitted source fact from its producer through each projection. Show t
 
 ## DO NOT REPORT
 
-Do not report a deliberately lossy presentation that clearly declares its scope and is never used as complete or authoritative evidence.
+Do not report a deliberately lossy presentation that clearly declares its scope and is never used as complete or authoritative evidence. Respect the destination visibility policy: exclusion accounting may itself need redaction or aggregation. Do not expose protected values or their existence merely to prove preservation; `evidence-visibility-enforcement-review` owns that boundary.
 
 ## PREFER
 
@@ -36,3 +36,5 @@ Preserve canonical evidence and project views from it. Carry explicit omission, 
 ## OUTPUT
 
 Return `# Evidence Projection Preservation Review` with findings: source fact, projection path, loss point, downstream ambiguity, explicit accounting required, minimal correction, verification.
+
+Use `FINDING` for proved unaccounted evidence loss. A `CLEAN` conclusion requires tracing the named admitted evidence classes through the relevant projections; unknown admission policy or uninspected consumers leave `INSUFFICIENT EVIDENCE`.

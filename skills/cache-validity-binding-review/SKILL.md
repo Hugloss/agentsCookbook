@@ -25,7 +25,7 @@ Hunt for caches missing:
 
 ## PROVE
 
-Identify one semantic dimension omitted from the key or validity check. Change only that dimension while preserving the cache key and show how stale or wrong semantics can be returned.
+Identify one semantic dimension unprotected by the combined key, invalidation, and read-time validity contract. Change only that dimension, trace any invalidation or revalidation it triggers, and show a reachable hit that still returns stale or wrong semantics. A field missing from the key is not sufficient proof when another existing guard prevents that reuse.
 
 ## DO NOT REPORT
 
@@ -38,3 +38,5 @@ Keep caches derived and disposable. Bind exact semantic inputs and authoritative
 ## OUTPUT
 
 Return `# Cache Validity Binding Review` with cache owner, key fields, omitted semantic dimension, stale-hit path, consequence, corrected binding, verification.
+
+Use `FINDING` for a proved stale reuse path, or `LEAVE ALONE` when the existing validity/invalidation owner prevents it. `CLEAN` requires tracing the named cache's relevant mutation and read paths; unknown invalidation behavior is `INSUFFICIENT EVIDENCE`.
