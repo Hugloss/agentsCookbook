@@ -1,0 +1,52 @@
+{
+  "packs": [
+    {
+      "id": "review-planning",
+      "name": "Agents Cookbook: Review and Planning",
+      "summary": "Review source and test changes, find missing work, ground repository claims, and prepare evidence-backed implementation plans with focused skills.",
+      "catalog_sections": [
+        "Skill authoring",
+        "Change review",
+        "Planning and evidence",
+        "Discovery"
+      ]
+    },
+    {
+      "id": "reliability-qualification",
+      "name": "Agents Cookbook: Reliability and Qualification",
+      "summary": "Inspect concurrency, Kafka delivery, retries, resource lifetime, and failure contracts; guide repair campaigns, sensitive-data masking, and qualified benchmark evidence.",
+      "catalog_sections": [
+        "Concurrency",
+        "Execution integrity",
+        "Data handling",
+        "Qualification integrity"
+      ]
+    },
+    {
+      "id": "evidence-integrity",
+      "name": "Agents Cookbook: Evidence Integrity",
+      "summary": "Review provenance, identity, completeness, cache validity, persistence, visibility, and uncertainty so conclusions remain supported across system boundaries.",
+      "catalog_sections": [
+        "Evidence integrity"
+      ]
+    },
+    {
+      "id": "architecture-simplicity",
+      "name": "Agents Cookbook: Architecture and Simplicity",
+      "summary": "Find competing authorities, repeated decisions, obsolete paths, unnecessary forwarding, and hidden effects while protecting coherent owners and native-tool boundaries.",
+      "catalog_sections": [
+        "Semantic authority",
+        "Structural simplicity"
+      ]
+    },
+    {
+      "id": "testing",
+      "name": "Agents Cookbook: Testing and Isolation",
+      "summary": "Build pytest fixtures for local and external services, verify event-driven completion, and review repeated setup, isolation, causality, contamination, and test coupling.",
+      "catalog_sections": [
+        "Integration test construction",
+        "Test-derived architecture"
+      ]
+    }
+  ]
+}

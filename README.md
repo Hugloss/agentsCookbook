@@ -8,11 +8,16 @@ The library works with **OpenCode, Pi, or another compatible agent runtime**. Th
 
 > The goal is not to make the agent sound more confident. The goal is to make it inspect the repository, find the right thing to investigate, prove what is actually wrong, and prefer the smallest correction that removes the problem.
 
-## Benchmarks and Agent Economics
+## Choose how to use the cookbook
 
-Benchmark execution, evaluation corpora, and the Agent Economics support toolkit now live in **[EvalShot](https://github.com/Hugloss/EvalShot)**. EvalShot owns their runners, tests, configuration, and documentation. This repository owns the canonical skills, agent prompts, flows, protocols, and OpenCode/Pi adapters.
+| You want to use it in | Start here | What you get |
+| --- | --- | --- |
+| OpenCode or Pi | [30-second setup](#30-second-setup) and [installation guide](docs/installation.md) | Skills, supported agent wrappers, and host adapters linked from one checkout. |
+| A native skill-capable environment, including supported ChatGPT environments | [Complete-folder import](docs/installation.md#prompt-only-use) and [delivery routes](docs/agensi-distribution.md#choose-the-delivery-route) | The selected skill and its resources, using the host's supported import workflow. |
+| A host connected to Agensi | [Pack selection and publication](docs/agensi-distribution.md) | Skills and supporting text retrieved through MCP after their listings are published. |
 
-Use the cookbook directly for prompts and runtime installation. When running evaluations with EvalShot, point it at the cookbook checkout you want to test; the skills remain here as one canonical source. See [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md) and [Agent Economics documentation](https://github.com/Hugloss/EvalShot/blob/main/scripts/agent_economics/README.md).
+To choose a prompt for a particular task, use [Start here](#start-here) or the
+[complete skill catalog](skills/README.md).
 
 ## 30-second setup
 
@@ -34,7 +39,10 @@ scripts/link-opencode-local.sh
 
 The installer fails closed on unrelated conflicts unless you explicitly pass `--force`; forced conflicts are moved to timestamped backup paths before links are created.
 
-That installs the same canonical agent and skill sources for OpenCode and Pi. You can also ignore the adapters completely and copy or load any `SKILL.md` directly in another agent system.
+That installs the same canonical agent and skill sources for OpenCode and Pi.
+For another native skill-capable environment, copy or import the complete
+`skills/<name>/` folder, including its references and other resources. Loading
+`SKILL.md` directly also requires access to any resources that skill uses.
 
 **Runtime compatibility:** the full OpenCode integration targets the 1.x API
 (native checks on 1.19.5). OpenCode 2 needs a plugin/API port; full preflight
@@ -43,15 +51,48 @@ rejects it. The Pi adapter was checked with Pi 1.4.0 and `pi-open-agents` 0.1.26
 flow. See the [version and evidence boundaries](docs/installation.md#runtime-versions)
 before upgrading a host or extension.
 
-Check the local installation with:
+Check the repository's canonical source contracts with:
 
 ```bash
 scripts/check-canonical-sources.sh
-scripts/preflight-opencode-ping-pong.sh
-scripts/preflight-pi-ping-pong.sh
 ```
 
-See [`docs/installation.md`](docs/installation.md) for prerequisites, custom install locations, removal guidance, update behavior, and platform support.
+If you use the full planning/build agent flow, also run the preflight for your
+chosen host after installing its prerequisites:
+
+| Chosen host | Preflight |
+| --- | --- |
+| OpenCode | `scripts/preflight-opencode-ping-pong.sh` |
+| Pi with its agent integration enabled | `scripts/preflight-pi-ping-pong.sh` |
+
+These flow checks are optional for direct skill use. See
+[`docs/installation.md`](docs/installation.md) for prerequisites, custom install
+locations, removal guidance, update behavior, and platform support.
+
+## Portable distribution and Agensi
+
+The same canonical skill folders can also be packaged for Agensi's MCP delivery
+or imported into an environment that supports native Agent Skills. The exporter
+builds five focused Agensi packs from a committed cookbook revision, preserving
+each skill and its supporting files. It does not publish listings or change the
+OpenCode/Pi installation.
+
+```bash
+python3 scripts/package-agensi.py --output-dir dist/agensi
+```
+
+Choose a fresh output directory for each changed source revision; the exporter
+preserves existing output and refuses to mix different builds.
+
+The [distribution guide](docs/agensi-distribution.md) explains pack contents,
+publication, source provenance, ChatGPT use, and the difference between portable
+skills and the full native agent/adapter setup. GitHub Actions also makes the
+generated packs available as build artifacts; an artifact is not a live Agensi
+listing.
+
+Changes to skills are included in the next candidate build. Updating the live
+Agensi listing is a separate submission and approval step; see the
+[update, addition, and deletion lifecycle](docs/agensi-lifecycle.md).
 
 ## Start here
 
@@ -263,17 +304,25 @@ The cookbook supplies the canonical prompt. EvalShot owns reusable evaluation co
 
 See [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md) and [sharp skill discrimination contract](https://github.com/Hugloss/EvalShot/blob/main/evals/sharp-skill-discrimination.md). Cookbook CI checks the canonical sources and adapters. Reusable behavioral benchmarks run through EvalShot against an explicitly selected cookbook checkout; ordinary contribution validation remains scoped to the change.
 
+### Benchmarks and Agent Economics
+
+Benchmark execution, evaluation corpora, and the Agent Economics support toolkit live in **[EvalShot](https://github.com/Hugloss/EvalShot)**. EvalShot owns their runners, tests, configuration, and documentation. This repository owns the canonical skills, agent prompts, flows, protocols, and OpenCode/Pi adapters.
+
+When running evaluations with EvalShot, point it at the cookbook checkout you want to test; the skills remain here as one canonical source. See [EvalShot's evaluation guide](https://github.com/Hugloss/EvalShot/blob/main/evals/README.md) and [Agent Economics documentation](https://github.com/Hugloss/EvalShot/blob/main/scripts/agent_economics/README.md).
+
 ## Repository layout
 
-```text
-skills/       reusable prompt methodology — the library core
-agents/       thin role and coordinator prompts
-flows/        optional composition recipes
-protocols/    portable evidence/context/output conventions
-adapters/     OpenCode/Pi integration
-scripts/      prompt installation, validation, and artifact helpers
-docs/         architecture and usage documentation
-```
+| Path | Owns |
+| --- | --- |
+| `skills/<name>/` | Canonical methodology and each skill's supporting resources. |
+| `skills/README.md` | The catalog, categories, and overlap boundaries. |
+| `agents/` | Thin role and coordinator prompts. |
+| `flows/` and `protocols/` | Optional composition recipes and portable evidence/context/output conventions. |
+| `adapters/` | OpenCode/Pi integration. |
+| `distribution/` | Pack metadata and selections of existing catalog categories. |
+| `scripts/` | Installation, validation, packaging, and artifact helpers. |
+| `docs/` | Architecture, usage, publishing, and lifecycle documentation. |
+| `dist/agensi/` | Generated ZIP candidates when using the example build command; ignored by Git. |
 
 There is one canonical Markdown source for each skill and agent. Supported runtime installation links those sources rather than maintaining runtime-specific copies.
 
@@ -308,6 +357,8 @@ The repository is licensed under the [`MIT License`](LICENSE).
 ## Documentation
 
 - [Installation and platform support](docs/installation.md)
+- [Portable distribution and Agensi pack selection](docs/agensi-distribution.md)
+- [Agensi updates, additions, deletions, and publication tracking](docs/agensi-lifecycle.md)
 - [Skill catalog](skills/README.md)
 - [Architecture](docs/architecture.md)
 - [Ping-Pong planning example](docs/ping-pong-plan-flow.md)
