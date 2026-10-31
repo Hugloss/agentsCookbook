@@ -184,6 +184,15 @@ scripts/smoke-run-artifacts.sh
 
 The GitHub workflow validates canonical prompts, adapters, artifact integrity, reviewer authority, and JavaScript/shell syntax on Ubuntu. These checks run without a benchmark checkout or Python environment. EvalShot owns the benchmark and Agent Economics test suites. Real model-backed OpenCode/Pi qualification remains a host-environment check; follow [local runtime qualification](docs/local-runtime-qualification.md) for the applicable evidence.
 
+The distribution step additionally uses the runner's Python 3 standard library
+to check and build [Agensi pack candidates](docs/agensi-distribution.md); it needs
+no Python environment setup or third-party packages. Pack membership is derived
+from the existing catalog sections and checked against `skills/*/SKILL.md`.
+When adding a catalog section, assign that section to a pack in
+`distribution/agensi-packs.json`. Do not maintain another list of skill names.
+Packaging checks prove archive completeness and source identity, not marketplace
+approval or host/model behavior.
+
 ## Pull requests
 
 Keep PRs focused. Explain:
