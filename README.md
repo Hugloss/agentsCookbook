@@ -1,5 +1,7 @@
 # Agents Cookbook
 
+[![Validate cookbook](https://github.com/Hugloss/agentsCookbook/actions/workflows/validate.yml/badge.svg)](https://github.com/Hugloss/agentsCookbook/actions/workflows/validate.yml)
+
 **Small, reusable prompts for agents that need to understand, review, and improve real codebases.**
 
 Agents Cookbook is a Markdown prompt library for coding agents and repository reviewers. The prompts are deliberately narrow, evidence-driven, and composable: use one skill directly, wrap it in an agent role, or combine several into a larger review flow.
@@ -7,6 +9,61 @@ Agents Cookbook is a Markdown prompt library for coding agents and repository re
 The library works with **OpenCode, Pi, or another compatible agent runtime**. The cookbook owns the prompts. Your runtime owns execution, tools, sandboxing, models, sessions, and persistence.
 
 > The goal is not to make the agent sound more confident. The goal is to make it inspect the repository, find the right thing to investigate, prove what is actually wrong, and prefer the smallest correction that removes the problem.
+
+
+## What the cookbook owns
+
+The repository has three deliberately separate layers:
+
+```text
+skill  -> portable investigation/review methodology
+agent  -> thin role, permission and output wrapper
+flow   -> optional composition of existing agents and skills
+```
+
+A skill defines what to inspect, what evidence is required, which safe
+controls must be protected and which outcomes are valid. It does not own
+model execution, repository edits, process isolation, sessions or
+persistence. Host adapters expose the same canonical Markdown sources
+rather than maintaining behaviorally different copies.
+
+That boundary keeps the useful unit small: a reviewer can load one skill
+directly, a host can wrap it in a constrained agent, and a larger flow can
+compose several independent reviews without moving runtime policy into the
+prompt library.
+
+## Quality and qualification
+
+Prompt text, runtime compatibility and behavioral evaluation are qualified
+separately.
+
+- Canonical-source checks verify one source per skill and agent and preserve the catalog and adapter boundary.
+- Runtime preflights check the effective OpenCode or Pi installation, enabled tools, permissions, session evidence and artifact contracts; unsupported combinations fail closed instead of being treated as compatible.
+- EvalShot owns reusable frozen corpora, runners, oracles, scoring and reports. Loading a skill or passing structural CI does not establish behavioral accuracy.
+- Material claims remain scoped to the evidence that produced them: definition review, representative application, native runtime qualification or a model-backed evaluation campaign.
+
+The 2026-10-30 catalog and runtime checkpoint covered 85 skills, 12 agent
+roles, two adapters and nine mandatory reviewers, including focused OpenCode
+and artifact/session regressions plus native OpenCode/Pi compatibility
+checks. Its exact results and limits are recorded in [PR #270](https://github.com/Hugloss/agentsCookbook/pull/270), the [skill review](docs/skill-quality-review-2026-10-30.md), and the [runtime compatibility review](docs/runtime-compatibility-review-2026-10-30.md).
+
+
+## Related projects and ownership
+
+Agents Cookbook is the portable-methodology owner in a deliberately
+separated toolchain. Its skills remain useful without adopting every
+neighboring project.
+
+| Project | Owns | Does not own |
+| --- | --- | --- |
+| [Hashmarks](https://github.com/Hugloss/Hashmarks) | Local repository facts, identity, relationships, freshness, impact and verification evidence | Review methodology, edits or command execution |
+| [OH-Goon](https://github.com/oh-goon/oh-goon) | Declared workflow admission, supervised execution, durable Run evidence, recovery and bounded agent campaigns | A second canonical skill catalog or benchmark oracle |
+| **Agents Cookbook** | Portable review and investigation skills, thin agent roles, optional flows and host adapters | Model execution, sandboxing, sessions, persistence or evaluation scoring |
+| [EvalShot](https://github.com/Hugloss/EvalShot) | Frozen evaluation corpora, runtime adapters, independent oracles, scoring and reports | Canonical skill text or host runtime policy |
+
+A host can load a cookbook skill directly, combine it with Hashmarks
+evidence, execute a bounded flow through OH-Goon, and evaluate the result
+in EvalShot while each responsibility still has one explicit owner.
 
 ## Choose how to use the cookbook
 
