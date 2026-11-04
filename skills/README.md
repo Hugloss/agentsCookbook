@@ -136,9 +136,12 @@ A strong finding normally removes a path, decision, representation, traversal, b
 
 ## Discovery
 
+- `hardcoded-config-scout` — Trace operational literals to find unsupported or ignored configuration overrides.
 - `architecture-risk-triage` — Route evidence-backed hotspots to the narrow specialist skill.
 
 ## Overlap boundaries
+
+- `hardcoded-config-scout` owns **reachable operational values that must vary but cannot follow the supported configuration path**; `repository-improvement-scout` owns broad leads, `entrypoint-authority-review` owns competing launch/configuration authorities, and `single-source-of-truth-review` owns multiple accepted producers. A literal or import fan-out alone is not a defect.
 
 - `known-good-contract-reconstruction` owns **historical-to-current behavioral contract recovery and durable repair design**; `canonical-consumer-contract-review` owns **consumer dependence on accidental shapes of one canonical owner's result**; `test-contract-coupling-review` owns tests that freeze implementation details. Use the historical comparison as evidence, not competing contract authority.
 
