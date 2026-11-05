@@ -14,6 +14,16 @@ Every skill should:
 
 A strong finding normally removes a path, decision, representation, traversal, branch, wrapper, synchronization mechanism, or source of ambiguity.
 
+For low-reasoning or short-context reviews, start with the
+[five-question finding calibration](codebase-finding-derivation/SKILL.md#five-quick-qa-questions-for-low-reasoning-reviewers).
+It requires actual source, scoped ownership, an accepted violation, a
+disconfirmation attempt, and an evidence-bounded verdict **before** recommending
+refactoring. The `fact-grounding-auditor` checks repository-specific claims;
+`single-source-of-truth-review` requires two independently accepted authorities
+for the *same* fact/scope/generation. Neither a code smell nor an incomplete
+search is a confirmed defect. Reuse these skills instead of adding another
+general-purpose reviewer or compulsory PR check.
+
 ## Skill authoring
 
 - `skill-contract-review` — Review skill selection, proof, safe controls, unknown outcomes and split boundaries before accepting a new or changed definition.
