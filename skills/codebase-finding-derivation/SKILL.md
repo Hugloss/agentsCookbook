@@ -10,7 +10,7 @@ Standalone, read-only evidence-derivation skill for turning inspected codebase b
 
 ## INVARIANT
 
-> **A codebase observation becomes a finding only when inspected evidence proves a real path, a violated expectation, and a material consequence; absence of findings is claimable only inside a completed inspected scope.**
+> **A codebase observation becomes a finding only when inspected evidence proves a reachable behavior or governed boundary, a violated expectation, and a material consequence; absence of findings is claimable only inside a completed inspected scope.**
 
 ## HUNT
 
@@ -34,31 +34,39 @@ ENTRY / TRIGGER
 
 ## PROVE
 
-### Five quick QA questions for low-reasoning reviewers
+### Five questions for evidence calibration
 
-Answer these in order from the inspected source; write `unknown` rather than filling
-a gap from pattern recognition. These are a short route through the proof below,
-not another skill, score, or approval gate.
+Use these prompts where they resolve the review's uncertainty. They summarize
+the proof below without prescribing a fixed order, another report template, or
+an approval gate. Keep unavailable evidence `unknown`.
 
-1. **What is actually implemented?** Name the inspected revision, exact symbol,
-   caller, and relevant existing tests. A grep hit, old review, or familiar API
-   name does not establish behavior.
-2. **What fact and owner are involved?** State the fact, scope, and generation.
-   Distinguish repository declarations/relationships from effective native-tool
-   configuration, Git/process execution witnesses, and independent custody
-   identities. Similar names or SHA-256 algorithms do not prove one authority.
-3. **Where is the accepted violation?** Trace entry -> producer -> consumer
-   decision -> observable consequence. Quote the contract that fails; a preferred
-   design, manual parser, or repeated helper is not a failure by itself.
-4. **What could disprove the claim?** Inspect the closest safe case and
-   existing tests. Check protocol guarantees, parsing edge cases, the moment
-   filesystem traversal prunes directories, and any deliberate trust boundary.
-   Try to show a violation/control pair rather than assert fragility or cost.
-5. **Which bounded verdict and next action follow?** Report `FINDING` only
-   with a real path, violation, and consequence; `LEAVE ALONE` for a justified
-   safe case; `INSUFFICIENT EVIDENCE` when decisive inputs are missing; and a
-   scoped `CLEAN` only after its scope is complete. Prefer one focused proof
-   and the smallest correction over a new service, abstraction, or gate.
+1. **What is actually implemented?** Identify the inspected source and revision,
+   relevant callers or governed boundary, and existing tests. Distinguish source
+   evidence from an executed test result; a grep hit or stale review is a lead.
+2. **What fact and owner are involved?** State the fact and scope; include
+   generation or freshness when it affects meaning. Separate declarations from
+   effective native-tool behavior and execution/custody facts. Similar names,
+   formats or hashing algorithms do not establish competing authority.
+3. **Which contract fails in accepted use?** Trace input -> producer -> consumer
+   decision -> consequence. A split-authority finding requires two independent
+   accepted authorities for the same fact, scope and generation; unsupported
+   reconstruction, weakened qualifications or lost typed meaning can violate
+   other contracts without a second producer. For structural contracts, identify
+   the governed boundary rather than inventing a runtime trace. A witnessed
+   violation can suffice; absence or clean claims need the complete defined scope.
+   Cite the applicable requirement and supporting evidence; a preferred design
+   or parser's presence is not a defect.
+4. **What could disprove the claim?** Inspect relevant guards, protocol guarantees
+   and the nearest safe case. Reuse existing tests or source evidence where
+   decisive; a new test pair is not a prerequisite to every finding. Separate
+   source-proved repeated work from measured cost or speedup claims, which need
+   suitable observations.
+5. **Which bounded verdict and repair follow?** Use `FINDING` for a proved
+   violation and consequence, `LEAVE ALONE` for a justified safe case, and
+   `INSUFFICIENT EVIDENCE` for unresolved claims. `CLEAN` requires complete
+   inspection of its declared scope. A proved finding survives unrelated
+   unresolved scope. Name the responsible owner or coordinated owners; an
+   upstream capability may need repair before a consumer can migrate.
 
 Concrete safe controls: a native Git command owner may both execute and observe
 Git without being a second repository-intelligence authority; file digests for
@@ -67,10 +75,15 @@ machine-readable Git status format is not inherently brittle; and removing
 names from top-down `os.walk`'s mutable `directories` list prevents descent.
 Verify each control in the actual target code before applying it.
 
+Check qualified meaning as well as value equality: accepting boolean `true` as
+integer `1` can violate a typed packet contract even when host-language equality
+equates them. A pure packet-consistency check also does not establish sender
+authenticity or current source freshness; those need their own admitted evidence.
+
 A finding needs all of these:
 
 1. **Observation** — what the code appears to do.
-2. **Reachable path** — how real production or test behavior reaches it.
+2. **Reachable path or governed boundary** — how production or test behavior reaches it, or the exact scope of an explicit structural/absence contract.
 3. **Expectation** — the contract, invariant, ownership rule, or behavior it should satisfy.
 4. **Violation** — the exact point where actual behavior diverges.
 5. **Consequence** — correctness, reliability, performance, testability, operability, or maintenance impact that can actually occur.
@@ -121,7 +134,7 @@ For each defensible finding include:
 ## <finding title>
 
 Observation:
-Reachable path:
+Reachable path / governed boundary:
 Violated expectation:
 Material consequence:
 Evidence:

@@ -14,15 +14,16 @@ Every skill should:
 
 A strong finding normally removes a path, decision, representation, traversal, branch, wrapper, synchronization mechanism, or source of ambiguity.
 
-For low-reasoning or short-context reviews, start with the
-[five-question finding calibration](codebase-finding-derivation/SKILL.md#five-quick-qa-questions-for-low-reasoning-reviewers).
-It requires actual source, scoped ownership, an accepted violation, a
-disconfirmation attempt, and an evidence-bounded verdict **before** recommending
-refactoring. The `fact-grounding-auditor` checks repository-specific claims;
-`single-source-of-truth-review` requires two independently accepted authorities
-for the *same* fact/scope/generation. Neither a code smell nor an incomplete
-search is a confirmed defect. Reuse these skills instead of adding another
-general-purpose reviewer or compulsory PR check.
+The [five-question finding calibration](codebase-finding-derivation/SKILL.md#five-questions-for-evidence-calibration)
+summarizes source grounding, scoped ownership, contract proof, disconfirmation
+and bounded verdicts. Use it where helpful, without a fixed question order or
+another compulsory PR check. The `fact-grounding-auditor` checks existing claims;
+`single-source-of-truth-review` requires two accepted authorities for its specific
+split-authority finding. Unsupported reconstruction or weakened evidence can
+violate another contract even with one producer. Use the narrowest proven owner,
+including coordinated upstream/consumer repair when needed. Source or structural
+checks establish their inspected properties; reviewer accuracy needs observed
+behavioral evidence.
 
 ## Skill authoring
 
